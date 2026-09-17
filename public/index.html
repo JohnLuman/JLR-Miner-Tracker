@@ -68,10 +68,11 @@
         <div class="inline-control">
           <select id="systemSelect" aria-label="Select T3 system"></select>
           <select id="statusSelect" aria-label="Select field status"><option value="ready">🟢 Site Up</option><option value="picked">🟡 Picked At</option><option value="cleared">🔴 Cleared / 10h</option></select>
-          <input id="fieldNote" maxlength="120" placeholder="note (optional)" aria-label="Field note">
           <button id="updateField" class="orb purple" type="button">UPDATE</button>
           <button id="reportCherry" class="orb cherry" type="button">🍒 CHERRY</button>
         </div>
+        <div class="note-entry"><input id="fieldNote" maxlength="240" placeholder="Add a note for this system" aria-label="New system note"><button id="addNote" class="orb blue" type="button">ADD NOTE</button></div>
+        <div id="fieldNotes" class="field-notes" aria-live="polite"></div>
         <div id="fieldMessage" class="tiny muted">Anyone signed in can update asteroid-field status. No player location is attached.</div>
       </section>
     </section>
@@ -122,7 +123,7 @@
       <section class="glass expanded-control">
         <div class="section-title"><div><span class="eyebrow">FIELD CONTROL</span><strong>SELECTED SYSTEM</strong></div></div>
         <div id="selectedDetail" class="selected-detail"></div>
-        <div class="expanded-actions"><button id="markGreen" class="orb green" type="button">MARK GREEN</button><button id="markYellow" class="orb yellow" type="button">MARK YELLOW</button><button id="markRed" class="orb red" type="button">CLEAR + START 10H</button><button id="restartTimer" class="orb red" type="button">RESTART TIMER</button><button id="cherryExpanded" class="orb cherry" type="button">🍒 REPORT CHERRY PICKED</button></div>
+        <div class="expanded-actions"><button id="markGreen" class="orb green" type="button">MARK GREEN</button><button id="markYellow" class="orb yellow" type="button">MARK YELLOW</button><button id="markRed" class="orb red" type="button">CLEAR + START 10H</button><button id="cherryExpanded" class="orb cherry" type="button">🍒 REPORT CHERRY PICKED</button></div>
       </section>
     </section>
 
