@@ -185,7 +185,7 @@ function resetExpired(broadcastIt=true) {
   let changed=false; const t=Date.now();
   for (const [system,f] of Object.entries(state.fields)) {
     if (f.status==='cleared' && f.timerEndsAt && Date.parse(f.timerEndsAt)<=t) {
-      f.status='ready'; f.cherryPicked=false; f.timerEndsAt=null; f.updatedAt=now(); changed=true;
+      f.status='ready'; f.cherryPicked=false; f.timerEndsAt=null; f.notes=[]; f.updatedAt=now(); changed=true;
     }
   }
   if (changed) { save(); if (broadcastIt) broadcast(); }
