@@ -74,7 +74,7 @@ function freshState() {
     users: {},
     characters: {},
     fields: Object.fromEntries(SYSTEM_DEFS.map((d) => [d.system, {
-      status: 'ready', cherryPicked: false, timerEndsAt: null, note: '', updatedAt: null,
+      status: 'ready', cherryPicked: false, timerEndsAt: null, notes: [], updatedAt: null,
     }])),
     esi: {
       typeCache: {}, systemCache: {}, dailyFleet: [], lastSyncAt: null, lastError: null,
@@ -89,7 +89,12 @@ async function loadState() {
     parsed.users ||= {};
     parsed.characters ||= {};
     parsed.fields ||= {};
-    for (const d of SYSTEM_DEFS) parsed.fields[d.system] = { ...base.fields[d.system], ...(parsed.fields[d.system] || {}) };
+    for (const d of SYSTEM_DEFS) {
+      const field = parsed.fields[d.system] = { ...base.fields[d.system], ...(parsed.fields[d.system] || {}) };
+      if (!Array.isArray(field.notes)) field.notes = [];
+      if (field.note && !field.notes.length) field.notes.push({ id: randomId(8), text: String(field.note), createdAt: field.updatedAt || now() });
+      delete field.note;
+    }
     parsed.esi = { ...base.esi, ...(parsed.esi || {}) };
     parsed.esi.typeCache ||= {}; parsed.esi.systemCache ||= {}; parsed.esi.dailyFleet ||= [];
     return parsed;
@@ -180,7 +185,7 @@ function resetExpired(broadcastIt=true) {
   let changed=false; const t=Date.now();
   for (const [system,f] of Object.entries(state.fields)) {
     if (f.status==='cleared' && f.timerEndsAt && Date.parse(f.timerEndsAt)<=t) {
-      state.fields[system]={status:'ready',cherryPicked:false,timerEndsAt:null,note:'',updatedAt:now()}; changed=true;
+      f.status='ready'; f.cherryPicked=false; f.timerEndsAt=null; f.updatedAt=now(); changed=true;
     }
   }
   if (changed) { save(); if (broadcastIt) broadcast(); }
@@ -305,11 +310,11 @@ async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname==='/api/events'){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});res.write(`event: state\ndata: ${JSON.stringify(publicState())}\n\n`);sseClients.add(res);req.on('close',()=>sseClients.delete(res));return}
   if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
   const fm=url.pathname.match(/^\/api\/fields\/([^/]+)$/);
-  if(fm&&req.method==='PUT'){const system=decodeURIComponent(fm[1]);const f=state.fields[system];if(!f)return json(res,404,{error:'UNKNOWN_SYSTEM'});const body=await readBody(req);const status=String(body.status||'');if(!['ready','picked','cleared'].includes(status))return json(res,400,{error:'BAD_STATUS'});if(status==='cleared'&&body.confirm!==true)return json(res,409,{error:'CONFIRM_REQUIRED'});if(f.status==='cleared'&&f.timerEndsAt&&Date.parse(f.timerEndsAt)>Date.now()&&status!=='cleared')return json(res,409,{error:'TIMER_ACTIVE'});f.status=status;f.note=String(body.note||'').slice(0,120);f.updatedAt=now();f.timerEndsAt=status==='cleared'?new Date(Date.now()+TEN_HOURS).toISOString():null;await save();broadcast();return json(res,200,{ok:true,field:f})}
+  if(fm&&req.method==='PUT'){const system=decodeURIComponent(fm[1]);const f=state.fields[system];if(!f)return json(res,404,{error:'UNKNOWN_SYSTEM'});const body=await readBody(req);const status=String(body.status||'');if(!['ready','picked','cleared'].includes(status))return json(res,400,{error:'BAD_STATUS'});if(f.status==='cleared'&&f.timerEndsAt&&Date.parse(f.timerEndsAt)>Date.now())return json(res,409,{error:'TIMER_ACTIVE',message:'The 10-hour timer is already running and cannot be restarted or changed.'});if(status==='cleared'&&body.confirm!==true)return json(res,409,{error:'CONFIRM_REQUIRED'});f.status=status;f.updatedAt=now();f.timerEndsAt=status==='cleared'?new Date(Date.now()+TEN_HOURS).toISOString():null;await save();broadcast();return json(res,200,{ok:true,field:f})}
+  const nm=url.pathname.match(/^\/api\/fields\/([^/]+)\/notes$/);
+  if(nm&&req.method==='POST'){const system=decodeURIComponent(nm[1]);const f=state.fields[system];if(!f)return json(res,404,{error:'UNKNOWN_SYSTEM'});const body=await readBody(req);const note=String(body.text||'').trim();if(!note||note.length>240)return json(res,400,{error:'BAD_NOTE',message:'Enter a note of 1 to 240 characters.'});f.notes.push({id:randomId(8),text:note,createdAt:now()});await save();broadcast();return json(res,201,{ok:true,field:f})}
   const cm=url.pathname.match(/^\/api\/fields\/([^/]+)\/cherry$/);
   if(cm&&req.method==='POST'){const system=decodeURIComponent(cm[1]);const f=state.fields[system];if(!f)return json(res,404,{error:'UNKNOWN_SYSTEM'});f.cherryPicked=true;f.updatedAt=now();await save();broadcast();return json(res,200,{ok:true,field:f})}
-  const rm=url.pathname.match(/^\/api\/fields\/([^/]+)\/restart$/);
-  if(rm&&req.method==='POST'){const system=decodeURIComponent(rm[1]);const f=state.fields[system];if(!f)return json(res,404,{error:'UNKNOWN_SYSTEM'});const body=await readBody(req);if(body.confirm!==true)return json(res,409,{error:'CONFIRM_REQUIRED'});f.status='cleared';f.timerEndsAt=new Date(Date.now()+TEN_HOURS).toISOString();f.updatedAt=now();await save();broadcast();return json(res,200,{ok:true,field:f})}
   if(req.method==='POST'&&url.pathname==='/api/esi/sync'){syncAll().catch(console.error);return json(res,202,{ok:true})}
   if(req.method==='DELETE'&&url.pathname.startsWith('/api/me/characters/')){const id=url.pathname.split('/').pop();if(!user.characterIds.includes(id))return json(res,404,{error:'NOT_LINKED'});if(user.characterIds.length<=1)return json(res,409,{error:'LAST_LOGIN_TOON',message:'Add another toon before disconnecting your last EVE login character.'});delete state.characters[id];user.characterIds=user.characterIds.filter(x=>x!==id);if(user.primaryCharacterId===id){user.primaryCharacterId=user.characterIds[0];const next=state.characters[user.primaryCharacterId];if(next)user.displayName=next.name;}await save();broadcast();return json(res,200,{ok:true,user:myProfile(user)})}
   return json(res,404,{error:'NOT_FOUND'});
