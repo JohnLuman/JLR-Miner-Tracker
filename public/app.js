@@ -5,6 +5,7 @@
   let state = null;
   let filter = 'all';
   let selectedSystem = '';
+  let fieldDraftDirty = false;
   let pending = null;
   let audio = null;
   let audioUnlocked = false;
@@ -78,9 +79,10 @@
   function renderSelect(){
     if(!state)return; const old=selectedSystem||$('systemSelect').value; $('systemSelect').innerHTML='';
     for(const ore of state.source.ores){const g=document.createElement('optgroup');g.label=`#${ore.rank} ${ore.name.toUpperCase()}`;for(const d of definitions().filter(x=>x.rank===ore.rank)){const f=field(d.system),o=document.createElement('option');o.value=d.system;o.textContent=`${d.system} — ${f.status==='cleared'?`RED ${timer(f.timerEndsAt)}`:statusText[f.status]}${f.cherryPicked?' 🍒':''}`;g.appendChild(o)}$('systemSelect').appendChild(g)}
-    selectedSystem=definitions().some(x=>x.system===old)?old:(definitions()[0]?.system||'');$('systemSelect').value=selectedSystem;const f=field(selectedSystem);if(f){$('statusSelect').value=f.status;$('fieldNote').value=f.note||''}
+    selectedSystem=definitions().some(x=>x.system===old)?old:(definitions()[0]?.system||'');$('systemSelect').value=selectedSystem;const f=field(selectedSystem);if(f&&!fieldDraftDirty){$('statusSelect').value=f.status;$('fieldNote').value=f.note||''}
   }
-  function node(d,f,includeTimer=true){const b=document.createElement('button');b.type='button';b.className='system-node';b.dataset.status=f.status;if(d.system===selectedSystem)b.classList.add('selected');const line=f.status==='cleared'?timer(f.timerEndsAt):f.status==='picked'?'PICKED':'READY';b.innerHTML=`${f.cherryPicked?'<span class="cherry-pin">🍒</span>':''}<span class="sys-name">${esc(d.system)}</span><span class="sys-ore">#${d.rank} ${esc(d.ore)}</span>${includeTimer?`<span class="sys-state">${line}</span>`:''}`;b.title=`${d.system} • ${d.ore} • ${statusText[f.status]}${f.cherryPicked?' • Cherry Picked':''}${f.note?` • ${f.note}`:''}`;b.addEventListener('click',()=>{selectedSystem=d.system;$('systemSelect').value=d.system;$('statusSelect').value=f.status;$('fieldNote').value=f.note||'';renderBoards();renderSelected()});return b}
+  function chooseSystem(system){selectedSystem=system;$('systemSelect').value=system;fieldDraftDirty=false;const f=field(system);if(f){$('statusSelect').value=f.status;$('fieldNote').value=f.note||''}renderBoards();renderSelected()}
+  function node(d,f,includeTimer=true){const b=document.createElement('button');b.type='button';b.className='system-node';b.dataset.status=f.status;if(d.system===selectedSystem)b.classList.add('selected');const line=f.status==='cleared'?timer(f.timerEndsAt):f.status==='picked'?'PICKED':'READY';b.innerHTML=`${f.cherryPicked?'<span class="cherry-pin">🍒</span>':''}<span class="sys-name">${esc(d.system)}</span><span class="sys-ore">#${d.rank} ${esc(d.ore)}</span>${includeTimer?`<span class="sys-state">${line}</span>`:''}`;b.title=`${d.system} • ${d.ore} • ${statusText[f.status]}${f.cherryPicked?' • Cherry Picked':''}${f.note?` • ${f.note}`:''}`;b.addEventListener('click',()=>chooseSystem(d.system));return b}
   function renderBoards(){
     if(!state)return;$('miniMap').innerHTML='';$('fieldBoard').innerHTML='';let counts={ready:0,picked:0,cleared:0,cherry:0};
     for(const d of definitions()){const f=field(d.system);counts[f.status]++;if(f.cherryPicked)counts.cherry++;$('miniMap').appendChild(node(d,f,false));if(filter==='all'||filter===f.status||(filter==='cherry'&&f.cherryPicked))$('fieldBoard').appendChild(node(d,f,true))}
@@ -88,7 +90,7 @@
   }
   function renderHits(){
     if(!state)return;const arr=definitions().map(d=>({d,f:field(d.system)})).filter(x=>x.f.status!=='cleared').sort((a,b)=>Number(a.f.cherryPicked)-Number(b.f.cherryPicked)||a.d.rank-b.d.rank||a.d.order-b.d.order).slice(0,8);$('hitOrder').innerHTML='';
-    for(const [i,x] of arr.entries()){const b=document.createElement('button');b.type='button';b.className=`orb hit-chip ${x.f.cherryPicked?'cherry':x.f.status==='picked'?'yellow':'green'}`;b.textContent=`${i+1}. ${x.d.system}${x.f.cherryPicked?' 🍒':''}`;b.addEventListener('click',()=>{selectedSystem=x.d.system;$('systemSelect').value=x.d.system;renderBoards();renderSelected()});$('hitOrder').appendChild(b)}
+    for(const [i,x] of arr.entries()){const b=document.createElement('button');b.type='button';b.className=`orb hit-chip ${x.f.cherryPicked?'cherry':x.f.status==='picked'?'yellow':'green'}`;b.textContent=`${i+1}. ${x.d.system}${x.f.cherryPicked?' 🍒':''}`;b.addEventListener('click',()=>chooseSystem(x.d.system));$('hitOrder').appendChild(b)}
   }
   function renderRanking(){
     if(!state)return;$('oreRanking').innerHTML='';for(const ore of state.source.ores){const clear=ore.siteM3/fleetM3()*60;const r=document.createElement('div');r.className='rank-row';r.innerHTML=`<div class="rank-badge">#${ore.rank}</div><div><strong>${esc(ore.name)}</strong><small>${ore.systems.join(' • ')}<br>${ore.jbvPerM3.toFixed(2)} JBV/m³ • site ${fmt(ore.siteJBV)} JBV</small></div><div class="rank-num">${fmt(fleetM3(),'m3')}<small>m³/hr</small></div><div class="rank-num">${fmt(projectedISK(ore))}/hr<small>~${Number.isFinite(clear)?clear.toFixed(0):'—'} min/site</small></div>`;$('oreRanking').appendChild(r)}
@@ -114,17 +116,20 @@
   $('addToon').addEventListener('click',addToon);$('addToonTop').addEventListener('click',addToon);
   $('logout').addEventListener('click',async()=>{try{await api('/auth/logout',{method:'POST',body:'{}'})}catch{}location.href='/' });
   $('compactMode').addEventListener('click',()=>applyMode('compact'));$('expandedMode').addEventListener('click',()=>applyMode('expanded'));
-  $('systemSelect').addEventListener('change',()=>{selectedSystem=$('systemSelect').value;const f=field(selectedSystem);if(f){$('statusSelect').value=f.status;$('fieldNote').value=f.note||''}renderBoards();renderSelected()});
+  $('systemSelect').addEventListener('change',()=>chooseSystem($('systemSelect').value));
+  $('statusSelect').addEventListener('change',()=>{fieldDraftDirty=true});
+  $('fieldNote').addEventListener('input',()=>{fieldDraftDirty=true});
   document.querySelectorAll('.filter').forEach(b=>b.addEventListener('click',()=>{filter=b.dataset.filter;document.querySelectorAll('.filter').forEach(x=>x.classList.toggle('active',x===b));renderBoards()}));
 
-  async function setField(status,note='',forceSystem=null){const system=forceSystem||$('systemSelect').value;if(status==='cleared'){pending={kind:'clear',system,note};$('confirmText').textContent=`${system} will turn RED and count down from 10 hours. Any 🍒 flag stays until the timer reaches zero.`;$('confirmPanel').classList.remove('hidden');return}try{await api(`/api/fields/${encodeURIComponent(system)}`,{method:'PUT',body:JSON.stringify({status,note})});$('fieldMessage').textContent=`${system} updated to ${statusText[status]}.`}catch(e){toast(e.message)}}
+  function applyFieldUpdate(system,updatedField){state.fields[system]=updatedField;if(selectedSystem===system)fieldDraftDirty=false;renderAll()}
+  async function setField(status,note='',forceSystem=null){const system=forceSystem||$('systemSelect').value;if(status==='cleared'){pending={kind:'clear',system,note};$('confirmText').textContent=`${system} will turn RED and count down from 10 hours. Any 🍒 flag stays until the timer reaches zero.`;$('confirmPanel').classList.remove('hidden');return}try{const result=await api(`/api/fields/${encodeURIComponent(system)}`,{method:'PUT',body:JSON.stringify({status,note})});applyFieldUpdate(system,result.field);$('fieldMessage').textContent=`${system} updated to ${statusText[status]}.`}catch(e){toast(e.message)}}
   $('updateField').addEventListener('click',()=>setField($('statusSelect').value,$('fieldNote').value));
   $('markGreen').addEventListener('click',()=>setField('ready',$('fieldNote').value,selectedSystem));$('markYellow').addEventListener('click',()=>setField('picked',$('fieldNote').value,selectedSystem));$('markRed').addEventListener('click',()=>setField('cleared',$('fieldNote').value,selectedSystem));
   async function cherry(){const system=selectedSystem||$('systemSelect').value;try{await api(`/api/fields/${encodeURIComponent(system)}/cherry`,{method:'POST',body:'{}'});$('fieldMessage').textContent=`${system} reported 🍒 CHERRY PICKED. It will clear only when the 10-hour respawn ends.`;sfx('timer')}catch(e){toast(e.message)}}
   $('reportCherry').addEventListener('click',cherry);$('cherryExpanded').addEventListener('click',cherry);
   $('restartTimer').addEventListener('click',()=>{pending={kind:'restart',system:selectedSystem};$('confirmText').textContent=`${selectedSystem} will restart its RED countdown at 10:00:00. Cherry Picked remains until the new timer expires.`;$('confirmPanel').classList.remove('hidden')});
   $('confirmNo').addEventListener('click',()=>{pending=null;$('confirmPanel').classList.add('hidden')});
-  $('confirmYes').addEventListener('click',async()=>{if(!pending)return;const p=pending;pending=null;$('confirmPanel').classList.add('hidden');try{if(p.kind==='clear')await api(`/api/fields/${encodeURIComponent(p.system)}`,{method:'PUT',body:JSON.stringify({status:'cleared',note:p.note,confirm:true})});else await api(`/api/fields/${encodeURIComponent(p.system)}/restart`,{method:'POST',body:JSON.stringify({confirm:true})});sfx('timer');$('fieldMessage').textContent=`${p.system} RED — 10-hour timer started.`}catch(e){toast(e.message)}});
+  $('confirmYes').addEventListener('click',async()=>{if(!pending)return;const p=pending;pending=null;$('confirmPanel').classList.add('hidden');try{const result=p.kind==='clear'?await api(`/api/fields/${encodeURIComponent(p.system)}`,{method:'PUT',body:JSON.stringify({status:'cleared',note:p.note,confirm:true})}):await api(`/api/fields/${encodeURIComponent(p.system)}/restart`,{method:'POST',body:JSON.stringify({confirm:true})});applyFieldUpdate(p.system,result.field);sfx('timer');$('fieldMessage').textContent=`${p.system} RED — 10-hour timer started.`}catch(e){toast(e.message)}});
   $('syncNow').addEventListener('click',async()=>{try{await api('/api/esi/sync',{method:'POST',body:'{}'});toast('ESI sync started. ESI mining ledgers are cached around 10 minutes.')}catch(e){toast(e.message)}});
 
   function readFleet(){fleetSettings={shipType:$('shipType').value,shipCount:Math.max(1,Number($('shipCount').value)||30),minerType:$('minerType').value,baseOutput:Math.max(1,Number($('baseOutput').value)||406800),abyssalAverage:Math.max(0,Number($('abyssalAverage').value)||0),uptime:Math.min(100,Math.max(1,Number($('uptime').value)||100)),payout:Math.min(100,Math.max(1,Number($('payout').value)||95))};saveFleet()}
