@@ -27,9 +27,9 @@ This version is designed to work like a normal EVE web app:
 - **🍒 Cherry Picked** is a separate persistent report flag.
 - **Red** = cleared. Starting Red requires confirmation and starts a 10-hour timer.
 - An active Red timer cannot be restarted or changed. The field becomes Green when the ten hours end.
-- Signed-in players can add timestamped notes to each system; notes remain in that system's history after a respawn.
+- Signed-in players can add timestamped notes to each system while its current field cycle is active.
 - Cherry Picked remains visible through Green / Yellow / Red changes.
-- When a Red timer reaches zero, the field automatically returns to Green and 🍒 clears. Its notes remain available.
+- When a Red timer reaches zero, the field automatically returns to Green and clears 🍒 and all notes for that system.
 - All signed-in browsers share the same board and receive changes live.
 
 ## Compact / Expanded UI
