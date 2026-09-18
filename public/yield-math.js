@@ -24,30 +24,43 @@
     if(names.some(x=>/Mining Foreman Burst I\b/i.test(x)))return 'T1';
     return 'T1';
   }
-  function detectEfficiencyCharge(fit){
-    return items(fit).some(x=>/Mining Laser Efficiency Charge/i.test(String(x.name||'')));
+  function detectBoostCharges(fit){
+    const names=items(fit).map(x=>String(x.name||''));
+    const optimization=names.some(x=>/Mining Laser Optimization Charge/i.test(x));
+    const efficiency=names.some(x=>/Mining Laser Efficiency Charge/i.test(x));
+    const fieldEnhancement=names.some(x=>/Mining Laser Field Enhancement Charge/i.test(x));
+    const preservation=names.some(x=>/Mining Equipment Preservation Charge/i.test(x));
+    const detected=[];
+    if(optimization)detected.push('Optimization');
+    if(efficiency)detected.push('Efficiency');
+    if(fieldEnhancement)detected.push('Field Enhancement');
+    if(preservation)detected.push('Equipment Preservation');
+    return {optimization,efficiency,fieldEnhancement,preservation,names:detected};
   }
+  function detectEfficiencyCharge(fit){return detectBoostCharges(fit).efficiency}
+  function detectOptimizationCharge(fit){return detectBoostCharges(fit).optimization}
   function firstRecognized(itemsList,map){
     for(const row of itemsList)if(Object.prototype.hasOwnProperty.call(map,String(row.name||'')))return String(row.name);
     return 'None';
   }
-  function boostBreakdown(data,skills,fit,mindlink,efficiencyCharge){
+  function boostBreakdown(data,skills,fit,mindlink){
     const ship=String(fit?.shipName||'');
     if(!['Porpoise','Orca','Rorqual','Outrider'].includes(ship)){
-      return {ship:'None',core:'None',burst:'T1',cycleReduction:0,efficiencyBoost:0,commonMultiplier:1};
+      return {ship:'None',core:'None',burst:'T1',cycleReduction:0,efficiencyBoost:0,commonMultiplier:1,charges:{optimization:false,efficiency:false,fieldEnhancement:false,preservation:false,names:[]}};
     }
     const core=detectCoreTier(fit),burst=detectBurstTier(fit);
     const row=data.boostShips?.[`${ship}-${core}`]||data.boostShips?.[`${ship}-None`];
-    if(!row)return {ship,core,burst,cycleReduction:0,efficiencyBoost:0,commonMultiplier:1};
+    if(!row)return {ship,core,burst,cycleReduction:0,efficiencyBoost:0,commonMultiplier:1,charges:detectBoostCharges(fit)};
     const ids=data.skillIds||{}, bonuses=data.skillBonuses||{}, b=data.boost||{};
     const commandSkill=level(skills,ship==='Rorqual'?ids.capitalIndustrialShips:(ship==='Outrider'?ids.commandDestroyers:ids.industrialCommandShips));
     const director=level(skills,ids.miningDirector);
     const burstBonus=burst==='T2'?n(b.burstModuleT2Bonus):n(b.burstModuleT1Bonus);
     const mindlinkBonus=mindlink?n(b.mindlinkBonus):0;
     const common=(1+burstBonus)*(1+n(row.coreBurstStrengthBonus))*(1+n(row.commandShipBonus)*commandSkill)*(1+n(bonuses.miningDirectorBurstPerLevel)*director)*(1+mindlinkBonus);
-    const cycleReduction=n(b.optimizationBase)*common;
-    const efficiencyBoost=efficiencyCharge?n(b.efficiencyBase)*common:0;
-    return {ship,core,burst,commandSkill,director,cycleReduction,efficiencyBoost,commonMultiplier:common};
+    const charges=detectBoostCharges(fit);
+    const cycleReduction=charges.optimization?n(b.optimizationBase)*common:0;
+    const efficiencyBoost=charges.efficiency?n(b.efficiencyBase)*common:0;
+    return {ship,core,burst,commandSkill,director,cycleReduction,efficiencyBoost,commonMultiplier:common,charges};
   }
   function normalizeDuration(v,fallback){
     const x=n(v,NaN);
@@ -64,7 +77,7 @@
     if(!Number.isFinite(x))return n(fallback);
     return x>10?x/100:x;
   }
-  function calculate({data,minerSkills={},minerFit=null,crystalKey='None',boosterSkills={},boosterFit=null,mindlink=false,efficiencyCharge=false}={}){
+  function calculate({data,minerSkills={},minerFit=null,crystalKey='None',boosterSkills={},boosterFit=null,mindlink=false}={}){
     if(!data)throw new Error('Yield calculator data is missing.');
     if(!minerFit)throw new Error('Select a saved mining fit.');
     const shipName=String(minerFit.shipName||'');
@@ -101,7 +114,7 @@
     let chosenCrystal=String(crystalKey||'None');
     if(chosenCrystal==='Auto')chosenCrystal=detectCrystal(minerFit);
     if(!data.crystals?.[chosenCrystal])chosenCrystal='None';
-    const boost=boostBreakdown(data,boosterSkills,boosterFit,mindlink,efficiencyCharge);
+    const boost=boostBreakdown(data,boosterSkills,boosterFit,mindlink);
 
     let totalM3s=0,totalBasePerCycle=0,totalBonusPerCycle=0;
     const lasers=[];
@@ -191,5 +204,5 @@
       m3PerHour:totalM3s*3600,
     };
   }
-  globalThis.JLRYieldMath={calculate,detectCrystal,detectCoreTier,detectBurstTier,detectEfficiencyCharge,boostBreakdown};
+  globalThis.JLRYieldMath={calculate,detectCrystal,detectCoreTier,detectBurstTier,detectBoostCharges,detectEfficiencyCharge,detectOptimizationCharge,boostBreakdown};
 })();
