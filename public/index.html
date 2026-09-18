@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0a0a10">
   <title>JLR Miner Tracker</title>
-  <link rel="stylesheet" href="/styles.css?v=2.3.13">
+  <link rel="stylesheet" href="/styles.css?v=2.3.14">
 </head>
 <body>
   <main id="loginView" class="login-shell hidden">
@@ -64,11 +64,13 @@
         <div class="field-control-box">
           <div class="field-control-top">
             <select id="systemSelect" aria-label="Select T3 system"></select>
-            <select id="statusSelect" aria-label="Select field status"><option value="ready">🟢 Site Up</option><option value="picked">🟡 Picked At</option><option value="cleared">🔴 Cleared / 10h</option></select>
+            <div id="selectedDetail" class="field-selected-detail"></div>
           </div>
           <div class="field-control-actions">
-            <button id="updateField" class="orb purple" type="button">UPDATE STATUS</button>
-            <button id="reportCherry" class="orb cherry" type="button">🍒 CHERRY</button>
+            <button id="markGreen" class="orb green compact-field-action" type="button">GREEN</button>
+            <button id="markYellow" class="orb yellow compact-field-action" type="button">YELLOW</button>
+            <button id="markRed" class="orb red compact-field-action" type="button">CLEAR + 10H</button>
+            <button id="reportCherry" class="orb cherry compact-field-action" type="button">🍒 CHERRY</button>
           </div>
           <div class="note-entry">
             <input id="fieldNote" maxlength="240" placeholder="Add a note for this system" aria-label="New system note">
@@ -154,11 +156,6 @@
         </section>
       </div>
 
-      <section class="glass expanded-control">
-        <div class="section-title"><div><span class="eyebrow">FIELD CONTROL</span><strong>SELECTED SYSTEM</strong></div></div>
-        <div id="selectedDetail" class="selected-detail"></div>
-        <div class="expanded-actions"><button id="markGreen" class="orb green" type="button">MARK GREEN</button><button id="markYellow" class="orb yellow" type="button">MARK YELLOW</button><button id="markRed" class="orb red" type="button">CLEAR + START 10H</button><button id="cherryExpanded" class="orb cherry" type="button">🍒 REPORT CHERRY PICKED</button></div>
-      </section>
     </section>
 
     <section id="confirmPanel" class="confirm-panel hidden" role="dialog" aria-modal="true">
@@ -166,7 +163,7 @@
     </section>
     <div id="toast" class="toast hidden" role="status"></div>
   </main>
-  <script src="/yield-math.js?v=2.3.13" defer></script>
-  <script src="/app.js?v=2.3.13" defer></script>
+  <script src="/yield-math.js?v=2.3.14" defer></script>
+  <script src="/app.js?v=2.3.14" defer></script>
 </body>
 </html>
