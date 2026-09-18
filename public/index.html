@@ -101,20 +101,19 @@
       </div>
 
       <section class="glass calculator-panel">
-        <div class="section-title"><div><span class="eyebrow">ESI SKILLS + FITTINGS</span><strong>MINING OUTPUT CALCULATOR</strong></div><span id="calcStatus" class="status-pill">ESI</span></div>
+        <div class="section-title"><div><span class="eyebrow">ORIGINAL WORKBOOK + ESI</span><strong>MINING OUTPUT CALCULATOR</strong></div><span id="calcStatus" class="status-pill">ESI</span></div>
         <div class="calc-grid">
           <label>Miner toon<select id="calcMinerCharacter"></select></label>
           <label>Saved mining fit<select id="calcFitting"></select></label>
+          <label>Mining crystal<select id="calcCrystal"><option value="Auto">Auto-detect from fit</option></select></label>
           <label>Booster toon<select id="calcBoosterCharacter"><option value="">No booster</option></select></label>
-          <label>Booster ship<select id="calcBoosterShip"><option value="none">None</option><option value="porpoise">Porpoise</option><option value="rorqual">Rorqual</option></select></label>
-          <label>Burst module<select id="calcBurstTech"><option value="1">Mining Foreman Burst I</option><option value="2" selected>Mining Foreman Burst II</option></select></label>
-          <label>Industrial core<select id="calcCoreTech"><option value="0">No core</option><option value="1">Core I</option><option value="2" selected>Core II</option></select></label>
+          <label>Saved booster fit<select id="calcBoosterFitting"><option value="">No booster fit</option></select></label>
           <label class="check-label"><input id="calcMindlink" type="checkbox" checked> Mining Foreman Mindlink</label>
-          <label>Reference m³/hr<input id="calcReferenceOutput" type="number" min="1" value="406800"></label>
+          <label class="check-label"><input id="calcEfficiencyCharge" type="checkbox" checked> Mining Laser Efficiency Charge</label>
         </div>
         <div id="calcResults" class="calc-results"></div>
         <div id="calcFitDetails" class="calc-fit-details"></div>
-        <div class="actual-note"><strong>Reference m³/hr</strong> is the unboosted, max-skill output of this exact fit. JLR scales it to the selected miner's ESI skills, then applies Porpoise/Rorqual cycle-time boosts from the selected booster's ESI skills. Saved-fit modules are read from ESI so you can verify the exact ship setup. Exact Dogma/module-stat calculation is the next layer.</div>
+        <div class="actual-note">This calculator mirrors the formulas and lookup values from the workbook's <strong>Yield Calc</strong> sheet. ESI supplies your actual skills and saved fittings; JLR reads strip miners, mining laser upgrades, mining survey chipset, booster hull, industrial core, and burst module from those fittings. Crystal, mindlink, and efficiency charge can be overridden here because they may not be present in a saved fit.</div>
       </section>
 
       <div class="expanded-grid">
@@ -149,6 +148,7 @@
     </section>
     <div id="toast" class="toast hidden" role="status"></div>
   </main>
+  <script src="/yield-math.js" defer></script>
   <script src="/app.js" defer></script>
 </body>
 </html>
