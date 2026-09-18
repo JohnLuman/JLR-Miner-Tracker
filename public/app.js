@@ -89,7 +89,7 @@
     $('perShipKpi').textContent=fmt(perShip(),'m3'); $('fleetKpi').textContent=fmt(fleetM3(),'m3'); $('topOreKpi').textContent=top.name; $('topOreSub').textContent=`${top.jbvPerM3.toFixed(2)} JBV/m³`; $('projectedIskKpi').textContent=`${fmt(projectedISK(top))}/hr`;
     $('actualTodayM3').textContent=fmt(state.esi.actual.today.m3,'m3'); $('actualTodayIsk').textContent=fmt(actualValue(state.esi.actual.today.jbv));
     $('actualExpTodayM3').textContent=`${fmt(state.esi.actual.today.m3,'m3')} m³`; $('actualExpTodayValue').textContent=`${fmt(actualValue(state.esi.actual.today.jbv))} ISK`; $('actualWeekM3').textContent=`${fmt(state.esi.actual.week.m3,'m3')} m³`; $('actualWeekValue').textContent=`${fmt(actualValue(state.esi.actual.week.jbv))} ISK`;
-    $('esiStatus').textContent=`${state.esi.linkedCharacters} TOONS`; $('lastSync').textContent=state.esi.lastSyncAt?`Last sync ${ago(state.esi.lastSyncAt)}`:(state.esi.lastError||'Never synced');
+    $('esiStatus').textContent=`${state.esi.linkedCharacters} TOONS`; $('lastSync').textContent=state.esi.lastSyncAt?`Last refresh ${ago(state.esi.lastSyncAt)}`:(state.esi.lastError||'Never refreshed');
   }
   function renderFleet(){
     for(const [id,key] of [['shipType','shipType'],['shipCount','shipCount'],['minerType','minerType'],['baseOutput','baseOutput'],['abyssalAverage','abyssalAverage'],['uptime','uptime'],['payout','payout']])if(document.activeElement!==$(id))$(id).value=fleetSettings[key];
@@ -122,7 +122,7 @@
   }
   function renderNotes(){const f=field(selectedSystem),notes=f?.notes||[];$('fieldNotes').innerHTML=notes.length?notes.slice().reverse().map(n=>`<div class="field-note"><span>${esc(n.text)}</span><time>${esc(ago(n.createdAt))}</time></div>`).join(''):'<span class="field-notes-empty">No notes for this system yet.</span>'}
   function renderCharacters(){
-    if(!me)return;$('characterList').innerHTML='';if(!me.characters.length){$('characterList').innerHTML='<div class="character-row"><div></div><div><strong>No mining toons linked</strong><small>Use Add Toon through EVE SSO.</small></div></div>';return}
+    if(!me)return;$('characterList').innerHTML='';if(!me.characters.length){$('characterList').innerHTML='<div class="character-row"><div></div><div><strong>No mining toons linked</strong><small>Use Add Toon to connect one.</small></div></div>';return}
     for(const c of me.characters){
       const r=document.createElement('div');r.className='character-row';
       const scopeState=c.needsReauth?' • skills/fits need authorization':` • ${Object.keys(c.skills||{}).length} mining skills • ${(c.fittings||[]).length} mining fits`;
