@@ -189,8 +189,18 @@
   function def(system){return definitions().find(x=>x.system===system)||null}
 
   function renderTop(){
-    if(!state)return; const ores=state.source.ores; const top=ores[0];
-    $('perShipKpi').textContent=fmt(perShip(),'m3'); $('fleetKpi').textContent=fmt(fleetM3(),'m3'); $('topOreKpi').textContent=top.name; $('topOreSub').textContent=`${top.jbvPerM3.toFixed(2)} JBV/m³`; $('projectedIskKpi').textContent=`${fmt(projectedISK(top))}/hr`;
+    if(!state)return;
+    const ores=state.source.ores;
+    const targets=definitions().map(d=>({d,f:field(d.system)}))
+      .filter(x=>x.f.status!=='cleared')
+      .sort((a,b)=>Number(a.f.cherryPicked)-Number(b.f.cherryPicked)||a.d.rank-b.d.rank||a.d.order-b.d.order);
+    const target=targets[0]||null;
+    const top=target?ores[target.d.rank-1]:ores[0];
+    $('perShipKpi').textContent=fmt(perShip(),'m3');
+    $('fleetKpi').textContent=fmt(fleetM3(),'m3');
+    $('topOreKpi').textContent=top?.name||'—';
+    $('topOreSub').textContent=target?`${target.d.system} • ${top.jbvPerM3.toFixed(2)} JBV/m³`:(top?`${top.jbvPerM3.toFixed(2)} JBV/m³`:'No target');
+    $('projectedIskKpi').textContent=top?`${fmt(projectedISK(top))}/hr`:'—';
     $('actualTodayM3').textContent=fmt(state.esi.actual.today.m3,'m3'); $('actualTodayIsk').textContent=fmt(actualValue(state.esi.actual.today.jbv));
     $('actualExpTodayM3').textContent=`${fmt(state.esi.actual.today.m3,'m3')} m³`; $('actualExpTodayValue').textContent=`${fmt(actualValue(state.esi.actual.today.jbv))} ISK`; $('actualWeekM3').textContent=`${fmt(state.esi.actual.week.m3,'m3')} m³`; $('actualWeekValue').textContent=`${fmt(actualValue(state.esi.actual.week.jbv))} ISK`;
     $('esiStatus').textContent=`${state.esi.linkedCharacters} TOONS`; $('lastSync').textContent=state.esi.lastSyncAt?`Last refresh ${ago(state.esi.lastSyncAt)}`:(state.esi.lastError||'Never refreshed');
