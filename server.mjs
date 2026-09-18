@@ -154,7 +154,7 @@ function freshState() {
       typeCache: {}, systemCache: {}, dailyFleet: [], lastSyncAt: null, lastError: null,
     },
     market: {
-      prices: {}, minerals: {}, icePrices: {}, iceProducts: {}, iceFields: [], history: { ore:{}, ice:{} }, lastUpdatedAt: null, lastError: null,
+      prices: {}, minerals: {}, icePrices: {}, iceProducts: {}, iceFields: [], t3Distances: {}, history: { ore:{}, ice:{} }, lastUpdatedAt: null, lastError: null,
       characterId: null, characterName: null, refreshTokenEnc: null, scopes: [], authorizedAt: null,
       structureId: null, structureName: null, privateLastError: null,
     },
@@ -182,6 +182,7 @@ async function loadState() {
     parsed.market.icePrices ||= {};
     parsed.market.iceProducts ||= {};
     parsed.market.iceFields ||= [];
+    parsed.market.t3Distances ||= {};
     parsed.market.history ||= {ore:{},ice:{}};
     parsed.market.history.ore ||= {};
     parsed.market.history.ice ||= {};
@@ -301,6 +302,7 @@ function effectiveSystems(ores=effectiveOres()) {
     const ore=byName.get(d.ore);
     return {
       ...d,
+      distanceLy:Number.isFinite(Number(state.market?.t3Distances?.[d.system]))?Number(state.market.t3Distances[d.system]):null,
       jbvPerM3:Number(ore?.jbvPerM3||d.jbvPerM3),
       siteJBV:Number(ore?.siteJBV||d.siteJBV),
     };
@@ -707,6 +709,23 @@ async function refreshIceFields(ids) {
   }
   return rows.sort((a,b)=>a.distanceLy-b.distanceLy||a.system.localeCompare(b.system));
 }
+async function refreshT3Distances(ids) {
+  const originId=ids.get(CN_SYSTEM_NAME);
+  if(!originId)return {};
+  const origin=(await esiGet(`https://esi.evetech.net/latest/universe/systems/${originId}/?datasource=tranquility`)).data;
+  const out={};
+  for(const d of SYSTEM_DEFS){
+    const id=ids.get(d.system);
+    if(!id)continue;
+    try{
+      const data=(await esiGet(`https://esi.evetech.net/latest/universe/systems/${id}/?datasource=tranquility`)).data;
+      out[d.system]=lyDistance(origin.position,data.position);
+    }catch(err){
+      console.warn('T3 distance lookup failed',d.system,String(err.message||err));
+    }
+  }
+  return out;
+}
 function pushMarketHistory(bucket,key,row) {
   bucket[key] ||= [];
   const date=String(row.date||dateUTC());
@@ -734,17 +753,21 @@ async function refreshMarketPrices(force=false) {
   const historyCurrent=ORES.every(o=>(state.market?.history?.ore?.[o.name]||[]).some(x=>x.date===today))
     &&Object.keys(ICE_REPROCESSING).every(name=>(state.market?.history?.ice?.[name]||[]).some(x=>x.date===today));
   const jitaBuyBasisCurrent=state.market?.jitaBuyBasis==='reachable-from-jita-4-4';
-  if(!force&&valuationCurrent&&historyCurrent&&jitaBuyBasisCurrent&&Number.isFinite(last)&&Date.now()-last<MARKET_REFRESH_MS)return;
+  const t3DistancesCurrent=SYSTEM_DEFS.every(d=>Number.isFinite(Number(state.market?.t3Distances?.[d.system])));
+  if(!force&&valuationCurrent&&historyCurrent&&jitaBuyBasisCurrent&&t3DistancesCurrent&&Number.isFinite(last)&&Date.now()-last<MARKET_REFRESH_MS)return;
   marketRefreshInProgress=true;
   state.market.lastError=null;
   state.market.privateLastError=null;
   broadcast();
   try{
-    const names=[...ORES.map(o=>ORE_TYPE_NAME[o.name]||o.name),...REFINING_MINERALS,...Object.keys(ICE_REPROCESSING),...ICE_PRODUCTS,...ICE_FIELD_SYSTEMS.map(x=>x[0]),CN_SYSTEM_NAME];
+    const names=[...ORES.map(o=>ORE_TYPE_NAME[o.name]||o.name),...REFINING_MINERALS,...Object.keys(ICE_REPROCESSING),...ICE_PRODUCTS,...ICE_FIELD_SYSTEMS.map(x=>x[0]),...SYSTEM_DEFS.map(x=>x.system),CN_SYSTEM_NAME];
     const ids=await resolveUniverseIds(names);
     const cnSystemId=ids.get(CN_SYSTEM_NAME);
     if(!cnSystemId)throw new Error(`${CN_SYSTEM_NAME} system ID could not be resolved`);
-    const iceFields=await refreshIceFields(ids);
+    const [iceFields,t3Distances]=await Promise.all([
+      refreshIceFields(ids),
+      refreshT3Distances(ids),
+    ]);
 
     const mineralTypeIds=REFINING_MINERALS.map(name=>Number(ids.get(name))).filter(Number.isFinite);
     const iceProductTypeIds=ICE_PRODUCTS.map(name=>Number(ids.get(name))).filter(Number.isFinite);
@@ -889,6 +912,7 @@ async function refreshMarketPrices(force=false) {
     state.market.icePrices=icePrices;
     state.market.iceProducts=iceProductPrices.detail;
     state.market.iceFields=iceFields;
+    state.market.t3Distances=t3Distances;
     state.market.jitaBuyBasis='reachable-from-jita-4-4';
     state.market.history ||= {ore:{},ice:{}};
     state.market.history.ore ||= {};
