@@ -302,7 +302,7 @@ function effectiveSystems(ores=effectiveOres()) {
     const ore=byName.get(d.ore);
     return {
       ...d,
-      distanceLy:Number.isFinite(Number(state.market?.t3Distances?.[d.system]))?Number(state.market.t3Distances[d.system]):null,
+      distanceLy:typeof state.market?.t3Distances?.[d.system]==='number'&&Number.isFinite(state.market.t3Distances[d.system])?state.market.t3Distances[d.system]:null,
       jbvPerM3:Number(ore?.jbvPerM3||d.jbvPerM3),
       siteJBV:Number(ore?.siteJBV||d.siteJBV),
     };
@@ -681,8 +681,12 @@ function iceTypesForSecurity(sec) {
   return out;
 }
 function lyDistance(a,b) {
-  const dx=Number(a.x)-Number(b.x),dy=Number(a.y)-Number(b.y),dz=Number(a.z)-Number(b.z);
-  return Math.sqrt(dx*dx+dy*dy+dz*dz)/LIGHT_YEAR_METERS;
+  const ax=Number(a?.x),ay=Number(a?.y),az=Number(a?.z);
+  const bx=Number(b?.x),by=Number(b?.y),bz=Number(b?.z);
+  if(![ax,ay,az,bx,by,bz].every(Number.isFinite))return null;
+  const dx=ax-bx,dy=ay-by,dz=az-bz;
+  const distance=Math.sqrt(dx*dx+dy*dy+dz*dz)/LIGHT_YEAR_METERS;
+  return Number.isFinite(distance)?distance:null;
 }
 async function refreshIceFields(ids) {
   const originId=ids.get(CN_SYSTEM_NAME);
@@ -695,7 +699,7 @@ async function refreshIceFields(ids) {
     try{
       const data=(await esiGet(`https://esi.evetech.net/latest/universe/systems/${id}/?datasource=tranquility`)).data;
       const distance=lyDistance(origin.position,data.position);
-      if(distance<=TITAN_BRIDGE_RANGE_LY+1e-9){
+      if(Number.isFinite(distance)&&distance<=TITAN_BRIDGE_RANGE_LY+1e-9){
         rows.push({
           system,
           systemId:Number(id),
@@ -719,12 +723,26 @@ async function refreshT3Distances(ids) {
     if(!id)continue;
     try{
       const data=(await esiGet(`https://esi.evetech.net/latest/universe/systems/${id}/?datasource=tranquility`)).data;
-      out[d.system]=lyDistance(origin.position,data.position);
+      const distance=lyDistance(origin.position,data.position);
+      if(Number.isFinite(distance))out[d.system]=distance;
     }catch(err){
       console.warn('T3 distance lookup failed',d.system,String(err.message||err));
     }
   }
   return out;
+}
+async function refreshFieldDistances() {
+  try{
+    const ids=await resolveUniverseIds([...SYSTEM_DEFS.map(x=>x.system),CN_SYSTEM_NAME]);
+    const distances=await refreshT3Distances(ids);
+    if(Object.keys(distances).length){
+      state.market.t3Distances=distances;
+      await save();
+      broadcast();
+    }
+  }catch(err){
+    console.warn('Field distance refresh failed',String(err.message||err));
+  }
 }
 function pushMarketHistory(bucket,key,row) {
   bucket[key] ||= [];
@@ -753,7 +771,7 @@ async function refreshMarketPrices(force=false) {
   const historyCurrent=ORES.every(o=>(state.market?.history?.ore?.[o.name]||[]).some(x=>x.date===today))
     &&Object.keys(ICE_REPROCESSING).every(name=>(state.market?.history?.ice?.[name]||[]).some(x=>x.date===today));
   const jitaBuyBasisCurrent=state.market?.jitaBuyBasis==='reachable-from-jita-4-4';
-  const t3DistancesCurrent=SYSTEM_DEFS.every(d=>Number.isFinite(Number(state.market?.t3Distances?.[d.system])));
+  const t3DistancesCurrent=SYSTEM_DEFS.every(d=>typeof state.market?.t3Distances?.[d.system]==='number'&&Number.isFinite(state.market.t3Distances[d.system]));
   if(!force&&valuationCurrent&&historyCurrent&&jitaBuyBasisCurrent&&t3DistancesCurrent&&Number.isFinite(last)&&Date.now()-last<MARKET_REFRESH_MS)return;
   marketRefreshInProgress=true;
   state.market.lastError=null;
@@ -1187,3 +1205,5 @@ setInterval(()=>syncAll().catch(console.error),10*60_000).unref();
 setTimeout(()=>syncAll().catch(console.error),5_000).unref();
 setInterval(()=>refreshMarketPrices().catch(console.error),60*60_000).unref();
 setTimeout(()=>refreshMarketPrices().catch(console.error),2_000).unref();
+setInterval(()=>refreshFieldDistances().catch(console.error),24*60*60_000).unref();
+setTimeout(()=>refreshFieldDistances().catch(console.error),1_000).unref();
