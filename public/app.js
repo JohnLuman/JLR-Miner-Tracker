@@ -15,6 +15,10 @@
   const DEFAULT_FLEET = { shipType:'hulk', shipCount:30, minerType:'ore', baseOutput:406800, abyssalAverage:20, uptime:100, payout:95 };
   function loadFleet() { try { return { ...DEFAULT_FLEET, ...JSON.parse(localStorage.getItem('jlrFleet') || '{}') }; } catch { return { ...DEFAULT_FLEET }; } }
   let fleetSettings = loadFleet();
+  const DEFAULT_CALC = { minerCharacterId:'', fittingId:'', boosterCharacterId:'', boosterShip:'none', burstTech:2, coreTech:2, mindlink:true, referenceOutput:406800 };
+  function loadCalc(){try{return{...DEFAULT_CALC,...JSON.parse(localStorage.getItem('jlrMiningCalc')||'{}')}}catch{return{...DEFAULT_CALC}}}
+  let calcSettings=loadCalc();
+  const SKILL_IDS={mining:'3386',astrogeology:'3410',miningBarge:'17940',exhumers:'22551',industrialCommand:'29637',capitalIndustrial:'28374',miningDirector:'22552',miningForeman:'22536'};
   const statusText = {ready:'GREEN',picked:'YELLOW',cleared:'RED'};
 
   function fmt(v, kind='num') {
@@ -60,6 +64,35 @@
   function projectedISK(ore){return fleetM3()*Number(ore.jbvPerM3)*(Number(fleetSettings.payout)/100)}
   function actualValue(raw){return Number(raw||0)*(Number(fleetSettings.payout)/100)}
   function saveFleet(){localStorage.setItem('jlrFleet',JSON.stringify(fleetSettings));renderAll()}
+  function saveCalc(){localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));renderCalculator()}
+  function skillLevel(character,id){return Number(character?.skills?.[String(id)]?.level||0)}
+  function skillLabel(character,id){const s=character?.skills?.[String(id)];return s?`${s.name} ${s.level}`:'Not synced'}
+  function minerSkillScale(character,shipName){
+    if(!character)return 1;
+    const mining=skillLevel(character,SKILL_IDS.mining),astro=skillLevel(character,SKILL_IDS.astrogeology),barge=skillLevel(character,SKILL_IDS.miningBarge),exh=skillLevel(character,SKILL_IDS.exhumers);
+    let factor=((1+.05*mining)/1.25)*((1+.05*astro)/1.25);
+    if(shipName==='Hulk'){
+      factor*=((1+.03*barge)/1.15)*((1+.06*exh)/1.30);
+      factor*=.85/Math.max(.01,1-.03*exh);
+    }else if(shipName==='Mackinaw'){
+      factor*=((1+.03*barge)/1.15)*((1+.04*exh)/1.20);
+    }
+    return factor;
+  }
+  function boostReduction(character,ship,burstTech,coreTech,mindlink){
+    if(!character||ship==='none')return 0;
+    const director=skillLevel(character,SKILL_IDS.miningDirector);
+    const shipLevel=ship==='rorqual'?skillLevel(character,SKILL_IDS.capitalIndustrial):skillLevel(character,SKILL_IDS.industrialCommand);
+    const moduleBonus=Number(burstTech)===2?.25:0;
+    const mindlinkBonus=mindlink?.25:0;
+    const shipBonus=(ship==='rorqual'?.05:.02)*shipLevel;
+    let coreBonus=0;
+    if(Number(coreTech)===1)coreBonus=ship==='rorqual'?.30:.05;
+    if(Number(coreTech)===2)coreBonus=ship==='rorqual'?.40:.075;
+    return Math.min(.90,.15*(1+moduleBonus)*(1+mindlinkBonus)*(1+.10*director)*(1+shipBonus)*(1+coreBonus));
+  }
+  function calcCharacter(id){return me?.characters?.find(c=>String(c.characterId)===String(id))||null}
+  function calcFitting(character,id){return character?.fittings?.find(f=>String(f.fittingId)===String(id))||null}
 
   function definitions(){return [...(state?.source?.systems||[])].sort((a,b)=>a.rank-b.rank||a.order-b.order||a.system.localeCompare(b.system))}
   function field(system){return state?.fields?.[system]||null}
@@ -104,10 +137,61 @@
   function renderNotes(){const f=field(selectedSystem),notes=f?.notes||[];$('fieldNotes').innerHTML=notes.length?notes.slice().reverse().map(n=>`<div class="field-note"><span>${esc(n.text)}</span><time>${esc(ago(n.createdAt))}</time></div>`).join(''):'<span class="field-notes-empty">No notes for this system yet.</span>'}
   function renderCharacters(){
     if(!me)return;$('characterList').innerHTML='';if(!me.characters.length){$('characterList').innerHTML='<div class="character-row"><div></div><div><strong>No mining toons linked</strong><small>Use Add Toon through EVE SSO.</small></div></div>';return}
-    for(const c of me.characters){const r=document.createElement('div');r.className='character-row';r.innerHTML=`<img src="${esc(c.portrait)}" alt=""><div><strong>${esc(c.name)}</strong><small>${c.lastError?`⚠ ${esc(c.lastError)}`:`last sync ${ago(c.lastSyncAt)}`}</small></div><button class="orb red disconnect" data-id="${c.characterId}" type="button">DISCONNECT</button>`;$('characterList').appendChild(r)}
-    $('characterList').querySelectorAll('.disconnect').forEach(b=>b.addEventListener('click',async()=>{if(!confirm('Disconnect this mining toon from JLR?'))return;try{const p=await api(`/api/me/characters/${b.dataset.id}`,{method:'DELETE'});me=p.user;renderCharacters();toast('Toon disconnected.')}catch(e){toast(e.message)}}));
+    for(const c of me.characters){
+      const r=document.createElement('div');r.className='character-row';
+      const scopeState=c.needsReauth?' • skills/fits need authorization':` • ${Object.keys(c.skills||{}).length} mining skills • ${(c.fittings||[]).length} mining fits`;
+      r.innerHTML=`<img src="${esc(c.portrait)}" alt=""><div><strong>${esc(c.name)}</strong><small>${c.lastError?`⚠ ${esc(c.lastError)}`:`last sync ${ago(c.lastSyncAt)}`}${scopeState}</small></div><div class="character-actions">${c.needsReauth?'<button class="orb blue reauth" type="button">AUTHORIZE</button>':''}<button class="orb red disconnect" data-id="${c.characterId}" type="button">DISCONNECT</button></div>`;
+      $('characterList').appendChild(r)
+    }
+    $('characterList').querySelectorAll('.reauth').forEach(b=>b.addEventListener('click',()=>{location.href='/auth/eve/start?intent=link'}));
+    $('characterList').querySelectorAll('.disconnect').forEach(b=>b.addEventListener('click',async()=>{if(!confirm('Disconnect this mining toon from JLR?'))return;try{const p=await api(`/api/me/characters/${b.dataset.id}`,{method:'DELETE'});me=p.user;renderCharacters();renderCalculator();toast('Toon disconnected.')}catch(e){toast(e.message)}}));
   }
-  function renderAll(){if(!state)return;renderTop();renderFleet();renderSelect();renderBoards();renderHits();renderRanking();renderTimers();renderSelected();renderNotes();renderCharacters();}
+  function renderCalculator(){
+    if(!me||!$('calcMinerCharacter'))return;
+    const miners=me.characters||[];
+    const minerSel=$('calcMinerCharacter'),boosterSel=$('calcBoosterCharacter'),fitSel=$('calcFitting');
+    const oldMiner=calcSettings.minerCharacterId||minerSel.value;
+    minerSel.innerHTML=miners.map(c=>`<option value="${c.characterId}">${esc(c.name)}</option>`).join('');
+    if(!miners.length){$('calcResults').innerHTML='<div class="calc-empty">Connect a mining toon first.</div>';fitSel.innerHTML='';return}
+    calcSettings.minerCharacterId=miners.some(c=>String(c.characterId)===String(oldMiner))?String(oldMiner):String(miners[0].characterId);
+    minerSel.value=calcSettings.minerCharacterId;
+    const miner=calcCharacter(calcSettings.minerCharacterId);
+    const fits=miner?.fittings||[];
+    fitSel.innerHTML=fits.length?fits.map(f=>`<option value="${f.fittingId}">${esc(f.shipName)} — ${esc(f.name)}</option>`).join(''):'<option value="">No saved mining fits synced</option>';
+    if(!fits.some(f=>String(f.fittingId)===String(calcSettings.fittingId)))calcSettings.fittingId=fits[0]?String(fits[0].fittingId):'';
+    fitSel.value=calcSettings.fittingId;
+    boosterSel.innerHTML='<option value="">No booster</option>'+miners.map(c=>`<option value="${c.characterId}">${esc(c.name)}</option>`).join('');
+    if(!miners.some(c=>String(c.characterId)===String(calcSettings.boosterCharacterId)))calcSettings.boosterCharacterId='';
+    boosterSel.value=calcSettings.boosterCharacterId;
+    $('calcBoosterShip').value=calcSettings.boosterShip;
+    $('calcBurstTech').value=String(calcSettings.burstTech);
+    $('calcCoreTech').value=String(calcSettings.coreTech);
+    $('calcMindlink').checked=Boolean(calcSettings.mindlink);
+    if(document.activeElement!==$('calcReferenceOutput'))$('calcReferenceOutput').value=Number(calcSettings.referenceOutput||406800);
+    const fit=calcFitting(miner,calcSettings.fittingId);
+    const shipName=fit?.shipName||(fleetSettings.shipType==='mackinaw'?'Mackinaw':'Hulk');
+    const ref=Math.max(1,Number(calcSettings.referenceOutput)||406800);
+    const skillScale=minerSkillScale(miner,shipName);
+    const unboosted=ref*skillScale;
+    const booster=calcCharacter(calcSettings.boosterCharacterId);
+    const reduction=boostReduction(booster,calcSettings.boosterShip,calcSettings.burstTech,calcSettings.coreTech,calcSettings.mindlink);
+    const boosted=unboosted/Math.max(.05,1-reduction);
+    const fleet=boosted*Math.max(1,Number(fleetSettings.shipCount)||1);
+    $('calcStatus').textContent=miner?.needsReauth?'REAUTH NEEDED':'ESI READY';
+    $('calcResults').innerHTML=`
+      <article class="calc-card"><span>Skill-adjusted</span><strong>${fmt(unboosted,'m3')} m³/hr</strong><small>${shipName} • ${(skillScale*100).toFixed(1)}% of max-skill reference</small></article>
+      <article class="calc-card"><span>Boost strength</span><strong>${(reduction*100).toFixed(2)}%</strong><small>${calcSettings.boosterShip==='none'?'No Mining Laser Optimization boost':esc(calcSettings.boosterShip.toUpperCase())+' cycle reduction'}</small></article>
+      <article class="calc-card"><span>Boosted per ship</span><strong>${fmt(boosted,'m3')} m³/hr</strong><small>cycle-time adjusted</small></article>
+      <article class="calc-card"><span>Fleet × ${Math.max(1,Number(fleetSettings.shipCount)||1)}</span><strong>${fmt(fleet,'m3')} m³/hr</strong><small>theoretical continuous mining</small></article>`;
+    const skillBits=[
+      skillLabel(miner,SKILL_IDS.mining),skillLabel(miner,SKILL_IDS.astrogeology),skillLabel(miner,SKILL_IDS.miningBarge),skillLabel(miner,SKILL_IDS.exhumers)
+    ];
+    if(booster)skillBits.push(skillLabel(booster,SKILL_IDS.miningDirector),calcSettings.boosterShip==='rorqual'?skillLabel(booster,SKILL_IDS.capitalIndustrial):skillLabel(booster,SKILL_IDS.industrialCommand));
+    const modules=fit?.items||[];
+    $('calcFitDetails').innerHTML=`<strong>${fit?esc(fit.shipName+' — '+fit.name):esc(shipName+' — reference setup')}</strong><div class="calc-skills">${skillBits.map(x=>`<span>${esc(x)}</span>`).join('')}</div>${fit?`<div class="fit-modules">${modules.map(i=>`<span>${esc(i.name)} ×${i.quantity}</span>`).join('')}</div>`:'<div class="muted tiny">Authorize ESI skills/fittings and save the mining fit in EVE to populate module details.</div>'}`;
+    localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));
+  }
+  function renderAll(){if(!state)return;renderTop();renderFleet();renderSelect();renderBoards();renderHits();renderRanking();renderTimers();renderSelected();renderNotes();renderCharacters();renderCalculator();}
 
   async function refreshMe(){const p=await api('/api/me');me=p.user;if(me){$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait}return p.authenticated}
   async function loadState(){state=await api('/api/state');renderAll()}
@@ -131,7 +215,24 @@
   $('reportCherry').addEventListener('click',cherry);$('cherryExpanded').addEventListener('click',cherry);
   $('confirmNo').addEventListener('click',()=>{pending=null;$('confirmPanel').classList.add('hidden')});
   $('confirmYes').addEventListener('click',async()=>{if(!pending)return;const p=pending;pending=null;$('confirmPanel').classList.add('hidden');try{const result=await api(`/api/fields/${encodeURIComponent(p.system)}`,{method:'PUT',body:JSON.stringify({status:'cleared',confirm:true})});applyFieldUpdate(p.system,result.field);sfx('timer');$('fieldMessage').textContent=`${p.system} RED — 10-hour timer started.`}catch(e){toast(e.message)}});
-  $('syncNow').addEventListener('click',async()=>{try{await api('/api/esi/sync',{method:'POST',body:'{}'});toast('ESI sync started. ESI mining ledgers are cached around 10 minutes.')}catch(e){toast(e.message)}});
+  $('syncNow').addEventListener('click',async()=>{try{await api('/api/esi/sync',{method:'POST',body:'{}'});toast('ESI sync started. Skills and saved fittings will refresh too.');setTimeout(async()=>{try{await refreshMe();renderCalculator();renderCharacters()}catch{}},3500);setTimeout(async()=>{try{await refreshMe();renderCalculator();renderCharacters()}catch{}},9000)}catch(e){toast(e.message)}});
+
+  function readCalc(){
+    calcSettings={
+      minerCharacterId:$('calcMinerCharacter').value,
+      fittingId:$('calcFitting').value,
+      boosterCharacterId:$('calcBoosterCharacter').value,
+      boosterShip:$('calcBoosterShip').value,
+      burstTech:Number($('calcBurstTech').value)||1,
+      coreTech:Number($('calcCoreTech').value)||0,
+      mindlink:$('calcMindlink').checked,
+      referenceOutput:Math.max(1,Number($('calcReferenceOutput').value)||406800),
+    };
+    saveCalc();
+  }
+  ['calcMinerCharacter','calcFitting','calcBoosterCharacter','calcBoosterShip','calcBurstTech','calcCoreTech','calcMindlink'].forEach(id=>$(id).addEventListener('change',readCalc));
+  $('calcMinerCharacter').addEventListener('change',()=>{calcSettings.fittingId='';readCalc()});
+  $('calcReferenceOutput').addEventListener('input',readCalc);
 
   function readFleet(){fleetSettings={shipType:$('shipType').value,shipCount:Math.max(1,Number($('shipCount').value)||30),minerType:$('minerType').value,baseOutput:Math.max(1,Number($('baseOutput').value)||406800),abyssalAverage:Math.max(0,Number($('abyssalAverage').value)||0),uptime:Math.min(100,Math.max(1,Number($('uptime').value)||100)),payout:Math.min(100,Math.max(1,Number($('payout').value)||95))};saveFleet()}
   ['shipCount','baseOutput','abyssalAverage','uptime','payout'].forEach(id=>$(id).addEventListener('input',readFleet));
