@@ -135,7 +135,7 @@
   function renderCalculator(){
     if(!me||!$('calcMinerCharacter'))return;
     const data=calcData(),engine=window.JLRYieldMath;
-    if(!data||!engine){$('calcResults').innerHTML='<div class="calc-empty">Workbook calculator data is not loaded.</div>';return}
+    if(!data||!engine){$('calcResults').innerHTML='<div class="calc-empty">Calculator data is not loaded.</div>';return}
     const chars=me.characters||[];
     const minerSel=$('calcMinerCharacter'),fitSel=$('calcFitting'),crystalSel=$('calcCrystal'),boosterSel=$('calcBoosterCharacter'),boosterFitSel=$('calcBoosterFitting');
     const oldMiner=calcSettings.minerCharacterId||minerSel.value;
@@ -171,22 +171,22 @@
     $('calcEfficiencyCharge').checked=Boolean(calcSettings.efficiencyCharge);
 
     const needsReauth=Boolean(miner?.needsReauth||(booster&&booster.needsReauth));
-    $('calcStatus').textContent=needsReauth?'REAUTH NEEDED':'WORKBOOK + ESI';
+    $('calcStatus').textContent=needsReauth?'AUTHORIZE':'READY';
 
     if(!minerFit){
-      $('calcResults').innerHTML='<div class="calc-empty">Save a supported barge/exhumer fit in EVE, authorize fittings, then Sync Now.</div>';
-      $('calcFitDetails').innerHTML='<div class="muted tiny">Supported workbook hulls: Covetor, Retriever, Procurer, Hulk, Mackinaw, Skiff.</div>';
+      $('calcResults').innerHTML='<div class="calc-empty">Save a supported barge/exhumer fit, authorize access, then refresh.</div>';
+      $('calcFitDetails').innerHTML='<div class="muted tiny">Supported hulls: Covetor, Retriever, Procurer, Hulk, Mackinaw, Skiff.</div>';
       localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));
       return;
     }
     if(miner?.needsReauth||!Object.keys(miner?.skills||{}).length){
-      $('calcResults').innerHTML='<div class="calc-empty">Authorize this miner for ESI skills/fittings, then press Sync Now. JLR will not guess missing skill levels.</div>';
+      $('calcResults').innerHTML='<div class="calc-empty">Authorize this miner, then press Refresh.</div>';
       $('calcFitDetails').innerHTML=`<strong>${esc(minerFit.shipName+' — '+minerFit.name)}</strong>`;
       localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));
       return;
     }
     if(booster&&boosterFit&&(booster.needsReauth||!Object.keys(booster.skills||{}).length)){
-      $('calcResults').innerHTML='<div class="calc-empty">Authorize the selected booster for ESI skills/fittings, then press Sync Now.</div>';
+      $('calcResults').innerHTML='<div class="calc-empty">Authorize the selected booster, then press Refresh.</div>';
       $('calcFitDetails').innerHTML=`<strong>${esc(boosterFit.shipName+' — '+boosterFit.name)}</strong>`;
       localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));
       return;
@@ -207,7 +207,7 @@
       const firstLaser=result.lasers[0];
       const detectedCrystal=calcSettings.crystal==='Auto'?engine.detectCrystal(minerFit):result.crystal;
       $('calcResults').innerHTML=`
-        <article class="calc-card"><span>Per ship</span><strong>${fmt(result.m3PerHour,'m3')} m³/hr</strong><small>${result.m3PerSecond.toFixed(2)} m³/s • workbook Yield Calc</small></article>
+        <article class="calc-card"><span>Per ship</span><strong>${fmt(result.m3PerHour,'m3')} m³/hr</strong><small>${result.m3PerSecond.toFixed(2)} m³/s</small></article>
         <article class="calc-card"><span>Cycle</span><strong>${firstLaser?firstLaser.duration.toFixed(2):'—'} sec</strong><small>${esc(result.shipName)} • crystal ${esc(detectedCrystal)}</small></article>
         <article class="calc-card"><span>Boost</span><strong>${(result.boost.cycleReduction*100).toFixed(2)}%</strong><small>${result.boost.ship==='None'?'No booster':esc(result.boost.ship+' '+result.boost.core+' / Burst '+result.boost.burst)}</small></article>
         <article class="calc-card"><span>Fleet × ${fleetCount}</span><strong>${fmt(fleet,'m3')} m³/hr</strong><small>continuous theoretical output</small></article>`;
@@ -255,7 +255,7 @@
   $('reportCherry').addEventListener('click',cherry);$('cherryExpanded').addEventListener('click',cherry);
   $('confirmNo').addEventListener('click',()=>{pending=null;$('confirmPanel').classList.add('hidden')});
   $('confirmYes').addEventListener('click',async()=>{if(!pending)return;const p=pending;pending=null;$('confirmPanel').classList.add('hidden');try{const result=await api(`/api/fields/${encodeURIComponent(p.system)}`,{method:'PUT',body:JSON.stringify({status:'cleared',confirm:true})});applyFieldUpdate(p.system,result.field);sfx('timer');$('fieldMessage').textContent=`${p.system} RED — 10-hour timer started.`}catch(e){toast(e.message)}});
-  $('syncNow').addEventListener('click',async()=>{try{await api('/api/esi/sync',{method:'POST',body:'{}'});toast('ESI sync started. Skills and saved fittings will refresh too.');setTimeout(async()=>{try{await refreshMe();renderCalculator();renderCharacters()}catch{}},3500);setTimeout(async()=>{try{await refreshMe();renderCalculator();renderCharacters()}catch{}},9000)}catch(e){toast(e.message)}});
+  $('syncNow').addEventListener('click',async()=>{try{await api('/api/esi/sync',{method:'POST',body:'{}'});toast('Refreshing character data...');setTimeout(async()=>{try{await refreshMe();renderCalculator();renderCharacters()}catch{}},3500);setTimeout(async()=>{try{await refreshMe();renderCalculator();renderCharacters()}catch{}},9000)}catch(e){toast(e.message)}});
 
   function readCalc(){
     calcSettings={
@@ -282,11 +282,11 @@
   async function boot(){
     try{
       const config=await fetch('/api/config').then(r=>r.json());
-      if(!config.ssoConfigured){$('setupWarning').classList.remove('hidden');$('setupWarning').innerHTML=`Server owner: EVE SSO is not configured yet.<br>Register this callback in the EVE Developer Portal:<br><code>${esc(config.callbackUrl)}</code><br>Then set EVE_CLIENT_ID and EVE_CLIENT_SECRET on the web host.`;}
+      if(!config.ssoConfigured){$('setupWarning').classList.remove('hidden');$('setupWarning').textContent='Login is not configured yet.';}
       const auth=await fetch('/api/me',{credentials:'same-origin'}).then(r=>r.json());
       if(!auth.authenticated){showLogin();return}
       me=auth.user;showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');await loadState();connectSse();
-      const params=new URLSearchParams(location.search);if(params.get('linked'))toast('Mining toon connected through EVE SSO.');if(params.get('login'))toast('Logged in with EVE Online.');if(params.get('error'))toast(decodeURIComponent(params.get('error')));if(params.toString())history.replaceState({},'',location.pathname);
+      const params=new URLSearchParams(location.search);if(params.get('linked'))toast('Mining toon connected.');if(params.get('login'))toast('Logged in.');if(params.get('error'))toast(decodeURIComponent(params.get('error')));if(params.toString())history.replaceState({},'',location.pathname);
     }catch(e){console.error(e);showLogin();$('setupWarning').classList.remove('hidden');$('setupWarning').textContent=`JLR could not load: ${e.message}`}
   }
   setInterval(()=>{if(state){renderBoards();renderTimers();renderSelect();renderSelected();}},1000);
