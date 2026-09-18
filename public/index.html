@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0a0a10">
   <title>JLR Miner Tracker</title>
-  <link rel="stylesheet" href="/styles.css?v=2.3.36">
+  <link rel="stylesheet" href="/styles.css?v=2.3.37">
 </head>
 <body>
   <main id="loginView" class="login-shell hidden">
@@ -27,7 +27,7 @@
     <header class="topbar">
       <div class="brand">
         <div class="brand-kicker">JLR INDUSTRIAL NETWORK // FOUNTAIN</div>
-        <div class="brand-line"><span class="brand-mark">JLR</span><h1>MINER TRACKER</h1><span id="liveBadge" class="status-pill">● LIVE</span></div>
+        <div class="brand-line"><span class="brand-mark">JLR</span><h1>MINER TRACKER</h1><span id="liveBadge" class="status-pill" title="Latest EVE data sync status">● DATA LOADING</span></div>
       </div>
       <div class="top-actions">
         <button id="compactMode" class="orb purple active" type="button">COMPACT</button>
@@ -39,13 +39,13 @@
     </header>
 
     <section class="kpis">
-      <article class="kpi"><span>PER SHIP</span><strong id="perShipKpi">—</strong><small>m³/hr projected</small></article>
-      <article class="kpi"><span>FLEET</span><strong id="fleetKpi">—</strong><small>m³/hr projected</small></article>
-      <article class="kpi"><span>TOP TARGET</span><strong id="topOreKpi">—</strong><small id="topOreSub">—</small></article>
-      <article class="kpi market-kpi"><span>JITA REFINE</span><strong id="jitaValueKpi">—</strong><small id="jitaValueSub">max-refine value</small></article>
-      <article class="kpi market-kpi"><span>C-N REFINE</span><strong id="cnValueKpi">—</strong><small id="cnValueSub">local max-refine value</small></article>
-      <article class="kpi api-kpi"><span>ACTUAL TODAY</span><strong id="actualTodayM3">—</strong><small>m³ mined</small></article>
-      <article class="kpi api-kpi"><span>ACTUAL VALUE</span><strong id="actualTodayIsk">—</strong><small>estimated value</small></article>
+      <article class="kpi"><span>AVG MINER</span><strong id="perShipKpi">—</strong><small id="perShipSub">selected miners • m³/hr</small></article>
+      <article class="kpi"><span>FLEET TARGET</span><strong id="fleetKpi">—</strong><small id="fleetSub">selected uptime • m³/hr</small></article>
+      <article class="kpi"><span>NEXT T3 TARGET</span><strong id="topOreKpi">—</strong><small id="topOreSub">highest-value available field</small></article>
+      <article class="kpi market-kpi"><span>JITA PAYOUT / HR</span><strong id="jitaValueKpi">—</strong><small id="jitaValueSub">fleet target × refined mineral value</small></article>
+      <article class="kpi market-kpi"><span>C-N PAYOUT / HR</span><strong id="cnValueKpi">—</strong><small id="cnValueSub">fleet target × private market refine</small></article>
+      <article class="kpi api-kpi"><span>LEDGER M³ TODAY</span><strong id="actualTodayM3">—</strong><small id="actualTodaySub">recorded by EVE mining ledger</small></article>
+      <article class="kpi api-kpi"><span>LEDGER PAYOUT TODAY</span><strong id="actualTodayIsk">—</strong><small id="actualTodayIskSub">recorded ore × payout setting</small></article>
     </section>
 
     <nav class="app-tabs" aria-label="Dashboard sections">
@@ -58,14 +58,14 @@
 
     <section class="compact-row">
       <details class="glass setup-drawer" open>
-        <summary><span>⚙ FLEET SETUP</span><span id="setupSummary">Select miners</span></summary>
+        <summary><span>⚙ FLEET MEMBERS & FITS</span><span id="setupSummary">Choose miners and fits</span></summary>
         <div class="fleet-setup-body">
           <div class="fleet-setup-controls">
             <label>Uptime %<input id="uptime" type="number" min="1" max="100"></label>
             <label>Payout %<input id="payout" type="number" min="1" max="100" step="0.1"></label>
           </div>
           <div id="fleetMemberList" class="fleet-member-list"></div>
-          <div class="fleet-setup-hint">Select linked miners and the saved fit each toon is flying. The selected booster is shown in the fleet list with its fit and active boost details.</div>
+          <div class="fleet-setup-hint">Checked miners contribute to projected fleet output. Choose the saved fit each toon is flying. A selected booster stays in fleet for boosts but is excluded from mining m³/hr.</div>
         </div>
       </details>
 
@@ -76,9 +76,9 @@
             <div id="selectedDetail" class="field-selected-detail"></div>
           </div>
           <div class="field-control-actions">
-            <button id="markGreen" class="orb green compact-field-action" type="button">GREEN</button>
-            <button id="markYellow" class="orb yellow compact-field-action" type="button">YELLOW</button>
-            <button id="markRed" class="orb red compact-field-action" type="button">CLEAR + 10H</button>
+            <button id="markGreen" class="orb green compact-field-action" type="button" title="Mark this field available to mine">GREEN • MINEABLE</button>
+            <button id="markYellow" class="orb yellow compact-field-action" type="button" title="Mark this field picked/in progress">YELLOW • PICKED</button>
+            <button id="markRed" class="orb red compact-field-action" type="button" title="Mark cleared and start the 10-hour respawn timer">RED • CLEAR + 10H</button>
             <button id="reportCherry" class="orb cherry compact-field-action" type="button">🍒 CHERRY</button>
           </div>
           <div class="note-entry">
@@ -86,7 +86,7 @@
             <button id="addNote" class="orb blue" type="button">ADD NOTE</button>
           </div>
           <div id="fieldNotes" class="field-notes" aria-live="polite"></div>
-          <div id="fieldMessage" class="tiny muted">Select a system, mark its status, or add a note here.</div>
+          <div id="fieldMessage" class="tiny muted">Status is shared with the fleet. RED starts the fixed 10-hour respawn timer; notes are shared per system.</div>
         </div>
       </section>
     </section>
@@ -103,7 +103,7 @@
             <label><span>Booster toon</span><select id="calcBoosterCharacter"><option value="">No booster</option></select></label>
             <label><span>Saved booster fit</span><select id="calcBoosterFitting"><option value="">No booster fit</option></select></label>
             <label class="check-label"><input id="calcMindlink" type="checkbox" checked><span>Mindlink equipped</span></label>
-            <label class="boost-charge-label"><span>Detected charges</span><div id="calcBoostCharges" class="calc-readout">None</div></label>
+            <label class="boost-charge-label"><span>Mining burst charges detected in saved fit</span><div id="calcBoostCharges" class="calc-readout">No supported mining burst charges detected</div></label>
           </div>
         </div>
       </div>
@@ -114,18 +114,18 @@
 
     <section class="glass board-panel">
       <div class="section-title"><div><strong>FIELD BOARD</strong><span id="systemCountLabel" class="muted count-label"></span><span id="statusCounts" class="muted count-label">—</span></div><div class="filters">
-        <button class="orb silver filter active" data-filter="all" type="button">ALL</button><button class="orb green filter" data-filter="ready" type="button">G</button><button class="orb yellow filter" data-filter="picked" type="button">Y</button><button class="orb red filter" data-filter="cleared" type="button">R</button><button class="orb cherry filter" data-filter="cherry" type="button">🍒</button><button class="orb ice-filter filter" data-filter="ice" type="button">ICE</button>
+        <button class="orb silver filter active" data-filter="all" type="button">ALL</button><button class="orb green filter" data-filter="ready" type="button">MINEABLE</button><button class="orb yellow filter" data-filter="picked" type="button">PICKED</button><button class="orb red filter" data-filter="cleared" type="button">RESPAWN</button><button class="orb cherry filter" data-filter="cherry" type="button">🍒 CHERRY</button><button class="orb ice-filter filter" data-filter="ice" type="button">ICE</button>
       </div></div>
       <div id="fieldBoard" class="node-grid field-board"></div>
     </section>
 
     <section class="glass hit-panel">
-      <div class="section-title compact-title"><strong>NEXT TARGETS</strong><span class="muted">value order • 🍒 goes last</span></div>
+      <div class="section-title compact-title"><strong>NEXT T3 TARGETS</strong><span class="muted">highest-value mineable fields first • 🍒 cherry-picked fields go last</span></div>
       <div id="hitOrder" class="hit-order"></div>
     </section>
 
     <section class="glass mining-visuals-panel">
-      <div class="section-title"><div><strong>MINING VISUALS</strong></div><span class="muted tiny">live fleet • max refine</span></div>
+      <div class="section-title"><div><strong>ORE MARKET & FLEET PERFORMANCE</strong></div><span class="muted tiny">market history • fit projection • ledger actuals</span></div>
       <div class="mining-visual-grid">
         <article class="mining-visual-card">
           <div class="visual-card-head trend-head">
@@ -149,15 +149,15 @@
       </div>
 
       <div class="ice-kpis">
-        <article class="ice-kpi"><span>TRACK VALUE</span><strong id="iceTrackValue">—</strong><small id="iceTrackValueSub">Blue 95% • others 75% JBV</small></article>
-        <article class="ice-kpi"><span>JITA REFINE</span><strong id="iceBestJita">—</strong><small id="iceBestJitaSub">Heavy Water excluded</small></article>
-        <article class="ice-kpi"><span>C-N REFINE</span><strong id="iceBestCn">—</strong><small id="iceBestCnSub">Heavy Water excluded</small></article>
+        <article class="ice-kpi"><span>TRACK PAYOUT / BLOCK</span><strong id="iceTrackValue">—</strong><small id="iceTrackValueSub">Blue 95% • others 75% of Jita refine</small></article>
+        <article class="ice-kpi"><span>JITA REFINE / BLOCK</span><strong id="iceBestJita">—</strong><small id="iceBestJitaSub">Heavy Water excluded from value</small></article>
+        <article class="ice-kpi"><span>C-N REFINE / BLOCK</span><strong id="iceBestCn">—</strong><small id="iceBestCnSub">private market • Heavy Water excluded</small></article>
         <article class="ice-kpi"><span>ICE FIELDS</span><strong id="iceFieldCount">—</strong><small id="iceBridgeRange">within Titan bridge range</small></article>
       </div>
 
       <div class="ice-layout ice-layout-single">
         <article class="ice-chart-card">
-          <div class="visual-card-head"><strong>BLOCK TRACKING</strong><small>Jita refine → local tracking value</small></div>
+          <div class="visual-card-head"><strong>ICE PAYOUT BY TYPE</strong><small>tracking payout calculated from Jita max-refine value</small></div>
           <div id="iceBlockTable" class="ice-block-table"></div>
         </article>
       </div>
@@ -180,27 +180,27 @@
 
     <section id="expandedArea" class="expanded-area">
       <div class="expanded-grid">
-        <section class="glass ranking-panel"><div class="section-title"><div><span class="eyebrow">LIVE PROJECTION</span><strong>#1–#6 T3 ECONOMICS</strong></div></div><div id="oreRanking" class="ranking-list"></div></section>
+        <section class="glass ranking-panel"><div class="section-title"><div><span class="eyebrow">SELECTED FLEET OUTPUT</span><strong>#1–#6 T3 ORE ECONOMICS</strong></div></div><div id="oreRanking" class="ranking-list"></div></section>
         <section class="glass timers-panel"><div class="section-title"><div><span class="eyebrow">RESPAWN CONTROL</span><strong>ACTIVE TIMERS</strong></div><span id="timerCount" class="muted tiny"></span></div><div id="activeTimers" class="timer-list"></div></section>
       </div>
 
       <div class="expanded-grid">
         <section class="glass esi-panel">
-          <div class="section-title"><div><strong>MY CONNECTED TOONS</strong></div><span id="esiStatus" class="status-pill">—</span></div>
-          <div class="esi-actions"><button id="addToon" class="orb purple" type="button">+ ADD TOON</button><button id="syncNow" class="orb blue" type="button">REFRESH</button><span id="lastSync" class="tiny muted">Never refreshed</span></div>
+          <div class="section-title"><div><strong>CONNECTED TOONS & DATA SYNC</strong></div><span id="esiStatus" class="status-pill">—</span></div>
+          <div class="esi-actions"><button id="addToon" class="orb purple" type="button">+ ADD TOON</button><button id="syncNow" class="orb blue" type="button">SYNC EVE DATA</button><span id="lastSync" class="tiny muted">No successful sync yet</span></div>
           <div id="characterList" class="character-list"></div>
           <div class="privacy-box"><strong>Privacy:</strong><p>No character-location access is requested.</p></div>
         </section>
 
         <section class="glass actual-panel">
-          <div class="section-title"><div><strong>FLEET PERFORMANCE</strong></div></div>
+          <div class="section-title"><div><strong>MINING LEDGER TOTALS</strong></div></div>
           <div class="actual-grid">
             <article class="actual-card"><span>Today mined</span><strong id="actualExpTodayM3">—</strong><small>m³ mined</small></article>
             <article class="actual-card"><span>Today value</span><strong id="actualExpTodayValue">—</strong><small>estimated payout</small></article>
             <article class="actual-card"><span>This week</span><strong id="actualWeekM3">—</strong><small>fleet m³</small></article>
             <article class="actual-card"><span>Week value</span><strong id="actualWeekValue">—</strong><small>estimated payout</small></article>
           </div>
-          <div class="actual-note">Projected and recorded fleet performance.</div>
+          <div class="actual-note">Recorded EVE mining-ledger totals. Value uses the current payout setting; this panel is not a fit projection.</div>
         </section>
       </div>
 
@@ -211,7 +211,7 @@
     </section>
     <div id="toast" class="toast hidden" role="status"></div>
   </main>
-  <script src="/yield-math.js?v=2.3.36" defer></script>
-  <script src="/app.js?v=2.3.36" defer></script>
+  <script src="/yield-math.js?v=2.3.37" defer></script>
+  <script src="/app.js?v=2.3.37" defer></script>
 </body>
 </html>
