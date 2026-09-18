@@ -23,6 +23,20 @@ const EVE_CLIENT_SECRET = String(process.env.EVE_CLIENT_SECRET || '').trim();
 const ESI_USER_AGENT = String(process.env.ESI_USER_AGENT || 'JLR-Miner-Tracker/2.0').trim();
 const ESI_COMPAT_DATE = String(process.env.ESI_COMPATIBILITY_DATE || '2026-09-16').trim();
 const MINING_SCOPE = 'esi-industry.read_character_mining.v1';
+const SKILLS_SCOPE = 'esi-skills.read_skills.v1';
+const FITTINGS_SCOPE = 'esi-fittings.read_fittings.v1';
+const ESI_SCOPES = [MINING_SCOPE, SKILLS_SCOPE, FITTINGS_SCOPE];
+const MINING_SKILLS = {
+  3386: 'Mining',
+  3410: 'Astrogeology',
+  17940: 'Mining Barge',
+  22551: 'Exhumers',
+  29637: 'Industrial Command Ships',
+  28374: 'Capital Industrial Ships',
+  22552: 'Mining Director',
+  22536: 'Mining Foreman',
+};
+const MINING_HULLS = new Set(['Hulk','Mackinaw','Skiff','Covetor','Retriever','Procurer','Porpoise','Orca','Rorqual']);
 const TEN_HOURS = 10 * 60 * 60 * 1000;
 const SESSION_TTL = 30 * 24 * 60 * 60 * 1000;
 const source = JSON.parse(await fsp.readFile(SOURCE_FILE, 'utf8'));
@@ -197,7 +211,7 @@ function publicState() {
   const sum = (predicate) => daily.filter(predicate).reduce((a,x)=>({m3:a.m3+Number(x.m3||0),jbv:a.jbv+Number(x.jbv||0)}),{m3:0,jbv:0});
   const todayActual = sum(x=>x.date===today); const weekActual = sum(x=>x.date>=weekStart);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.0.0',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state and fleet-level mining totals only. No character-location scope and no per-character mining systems are stored.'},
+    app:{name:'JLR Miner Tracker',version:'2.2.0',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state and fleet-level mining totals only. No character-location scope and no per-character mining systems are stored.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,ores:ORES,systems:SYSTEM_DEFS},
     fields:state.fields,
     esi:{configured:Boolean(EVE_CLIENT_ID),linkedCharacters:Object.keys(state.characters).length,lastSyncAt:state.esi.lastSyncAt,lastError:state.esi.lastError,syncing:syncInProgress,actual:{today:todayActual,week:weekActual}},
@@ -222,7 +236,7 @@ async function startSso(req,res,url) {
   oauthStates.set(stateId,{intent,userId:user?.id||null,verifier,redirectUri,createdAt:Date.now()});
   for(const [k,v] of oauthStates)if(Date.now()-v.createdAt>15*60_000)oauthStates.delete(k);
   const u=new URL(meta.authorization_endpoint||'https://login.eveonline.com/v2/oauth/authorize');
-  u.searchParams.set('response_type','code');u.searchParams.set('client_id',EVE_CLIENT_ID);u.searchParams.set('redirect_uri',redirectUri);u.searchParams.set('scope',MINING_SCOPE);u.searchParams.set('state',stateId);
+  u.searchParams.set('response_type','code');u.searchParams.set('client_id',EVE_CLIENT_ID);u.searchParams.set('redirect_uri',redirectUri);u.searchParams.set('scope',ESI_SCOPES.join(' '));u.searchParams.set('state',stateId);
   if(!EVE_CLIENT_SECRET){const challenge=crypto.createHash('sha256').update(verifier).digest('base64url');u.searchParams.set('code_challenge',challenge);u.searchParams.set('code_challenge_method','S256')}
   redirect(res,u.toString());
 }
@@ -265,7 +279,20 @@ async function handleCallback(req,res,url) {
       if(existing?.ownerUserId&&state.users[existing.ownerUserId]) user=state.users[existing.ownerUserId];
       else {const id=`u_${randomId(12)}`; user=state.users[id]={id,displayName:identity.characterName,primaryCharacterId:charId,characterIds:[],createdAt:now(),lastLoginAt:now()};}
     }
-    const old=state.characters[charId]; state.characters[charId]={characterId:charId,name:identity.characterName,ownerUserId:user.id,refreshTokenEnc:encrypt(tokens.refresh_token),connectedAt:old?.connectedAt||now(),lastSyncAt:old?.lastSyncAt||null,lastError:null};
+    const old=state.characters[charId]; state.characters[charId]={
+      characterId:charId,
+      name:identity.characterName,
+      ownerUserId:user.id,
+      refreshTokenEnc:encrypt(tokens.refresh_token),
+      scopes:identity.scopes,
+      connectedAt:old?.connectedAt||now(),
+      lastSyncAt:old?.lastSyncAt||null,
+      lastError:null,
+      skills:old?.skills||{},
+      skillsUpdatedAt:old?.skillsUpdatedAt||null,
+      fittings:old?.fittings||[],
+      fittingsUpdatedAt:old?.fittingsUpdatedAt||null,
+    };
     if(!user.characterIds.includes(charId))user.characterIds.push(charId); user.lastLoginAt=now(); if(!user.primaryCharacterId)user.primaryCharacterId=charId;
     await save(); setSessionCookie(res,user.id,req); setTimeout(()=>syncAll().catch(console.error),250); return redirect(res,pending.intent==='link'?'/?linked=1':'/?login=1');
   }catch(err){console.error('SSO callback',err);return redirect(res,`/?error=${encodeURIComponent(String(err.message||err).slice(0,120))}`)}
@@ -279,13 +306,63 @@ async function miningLedger(characterId,access) {
   const first=await esiGet(`https://esi.evetech.net/latest/characters/${characterId}/mining/?datasource=tranquility&page=1`,access); let rows=[...first.data]; const pages=Math.max(1,Number(first.headers.get('x-pages')||1));
   for(let p=2;p<=pages;p++)rows.push(...(await esiGet(`https://esi.evetech.net/latest/characters/${characterId}/mining/?datasource=tranquility&page=${p}`,access)).data); return rows;
 }
+async function characterSkills(characterId,access) {
+  return (await esiGet(`https://esi.evetech.net/latest/characters/${characterId}/skills/?datasource=tranquility`,access)).data;
+}
+async function characterFittings(characterId,access) {
+  return (await esiGet(`https://esi.evetech.net/latest/characters/${characterId}/fittings/?datasource=tranquility`,access)).data;
+}
+function skillSnapshot(payload) {
+  const out={};
+  for(const row of payload?.skills||[]) {
+    const id=String(row.skill_id);
+    if(MINING_SKILLS[id]) out[id]={skillId:Number(id),name:MINING_SKILLS[id],level:Number(row.active_skill_level||0)};
+  }
+  return out;
+}
+async function miningFittingSnapshot(fittings=[]) {
+  await ensureType(fittings.map(f=>f.ship_type_id));
+  const mine=fittings.filter(f=>MINING_HULLS.has(state.esi.typeCache[String(f.ship_type_id)]?.name));
+  await ensureType(mine.flatMap(f=>(f.items||[]).map(i=>i.type_id)));
+  return mine.map(f=>({
+    fittingId:f.fitting_id,
+    name:f.name||'Unnamed fit',
+    description:f.description||'',
+    shipTypeId:f.ship_type_id,
+    shipName:state.esi.typeCache[String(f.ship_type_id)]?.name||`Type ${f.ship_type_id}`,
+    items:(f.items||[]).map(i=>({
+      typeId:i.type_id,
+      name:state.esi.typeCache[String(i.type_id)]?.name||`Type ${i.type_id}`,
+      flag:i.flag,
+      quantity:Number(i.quantity||1),
+    })),
+  }));
+}
 async function ensureType(ids) { for(const id of [...new Set(ids.map(String))]) if(!state.esi.typeCache[id]){const {data}=await esiGet(`https://esi.evetech.net/latest/universe/types/${id}/?datasource=tranquility`);state.esi.typeCache[id]={name:data.name||`Type ${id}`,volume:Number(data.volume||0)}} }
 async function ensureSystem(ids) { for(const id of [...new Set(ids.map(String))]) if(!state.esi.systemCache[id]){const {data}=await esiGet(`https://esi.evetech.net/latest/universe/systems/${id}/?datasource=tranquility`);state.esi.systemCache[id]={name:data.name||`System ${id}`}} }
 async function syncAll() {
   if(syncInProgress||!EVE_CLIENT_ID)return; const entries=Object.values(state.characters); if(!entries.length)return; syncInProgress=true;state.esi.lastError=null;broadcast();
   try{
     const ledgers=[];
-    for(const ch of entries){try{const tokens=await refreshToken(decrypt(ch.refreshTokenEnc));const id=await verifyJwt(tokens.access_token,true);if(String(id.characterId)!==String(ch.characterId))throw new Error('Refresh token changed character');if(tokens.refresh_token)ch.refreshTokenEnc=encrypt(tokens.refresh_token);const rows=await miningLedger(ch.characterId,tokens.access_token);ch.lastSyncAt=now();ch.lastError=null;ledgers.push(rows)}catch(err){ch.lastError=String(err.message||err);ledgers.push([])}}
+    for(const ch of entries){
+      try{
+        const tokens=await refreshToken(decrypt(ch.refreshTokenEnc));
+        const id=await verifyJwt(tokens.access_token,true);
+        if(String(id.characterId)!==String(ch.characterId))throw new Error('Refresh token changed character');
+        if(tokens.refresh_token)ch.refreshTokenEnc=encrypt(tokens.refresh_token);
+        ch.scopes=id.scopes;
+        const rows=await miningLedger(ch.characterId,tokens.access_token);
+        if(id.scopes.includes(SKILLS_SCOPE)){
+          const skills=await characterSkills(ch.characterId,tokens.access_token);
+          ch.skills=skillSnapshot(skills); ch.skillsUpdatedAt=now();
+        }
+        if(id.scopes.includes(FITTINGS_SCOPE)){
+          const fits=await characterFittings(ch.characterId,tokens.access_token);
+          ch.fittings=await miningFittingSnapshot(fits); ch.fittingsUpdatedAt=now();
+        }
+        ch.lastSyncAt=now();ch.lastError=null;ledgers.push(rows);
+      }catch(err){ch.lastError=String(err.message||err);ledgers.push([])}
+    }
     const rows=ledgers.flat(); await ensureType(rows.map(r=>r.type_id)); await ensureSystem(rows.map(r=>r.solar_system_id));
     const daily=new Map();
     for(const row of rows){const type=state.esi.typeCache[String(row.type_id)]||{volume:0};const sys=state.esi.systemCache[String(row.solar_system_id)]||{name:''};const m3=Number(row.quantity||0)*Number(type.volume||0);let jbv=0;const def=SYSTEM_MAP.get(sys.name);if(def)jbv=m3*def.jbvPerM3;const key=String(row.date);const x=daily.get(key)||{date:key,m3:0,jbv:0};x.m3+=m3;x.jbv+=jbv;daily.set(key,x)}
@@ -294,7 +371,29 @@ async function syncAll() {
 }
 
 function myProfile(user) {
-  return {id:user.id,displayName:user.displayName,primaryCharacterId:user.primaryCharacterId,portrait:`https://images.evetech.net/characters/${user.primaryCharacterId}/portrait?size=64`,characters:user.characterIds.map(id=>state.characters[id]).filter(Boolean).map(c=>({characterId:c.characterId,name:c.name,connectedAt:c.connectedAt,lastSyncAt:c.lastSyncAt,lastError:c.lastError,portrait:`https://images.evetech.net/characters/${c.characterId}/portrait?size=64`}))};
+  return {
+    id:user.id,
+    displayName:user.displayName,
+    primaryCharacterId:user.primaryCharacterId,
+    portrait:`https://images.evetech.net/characters/${user.primaryCharacterId}/portrait?size=64`,
+    characters:user.characterIds.map(id=>state.characters[id]).filter(Boolean).map(c=>{
+      const scopes=Array.isArray(c.scopes)?c.scopes:[];
+      return {
+        characterId:c.characterId,
+        name:c.name,
+        connectedAt:c.connectedAt,
+        lastSyncAt:c.lastSyncAt,
+        lastError:c.lastError,
+        portrait:`https://images.evetech.net/characters/${c.characterId}/portrait?size=64`,
+        scopes,
+        needsReauth:!scopes.includes(SKILLS_SCOPE)||!scopes.includes(FITTINGS_SCOPE),
+        skills:c.skills||{},
+        skillsUpdatedAt:c.skillsUpdatedAt||null,
+        fittings:c.fittings||[],
+        fittingsUpdatedAt:c.fittingsUpdatedAt||null,
+      };
+    }),
+  };
 }
 
 async function serveStatic(req,res,pathname) {
@@ -303,7 +402,7 @@ async function serveStatic(req,res,pathname) {
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.0.0',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.2.0',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,scopes:ESI_SCOPES});
   if(req.method==='GET'&&url.pathname==='/api/me'){const u=readSession(req);return json(res,200,{authenticated:Boolean(u),user:u?myProfile(u):null})}
   const user=requireUser(req,res);if(!user)return;
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
@@ -328,5 +427,5 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.2 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setInterval(()=>resetExpired(true),15_000).unref();setInterval(()=>syncAll().catch(console.error),10*60_000).unref();setTimeout(()=>syncAll().catch(console.error),5_000).unref();
