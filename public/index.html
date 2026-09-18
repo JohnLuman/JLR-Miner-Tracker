@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0a0a10">
   <title>JLR Miner Tracker</title>
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/styles.css?v=2.2.1">
 </head>
 <body>
   <main id="loginView" class="login-shell hidden">
@@ -77,6 +77,43 @@
       </section>
     </section>
 
+    <section class="glass calculator-panel shared-calculator">
+      <div class="section-title calculator-title">
+        <div><span class="eyebrow">ORIGINAL WORKBOOK + ESI</span><strong>MINING OUTPUT CALCULATOR</strong></div>
+        <div class="calculator-title-right"><span class="muted tiny">same calculator in Compact + Expanded</span><span id="calcStatus" class="status-pill">ESI</span></div>
+      </div>
+
+      <div class="calculator-workspace">
+        <div class="calc-group">
+          <div class="calc-group-title">MINER SETUP</div>
+          <div class="calc-grid calc-miner-grid">
+            <label><span>Miner toon</span><select id="calcMinerCharacter"></select></label>
+            <label><span>Saved mining fit</span><select id="calcFitting"></select></label>
+            <label><span>Mining crystal</span><select id="calcCrystal"><option value="Auto">Auto-detect from fit</option></select></label>
+          </div>
+        </div>
+
+        <div class="calc-group">
+          <div class="calc-group-title">BOOSTER SETUP</div>
+          <div class="calc-grid calc-booster-grid">
+            <label><span>Booster toon</span><select id="calcBoosterCharacter"><option value="">No booster</option></select></label>
+            <label><span>Saved booster fit</span><select id="calcBoosterFitting"><option value="">No booster fit</option></select></label>
+            <label class="check-label"><input id="calcMindlink" type="checkbox" checked><span>Mining Foreman Mindlink</span></label>
+            <label class="check-label"><input id="calcEfficiencyCharge" type="checkbox" checked><span>Mining Laser Efficiency Charge</span></label>
+          </div>
+        </div>
+      </div>
+
+      <div id="calcResults" class="calc-results"></div>
+
+      <details class="calc-detail-drawer">
+        <summary><span>FIT + SKILL DETAILS</span><span class="muted tiny">click to inspect what ESI loaded</span></summary>
+        <div id="calcFitDetails" class="calc-fit-details"></div>
+      </details>
+
+      <div class="actual-note calculator-note">Workbook Yield Calc math + your ESI skills/fits. JLR reads supported miners, upgrades, chipsets, booster hull, industrial core, and burst module from the saved fittings.</div>
+    </section>
+
     <section class="glass mini-map-panel">
       <div class="section-title compact-title"><strong>MINI STATUS MAP</strong><span id="statusCounts" class="muted">—</span></div>
       <div id="miniMap" class="node-grid mini-map"></div>
@@ -99,22 +136,6 @@
         <section class="glass ranking-panel"><div class="section-title"><div><span class="eyebrow">LIVE PROJECTION</span><strong>#1–#6 T3 ECONOMICS</strong></div></div><div id="oreRanking" class="ranking-list"></div></section>
         <section class="glass timers-panel"><div class="section-title"><div><span class="eyebrow">RESPAWN CONTROL</span><strong>ACTIVE TIMERS</strong></div><span id="timerCount" class="muted tiny"></span></div><div id="activeTimers" class="timer-list"></div></section>
       </div>
-
-      <section class="glass calculator-panel">
-        <div class="section-title"><div><span class="eyebrow">ORIGINAL WORKBOOK + ESI</span><strong>MINING OUTPUT CALCULATOR</strong></div><span id="calcStatus" class="status-pill">ESI</span></div>
-        <div class="calc-grid">
-          <label>Miner toon<select id="calcMinerCharacter"></select></label>
-          <label>Saved mining fit<select id="calcFitting"></select></label>
-          <label>Mining crystal<select id="calcCrystal"><option value="Auto">Auto-detect from fit</option></select></label>
-          <label>Booster toon<select id="calcBoosterCharacter"><option value="">No booster</option></select></label>
-          <label>Saved booster fit<select id="calcBoosterFitting"><option value="">No booster fit</option></select></label>
-          <label class="check-label"><input id="calcMindlink" type="checkbox" checked> Mining Foreman Mindlink</label>
-          <label class="check-label"><input id="calcEfficiencyCharge" type="checkbox" checked> Mining Laser Efficiency Charge</label>
-        </div>
-        <div id="calcResults" class="calc-results"></div>
-        <div id="calcFitDetails" class="calc-fit-details"></div>
-        <div class="actual-note">This calculator mirrors the formulas and lookup values from the workbook's <strong>Yield Calc</strong> sheet. ESI supplies your actual skills and saved fittings; JLR reads strip miners, mining laser upgrades, mining survey chipset, booster hull, industrial core, and burst module from those fittings. Crystal, mindlink, and efficiency charge can be overridden here because they may not be present in a saved fit.</div>
-      </section>
 
       <div class="expanded-grid">
         <section class="glass esi-panel">
@@ -148,7 +169,7 @@
     </section>
     <div id="toast" class="toast hidden" role="status"></div>
   </main>
-  <script src="/yield-math.js" defer></script>
-  <script src="/app.js" defer></script>
+  <script src="/yield-math.js?v=2.2.1" defer></script>
+  <script src="/app.js?v=2.2.1" defer></script>
 </body>
 </html>
