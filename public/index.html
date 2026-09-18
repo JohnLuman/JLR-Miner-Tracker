@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0a0a10">
   <title>JLR Miner Tracker</title>
-  <link rel="stylesheet" href="/styles.css?v=2.3.16">
+  <link rel="stylesheet" href="/styles.css?v=2.3.17">
 </head>
 <body>
   <main id="loginView" class="login-shell hidden">
@@ -42,7 +42,8 @@
       <article class="kpi"><span>PER SHIP</span><strong id="perShipKpi">—</strong><small>m³/hr projected</small></article>
       <article class="kpi"><span>FLEET</span><strong id="fleetKpi">—</strong><small>m³/hr projected</small></article>
       <article class="kpi"><span>TOP TARGET</span><strong id="topOreKpi">—</strong><small id="topOreSub">—</small></article>
-      <article class="kpi"><span>PROJECTED ISK</span><strong id="projectedIskKpi">—</strong><small>per hour @ payout</small></article>
+      <article class="kpi market-kpi"><span>JITA REFINE</span><strong id="jitaValueKpi">—</strong><small id="jitaValueSub">max-refine value</small></article>
+      <article class="kpi market-kpi"><span>C-N REFINE</span><strong id="cnValueKpi">—</strong><small id="cnValueSub">local max-refine value</small></article>
       <article class="kpi api-kpi"><span>ACTUAL TODAY</span><strong id="actualTodayM3">—</strong><small>m³ mined</small></article>
       <article class="kpi api-kpi"><span>ACTUAL VALUE</span><strong id="actualTodayIsk">—</strong><small>estimated value</small></article>
     </section>
@@ -163,7 +164,7 @@
     </section>
     <div id="toast" class="toast hidden" role="status"></div>
   </main>
-  <script src="/yield-math.js?v=2.3.16" defer></script>
-  <script src="/app.js?v=2.3.16" defer></script>
+  <script src="/yield-math.js?v=2.3.17" defer></script>
+  <script src="/app.js?v=2.3.17" defer></script>
 </body>
 </html>
