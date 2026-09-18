@@ -31,7 +31,7 @@ const SEARCH_STRUCTURES_SCOPE = 'esi-search.search_structures.v1';
 const READ_STRUCTURES_SCOPE = 'esi-universe.read_structures.v1';
 const ESI_SCOPES = [MINING_SCOPE, SKILLS_SCOPE, FITTINGS_SCOPE, ASSETS_SCOPE];
 const MARKET_SCOPES = [MARKET_STRUCTURE_SCOPE, SEARCH_STRUCTURES_SCOPE, READ_STRUCTURES_SCOPE];
-const MARKET_CHARACTER_NAME = String(process.env.MARKET_CHARACTER_NAME || 'John Luman Raholan').trim();
+const MARKET_CHARACTER_NAME = String(process.env.MARKET_CHARACTER_NAME || 'John Leman Raholan').trim();
 const MARKET_STRUCTURE_ID_ENV = String(process.env.MARKET_STRUCTURE_ID || '').trim();
 const MINING_SKILLS = {
   3386: 'Mining',
