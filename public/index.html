@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0a0a10">
   <title>JLR Miner Tracker</title>
-  <link rel="stylesheet" href="/styles.css?v=2.3.38">
+  <link rel="stylesheet" href="/styles.css?v=2.3.39">
 </head>
 <body>
   <main id="loginView" class="login-shell hidden">
@@ -180,8 +180,25 @@
 
     <section id="expandedArea" class="expanded-area">
       <div class="expanded-grid">
-        <section class="glass ranking-panel"><div class="section-title"><div><span class="eyebrow">SELECTED FLEET OUTPUT</span><strong>#1–#6 T3 ORE ECONOMICS</strong></div></div><div id="oreRanking" class="ranking-list"></div></section>
-        <section class="glass timers-panel"><div class="section-title"><div><span class="eyebrow">RESPAWN CONTROL</span><strong>ACTIVE TIMERS</strong></div><span id="timerCount" class="muted tiny"></span></div><div id="activeTimers" class="timer-list"></div></section>
+        <section class="glass ranking-panel">
+          <div class="section-title panel-title-row">
+            <div class="panel-title-stack">
+              <strong>T3 ORE ECONOMICS</strong>
+              <small id="oreRankingSummary">Selected fleet • payout and clear-time comparison</small>
+            </div>
+          </div>
+          <div id="oreRanking" class="ranking-list"></div>
+        </section>
+        <section class="glass timers-panel">
+          <div class="section-title panel-title-row">
+            <div class="panel-title-stack">
+              <strong>T3 RESPAWN TIMERS</strong>
+              <small>RED fields • fixed 10-hour respawn countdown</small>
+            </div>
+            <span id="timerCount" class="status-pill timer-count-pill">0 respawning</span>
+          </div>
+          <div id="activeTimers" class="timer-list"></div>
+        </section>
       </div>
 
       <div class="expanded-grid">
@@ -211,7 +228,7 @@
     </section>
     <div id="toast" class="toast hidden" role="status"></div>
   </main>
-  <script src="/yield-math.js?v=2.3.38" defer></script>
-  <script src="/app.js?v=2.3.38" defer></script>
+  <script src="/yield-math.js?v=2.3.39" defer></script>
+  <script src="/app.js?v=2.3.39" defer></script>
 </body>
 </html>
