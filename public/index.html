@@ -100,6 +100,23 @@
         <section class="glass timers-panel"><div class="section-title"><div><span class="eyebrow">RESPAWN CONTROL</span><strong>ACTIVE TIMERS</strong></div><span id="timerCount" class="muted tiny"></span></div><div id="activeTimers" class="timer-list"></div></section>
       </div>
 
+      <section class="glass calculator-panel">
+        <div class="section-title"><div><span class="eyebrow">ESI SKILLS + FITTINGS</span><strong>MINING OUTPUT CALCULATOR</strong></div><span id="calcStatus" class="status-pill">ESI</span></div>
+        <div class="calc-grid">
+          <label>Miner toon<select id="calcMinerCharacter"></select></label>
+          <label>Saved mining fit<select id="calcFitting"></select></label>
+          <label>Booster toon<select id="calcBoosterCharacter"><option value="">No booster</option></select></label>
+          <label>Booster ship<select id="calcBoosterShip"><option value="none">None</option><option value="porpoise">Porpoise</option><option value="rorqual">Rorqual</option></select></label>
+          <label>Burst module<select id="calcBurstTech"><option value="1">Mining Foreman Burst I</option><option value="2" selected>Mining Foreman Burst II</option></select></label>
+          <label>Industrial core<select id="calcCoreTech"><option value="0">No core</option><option value="1">Core I</option><option value="2" selected>Core II</option></select></label>
+          <label class="check-label"><input id="calcMindlink" type="checkbox" checked> Mining Foreman Mindlink</label>
+          <label>Reference m³/hr<input id="calcReferenceOutput" type="number" min="1" value="406800"></label>
+        </div>
+        <div id="calcResults" class="calc-results"></div>
+        <div id="calcFitDetails" class="calc-fit-details"></div>
+        <div class="actual-note"><strong>Reference m³/hr</strong> is the unboosted, max-skill output of this exact fit. JLR scales it to the selected miner's ESI skills, then applies Porpoise/Rorqual cycle-time boosts from the selected booster's ESI skills. Saved-fit modules are read from ESI so you can verify the exact ship setup. Exact Dogma/module-stat calculation is the next layer.</div>
+      </section>
+
       <div class="expanded-grid">
         <section class="glass esi-panel">
           <div class="section-title"><div><span class="eyebrow">EVE SSO + ESI</span><strong>MY CONNECTED TOONS</strong></div><span id="esiStatus" class="status-pill">—</span></div>
