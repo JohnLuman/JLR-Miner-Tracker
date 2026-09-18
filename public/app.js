@@ -5,7 +5,6 @@
   let state = null;
   let filter = 'all';
   let selectedSystem = '';
-  let fieldDraftDirty = false;
   let pending = null;
   let audio = null;
   let audioUnlocked = false;
@@ -267,10 +266,11 @@
     const systemSelect=$('systemSelect');
     if(document.activeElement===systemSelect)return;
     const old=selectedSystem||systemSelect.value; systemSelect.innerHTML='';
-    for(const ore of state.source.ores){const g=document.createElement('optgroup');g.label=`#${ore.rank} ${ore.name.toUpperCase()}`;for(const d of definitions().filter(x=>x.rank===ore.rank)){const f=field(d.system),o=document.createElement('option');o.value=d.system;o.textContent=`${d.system} — ${f.status==='cleared'?`RED ${timer(f.timerEndsAt)}`:statusText[f.status]}${f.cherryPicked?' 🍒':''}`;g.appendChild(o)}$('systemSelect').appendChild(g)}
-    selectedSystem=definitions().some(x=>x.system===old)?old:(definitions()[0]?.system||'');$('systemSelect').value=selectedSystem;const f=field(selectedSystem);if(f){const timerActive=f.status==='cleared'&&Date.parse(f.timerEndsAt)>Date.now();if(timerActive)fieldDraftDirty=false;if(!fieldDraftDirty)$('statusSelect').value=f.status;$('statusSelect').disabled=timerActive;$('updateField').disabled=timerActive}
+    for(const ore of state.source.ores){const g=document.createElement('optgroup');g.label=`#${ore.rank} ${ore.name.toUpperCase()}`;for(const d of definitions().filter(x=>x.rank===ore.rank)){const f=field(d.system),o=document.createElement('option');o.value=d.system;o.textContent=`${d.system} — ${f.status==='cleared'?`RED ${timer(f.timerEndsAt)}`:statusText[f.status]}${f.cherryPicked?' 🍒':''}`;g.appendChild(o)}systemSelect.appendChild(g)}
+    selectedSystem=definitions().some(x=>x.system===old)?old:(definitions()[0]?.system||'');
+    systemSelect.value=selectedSystem;
   }
-  function chooseSystem(system){selectedSystem=system;$('systemSelect').value=system;fieldDraftDirty=false;$('fieldNote').value='';const f=field(system);if(f)$('statusSelect').value=f.status;renderSelect();renderBoards();renderSelected();renderNotes()}
+  function chooseSystem(system){selectedSystem=system;$('systemSelect').value=system;$('fieldNote').value='';renderSelect();renderBoards();renderSelected();renderNotes()}
   function node(d,f,includeTimer=true){const b=document.createElement('button');b.type='button';b.className='system-node';b.dataset.status=f.status;b.dataset.system=d.system;if(d.system===selectedSystem)b.classList.add('selected');const line=f.status==='cleared'?timer(f.timerEndsAt):f.status==='picked'?'PICKED':'READY';b.innerHTML=`${f.cherryPicked?'<span class="cherry-pin">🍒</span>':''}<span class="sys-name">${esc(d.system)}</span><span class="sys-ore">#${d.rank} ${esc(d.ore)}</span>${includeTimer?`<span class="sys-state">${line}</span>`:''}`;b.title=`${d.system} • ${d.ore} • ${statusText[f.status]}${f.cherryPicked?' • Cherry Picked':''}${f.notes?.length?` • ${f.notes.length} notes`:''}`;b.addEventListener('click',()=>chooseSystem(d.system));return b}
   function renderBoards(){
     if(!state)return;$('miniMap').innerHTML='';$('fieldBoard').innerHTML='';let counts={ready:0,picked:0,cleared:0,cherry:0};
@@ -288,7 +288,12 @@
     if(!state)return;const active=definitions().map(d=>({d,f:field(d.system)})).filter(x=>x.f.status==='cleared'&&x.f.timerEndsAt).sort((a,b)=>Date.parse(a.f.timerEndsAt)-Date.parse(b.f.timerEndsAt));$('timerCount').textContent=`${active.length} active`;if(!active.length){$('activeTimers').innerHTML='<div class="timer-item"><div><strong>No active respawns</strong><small>Cleared fields appear here.</small></div></div>';return}$('activeTimers').innerHTML='';for(const x of active){const d=document.createElement('div');d.className='timer-item';d.innerHTML=`<div><strong>${x.d.system}${x.f.cherryPicked?' 🍒':''}</strong><small>${x.d.ore} • updated ${ago(x.f.updatedAt)}</small></div><div class="timer-value">${timer(x.f.timerEndsAt)}</div>`;$('activeTimers').appendChild(d)}
   }
   function renderSelected(){
-    if(!state||!selectedSystem)return;const d=def(selectedSystem),f=field(selectedSystem);if(!d||!f)return;$('selectedDetail').innerHTML=`<strong>${d.system} — #${d.rank} ${d.ore}</strong><br><span class="muted">${statusText[f.status]}${f.status==='cleared'?` • ${timer(f.timerEndsAt)}`:''}${f.cherryPicked?' • 🍒 CHERRY PICKED':''} • projected ${fmt(projectedISK(state.source.ores[d.rank-1]))}/hr • updated ${ago(f.updatedAt)}</span>`;const timerActive=f.status==='cleared'&&Date.parse(f.timerEndsAt)>Date.now();for(const id of ['markGreen','markYellow','markRed'])$(id).disabled=timerActive;
+    if(!state||!selectedSystem)return;
+    const d=def(selectedSystem),f=field(selectedSystem);if(!d||!f)return;
+    const status=f.status==='cleared'?`RED • ${timer(f.timerEndsAt)}`:statusText[f.status];
+    $('selectedDetail').innerHTML=`<strong>#${d.rank} ${esc(d.ore)}</strong><span>${esc(status)}${f.cherryPicked?' • 🍒':''} • ${fmt(projectedISK(state.source.ores[d.rank-1]))}/hr</span>`;
+    const timerActive=f.status==='cleared'&&Date.parse(f.timerEndsAt)>Date.now();
+    for(const id of ['markGreen','markYellow','markRed'])$(id).disabled=timerActive;
   }
   function renderNotes(){const f=field(selectedSystem),notes=f?.notes||[];$('fieldNotes').innerHTML=notes.length?notes.slice().reverse().map(n=>`<div class="field-note"><span>${esc(n.text)}</span><time>${esc(ago(n.createdAt))}</time></div>`).join(''):'<span class="field-notes-empty">No notes for this system yet.</span>'}
   function renderCharacters(){
@@ -399,17 +404,15 @@
   $('logout').addEventListener('click',async()=>{try{await api('/auth/logout',{method:'POST',body:'{}'})}catch{}location.href='/' });
   $('compactMode').addEventListener('click',()=>applyMode('compact'));$('expandedMode').addEventListener('click',()=>applyMode('expanded'));
   $('systemSelect').addEventListener('change',()=>chooseSystem($('systemSelect').value));
-  $('statusSelect').addEventListener('change',()=>{fieldDraftDirty=true});
   document.querySelectorAll('.filter').forEach(b=>b.addEventListener('click',()=>{filter=b.dataset.filter;document.querySelectorAll('.filter').forEach(x=>x.classList.toggle('active',x===b));renderBoards()}));
 
-  function applyFieldUpdate(system,updatedField,resetDraft=true){state.fields[system]=updatedField;if(resetDraft&&selectedSystem===system)fieldDraftDirty=false;renderAll()}
+  function applyFieldUpdate(system,updatedField){state.fields[system]=updatedField;renderAll()}
   async function setField(status,forceSystem=null){const system=forceSystem||$('systemSelect').value;if(status==='cleared'){pending={system};$('confirmText').textContent=`${system} will turn RED and count down from 10 hours. The timer cannot be restarted or changed while it runs.`;$('confirmPanel').classList.remove('hidden');return}try{const result=await api(`/api/fields/${encodeURIComponent(system)}`,{method:'PUT',body:JSON.stringify({status})});applyFieldUpdate(system,result.field);$('fieldMessage').textContent=`${system} updated to ${statusText[status]}.`}catch(e){toast(e.message)}}
-  $('updateField').addEventListener('click',()=>setField($('statusSelect').value));
   $('markGreen').addEventListener('click',()=>setField('ready',selectedSystem));$('markYellow').addEventListener('click',()=>setField('picked',selectedSystem));$('markRed').addEventListener('click',()=>setField('cleared',selectedSystem));
-  async function addNote(){const system=selectedSystem,text=$('fieldNote').value.trim();if(!text){toast('Type a note first.');return}try{const result=await api(`/api/fields/${encodeURIComponent(system)}/notes`,{method:'POST',body:JSON.stringify({text})});if(selectedSystem===system&&$('fieldNote').value.trim()===text)$('fieldNote').value='';applyFieldUpdate(system,result.field,false);toast(`Note added to ${system}.`)}catch(e){toast(e.message)}}
+  async function addNote(){const system=selectedSystem,text=$('fieldNote').value.trim();if(!text){toast('Type a note first.');return}try{const result=await api(`/api/fields/${encodeURIComponent(system)}/notes`,{method:'POST',body:JSON.stringify({text})});if(selectedSystem===system&&$('fieldNote').value.trim()===text)$('fieldNote').value='';applyFieldUpdate(system,result.field);toast(`Note added to ${system}.`)}catch(e){toast(e.message)}}
   $('addNote').addEventListener('click',addNote);$('fieldNote').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addNote()}});
   async function cherry(){const system=selectedSystem||$('systemSelect').value;try{await api(`/api/fields/${encodeURIComponent(system)}/cherry`,{method:'POST',body:'{}'});$('fieldMessage').textContent=`${system} reported 🍒 CHERRY PICKED. It will clear only when the 10-hour respawn ends.`;sfx('timer')}catch(e){toast(e.message)}}
-  $('reportCherry').addEventListener('click',cherry);$('cherryExpanded').addEventListener('click',cherry);
+  $('reportCherry').addEventListener('click',cherry);
   $('confirmNo').addEventListener('click',()=>{pending=null;$('confirmPanel').classList.add('hidden')});
   $('confirmYes').addEventListener('click',async()=>{if(!pending)return;const p=pending;pending=null;$('confirmPanel').classList.add('hidden');try{const result=await api(`/api/fields/${encodeURIComponent(p.system)}`,{method:'PUT',body:JSON.stringify({status:'cleared',confirm:true})});applyFieldUpdate(p.system,result.field);sfx('timer');$('fieldMessage').textContent=`${p.system} RED — 10-hour timer started.`}catch(e){toast(e.message)}});
   $('syncNow').addEventListener('click',async()=>{
