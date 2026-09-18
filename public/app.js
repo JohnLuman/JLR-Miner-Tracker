@@ -70,8 +70,6 @@
     $('app').classList.toggle('expanded',mode==='expanded');
     $('compactMode').classList.toggle('active',mode==='compact');
     $('expandedMode').classList.toggle('active',mode==='expanded');
-    const details=document.querySelector('.calc-detail-drawer');
-    if(details)details.open=mode==='expanded';
     localStorage.setItem('jlrMode',mode);
   }
 
@@ -290,19 +288,16 @@
 
     if(!minerFit){
       $('calcResults').innerHTML='<div class="calc-empty">Save a supported barge/exhumer fit, authorize access, then refresh.</div>';
-      $('calcFitDetails').innerHTML='<div class="muted tiny">Supported hulls: Covetor, Retriever, Procurer, Hulk, Mackinaw, Skiff.</div>';
       localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));
       return;
     }
     if(miner?.needsReauth||!Object.keys(miner?.skills||{}).length){
       $('calcResults').innerHTML='<div class="calc-empty">Authorize this miner, then press Refresh.</div>';
-      $('calcFitDetails').innerHTML=`<strong>${esc(minerFit.shipName+' — '+minerFit.name)}</strong>`;
       localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));
       return;
     }
     if(booster&&boosterFit&&(booster.needsReauth||!Object.keys(booster.skills||{}).length)){
       $('calcResults').innerHTML='<div class="calc-empty">Authorize the selected booster, then press Refresh.</div>';
-      $('calcFitDetails').innerHTML=`<strong>${esc(boosterFit.shipName+' — '+boosterFit.name)}</strong>`;
       localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));
       return;
     }
@@ -326,23 +321,8 @@
         <article class="calc-card"><span>Boost</span><strong>${(result.boost.cycleReduction*100).toFixed(2)}%</strong><small>${result.boost.ship==='None'?'No booster':esc(result.boost.ship+' '+result.boost.core+' / Burst '+result.boost.burst)}</small></article>
         <article class="calc-card"><span>Fleet × ${fleetCount}</span><strong>${fmt(fleet,'m3')} m³/hr</strong><small>selected miners @ ${Number(fleetSettings.uptime).toFixed(0)}% uptime</small></article>`;
 
-      const minerSkillBits=['mining','astrogeology','miningBarge','exhumers','miningExploitation','miningPrecision'].map(k=>skillLabelKey(miner,k));
-      const boosterSkillBits=[];
-      if(booster&&boosterFit){
-        boosterSkillBits.push(skillLabelKey(booster,'miningDirector'));
-        const boostSkillKey=boosterFit.shipName==='Rorqual'?'capitalIndustrialShips':boosterFit.shipName==='Outrider'?'commandDestroyers':'industrialCommandShips';
-        boosterSkillBits.push(skillLabelKey(booster,boostSkillKey));
-      }
-      const upgradeText=result.miningUpgrades.length?result.miningUpgrades.map(x=>`${x.name} ×${x.quantity}`).join(' • '):'No recognized Mining Laser Upgrade';
-      const laserText=result.lasers.map(x=>`${x.name}${x.abyssal&&x.sourceName?` [${x.sourceName} roll]`:''} ×${x.quantity}`).join(' • ');
-      const boosterText=boosterFit?`<div class="fit-modules"><span>BOOSTER: ${esc(boosterFit.shipName)} — ${esc(boosterFit.name)}</span>${(boosterFit.items||[]).map(i=>`<span>${esc(i.name)} ×${i.quantity}</span>`).join('')}</div>`:'';
-      $('calcFitDetails').innerHTML=`<strong>${esc(minerFit.shipName+' — '+minerFit.name)}</strong>
-        <div class="calc-skills">${[...minerSkillBits,...boosterSkillBits].map(x=>`<span>${esc(x)}</span>`).join('')}</div>
-        <div class="fit-modules"><span>${esc(laserText)}</span><span>${esc(upgradeText)}</span><span>Chipset: ${esc(result.chipset)}</span><span>Crystal: ${esc(detectedCrystal)}</span><span>Expected crit bonus/cycle: ${result.expectedCriticalBonusPerCycle.toFixed(2)} m³</span></div>
-        ${boosterText}`;
     }catch(err){
       $('calcResults').innerHTML=`<div class="calc-empty">⚠ ${esc(err.message||err)}</div>`;
-      $('calcFitDetails').innerHTML=`<strong>${esc(minerFit.shipName+' — '+minerFit.name)}</strong><div class="fit-modules">${(minerFit.items||[]).map(i=>`<span>${esc(i.name)} ×${i.quantity}</span>`).join('')}</div>`;
     }
     localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));
   }
