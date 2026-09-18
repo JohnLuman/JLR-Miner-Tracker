@@ -713,7 +713,7 @@
 
     function activeTimeLabel(seconds){
       const s=Math.max(0,Number(seconds)||0);
-      if(!s)return'waiting for mining';
+      if(!s)return'no ledger increase detected';
       const h=Math.floor(s/3600),m=Math.floor((s%3600)/60);
       return h?(`${h}h ${m}m active`):(`${Math.max(1,m)}m active`);
     }
@@ -735,7 +735,7 @@
         <div class="fleet-rate-pair">
           <div><span>100% RATE</span><strong>${fmt(fullRate,'m3')}</strong><small>m³/hr</small></div>
           <div><span>@ ${uptime.toFixed(0)}% TARGET</span><strong>${fmt(output,'m3')}</strong><small>m³/hr</small></div>
-          <div class="ledger-rate"><span>LEDGER ACTIVE</span><strong>${hasActual?fmt(actual,'m3'):'—'}</strong><small>${hasActual?activeTimeLabel(ledger.activeSeconds):'starts after ledger increases'}</small></div>
+          <div class="ledger-rate"><span>LEDGER ACTIVE RATE</span><strong>${hasActual?fmt(actual,'m3'):'—'}</strong><small>${hasActual?activeTimeLabel(ledger.activeSeconds):'starts after EVE ledger quantity increases'}</small></div>
         </div>
         <div class="fleet-share-track"><span style="width:${targetPct==null?0:Math.min(100,targetPct).toFixed(2)}%"></span></div>
         <div class="fleet-perf-number"><strong>${targetPct==null?'—':targetPct.toFixed(0)+'%'}</strong><small>of uptime target</small></div>
@@ -753,7 +753,7 @@
 
     $('fleetOutputChart').innerHTML=`
       <div class="fleet-perf-kpis">
-        <div class="ledger-kpi"><span>LEDGER ACTIVE</span><strong>${activeActual.length?fmt(ledgerActual,'m3'):'—'}</strong><small>${activeActual.length} of ${entries.length} miners detected</small></div>
+        <div class="ledger-kpi"><span>LEDGER ACTIVE RATE</span><strong>${activeActual.length?fmt(ledgerActual,'m3'):'—'}</strong><small>${activeActual.length} of ${entries.length} miners detected</small></div>
         <div><span>@ ${uptime.toFixed(0)}% TARGET</span><strong>${fmt(effective,'m3')}</strong><small>projected m³/hr</small></div>
         <div><span>100% RATE</span><strong>${fmt(potential,'m3')}</strong><small>full calculated m³/hr</small></div>
         <div><span>VS TARGET</span><strong>${actualVsTarget==null?'—':actualVsTarget.toFixed(0)+'%'}</strong><small>ledger active ÷ uptime target</small></div>
@@ -801,11 +801,11 @@
     const selected=iceRows.find(x=>x.name===iceTrackType)||iceRows[0]||null;
 
     $('iceTrackValue').textContent=selected?.track?fmt(selected.track)+' ISK':'—';
-    $('iceTrackValueSub').textContent=selected?(selected.name+' • '+Math.round(selected.pct*100)+'% Jita refine'):'Waiting for Jita refined value';
+    $('iceTrackValueSub').textContent=selected?(selected.name+' • '+Math.round(selected.pct*100)+'% of Jita max-refine value'):'Waiting for Jita refined-product prices';
     $('iceBestJita').textContent=selected?.jita?fmt(selected.jita)+' ISK':'—';
-    $('iceBestJitaSub').textContent=selected?(selected.name+' • /block • no Heavy Water'):'Heavy Water excluded';
+    $('iceBestJitaSub').textContent=selected?(selected.name+' • refined ISK/block • Heavy Water excluded'):'Jita refined-product prices unavailable';
     $('iceBestCn').textContent=selected?.cn?fmt(selected.cn)+' ISK':'—';
-    $('iceBestCnSub').textContent=selected?(selected.name+' • /block • no Heavy Water'):'Heavy Water excluded';
+    $('iceBestCnSub').textContent=selected?(selected.name+' • private-market ISK/block • Heavy Water excluded'):'C-N private refined-product prices unavailable';
 
     const range=Number(state.market?.titanBridgeRangeLy||6);
     const fields=Array.isArray(state.source?.iceFields)?state.source.iceFields:[];
@@ -820,7 +820,7 @@
         '<div class="ice-block-row">'+
           '<div><strong>'+esc(row.name)+'</strong><small>'+Math.round(row.pct*100)+'% Jita refine tracking</small></div>'+
           '<div><span>Jita refine</span><strong>'+(row.jita?fmt(row.jita):'—')+'</strong></div>'+
-          '<div><span>Track</span><strong>'+(row.track?fmt(row.track):'—')+'</strong></div>'+
+          '<div><span>Tracking payout</span><strong>'+(row.track?fmt(row.track):'—')+'</strong></div>'+
         '</div>'
       ).join('');
 
@@ -855,7 +855,7 @@
           '<div><strong>'+esc(row.character.name)+'</strong><small>'+esc(row.fit.shipName)+' • '+esc(row.fit.name||'Saved fit')+' • '+row.cycle.toFixed(1)+'s cycle</small></div>'+
           '<div><span>Blocks/hr</span><strong>'+blocks.toFixed(1)+'</strong></div>'+
           '<div><span>m³/hr</span><strong>'+fmt(m3,'m3')+'</strong></div>'+
-          '<div><span>Track/hr</span><strong>'+(track?fmt(track):'—')+'</strong></div>'+
+          '<div><span>Payout/hr</span><strong>'+(track?fmt(track):'—')+'</strong></div>'+
           '<div><span>Jita refine/hr</span><strong>'+(jita?fmt(jita):'—')+'</strong></div>'+
           '<div><span>C-N refine/hr</span><strong>'+(cn?fmt(cn):'—')+'</strong></div>'+
         '</div>';
@@ -868,10 +868,10 @@
     }
   }
   function renderRanking(){
-    if(!state)return;$('oreRanking').innerHTML='';for(const ore of state.source.ores){const clear=ore.siteM3/fleetM3()*60;const r=document.createElement('div');r.className='rank-row';r.innerHTML=`<div class="rank-badge">#${ore.rank}</div><div><strong>${esc(ore.name)}</strong><small>${ore.systems.join(' • ')}<br>${ore.jbvPerM3.toFixed(2)} JBV/m³ • site ${fmt(ore.siteJBV)} JBV</small></div><div class="rank-num">${fmt(fleetM3(),'m3')}<small>m³/hr</small></div><div class="rank-num">${fmt(projectedISK(ore))}/hr<small>~${Number.isFinite(clear)?clear.toFixed(0):'—'} min/site</small></div>`;$('oreRanking').appendChild(r)}
+    if(!state)return;$('oreRanking').innerHTML='';for(const ore of state.source.ores){const clear=ore.siteM3/fleetM3()*60;const r=document.createElement('div');r.className='rank-row';r.innerHTML=`<div class="rank-badge">#${ore.rank}</div><div><strong>${esc(ore.name)}</strong><small>${ore.systems.join(' • ')}<br>Jita refine ${ore.jbvPerM3.toFixed(2)} ISK/m³ • full site ${fmt(ore.siteJBV)} ISK</small></div><div class="rank-num">${fmt(fleetM3(),'m3')}<small>m³/hr</small></div><div class="rank-num">${fmt(projectedISK(ore))}/hr<small>payout • ~${Number.isFinite(clear)?clear.toFixed(0):'—'} min/site</small></div>`;$('oreRanking').appendChild(r)}
   }
   function renderTimers(){
-    if(!state)return;const active=definitions().map(d=>({d,f:field(d.system)})).filter(x=>x.f.status==='cleared'&&x.f.timerEndsAt).sort((a,b)=>Date.parse(a.f.timerEndsAt)-Date.parse(b.f.timerEndsAt));$('timerCount').textContent=`${active.length} active`;if(!active.length){$('activeTimers').innerHTML='<div class="timer-item"><div><strong>No active respawns</strong><small>Cleared fields appear here.</small></div></div>';return}$('activeTimers').innerHTML='';for(const x of active){const d=document.createElement('div');d.className='timer-item';d.innerHTML=`<div><strong>${x.d.system}${x.f.cherryPicked?' 🍒':''}</strong><small>${x.d.ore} • updated ${ago(x.f.updatedAt)}</small></div><div class="timer-value">${timer(x.f.timerEndsAt)}</div>`;$('activeTimers').appendChild(d)}
+    if(!state)return;const active=definitions().map(d=>({d,f:field(d.system)})).filter(x=>x.f.status==='cleared'&&x.f.timerEndsAt).sort((a,b)=>Date.parse(a.f.timerEndsAt)-Date.parse(b.f.timerEndsAt));$('timerCount').textContent=`${active.length} respawning`;if(!active.length){$('activeTimers').innerHTML='<div class="timer-item"><div><strong>No fields currently respawning</strong><small>Marking a field RED starts its fixed 10-hour countdown here.</small></div></div>';return}$('activeTimers').innerHTML='';for(const x of active){const d=document.createElement('div');d.className='timer-item';d.innerHTML=`<div><strong>${x.d.system}${x.f.cherryPicked?' 🍒':''}</strong><small>${x.d.ore} • cleared ${ago(x.f.updatedAt)} • time remaining</small></div><div class="timer-value">${timer(x.f.timerEndsAt)}</div>`;$('activeTimers').appendChild(d)}
   }
   function renderSelected(){
     if(!state||!selectedSystem)return;
@@ -989,12 +989,12 @@
       const previousSync=state?.esi?.lastSyncAt||null;
       state=JSON.parse(e.data);
       renderAll();
-      $('liveBadge').textContent='● LIVE';
+      renderDataStatus();
       if(state?.esi?.lastSyncAt&&state.esi.lastSyncAt!==previousSync){
         refreshMe().then(()=>renderAll()).catch(()=>{});
       }
     });
-    eventSource.onerror=()=>{$('liveBadge').textContent='● RECONNECTING'};
+    eventSource.onerror=()=>{$('liveBadge').textContent='⚠ DATA CONNECTION LOST';$('liveBadge').title='Live dashboard updates disconnected; the page is attempting to reconnect.'};
   }
 
   function addToon(){location.href='/auth/eve/start?intent=link'}
@@ -1005,7 +1005,22 @@
   document.querySelectorAll('.filter').forEach(b=>b.addEventListener('click',()=>{filter=b.dataset.filter;document.querySelectorAll('.filter').forEach(x=>x.classList.toggle('active',x===b));renderBoards()}));
 
   function applyFieldUpdate(system,updatedField){state.fields[system]=updatedField;renderAll()}
-  async function setField(status,forceSystem=null){const system=forceSystem||$('systemSelect').value;if(status==='cleared'){pending={system};$('confirmText').textContent=`${system} will turn RED and count down from 10 hours. The timer cannot be restarted or changed while it runs.`;$('confirmPanel').classList.remove('hidden');return}try{const result=await api(`/api/fields/${encodeURIComponent(system)}`,{method:'PUT',body:JSON.stringify({status})});applyFieldUpdate(system,result.field);$('fieldMessage').textContent=`${system} updated to ${statusText[status]}.`}catch(e){toast(e.message)}}
+  async function setField(status,forceSystem=null){
+    const system=forceSystem||$('systemSelect').value;
+    if(status==='cleared'){
+      pending={system};
+      $('confirmText').textContent=`${system} will be marked RED and start a fixed 10-hour respawn countdown. Status changes are locked until that timer expires.`;
+      $('confirmPanel').classList.remove('hidden');
+      return;
+    }
+    try{
+      const result=await api(`/api/fields/${encodeURIComponent(system)}`,{method:'PUT',body:JSON.stringify({status})});
+      applyFieldUpdate(system,result.field);
+      $('fieldMessage').textContent=status==='ready'
+        ?`${system} is GREEN and mineable.`
+        :`${system} is YELLOW and marked picked/in progress.`;
+    }catch(e){toast(e.message)}
+  }
   $('markGreen').addEventListener('click',()=>setField('ready',selectedSystem));$('markYellow').addEventListener('click',()=>setField('picked',selectedSystem));$('markRed').addEventListener('click',()=>setField('cleared',selectedSystem));
   async function addNote(){const system=selectedSystem,text=$('fieldNote').value.trim();if(!text){toast('Type a note first.');return}try{const result=await api(`/api/fields/${encodeURIComponent(system)}/notes`,{method:'POST',body:JSON.stringify({text})});if(selectedSystem===system&&$('fieldNote').value.trim()===text)$('fieldNote').value='';applyFieldUpdate(system,result.field);toast(`Note added to ${system}.`)}catch(e){toast(e.message)}}
   $('addNote').addEventListener('click',addNote);$('fieldNote').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addNote()}});
@@ -1017,10 +1032,10 @@
     const button=$('syncNow');
     const before=state?.esi?.lastSyncAt||null;
     button.disabled=true;
-    button.textContent='REFRESHING…';
+    button.textContent='SYNCING EVE…';
     try{
       await api('/api/esi/sync',{method:'POST',body:'{}'});
-      toast('Refreshing character data...');
+      toast('Syncing skills, saved fits, assets, and mining ledger from EVE...');
       let completed=false;
       for(let attempt=0;attempt<60;attempt++){
         await new Promise(resolve=>setTimeout(resolve,1000));
@@ -1036,18 +1051,18 @@
         const saved=chars.reduce((n,c)=>n+(Number(c.savedFittingsCount ?? (c.fittings||[]).length)||0),0);
         const mining=chars.reduce((n,c)=>n+(c.fittings||[]).length,0);
         const abyssal=chars.reduce((n,c)=>n+(Number(c.abyssalStripCount)||0),0);
-        button.textContent='UPDATED ✓';
+        button.textContent='SYNCED ✓';
         toast(`${saved} saved fits • ${mining} mining fits${abyssal?` • ${abyssal} Abyssal`:''}`);
-        setTimeout(()=>{button.textContent='REFRESH';button.disabled=false},2200);
+        setTimeout(()=>{button.textContent='SYNC EVE DATA';button.disabled=false},2200);
       }else{
-        button.textContent='STILL REFRESHING';
-        toast('Refresh is taking longer than expected.');
-        setTimeout(()=>{button.textContent='REFRESH';button.disabled=false},3000);
+        button.textContent='SYNC STILL RUNNING';
+        toast('EVE data sync is taking longer than expected.');
+        setTimeout(()=>{button.textContent='SYNC EVE DATA';button.disabled=false},3000);
       }
     }catch(e){
-      button.textContent='REFRESH FAILED';
+      button.textContent='SYNC FAILED';
       toast(e.message);
-      setTimeout(()=>{button.textContent='REFRESH';button.disabled=false},3000);
+      setTimeout(()=>{button.textContent='SYNC EVE DATA';button.disabled=false},3000);
     }
   });
 
@@ -1099,6 +1114,6 @@
       const params=new URLSearchParams(location.search);if(params.get('linked'))toast('Mining toon connected.');if(params.get('login'))toast('Logged in.');if(params.get('market')==='authorized')toast('John market access authorized.');if(params.get('error'))toast(decodeURIComponent(params.get('error')));if(params.toString())history.replaceState({},'',location.pathname);
     }catch(e){console.error(e);showLogin();$('setupWarning').classList.remove('hidden');$('setupWarning').textContent=`JLR could not load: ${e.message}`}
   }
-  setInterval(()=>{if(state){renderBoards();renderTimers();renderSelect();renderSelected();}},1000);
+  setInterval(()=>{if(state){renderBoards();renderTimers();renderSelect();renderSelected();renderDataStatus();}},1000);
   boot();
 })();
