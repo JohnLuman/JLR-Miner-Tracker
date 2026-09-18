@@ -32,7 +32,7 @@
   delete calcSettings.crystal;
   let iceTrackType=localStorage.getItem('jlrIceType')||'Blue Ice IV-Grade';
   let oreTrendType=localStorage.getItem('jlrOreTrend')||'Kylixium';
-  const statusText = {ready:'GREEN',picked:'YELLOW',cleared:'RED'};
+  const statusText = {ready:'GREEN • MINEABLE',picked:'YELLOW • PICKED',cleared:'RED • RESPAWN'};
 
   function fmt(v, kind='num') {
     v = Number(v || 0);
@@ -44,7 +44,7 @@
     return v.toFixed(0);
   }
   function timer(iso) {
-    if (!iso) return 'READY';
+    if (!iso) return 'NO TIMER';
     let s = Math.max(0, Math.floor((Date.parse(iso)-Date.now())/1000));
     const h=Math.floor(s/3600); s%=3600; const m=Math.floor(s/60); s%=60;
     return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
@@ -52,6 +52,23 @@
   function ago(iso) {
     if (!iso) return 'never'; const ms=Date.now()-Date.parse(iso); if(!Number.isFinite(ms))return 'unknown';
     const m=Math.max(0,Math.floor(ms/60000)); if(m<1)return 'just now'; if(m<60)return `${m}m ago`; const h=Math.floor(m/60); if(h<24)return `${h}h ${m%60}m ago`; return `${Math.floor(h/24)}d ago`;
+  }
+  function renderDataStatus(){
+    const el=$('liveBadge');
+    if(!el)return;
+    if(state?.esi?.syncing){
+      el.textContent='● SYNCING EVE DATA';
+      el.title='Skills, saved fits, assets, and mining ledger are being refreshed.';
+    }else if(state?.esi?.lastError){
+      el.textContent='⚠ EVE SYNC ERROR';
+      el.title=String(state.esi.lastError);
+    }else if(state?.esi?.lastSyncAt){
+      el.textContent='● EVE DATA '+ago(state.esi.lastSyncAt).toUpperCase();
+      el.title='Latest successful EVE character-data sync: '+ago(state.esi.lastSyncAt)+'.';
+    }else{
+      el.textContent='● EVE DATA PENDING';
+      el.title='No successful EVE character-data sync has completed yet.';
+    }
   }
   function esc(s){return String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
   function toast(msg){$('toast').textContent=msg;$('toast').classList.remove('hidden');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.add('hidden'),3000)}
@@ -489,10 +506,15 @@
       .sort((a,b)=>Number(a.f.cherryPicked)-Number(b.f.cherryPicked)||a.d.rank-b.d.rank||a.d.order-b.d.order);
     const target=targets[0]||null;
     const top=target?ores[target.d.rank-1]:ores[0];
-    $('perShipKpi').textContent=fmt(perShip(),'m3');
-    $('fleetKpi').textContent=fmt(fleetM3(),'m3');
+    const fleetNow=fleetStats();
+    const uptimePct=Math.min(100,Math.max(1,Number(fleetSettings.uptime)||100));
+    $('perShipKpi').textContent=fmt(fleetNow.average,'m3');
+    $('perShipSub').textContent=fleetNow.count?`${fleetNow.count} selected • avg @ ${uptimePct.toFixed(0)}% uptime • m³/hr`:'No miners selected';
+    $('fleetKpi').textContent=fmt(fleetNow.total,'m3');
+    $('fleetSub').textContent=fleetNow.count?`${fleetNow.count} miners • ${uptimePct.toFixed(0)}% uptime target • m³/hr`:'Select miners in Fleet';
     $('topOreKpi').textContent=top?.name||'—';
-    $('topOreSub').textContent=target?`${target.d.system} • max refine`:(top?'max refine':'No target');
+    const targetDistance=target&&Number.isFinite(Number(target.d.distanceLy))?` • ${Number(target.d.distanceLy).toFixed(2)} LY`:'';
+    $('topOreSub').textContent=target?`${target.d.system}${targetDistance} • rank #${target.d.rank}`:'No mineable T3 target';
 
     const payout=Number(fleetSettings.payout)/100;
     const jitaPerM3=Number(top?.market?.jita?.refinedBuyPerM3 ?? top?.market?.jita?.buyPerM3 ?? top?.jbvPerM3);
@@ -502,13 +524,21 @@
     const cnHourly=Number.isFinite(cnPerM3)&&cnPerM3>0?fleetRate*cnPerM3*payout:null;
 
     $('jitaValueKpi').textContent=jitaHourly===null?'—':`${fmt(jitaHourly)}/hr`;
-    $('jitaValueSub').textContent=Number.isFinite(jitaPerM3)?`${jitaPerM3.toFixed(2)} ISK/m³ • max refine`:'No Jita price';
+    $('jitaValueSub').textContent=Number.isFinite(jitaPerM3)?`${jitaPerM3.toFixed(2)} ISK/m³ • ${(payout*100).toFixed(1)}% payout • ${top?.name||'ore'}`:'Jita refined-mineral price unavailable';
     $('cnValueKpi').textContent=cnHourly===null?'—':`${fmt(cnHourly)}/hr`;
-    $('cnValueSub').textContent=cnHourly===null?'No local mineral price':`${cnPerM3.toFixed(2)} ISK/m³ • max refine`;
+    $('cnValueSub').textContent=cnHourly===null?'C-N private mineral price unavailable':`${cnPerM3.toFixed(2)} ISK/m³ • ${(payout*100).toFixed(1)}% payout • ${top?.name||'ore'}`;
 
-    $('actualTodayM3').textContent=fmt(state.esi.actual.today.m3,'m3'); $('actualTodayIsk').textContent=fmt(actualValue(state.esi.actual.today.jbv));
-    $('actualExpTodayM3').textContent=`${fmt(state.esi.actual.today.m3,'m3')} m³`; $('actualExpTodayValue').textContent=`${fmt(actualValue(state.esi.actual.today.jbv))} ISK`; $('actualWeekM3').textContent=`${fmt(state.esi.actual.week.m3,'m3')} m³`; $('actualWeekValue').textContent=`${fmt(actualValue(state.esi.actual.week.jbv))} ISK`;
-    $('esiStatus').textContent=`${state.esi.linkedCharacters} TOONS`; $('lastSync').textContent=state.esi.lastSyncAt?`Last refresh ${ago(state.esi.lastSyncAt)}`:(state.esi.lastError||'Never refreshed');
+    $('actualTodayM3').textContent=fmt(state.esi.actual.today.m3,'m3');
+    $('actualTodayIsk').textContent=fmt(actualValue(state.esi.actual.today.jbv));
+    $('actualTodaySub').textContent=state.esi.lastSyncAt?`ledger total • synced ${ago(state.esi.lastSyncAt)}`:'waiting for first EVE ledger sync';
+    $('actualTodayIskSub').textContent=`tracked T3 ore • ${(payout*100).toFixed(1)}% payout setting`;
+    $('actualExpTodayM3').textContent=`${fmt(state.esi.actual.today.m3,'m3')} m³`;
+    $('actualExpTodayValue').textContent=`${fmt(actualValue(state.esi.actual.today.jbv))} ISK`;
+    $('actualWeekM3').textContent=`${fmt(state.esi.actual.week.m3,'m3')} m³`;
+    $('actualWeekValue').textContent=`${fmt(actualValue(state.esi.actual.week.jbv))} ISK`;
+    $('esiStatus').textContent=`${state.esi.linkedCharacters} LINKED`;
+    $('lastSync').textContent=state.esi.lastSyncAt?`EVE data synced ${ago(state.esi.lastSyncAt)}`:(state.esi.lastError?`Sync error: ${state.esi.lastError}`:'No successful sync yet');
+    renderDataStatus();
   }
   function renderFleet(){
     if(!me)return;
@@ -595,7 +625,7 @@
     b.dataset.status=f.status;
     b.dataset.system=d.system;
     if(d.system===selectedSystem)b.classList.add('selected');
-    const line=f.status==='cleared'?timer(f.timerEndsAt):f.status==='picked'?'PICKED':'READY';
+    const line=f.status==='cleared'?`RESPAWN ${timer(f.timerEndsAt)}`:f.status==='picked'?'PICKED':'MINEABLE';
     const distance=d.distanceLy==null?NaN:Number(d.distanceLy);
     const distanceText=Number.isFinite(distance)?` • ${distance.toFixed(2)} LY`:'';
     b.innerHTML=`${f.cherryPicked?'<span class="cherry-pin">🍒</span>':''}<span class="sys-name">${esc(d.system)}</span><span class="sys-ore">#${d.rank} ${esc(d.ore)}</span>${includeTimer?`<span class="sys-state">${line}${distanceText}</span>`:''}`;
@@ -612,8 +642,8 @@
     const distance=Number(row.distanceLy);
     card.innerHTML='<span class="sys-name">'+esc(row.system)+'</span>'+
       '<span class="sys-ore">'+fields+' ICE FIELD'+(fields===1?'':'S')+'</span>'+
-      '<span class="sys-state">READY'+(Number.isFinite(distance)?' • '+distance.toFixed(2)+' LY':'')+'</span>';
-    card.title=row.system+' • '+fields+' ice field'+(fields===1?'':'s')+(Number.isFinite(distance)?' • '+distance.toFixed(2)+' LY from C-N4OD':'')+' • READY';
+      '<span class="sys-state">IN TITAN RANGE'+(Number.isFinite(distance)?' • '+distance.toFixed(2)+' LY':'')+'</span>';
+    card.title=row.system+' • '+fields+' ice field'+(fields===1?'':'s')+(Number.isFinite(distance)?' • '+distance.toFixed(2)+' LY from C-N4OD':'')+' • within configured Titan bridge range';
     return card;
   }
 
@@ -643,7 +673,7 @@
       for(const row of iceFields)board.appendChild(iceBoardNode(row));
     }
 
-    $('statusCounts').textContent=`${counts.ready} G • ${counts.picked} Y • ${counts.cleared} R • ${counts.cherry} 🍒 • ${iceFields.length} ICE`;
+    $('statusCounts').textContent=`${counts.ready} mineable • ${counts.picked} picked • ${counts.cleared} respawning • ${counts.cherry} cherry • ${iceFields.length} ice systems`;
     $('systemCountLabel').textContent=`${definitions().length} T3 • ${iceFields.length} ICE`;
   }
   function renderHits(){
@@ -846,8 +876,8 @@
   function renderSelected(){
     if(!state||!selectedSystem)return;
     const d=def(selectedSystem),f=field(selectedSystem);if(!d||!f)return;
-    const status=f.status==='cleared'?`RED • ${timer(f.timerEndsAt)}`:statusText[f.status];
-    $('selectedDetail').innerHTML=`<strong>#${d.rank} ${esc(d.ore)}</strong><span>${esc(status)}${f.cherryPicked?' • 🍒':''} • ${fmt(projectedISK(state.source.ores[d.rank-1]))}/hr</span>`;
+    const status=f.status==='cleared'?`RED • RESPAWN ${timer(f.timerEndsAt)}`:statusText[f.status];
+    $('selectedDetail').innerHTML=`<strong>#${d.rank} ${esc(d.ore)}</strong><span>${esc(status)}${f.cherryPicked?' • 🍒 CHERRY':''} • ${fmt(projectedISK(state.source.ores[d.rank-1]))} payout/hr</span>`;
     const timerActive=f.status==='cleared'&&Date.parse(f.timerEndsAt)>Date.now();
     for(const id of ['markGreen','markYellow','markRed'])$(id).disabled=timerActive;
   }
