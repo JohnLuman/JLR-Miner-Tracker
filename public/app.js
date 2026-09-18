@@ -68,7 +68,7 @@
   function skillLevel(character,id){return Number(character?.skills?.[String(id)]?.level||0)}
   function skillLabel(character,id){const s=character?.skills?.[String(id)];return s?`${s.name} ${s.level}`:'Not synced'}
   function minerSkillScale(character,shipName){
-    if(!character)return 1;
+    if(!character||!Object.keys(character.skills||{}).length)return 1;
     const mining=skillLevel(character,SKILL_IDS.mining),astro=skillLevel(character,SKILL_IDS.astrogeology),barge=skillLevel(character,SKILL_IDS.miningBarge),exh=skillLevel(character,SKILL_IDS.exhumers);
     let factor=((1+.05*mining)/1.25)*((1+.05*astro)/1.25);
     if(shipName==='Hulk'){
@@ -80,7 +80,7 @@
     return factor;
   }
   function boostReduction(character,ship,burstTech,coreTech,mindlink){
-    if(!character||ship==='none')return 0;
+    if(!character||ship==='none'||!Object.keys(character.skills||{}).length)return 0;
     const director=skillLevel(character,SKILL_IDS.miningDirector);
     const shipLevel=ship==='rorqual'?skillLevel(character,SKILL_IDS.capitalIndustrial):skillLevel(character,SKILL_IDS.industrialCommand);
     const moduleBonus=Number(burstTech)===2?.25:0;
