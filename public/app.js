@@ -260,6 +260,7 @@
     if(e.target.closest('button,summary,.app-tab'))sfx('click');
   });
   document.addEventListener('change',(e)=>{
+    if(e.target.matches('.fleet-fit-select,.fleet-member-check'))return;
     if(e.target.matches('select'))sfx('select');
     else if(e.target.matches('input[type="checkbox"],input[type="radio"]'))sfx('toggle');
   });
@@ -563,10 +564,12 @@
     }
 
     list.querySelectorAll('.fleet-member-check').forEach(input=>input.addEventListener('change',()=>{
+      sfx('toggle');
       const id=input.dataset.id;if(!fleetSettings.members[id])fleetSettings.members[id]={enabled:false,fittingId:''};
       fleetSettings.members[id].enabled=input.checked;saveFleet();
     }));
     list.querySelectorAll('.fleet-fit-select').forEach(select=>select.addEventListener('change',()=>{
+      sfx('select');
       const id=select.dataset.id;if(!fleetSettings.members[id])fleetSettings.members[id]={enabled:false,fittingId:''};
       fleetSettings.members[id].fittingId=select.value;saveFleet();
     }));
