@@ -3,7 +3,7 @@
   "t3RespawnHours": 10,
   "presetOutputs": {
     "hulk_ore": 406800,
-    "mack_mod2": 405704.7771
+    "mack_mod2": 405704.7772
   },
   "ores": [
     {
@@ -15,9 +15,7 @@
       "systems": [
         "RP2-OQ",
         "APM-6K",
-        "R3W-XU",
-        "FM-JK5",
-        "YQX-7U"
+        "R3W-XU"
       ]
     },
     {
@@ -42,8 +40,7 @@
         "J5A-IX",
         "CHA2-Q",
         "H-S80W",
-        "AC2E-3",
-        "NOL-M9"
+        "AC2E-3"
       ]
     },
     {
@@ -54,8 +51,7 @@
       "siteM3": 13099607,
       "systems": [
         "K8L-X7",
-        "B17O-R",
-        "RE-C26"
+        "B17O-R"
       ]
     },
     {
@@ -66,8 +62,7 @@
       "siteM3": 23177885,
       "systems": [
         "PNQY-Y",
-        "5-D82P",
-        "SPLE-Y"
+        "5-D82P"
       ]
     },
     {
