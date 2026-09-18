@@ -199,8 +199,20 @@
     $('perShipKpi').textContent=fmt(perShip(),'m3');
     $('fleetKpi').textContent=fmt(fleetM3(),'m3');
     $('topOreKpi').textContent=top?.name||'—';
-    $('topOreSub').textContent=target?`${target.d.system} • ${top.jbvPerM3.toFixed(2)} JBV/m³`:(top?`${top.jbvPerM3.toFixed(2)} JBV/m³`:'No target');
-    $('projectedIskKpi').textContent=top?`${fmt(projectedISK(top))}/hr`:'—';
+    $('topOreSub').textContent=target?`${target.d.system} • max refine`:(top?'max refine':'No target');
+
+    const payout=Number(fleetSettings.payout)/100;
+    const jitaPerM3=Number(top?.market?.jita?.refinedBuyPerM3 ?? top?.market?.jita?.buyPerM3 ?? top?.jbvPerM3);
+    const cnPerM3=Number(top?.market?.cn?.refinedBuyPerM3 ?? top?.market?.cn?.buyPerM3);
+    const fleetRate=fleetM3();
+    const jitaHourly=Number.isFinite(jitaPerM3)?fleetRate*jitaPerM3*payout:null;
+    const cnHourly=Number.isFinite(cnPerM3)&&cnPerM3>0?fleetRate*cnPerM3*payout:null;
+
+    $('jitaValueKpi').textContent=jitaHourly===null?'—':`${fmt(jitaHourly)}/hr`;
+    $('jitaValueSub').textContent=Number.isFinite(jitaPerM3)?`${jitaPerM3.toFixed(2)} ISK/m³ • max refine`:'No Jita price';
+    $('cnValueKpi').textContent=cnHourly===null?'—':`${fmt(cnHourly)}/hr`;
+    $('cnValueSub').textContent=cnHourly===null?'No local mineral price':`${cnPerM3.toFixed(2)} ISK/m³ • max refine`;
+
     $('actualTodayM3').textContent=fmt(state.esi.actual.today.m3,'m3'); $('actualTodayIsk').textContent=fmt(actualValue(state.esi.actual.today.jbv));
     $('actualExpTodayM3').textContent=`${fmt(state.esi.actual.today.m3,'m3')} m³`; $('actualExpTodayValue').textContent=`${fmt(actualValue(state.esi.actual.today.jbv))} ISK`; $('actualWeekM3').textContent=`${fmt(state.esi.actual.week.m3,'m3')} m³`; $('actualWeekValue').textContent=`${fmt(actualValue(state.esi.actual.week.jbv))} ISK`;
     $('esiStatus').textContent=`${state.esi.linkedCharacters} TOONS`; $('lastSync').textContent=state.esi.lastSyncAt?`Last refresh ${ago(state.esi.lastSyncAt)}`:(state.esi.lastError||'Never refreshed');
