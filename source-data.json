@@ -3,7 +3,8 @@
   "t3RespawnHours": 10,
   "presetOutputs": {
     "hulk_ore": 406800,
-    "mack_mod2": 405704.7772
+    "mack_mod2": 405704.7772,
+    "hulk_strip1": 305100
   },
   "ores": [
     {
