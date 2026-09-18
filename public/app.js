@@ -519,7 +519,7 @@
     b.dataset.system=d.system;
     if(d.system===selectedSystem)b.classList.add('selected');
     const line=f.status==='cleared'?timer(f.timerEndsAt):f.status==='picked'?'PICKED':'READY';
-    const distance=Number(d.distanceLy);
+    const distance=d.distanceLy==null?NaN:Number(d.distanceLy);
     const distanceText=Number.isFinite(distance)?` • ${distance.toFixed(2)} LY`:'';
     b.innerHTML=`${f.cherryPicked?'<span class="cherry-pin">🍒</span>':''}<span class="sys-name">${esc(d.system)}</span><span class="sys-ore">#${d.rank} ${esc(d.ore)}</span>${includeTimer?`<span class="sys-state">${line}${distanceText}</span>`:''}`;
     b.title=`${d.system} • ${d.ore} • ${statusText[f.status]}${Number.isFinite(distance)?` • ${distance.toFixed(2)} LY from C-N4OD`:''}${f.cherryPicked?' • Cherry Picked':''}${f.notes?.length?` • ${f.notes.length} notes`:''}`;
