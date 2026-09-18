@@ -31,6 +31,8 @@ const MINING_SKILLS = {
   3410: 'Astrogeology',
   17940: 'Mining Barge',
   22551: 'Exhumers',
+  90728: 'Mining Exploitation',
+  90727: 'Mining Precision',
   29637: 'Industrial Command Ships',
   28374: 'Capital Industrial Ships',
   22552: 'Mining Director',
@@ -212,7 +214,7 @@ function publicState() {
   const todayActual = sum(x=>x.date===today); const weekActual = sum(x=>x.date>=weekStart);
   return {
     app:{name:'JLR Miner Tracker',version:'2.2.0',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state and fleet-level mining totals only. No character-location scope and no per-character mining systems are stored.'},
-    source:{respawnHours:10,presetOutputs:source.presetOutputs,ores:ORES,systems:SYSTEM_DEFS},
+    source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:ORES,systems:SYSTEM_DEFS},
     fields:state.fields,
     esi:{configured:Boolean(EVE_CLIENT_ID),linkedCharacters:Object.keys(state.characters).length,lastSyncAt:state.esi.lastSyncAt,lastError:state.esi.lastError,syncing:syncInProgress,actual:{today:todayActual,week:weekActual}},
     serverNow:now(),
