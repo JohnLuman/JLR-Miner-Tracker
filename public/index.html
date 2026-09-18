@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0a0a10">
   <title>JLR Miner Tracker</title>
-  <link rel="stylesheet" href="/styles.css?v=2.2.5">
+  <link rel="stylesheet" href="/styles.css?v=2.3.0">
 </head>
 <body>
   <main id="loginView" class="login-shell hidden">
@@ -48,19 +48,16 @@
     </section>
 
     <section class="compact-row">
-      <details class="glass setup-drawer">
-        <summary><span>⚙ FLEET SETUP</span><span id="setupSummary">—</span></summary>
-        <div class="setup-grid">
-          <label>Ship<select id="shipType"><option value="hulk">Hulk</option><option value="mackinaw">Mackinaw</option><option value="custom">Custom</option></select></label>
-          <label>Ships<input id="shipCount" type="number" min="1" max="500"></label>
-          <label>Miner<select id="minerType"><option value="ore">ORE Strip Miner</option><option value="strip1">Strip Miner I</option><option value="mod2">Modulated Strip Miner II</option><option value="custom">Custom Miner</option></select></label>
-          <label>Base m³/hr<input id="baseOutput" type="number" min="1"></label>
-          <label>Abyssal avg %<input id="abyssalAverage" type="number" min="0" max="200" step="0.01"></label>
-          <label>Uptime %<input id="uptime" type="number" min="1" max="100"></label>
-          <label>Payout % JBV<input id="payout" type="number" min="1" max="100" step="0.1"></label>
-          <label class="rolls-label">Abyssal rolls<input id="abyssalRolls" type="text" placeholder="20.3, 21.1, 19.8, 22.0"></label>
-          <button id="averageRolls" class="orb blue setup-action" type="button">AVERAGE ROLLS</button>
-          <span id="rollResult" class="muted setup-result">Local projection settings — they do not alter the shared board.</span>
+      <details class="glass setup-drawer" open>
+        <summary><span>⚙ FLEET SETUP</span><span id="setupSummary">Select miners</span></summary>
+        <div class="fleet-setup-body">
+          <div class="fleet-setup-controls">
+            <label>Uptime %<input id="uptime" type="number" min="1" max="100"></label>
+            <label>Payout %<input id="payout" type="number" min="1" max="100" step="0.1"></label>
+            <div id="fleetBoosterSummary" class="fleet-booster-summary">No booster selected</div>
+          </div>
+          <div id="fleetMemberList" class="fleet-member-list"></div>
+          <div class="fleet-setup-hint">Select linked miners and the saved fit each toon is flying. Ship output is calculated from that toon’s skills and fit.</div>
         </div>
       </details>
 
@@ -168,7 +165,7 @@
     </section>
     <div id="toast" class="toast hidden" role="status"></div>
   </main>
-  <script src="/yield-math.js?v=2.2.5" defer></script>
-  <script src="/app.js?v=2.2.5" defer></script>
+  <script src="/yield-math.js?v=2.3.0" defer></script>
+  <script src="/app.js?v=2.3.0" defer></script>
 </body>
 </html>
