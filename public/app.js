@@ -227,11 +227,17 @@
       o.type='triangle';o.frequency.setValueAtTime(350,n);o.frequency.exponentialRampToValueAtTime(720,n+.09);
       g.gain.setValueAtTime(.018,n);g.gain.exponentialRampToValueAtTime(.001,n+.11);o.start(n);o.stop(n+.12);
     }else if(kind==='select'){
-      o.type='triangle';o.frequency.setValueAtTime(500,n);o.frequency.exponentialRampToValueAtTime(760,n+.06);
-      g.gain.setValueAtTime(.012,n);g.gain.exponentialRampToValueAtTime(.001,n+.075);o.start(n);o.stop(n+.08);
+      o.type='triangle';o.frequency.setValueAtTime(520,n);o.frequency.exponentialRampToValueAtTime(860,n+.08);
+      g.gain.setValueAtTime(.026,n);g.gain.exponentialRampToValueAtTime(.001,n+.10);o.start(n);o.stop(n+.105);
+    }else if(kind==='toggleOn'){
+      o.type='square';o.frequency.setValueAtTime(310,n);o.frequency.exponentialRampToValueAtTime(540,n+.065);
+      g.gain.setValueAtTime(.022,n);g.gain.exponentialRampToValueAtTime(.001,n+.085);o.start(n);o.stop(n+.09);
+    }else if(kind==='toggleOff'){
+      o.type='square';o.frequency.setValueAtTime(420,n);o.frequency.exponentialRampToValueAtTime(230,n+.065);
+      g.gain.setValueAtTime(.022,n);g.gain.exponentialRampToValueAtTime(.001,n+.085);o.start(n);o.stop(n+.09);
     }else if(kind==='toggle'){
-      o.type='square';o.frequency.setValueAtTime(220,n);o.frequency.exponentialRampToValueAtTime(390,n+.045);
-      g.gain.setValueAtTime(.010,n);g.gain.exponentialRampToValueAtTime(.001,n+.06);o.start(n);o.stop(n+.065);
+      o.type='square';o.frequency.setValueAtTime(250,n);o.frequency.exponentialRampToValueAtTime(430,n+.055);
+      g.gain.setValueAtTime(.020,n);g.gain.exponentialRampToValueAtTime(.001,n+.075);o.start(n);o.stop(n+.08);
     }else if(kind==='timer'){
       o.type='sawtooth';o.frequency.setValueAtTime(330,n);o.frequency.exponentialRampToValueAtTime(100,n+.14);
       g.gain.setValueAtTime(.025,n);g.gain.exponentialRampToValueAtTime(.001,n+.15);o.start(n);o.stop(n+.16);
@@ -242,11 +248,24 @@
     return true;
   }
   let systemHoverKey='';
-  // Try immediately. Browsers that permit WebAudio without a gesture will have hover sound right away.
+  // Try immediately for browsers that already allow audio on this site.
   unlockAudio();
   if(audio?.state==='suspended')audio.resume().catch(()=>{});
-  // Fallback for browsers that enforce autoplay/user-activation rules.
-  document.addEventListener('pointerdown',()=>{unlockAudio();audio?.resume?.().catch(()=>{})},{once:true});
+
+  // Chrome/Edge can block WebAudio until a real user gesture. Prime the context on
+  // pointer/key DOWN (before a native select opens), so the later change event can
+  // actually play the fit/toon selection sound.
+  async function primeAudioFromGesture(){
+    unlockAudio();
+    if(audio?.state==='suspended'){
+      try{await audio.resume()}catch{}
+    }
+  }
+  document.addEventListener('pointerdown',primeAudioFromGesture,{capture:true});
+  document.addEventListener('keydown',(e)=>{
+    if(e.key==='Enter'||e.key===' '||e.key==='ArrowUp'||e.key==='ArrowDown')primeAudioFromGesture();
+  },{capture:true});
+
   document.addEventListener('pointerover',async(e)=>{
     const system=e.target.closest('.system-node');
     if(system){
@@ -257,9 +276,9 @@
       }
       return;
     }
-    const target=e.target.closest('button,summary,.app-tab');
+    const target=e.target.closest('button,summary,.app-tab,select,.fleet-member-toggle');
     if(!target)return;
-    const previous=e.relatedTarget?.closest?.('button,summary,.app-tab');
+    const previous=e.relatedTarget?.closest?.('button,summary,.app-tab,select,.fleet-member-toggle');
     if(previous!==target)await sfx('hover');
   });
   document.addEventListener('pointerout',(e)=>{
@@ -276,11 +295,16 @@
     if(e.target.closest('.system-node')){sfx('systemSelect');return}
     if(e.target.closest('button,summary,.app-tab'))sfx('click');
   });
+
+  // Capture this BEFORE fleet controls rerender themselves. This makes dynamic
+  // toon checkboxes, saved-fit selects, booster selects, and other controls reliable.
   document.addEventListener('change',(e)=>{
-    if(e.target.matches('.fleet-fit-select,.fleet-member-check'))return;
-    if(e.target.matches('select'))sfx('select');
-    else if(e.target.matches('input[type="checkbox"],input[type="radio"]'))sfx('toggle');
-  });
+    if(e.target.matches('select')){
+      sfx('select');
+    }else if(e.target.matches('input[type="checkbox"],input[type="radio"]')){
+      sfx(e.target.checked?'toggleOn':'toggleOff');
+    }
+  },{capture:true});
 
   async function api(url, options={}) {
     const headers={...(options.headers||{})}; if(options.body&&!headers['Content-Type'])headers['Content-Type']='application/json';
@@ -595,12 +619,10 @@
     }
 
     list.querySelectorAll('.fleet-member-check').forEach(input=>input.addEventListener('change',()=>{
-      sfx('toggle');
       const id=input.dataset.id;if(!fleetSettings.members[id])fleetSettings.members[id]={enabled:false,fittingId:''};
       fleetSettings.members[id].enabled=input.checked;saveFleet();
     }));
     list.querySelectorAll('.fleet-fit-select').forEach(select=>select.addEventListener('change',()=>{
-      sfx('select');
       const id=select.dataset.id;if(!fleetSettings.members[id])fleetSettings.members[id]={enabled:false,fittingId:''};
       fleetSettings.members[id].fittingId=select.value;saveFleet();
     }));
@@ -1119,14 +1141,12 @@
     oreTrendType=$('oreTrendSelect').value||'Kylixium';
     localStorage.setItem('jlrOreTrend',oreTrendType);
     renderMiningVisuals();
-    sfx('select');
   });
 
   $('iceTypeSelect').addEventListener('change',()=>{
     iceTrackType=$('iceTypeSelect').value||'Blue Ice IV-Grade';
     localStorage.setItem('jlrIceType',iceTrackType);
     renderIceMining();
-    sfx('select');
   });
 
   function readBoosterCalc(){
