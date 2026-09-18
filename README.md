@@ -56,15 +56,17 @@ Actuals on the dashboard come from EVE mining-ledger API data. Projected values 
 
 ### Skill / fitting / boost calculator
 
-The v2.2 expanded view adds a calculator that:
+The v2.2 expanded view adds a calculator that mirrors the supplied workbook's **Yield Calc** sheet:
 
-- reads Mining, Astrogeology, Mining Barge, Exhumers, Mining Director, Industrial Command Ships, and Capital Industrial Ships levels from ESI
-- lists saved mining fits for barges, exhumers, Porpoise, Orca, and Rorqual
-- scales an unboosted max-skill reference output to the selected miner's actual skills
-- estimates Mining Laser Optimization cycle-time reduction for Porpoise or Rorqual with Burst I/II, Industrial Core I/II, and optional Mining Foreman Mindlink
-- shows boosted per-ship output and fleet output
+- reads Mining, Astrogeology, Mining Barge, Exhumers, Mining Exploitation, Mining Precision, Mining Director, Industrial Command Ships, and Capital Industrial Ships levels from ESI
+- lists saved mining fits for barges/exhumers and saved Porpoise, Orca, or Rorqual boost fits
+- reads supported strip miners, Mining Laser Upgrades, and Mining Survey Chipsets from the saved fit
+- reads the booster hull, Industrial Core I/II, and Mining Foreman Burst I/II from the saved boost fit
+- allows crystal, Mining Foreman Mindlink, and Mining Laser Efficiency Charge to be selected when they are not reliably represented in a saved fit
+- applies the same base-yield, critical-success, duration, Mining Laser Optimization, and Mining Laser Efficiency formulas used by the original workbook
+- shows per-ship and fleet m³/hr
 
-The current v2.2 calculator intentionally uses a **reference m³/hr** for the exact fit as its starting point. It reads the saved fit so the setup can be verified, but it does not yet implement the complete EVE Dogma engine needed to derive every module, crystal, implant, stacking penalty, and modified attribute directly from static data.
+The lookup values in `source-data.json` are copied from the workbook's Yield Calc tables. A regression test reproduces the workbook's selected Mackinaw result of **405,704.7772 m³/hr** and its **61.5234375%** Rorqual optimization value. This is intentionally workbook-faithful rather than a separate guessed fitting model.
 
 ## Public website setup
 
@@ -142,7 +144,7 @@ For the real shared app, use the public HTTPS callback instead.
 
 ## Fountain data in this build
 
-The bundled source data contains **20 T3 systems** from the supplied workbook and the six priority ore classes:
+The bundled source data contains **15 T3 systems** from the supplied workbook and the six priority ore classes:
 
 1. Kylixium
 2. Ueganite
@@ -154,7 +156,7 @@ The bundled source data contains **20 T3 systems** from the supplied workbook an
 Default calculator baselines:
 
 - Hulk + ORE Strip Miner: `406,800 m³/hr` per ship before Abyssal adjustment.
-- Mackinaw + Modulated Strip Miner II: `405,704.7771 m³/hr` per ship before Abyssal adjustment.
+- Mackinaw + Modulated Strip Miner II: `405,704.7772 m³/hr` per ship before Abyssal adjustment.
 
 The default payout display is 95% JBV, but each browser can change its own projection settings without changing the shared field board.
 
@@ -177,4 +179,6 @@ Static  now lives outside , so a production volume can safely mount at  without 
 
 ## v2.2 skills, fittings, and boosts
 
-v2.2 adds read-only ESI skill and saved-fitting sync plus the first mining-output calculator. Existing linked characters keep working for mining Actuals, but the UI marks them **Authorize** until they grant the new skills/fittings scopes. No character-location scope was added.
+v2.2 adds read-only ESI skill and saved-fitting sync plus a mining-output calculator driven by the original workbook's Yield Calc formulas and lookup tables. Existing linked characters keep working for mining Actuals, but the UI marks them **Authorize** until they grant the new skills/fittings scopes. No character-location scope was added.
+
+The uploaded workbook also reduced the T3 field list from the older 20-system set to the current 15-system set; the bundled source data now matches that workbook list.
