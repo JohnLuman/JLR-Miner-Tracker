@@ -50,6 +50,12 @@ const ABYSSAL_STRIP_TYPES = new Map([
 const dogmaAttributeCache = new Map();
 const TEN_HOURS = 10 * 60 * 60 * 1000;
 const SESSION_TTL = 30 * 24 * 60 * 60 * 1000;
+const MARKET_REFRESH_MS = 24 * 60 * 60 * 1000;
+const JITA_REGION_ID = 10000002;
+const JITA_SYSTEM_ID = 30000142;
+const JITA_44_STATION_ID = 60003760;
+const FOUNTAIN_REGION_ID = 10000058;
+const CN_SYSTEM_NAME = 'C-N4OD';
 const source = JSON.parse(await fsp.readFile(SOURCE_FILE, 'utf8'));
 const ORES = source.ores.map((o, rankIndex) => ({
   rank: rankIndex + 1,
@@ -69,6 +75,7 @@ const sseClients = new Set();
 let ssoMetadata = null;
 let ssoMetadataAt = 0;
 let syncInProgress = false;
+let marketRefreshInProgress = false;
 let state = await loadState();
 const tokenKey = await loadTokenKey();
 const sessionSecret = crypto.createHash('sha256').update(process.env.SESSION_SECRET || tokenKey).digest();
@@ -104,6 +111,9 @@ function freshState() {
     esi: {
       typeCache: {}, systemCache: {}, dailyFleet: [], lastSyncAt: null, lastError: null,
     },
+    market: {
+      prices: {}, lastUpdatedAt: null, lastError: null,
+    },
   };
 }
 async function loadState() {
@@ -122,6 +132,8 @@ async function loadState() {
     }
     parsed.esi = { ...base.esi, ...(parsed.esi || {}) };
     parsed.esi.typeCache ||= {}; parsed.esi.systemCache ||= {}; parsed.esi.dailyFleet ||= [];
+    parsed.market = { ...base.market, ...(parsed.market || {}) };
+    parsed.market.prices ||= {};
     return parsed;
   } catch {
     const x = freshState();
@@ -215,16 +227,47 @@ function resetExpired(broadcastIt=true) {
   }
   if (changed) { save(); if (broadcastIt) broadcast(); }
 }
+function effectiveJbvPerM3(oreName) {
+  const live=Number(state.market?.prices?.[oreName]?.jita?.buyPerM3);
+  if(Number.isFinite(live)&&live>0)return live;
+  return Number(ORES.find(o=>o.name===oreName)?.jbvPerM3||0);
+}
+function effectiveOres() {
+  return ORES.map(o=>{
+    const market=state.market?.prices?.[o.name]||null;
+    const jbvPerM3=effectiveJbvPerM3(o.name);
+    return {
+      ...o,
+      jbvPerM3,
+      siteJBV:jbvPerM3*Number(o.siteM3||0),
+      market,
+    };
+  });
+}
+function effectiveSystems(ores=effectiveOres()) {
+  const byName=new Map(ores.map(o=>[o.name,o]));
+  return SYSTEM_DEFS.map(d=>{
+    const ore=byName.get(d.ore);
+    return {
+      ...d,
+      jbvPerM3:Number(ore?.jbvPerM3||d.jbvPerM3),
+      siteJBV:Number(ore?.siteJBV||d.siteJBV),
+    };
+  });
+}
 function publicState() {
   resetExpired(false);
   const daily = state.esi.dailyFleet;
   const today = dateUTC(); const weekStart = mondayUTC();
   const sum = (predicate) => daily.filter(predicate).reduce((a,x)=>({m3:a.m3+Number(x.m3||0),jbv:a.jbv+Number(x.jbv||0)}),{m3:0,jbv:0});
   const todayActual = sum(x=>x.date===today); const weekActual = sum(x=>x.date>=weekStart);
+  const marketOres=effectiveOres();
+  const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.2.0',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state and fleet-level mining totals only. No character-location scope and no per-character mining systems are stored.'},
-    source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:ORES,systems:SYSTEM_DEFS},
+    app:{name:'JLR Miner Tracker',version:'2.3.15',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state and fleet-level mining totals only. No character-location scope and no per-character mining systems are stored.'},
+    source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,systems:marketSystems},
     fields:state.fields,
+    market:{lastUpdatedAt:state.market.lastUpdatedAt,lastError:state.market.lastError,refreshing:marketRefreshInProgress,jita:'Jita IV - Moon 4 - Caldari Navy Assembly Plant',local:CN_SYSTEM_NAME},
     esi:{configured:Boolean(EVE_CLIENT_ID),linkedCharacters:Object.keys(state.characters).length,lastSyncAt:state.esi.lastSyncAt,lastError:state.esi.lastError,syncing:syncInProgress,actual:{today:todayActual,week:weekActual}},
     serverNow:now(),
   };
@@ -315,6 +358,101 @@ async function handleCallback(req,res,url) {
 async function esiGet(url,access=null) {
   const headers={'Accept':'application/json','User-Agent':ESI_USER_AGENT,'X-Compatibility-Date':ESI_COMPAT_DATE}; if(access)headers.Authorization=`Bearer ${access}`;
   const r=await fetch(url,{headers}); if(!r.ok)throw new Error(`ESI ${r.status}: ${(await r.text().catch(()=>'' )).slice(0,160)}`); return{data:await r.json(),headers:r.headers};
+}
+async function esiPost(url,body,access=null) {
+  const headers={'Accept':'application/json','Content-Type':'application/json','User-Agent':ESI_USER_AGENT,'X-Compatibility-Date':ESI_COMPAT_DATE};
+  if(access)headers.Authorization=`Bearer ${access}`;
+  const r=await fetch(url,{method:'POST',headers,body:JSON.stringify(body)});
+  if(!r.ok)throw new Error(`ESI ${r.status}: ${(await r.text().catch(()=>'' )).slice(0,160)}`);
+  return{data:await r.json(),headers:r.headers};
+}
+async function resolveUniverseIds(names) {
+  const {data}=await esiPost('https://esi.evetech.net/latest/universe/ids/?datasource=tranquility',names);
+  const out=new Map();
+  for(const group of Object.values(data||{})){
+    if(!Array.isArray(group))continue;
+    for(const row of group)if(row?.name&&row?.id!==undefined)out.set(String(row.name),Number(row.id));
+  }
+  return out;
+}
+async function marketOrders(regionId,typeId) {
+  const base=`https://esi.evetech.net/latest/markets/${regionId}/orders/?datasource=tranquility&order_type=all&type_id=${typeId}`;
+  const first=await esiGet(`${base}&page=1`);
+  let rows=[...first.data];
+  const pages=Math.max(1,Number(first.headers.get('x-pages')||1));
+  for(let page=2;page<=pages;page++)rows.push(...(await esiGet(`${base}&page=${page}`)).data);
+  return rows;
+}
+function bestOrderPrices(orders=[]) {
+  let buy=null,sell=null;
+  for(const row of orders){
+    const price=Number(row.price);
+    if(!Number.isFinite(price)||price<=0)continue;
+    if(row.is_buy_order){
+      if(buy===null||price>buy)buy=price;
+    }else if(sell===null||price<sell)sell=price;
+  }
+  return{buy,sell};
+}
+async function refreshMarketPrices(force=false) {
+  if(marketRefreshInProgress)return;
+  const last=Date.parse(state.market?.lastUpdatedAt||'');
+  if(!force&&Number.isFinite(last)&&Date.now()-last<MARKET_REFRESH_MS)return;
+  marketRefreshInProgress=true;
+  state.market.lastError=null;
+  broadcast();
+  try{
+    const names=[...ORES.map(o=>o.name),CN_SYSTEM_NAME];
+    const ids=await resolveUniverseIds(names);
+    const cnSystemId=ids.get(CN_SYSTEM_NAME);
+    if(!cnSystemId)throw new Error(`${CN_SYSTEM_NAME} system ID could not be resolved`);
+    const next={...state.market.prices};
+
+    for(const ore of ORES){
+      const typeId=ids.get(ore.name);
+      if(!typeId){console.warn('Market type not resolved',ore.name);continue}
+      await ensureType([typeId]);
+      const volume=Number(state.esi.typeCache[String(typeId)]?.volume||0);
+      if(!(volume>0)){console.warn('Market type has no volume',ore.name,typeId);continue}
+
+      const [forgeOrders,fountainOrders]=await Promise.all([
+        marketOrders(JITA_REGION_ID,typeId),
+        marketOrders(FOUNTAIN_REGION_ID,typeId),
+      ]);
+      const jita=bestOrderPrices(forgeOrders.filter(o=>Number(o.system_id)===JITA_SYSTEM_ID&&Number(o.location_id)===JITA_44_STATION_ID));
+      const cn=bestOrderPrices(fountainOrders.filter(o=>Number(o.system_id)===cnSystemId));
+      next[ore.name]={
+        typeId,
+        volume,
+        updatedAt:now(),
+        jita:{
+          buy:jita.buy,
+          sell:jita.sell,
+          buyPerM3:jita.buy===null?null:jita.buy/volume,
+          sellPerM3:jita.sell===null?null:jita.sell/volume,
+        },
+        cn:{
+          system:CN_SYSTEM_NAME,
+          buy:cn.buy,
+          sell:cn.sell,
+          buyPerM3:cn.buy===null?null:cn.buy/volume,
+          sellPerM3:cn.sell===null?null:cn.sell/volume,
+        },
+      };
+    }
+
+    state.market.prices=next;
+    state.market.lastUpdatedAt=now();
+    state.market.lastError=null;
+    await save();
+  }catch(err){
+    state.market.lastError=String(err.message||err);
+    await save();
+    console.error('Market refresh',err);
+  }finally{
+    marketRefreshInProgress=false;
+    broadcast();
+  }
 }
 async function miningLedger(characterId,access) {
   const first=await esiGet(`https://esi.evetech.net/latest/characters/${characterId}/mining/?datasource=tranquility&page=1`,access); let rows=[...first.data]; const pages=Math.max(1,Number(first.headers.get('x-pages')||1));
@@ -481,7 +619,7 @@ async function syncAll() {
     }
     const rows=ledgers.flat(); await ensureType(rows.map(r=>r.type_id)); await ensureSystem(rows.map(r=>r.solar_system_id));
     const daily=new Map();
-    for(const row of rows){const type=state.esi.typeCache[String(row.type_id)]||{volume:0};const sys=state.esi.systemCache[String(row.solar_system_id)]||{name:''};const m3=Number(row.quantity||0)*Number(type.volume||0);let jbv=0;const def=SYSTEM_MAP.get(sys.name);if(def)jbv=m3*def.jbvPerM3;const key=String(row.date);const x=daily.get(key)||{date:key,m3:0,jbv:0};x.m3+=m3;x.jbv+=jbv;daily.set(key,x)}
+    for(const row of rows){const type=state.esi.typeCache[String(row.type_id)]||{volume:0};const sys=state.esi.systemCache[String(row.solar_system_id)]||{name:''};const m3=Number(row.quantity||0)*Number(type.volume||0);let jbv=0;const def=SYSTEM_MAP.get(sys.name);if(def)jbv=m3*effectiveJbvPerM3(def.ore);const key=String(row.date);const x=daily.get(key)||{date:key,m3:0,jbv:0};x.m3+=m3;x.jbv+=jbv;daily.set(key,x)}
     state.esi.dailyFleet=[...daily.values()].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,90);state.esi.lastSyncAt=now();await save();
   }catch(err){state.esi.lastError=String(err.message||err);await save()}finally{syncInProgress=false;broadcast()}
 }
@@ -547,4 +685,8 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
 server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.2 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
-setInterval(()=>resetExpired(true),15_000).unref();setInterval(()=>syncAll().catch(console.error),10*60_000).unref();setTimeout(()=>syncAll().catch(console.error),5_000).unref();
+setInterval(()=>resetExpired(true),15_000).unref();
+setInterval(()=>syncAll().catch(console.error),10*60_000).unref();
+setTimeout(()=>syncAll().catch(console.error),5_000).unref();
+setInterval(()=>refreshMarketPrices().catch(console.error),60*60_000).unref();
+setTimeout(()=>refreshMarketPrices().catch(console.error),2_000).unref();
