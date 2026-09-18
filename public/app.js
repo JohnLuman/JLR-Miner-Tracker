@@ -483,7 +483,21 @@
     systemSelect.value=selectedSystem;
   }
   function chooseSystem(system){selectedSystem=system;$('systemSelect').value=system;$('fieldNote').value='';renderSelect();renderBoards();renderSelected();renderNotes()}
-  function node(d,f,includeTimer=true){const b=document.createElement('button');b.type='button';b.className='system-node';b.dataset.status=f.status;b.dataset.system=d.system;if(d.system===selectedSystem)b.classList.add('selected');const line=f.status==='cleared'?timer(f.timerEndsAt):f.status==='picked'?'PICKED':'READY';b.innerHTML=`${f.cherryPicked?'<span class="cherry-pin">🍒</span>':''}<span class="sys-name">${esc(d.system)}</span><span class="sys-ore">#${d.rank} ${esc(d.ore)}</span>${includeTimer?`<span class="sys-state">${line}</span>`:''}`;b.title=`${d.system} • ${d.ore} • ${statusText[f.status]}${f.cherryPicked?' • Cherry Picked':''}${f.notes?.length?` • ${f.notes.length} notes`:''}`;b.addEventListener('click',()=>chooseSystem(d.system));return b}
+  function node(d,f,includeTimer=true){
+    const b=document.createElement('button');
+    b.type='button';
+    b.className='system-node';
+    b.dataset.status=f.status;
+    b.dataset.system=d.system;
+    if(d.system===selectedSystem)b.classList.add('selected');
+    const line=f.status==='cleared'?timer(f.timerEndsAt):f.status==='picked'?'PICKED':'READY';
+    const distance=Number(d.distanceLy);
+    const distanceText=Number.isFinite(distance)?` • ${distance.toFixed(2)} LY`:'';
+    b.innerHTML=`${f.cherryPicked?'<span class="cherry-pin">🍒</span>':''}<span class="sys-name">${esc(d.system)}</span><span class="sys-ore">#${d.rank} ${esc(d.ore)}</span>${includeTimer?`<span class="sys-state">${line}${distanceText}</span>`:''}`;
+    b.title=`${d.system} • ${d.ore} • ${statusText[f.status]}${Number.isFinite(distance)?` • ${distance.toFixed(2)} LY from C-N4OD`:''}${f.cherryPicked?' • Cherry Picked':''}${f.notes?.length?` • ${f.notes.length} notes`:''}`;
+    b.addEventListener('click',()=>chooseSystem(d.system));
+    return b;
+  }
   function iceBoardNode(row){
     const card=document.createElement('div');
     card.className='system-node ice-system-node';
