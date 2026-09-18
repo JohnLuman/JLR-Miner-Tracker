@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0a0a10">
   <title>JLR Miner Tracker</title>
-  <link rel="stylesheet" href="/styles.css?v=2.3.5">
+  <link rel="stylesheet" href="/styles.css?v=2.3.6">
 </head>
 <body>
   <main id="loginView" class="login-shell hidden">
@@ -54,13 +54,10 @@
           <div class="fleet-setup-controls">
             <label>Uptime %<input id="uptime" type="number" min="1" max="100"></label>
             <label>Payout %<input id="payout" type="number" min="1" max="100" step="0.1"></label>
-            <label>Booster toon<select id="fleetBoosterCharacter"><option value="">No booster</option></select></label>
-            <label>Booster fit<select id="fleetBoosterFitting"><option value="">No booster fit</option></select></label>
-            <label class="fleet-check"><input id="fleetMindlink" type="checkbox" checked><span>Mindlink</span></label>
-            <label class="fleet-check"><input id="fleetEfficiencyCharge" type="checkbox" checked><span>Efficiency Charge</span></label>
+            <div id="fleetBoosterSummary" class="fleet-booster-summary">Booster: none selected</div>
           </div>
           <div id="fleetMemberList" class="fleet-member-list"></div>
-          <div class="fleet-setup-hint">Select linked miners and the saved fit each toon is flying. Ship output is calculated from that toon’s skills and fit.</div>
+          <div class="fleet-setup-hint">Select linked miners and the saved fit each toon is flying. Booster selection is automatically taken from Booster Setup.</div>
         </div>
       </details>
 
@@ -168,7 +165,7 @@
     </section>
     <div id="toast" class="toast hidden" role="status"></div>
   </main>
-  <script src="/yield-math.js?v=2.3.5" defer></script>
+  <script src="/yield-math.js?v=2.3.6" defer></script>
   <script src="/app.js?v=2.3.6" defer></script>
 </body>
 </html>
