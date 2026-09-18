@@ -85,6 +85,7 @@
   document.addEventListener('pointerover',(e)=>{
     const system=e.target.closest('.system-node');
     if(system){
+      if(!audioUnlocked)return;
       const key=system.dataset.system||system.querySelector('.sys-name')?.textContent||'system';
       if(key!==systemHoverKey){systemHoverKey=key;sfx('systemHover')}
       return;
