@@ -682,7 +682,10 @@ async function refreshMarketPrices(force=false) {
   const last=Date.parse(state.market?.lastUpdatedAt||'');
   const valuationCurrent=ORES.every(o=>state.market?.prices?.[o.name]?.valuation==='max-refine-minerals')
     &&Object.keys(ICE_REPROCESSING).every(name=>state.market?.icePrices?.[name]?.valuation==='max-refine-ice');
-  if(!force&&valuationCurrent&&Number.isFinite(last)&&Date.now()-last<MARKET_REFRESH_MS)return;
+  const today=dateUTC();
+  const historyCurrent=ORES.every(o=>(state.market?.history?.ore?.[o.name]||[]).some(x=>x.date===today))
+    &&Object.keys(ICE_REPROCESSING).every(name=>(state.market?.history?.ice?.[name]||[]).some(x=>x.date===today));
+  if(!force&&valuationCurrent&&historyCurrent&&Number.isFinite(last)&&Date.now()-last<MARKET_REFRESH_MS)return;
   marketRefreshInProgress=true;
   state.market.lastError=null;
   state.market.privateLastError=null;
