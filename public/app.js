@@ -84,7 +84,7 @@
     const entries=[];
     for(const character of chars){
       const id=String(character.characterId),cfg=fleetSettings.members?.[id]||{};
-      if(!cfg.enabled)continue;
+      if(!cfg.enabled||id===String(calcSettings.boosterCharacterId||''))continue;
       const fits=miningFits(character);
       const fit=fits.find(x=>String(x.fittingId)===String(cfg.fittingId))||fits[0]||null;
       if(!fit){entries.push({character,fit:null,error:'No mining fit'});continue}
@@ -142,12 +142,11 @@
     if(document.activeElement!==$('payout'))$('payout').value=Number(fleetSettings.payout)||95;
 
     const chars=me.characters||[];
-    const boostChars=chars.filter(character=>boosterFits(character).length);
     const boosterSel=$('fleetBoosterCharacter');
     const boosterFitSel=$('fleetBoosterFitting');
 
-    boosterSel.innerHTML='<option value="">No booster</option>'+boostChars.map(character=>`<option value="${character.characterId}">${esc(character.name)}</option>`).join('');
-    if(!boostChars.some(character=>String(character.characterId)===String(calcSettings.boosterCharacterId))){
+    boosterSel.innerHTML='<option value="">No booster</option>'+chars.map(character=>`<option value="${character.characterId}">${esc(character.name)}</option>`).join('');
+    if(!chars.some(character=>String(character.characterId)===String(calcSettings.boosterCharacterId))){
       calcSettings.boosterCharacterId='';
       calcSettings.boosterFittingId='';
     }
@@ -187,9 +186,11 @@
           if(entry?.result)output=`${fmt(entry.effectiveM3,'m3')} m³/hr`;
           else output=entry?.error||'Needs fit';
         }
+        const isBooster=id===String(calcSettings.boosterCharacterId||'');
+        if(isBooster)output='Booster';
         row.innerHTML=`
-          <label class="fleet-member-toggle"><input class="fleet-member-check" data-id="${id}" type="checkbox" ${cfg.enabled?'checked':''} ${fits.length?'':'disabled'}><img src="${esc(character.portrait)}" alt=""><span><strong>${esc(character.name)}</strong><small>${fits.length?`${fits.length} mining fit${fits.length===1?'':'s'}`:'No mining fits'}</small></span></label>
-          <select class="fleet-fit-select" data-id="${id}" ${fits.length?'':'disabled'}>${fitOptions}</select>
+          <label class="fleet-member-toggle"><input class="fleet-member-check" data-id="${id}" type="checkbox" ${cfg.enabled&&!isBooster?'checked':''} ${fits.length&&!isBooster?'':'disabled'}><img src="${esc(character.portrait)}" alt=""><span><strong>${esc(character.name)}</strong><small>${isBooster?'Selected booster':fits.length?`${fits.length} mining fit${fits.length===1?'':'s'}`:'No mining fits'}</small></span></label>
+          <select class="fleet-fit-select" data-id="${id}" ${fits.length&&!isBooster?'':'disabled'}>${fitOptions}</select>
           <strong class="fleet-member-output">${esc(output)}</strong>`;
         list.appendChild(row);
       }
