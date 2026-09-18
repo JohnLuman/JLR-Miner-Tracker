@@ -8,6 +8,7 @@
   let pending = null;
   let audio = null;
   let audioUnlocked = false;
+  let audioResumePending = false;
   let toastTimer = null;
   let eventSource = null;
 
@@ -199,20 +200,40 @@
       collecting+
     '</div>';
   }
+  function updateSoundStatus(){
+    const button=$('soundStatus');
+    if(!button)return;
+    const running=audio?.state==='running';
+    button.textContent=running?'SOUND ON':'ENABLE SOUND';
+    button.classList.toggle('active',running);
+    button.title=running?'Sounds are on. Click to test them.':'If sound is blocked, click to enable it.';
+  }
   function unlockAudio(){
     if(audioUnlocked&&audio)return audio;
     const AC=window.AudioContext||window.webkitAudioContext;
     if(!AC)return null;
     audio=new AC();
     audioUnlocked=true;
+    audio.addEventListener('statechange',updateSoundStatus);
+    updateSoundStatus();
     return audio;
   }
-  async function sfx(kind='click'){
+  function tryResumeAudio(){
+    if(!audio||audio.state!=='suspended'||audioResumePending)return;
+    audioResumePending=true;
+    // Installed apps and previously approved sites may allow this immediately.
+    // If a browser blocks it, keep at most one pending request and retry on a gesture.
+    audio.resume().catch(()=>{}).finally(()=>{
+      audioResumePending=false;
+      updateSoundStatus();
+    });
+  }
+  function sfx(kind='click'){
     unlockAudio();
     if(!audio)return false;
-    if(audio.state==='suspended'){
-      try{await audio.resume()}catch{}
-    }
+    // Attempt to resume without queuing a sound: a blocked resume may not
+    // resolve until the next click, when this old hover cue would be stale.
+    tryResumeAudio();
     if(audio.state!=='running')return false;
 
     const o=audio.createOscillator(),g=audio.createGain(),n=audio.currentTime;
@@ -232,6 +253,9 @@
     }else if(kind==='select'){
       o.type='triangle';o.frequency.setValueAtTime(540,n);o.frequency.exponentialRampToValueAtTime(930,n+.09);
       g.gain.setValueAtTime(.045,n);g.gain.exponentialRampToValueAtTime(.001,n+.12);o.start(n);o.stop(n+.125);
+    }else if(kind==='selectPreview'){
+      o.type='sine';o.frequency.setValueAtTime(610,n);o.frequency.exponentialRampToValueAtTime(790,n+.055);
+      g.gain.setValueAtTime(.032,n);g.gain.exponentialRampToValueAtTime(.001,n+.075);o.start(n);o.stop(n+.080);
     }else if(kind==='toggleOn'){
       o.type='square';o.frequency.setValueAtTime(310,n);o.frequency.exponentialRampToValueAtTime(540,n+.065);
       g.gain.setValueAtTime(.040,n);g.gain.exponentialRampToValueAtTime(.001,n+.100);o.start(n);o.stop(n+.105);
@@ -251,25 +275,23 @@
     return true;
   }
   let systemHoverKey='';
-  // Try immediately for browsers that already allow audio on this site.
+  // Try on load so a site/app with audio permission can play the first hover.
   unlockAudio();
-  if(audio?.state==='suspended')audio.resume().catch(()=>{});
+  tryResumeAudio();
+  updateSoundStatus();
 
-  // Chrome/Edge can block WebAudio until a real user gesture. Prime the context on
-  // pointer/key DOWN (before a native select opens), so the later change event can
-  // actually play the fit/toon selection sound.
+  // Browsers can block WebAudio until a real user gesture. Prime on pointer/key
+  // down before opening a menu, and show the current state in the header.
   async function primeAudioFromGesture(e){
     unlockAudio();
     if(audio?.state==='suspended'){
       try{await audio.resume()}catch{}
     }
+    updateSoundStatus();
     if(audio?.state!=='running')return false;
 
-    // Native <select> menus can temporarily leave the page event loop while open.
-    // Play a short audible cue on pointer-down, while the browser still considers
-    // this a direct user gesture. A second tone plays when the chosen value commits.
     const target=e?.target;
-    if(target?.matches?.('select'))await sfx('selectOpen');
+    if(target?.matches?.('select')&&(e.type==='pointerdown'||(target.matches(audibleSelects)&&soundMenu?.select!==target)))sfx('selectOpen');
     return true;
   }
   document.addEventListener('pointerdown',primeAudioFromGesture,{capture:true});
@@ -277,12 +299,13 @@
     if(e.key==='Enter'||e.key===' '||e.key==='ArrowUp'||e.key==='ArrowDown')primeAudioFromGesture(e);
   },{capture:true});
 
-  document.addEventListener('pointerover',async(e)=>{
+  document.addEventListener('pointerover',(e)=>{
+    if(e.target.closest('.sound-menu'))return;
     const system=e.target.closest('.system-node');
     if(system){
       const key=system.dataset.system||system.querySelector('.sys-name')?.textContent||'system';
       if(key!==systemHoverKey){
-        const played=await sfx('systemHover');
+        const played=sfx('systemHover');
         if(played)systemHoverKey=key;
       }
       return;
@@ -290,7 +313,7 @@
     const target=e.target.closest('button,summary,.app-tab,select,.fleet-member-toggle');
     if(!target)return;
     const previous=e.relatedTarget?.closest?.('button,summary,.app-tab,select,.fleet-member-toggle');
-    if(previous!==target)await sfx('hover');
+    if(previous!==target)sfx('hover');
   });
   document.addEventListener('pointerout',(e)=>{
     const system=e.target.closest('.system-node');
@@ -303,9 +326,12 @@
     },0);
   });
   document.addEventListener('click',(e)=>{
+    if(e.target.closest('.sound-menu'))return;
+    if(e.target.closest('#soundStatus'))return;
     if(e.target.closest('.system-node')){sfx('systemSelect');return}
     if(e.target.closest('button,summary,.app-tab'))sfx('click');
   });
+  $('soundStatus').addEventListener('click',()=>sfx('select'));
 
   // Listen to both input and change because native select behavior differs by
   // browser/OS. De-dupe the pair so one selection produces one commit tone.
@@ -323,6 +349,117 @@
   }
   document.addEventListener('input',controlSound,{capture:true});
   document.addEventListener('change',controlSound,{capture:true});
+
+  // Native <select> popups are drawn by the browser/OS, so moving over their
+  // options does not produce page events. Use an app-owned popup for the fit
+  // and booster selectors while retaining their existing change handlers.
+  const audibleSelects='#calcBoosterCharacter,#calcBoosterFitting,.fleet-fit-select';
+  let soundMenu=null, soundMenuSerial=0;
+  function closeSoundMenu(refocus=false){
+    if(!soundMenu)return;
+    const {select,popup}=soundMenu;
+    soundMenu=null;
+    popup.remove();
+    select.removeAttribute('aria-expanded');
+    select.removeAttribute('aria-controls');
+    select.removeAttribute('aria-activedescendant');
+    if(refocus&&select.isConnected)select.focus({preventScroll:true});
+  }
+  function highlightSoundOption(index,preview=false){
+    if(!soundMenu||index<0||soundMenu.select.options[index]?.disabled)return;
+    const {popup,select}=soundMenu;
+    const button=popup.querySelector(`[data-index="${index}"]`);
+    if(!button)return;
+    popup.querySelector('.active')?.classList.remove('active');
+    button.classList.add('active');
+    select.setAttribute('aria-activedescendant',button.id);
+    if(preview&&soundMenu.lastPreviewIndex!==index){
+      sfx('selectPreview');
+      soundMenu.lastPreviewIndex=index;
+    }
+    soundMenu.activeIndex=index;
+    button.scrollIntoView({block:'nearest'});
+  }
+  function openSoundMenu(select){
+    if(select.disabled||!select.options.length)return;
+    closeSoundMenu();
+    const popup=document.createElement('div');
+    const id=`sound-menu-${++soundMenuSerial}`;
+    popup.className='sound-menu';popup.id=id;popup.setAttribute('role','listbox');
+    popup.setAttribute('aria-label',select.labels?.[0]?.querySelector('span')?.textContent?.trim()||select.getAttribute('aria-label')||'Saved mining fit');
+    Array.from(select.options).forEach((option,index)=>{
+      const button=document.createElement('button');
+      button.type='button';button.className='sound-menu-option';button.id=`${id}-option-${index}`;
+      button.dataset.index=String(index);button.setAttribute('role','option');
+      button.setAttribute('aria-selected',String(index===select.selectedIndex));
+      button.textContent=option.textContent;button.disabled=option.disabled;
+      popup.appendChild(button);
+    });
+    document.body.appendChild(popup);
+    soundMenu={select,popup,activeIndex:-1,lastPreviewIndex:-1};
+    select.setAttribute('aria-expanded','true');select.setAttribute('aria-controls',id);
+    select.focus({preventScroll:true});
+    const rect=select.getBoundingClientRect();
+    const width=Math.min(window.innerWidth-16,Math.max(rect.width,270));
+    popup.style.width=`${width}px`;
+    popup.style.left=`${Math.max(8,Math.min(rect.left,window.innerWidth-width-8))}px`;
+    const height=popup.offsetHeight,spaceBelow=window.innerHeight-rect.bottom-8,spaceAbove=rect.top-8;
+    const above=spaceBelow<Math.min(height,220)&&spaceAbove>spaceBelow;
+    popup.style.top=`${above?Math.max(8,rect.top-height-4):Math.min(rect.bottom+4,window.innerHeight-height-8)}px`;
+    const selected=select.selectedIndex;
+    highlightSoundOption(selected>=0&&!select.options[selected].disabled?selected:Array.from(select.options).findIndex(o=>!o.disabled));
+
+    // Keep focus on the select so arrow keys, Escape and Tab keep working.
+    popup.addEventListener('pointerdown',e=>e.preventDefault());
+    popup.addEventListener('pointerover',e=>{
+      const option=e.target.closest('.sound-menu-option');
+      if(option&&!option.disabled)highlightSoundOption(Number(option.dataset.index),true);
+    });
+    popup.addEventListener('click',e=>{
+      const option=e.target.closest('.sound-menu-option');
+      if(option&&!option.disabled)commitSoundOption(Number(option.dataset.index));
+    });
+  }
+  function commitSoundOption(index){
+    if(!soundMenu)return;
+    const {select}=soundMenu,option=select.options[index];
+    if(!option||option.disabled)return;
+    const changed=select.value!==option.value;
+    select.value=option.value;
+    closeSoundMenu(true);
+    if(changed){
+      select.dispatchEvent(new Event('input',{bubbles:true}));
+      select.dispatchEvent(new Event('change',{bubbles:true}));
+    }else sfx('select');
+  }
+  document.addEventListener('pointerdown',e=>{
+    const select=e.target.closest?.(audibleSelects);
+    if(select&&e.pointerType!=='touch'&&e.button===0){
+      e.preventDefault();
+      if(soundMenu?.select===select)closeSoundMenu(true);
+      else openSoundMenu(select);
+    }else if(soundMenu&&!soundMenu.popup.contains(e.target))closeSoundMenu();
+  },{capture:true});
+  document.addEventListener('keydown',e=>{
+    const select=e.target.closest?.(audibleSelects);
+    if(!select||select.disabled)return;
+    if(e.key==='Tab'){closeSoundMenu();return}
+    if(e.key==='Escape'&&soundMenu?.select===select){e.preventDefault();closeSoundMenu(true);return}
+    if(!['Enter',' ','ArrowDown','ArrowUp','Home','End'].includes(e.key))return;
+    e.preventDefault();
+    if(soundMenu?.select!==select){openSoundMenu(select);return}
+    if(e.key==='Enter'||e.key===' '){commitSoundOption(soundMenu.activeIndex);return}
+    const available=Array.from(select.options).map((o,i)=>o.disabled?-1:i).filter(i=>i>=0);
+    if(!available.length)return;
+    const current=available.indexOf(soundMenu.activeIndex);
+    const next=e.key==='Home'?available[0]:e.key==='End'?available.at(-1):
+      available[(current+(e.key==='ArrowDown'?1:available.length-1))%available.length];
+    highlightSoundOption(next,true);
+  },{capture:true});
+  document.addEventListener('focusin',e=>{
+    if(soundMenu&&e.target!==soundMenu.select&&!soundMenu.popup.contains(e.target))closeSoundMenu();
+  });
+  window.addEventListener('resize',()=>closeSoundMenu());
 
   async function api(url, options={}) {
     const headers={...(options.headers||{})}; if(options.body&&!headers['Content-Type'])headers['Content-Type']='application/json';
@@ -604,6 +741,7 @@
     const booster=calcCharacter(calcSettings.boosterCharacterId);
     const boosterFit=calcFitting(booster,calcSettings.boosterFittingId);
     const list=$('fleetMemberList');
+    if(soundMenu?.select.closest('#fleetMemberList'))closeSoundMenu();
     list.innerHTML='';
     for(const character of chars){
       const id=String(character.characterId),fits=miningFits(character);
