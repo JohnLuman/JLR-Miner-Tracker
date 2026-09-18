@@ -699,11 +699,12 @@ async function refreshMarketPrices(force=false) {
 
     const mineralTypeIds=REFINING_MINERALS.map(name=>Number(ids.get(name))).filter(Number.isFinite);
     const iceProductTypeIds=ICE_PRODUCTS.map(name=>Number(ids.get(name))).filter(Number.isFinite);
+    const rawIceTypeIds=Object.keys(ICE_REPROCESSING).map(name=>Number(ids.get(name))).filter(Number.isFinite);
     let privateMarket=null;
     if(state.market.refreshTokenEnc){
       try{
         const access=await marketAccessToken();
-        privateMarket=await resolveMarketStructure(cnSystemId,access,[...mineralTypeIds,...iceProductTypeIds]);
+        privateMarket=await resolveMarketStructure(cnSystemId,access,[...mineralTypeIds,...iceProductTypeIds,...rawIceTypeIds]);
       }catch(err){
         state.market.privateLastError=String(err.message||err);
         console.warn('Private market refresh unavailable',state.market.privateLastError);
@@ -714,22 +715,16 @@ async function refreshMarketPrices(force=false) {
     for(const mineral of REFINING_MINERALS){
       const typeId=ids.get(mineral);
       if(!typeId){console.warn('Mineral type not resolved',mineral);continue}
-      const [forgeOrders,fountainOrders]=await Promise.all([
-        marketOrders(JITA_REGION_ID,typeId),
-        marketOrders(FOUNTAIN_REGION_ID,typeId),
-      ]);
+      const forgeOrders=await marketOrders(JITA_REGION_ID,typeId);
       const jita=bestOrderPrices(forgeOrders.filter(o=>Number(o.system_id)===JITA_SYSTEM_ID&&Number(o.location_id)===JITA_44_STATION_ID));
-      const publicCn=bestOrderPrices(fountainOrders.filter(o=>Number(o.system_id)===cnSystemId));
-      const privateCn=privateMarket?bestOrderPrices(privateMarket.orders.filter(o=>Number(o.type_id)===Number(typeId))):{buy:null,sell:null};
-      const usePrivate=privateMarket&&(privateCn.buy!==null||privateCn.sell!==null);
-      const cn=usePrivate?privateCn:publicCn;
+      const cn=privateMarket?bestOrderPrices(privateMarket.orders.filter(o=>Number(o.type_id)===Number(typeId))):{buy:null,sell:null};
 
       if(jita.buy!==null)mineralPrices.jita[mineral]=jita.buy;
       if(cn.buy!==null)mineralPrices.cn[mineral]=cn.buy;
       mineralPrices.detail[mineral]={
         typeId,
         jita,
-        cn:{...cn,source:usePrivate?'alliance-structure':'public-region'},
+        cn:{...cn,source:privateMarket?'john-private-structure':'unavailable'},
       };
     }
 
@@ -737,21 +732,15 @@ async function refreshMarketPrices(force=false) {
     for(const product of ICE_PRODUCTS){
       const typeId=ids.get(product);
       if(!typeId){console.warn('Ice product type not resolved',product);continue}
-      const [forgeOrders,fountainOrders]=await Promise.all([
-        marketOrders(JITA_REGION_ID,typeId),
-        marketOrders(FOUNTAIN_REGION_ID,typeId),
-      ]);
+      const forgeOrders=await marketOrders(JITA_REGION_ID,typeId);
       const jita=bestOrderPrices(forgeOrders.filter(o=>Number(o.system_id)===JITA_SYSTEM_ID&&Number(o.location_id)===JITA_44_STATION_ID));
-      const publicCn=bestOrderPrices(fountainOrders.filter(o=>Number(o.system_id)===cnSystemId));
-      const privateCn=privateMarket?bestOrderPrices(privateMarket.orders.filter(o=>Number(o.type_id)===Number(typeId))):{buy:null,sell:null};
-      const usePrivate=privateMarket&&(privateCn.buy!==null||privateCn.sell!==null);
-      const cn=usePrivate?privateCn:publicCn;
+      const cn=privateMarket?bestOrderPrices(privateMarket.orders.filter(o=>Number(o.type_id)===Number(typeId))):{buy:null,sell:null};
       if(jita.buy!==null)iceProductPrices.jita[product]=jita.buy;
       if(cn.buy!==null)iceProductPrices.cn[product]=cn.buy;
       iceProductPrices.detail[product]={
         typeId,
         jita,
-        cn:{...cn,source:usePrivate?'alliance-structure':'public-region'},
+        cn:{...cn,source:privateMarket?'john-private-structure':'unavailable'},
       };
     }
 
@@ -783,7 +772,7 @@ async function refreshMarketPrices(force=false) {
         },
         cn:{
           system:CN_SYSTEM_NAME,
-          source:privateMarket?'alliance-structure-minerals':'public-region-minerals',
+          source:privateMarket?'john-private-structure-minerals':'unavailable',
           structureId:privateMarket?privateMarket.id:null,
           structureName:privateMarket?privateMarket.name:null,
           buyPerM3:cnValue?.perM3??null,
@@ -801,17 +790,11 @@ async function refreshMarketPrices(force=false) {
       const cnValue=refinedIceValue(iceName,iceProductPrices.cn);
       if(!jitaValue){console.warn('Incomplete Jita ice-product prices for',iceName);continue}
 
-      let rawJita={buy:null,sell:null},rawLocal={buy:null,sell:null},rawLocalSource='public-region';
+      let rawJita={buy:null,sell:null},rawLocal={buy:null,sell:null},rawLocalSource=privateMarket?'john-private-structure':'unavailable';
       if(typeId){
-        const [forgeRaw,fountainRaw]=await Promise.all([
-          marketOrders(JITA_REGION_ID,typeId),
-          marketOrders(FOUNTAIN_REGION_ID,typeId),
-        ]);
+        const forgeRaw=await marketOrders(JITA_REGION_ID,typeId);
         rawJita=bestOrderPrices(forgeRaw.filter(o=>Number(o.system_id)===JITA_SYSTEM_ID&&Number(o.location_id)===JITA_44_STATION_ID));
-        const publicRaw=bestOrderPrices(fountainRaw.filter(o=>Number(o.system_id)===cnSystemId));
-        const privateRaw=privateMarket?bestOrderPrices(privateMarket.orders.filter(o=>Number(o.type_id)===Number(typeId))):{buy:null,sell:null};
-        if(privateMarket&&(privateRaw.buy!==null||privateRaw.sell!==null)){rawLocal=privateRaw;rawLocalSource='alliance-structure'}
-        else rawLocal=publicRaw;
+        if(privateMarket)rawLocal=bestOrderPrices(privateMarket.orders.filter(o=>Number(o.type_id)===Number(typeId)));
       }
       const trackPct=Number(ICE_TRACK_PAYOUT[iceName]||0.75);
       const trackingBlockValue=rawJita.buy===null?null:Number(rawJita.buy)*trackPct;
@@ -838,7 +821,7 @@ async function refreshMarketPrices(force=false) {
         },
         cn:{
           system:CN_SYSTEM_NAME,
-          source:privateMarket?'alliance-structure-ice-products-ex-heavy-water':'public-region-ice-products-ex-heavy-water',
+          source:privateMarket?'john-private-structure-ice-products-ex-heavy-water':'unavailable',
           structureId:privateMarket?privateMarket.id:null,
           structureName:privateMarket?privateMarket.name:null,
           buyPerM3:cnValue?.perM3??null,
