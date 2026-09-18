@@ -61,8 +61,8 @@
       o.type='sine';o.frequency.setValueAtTime(560,n);o.frequency.exponentialRampToValueAtTime(690,n+.035);
       g.gain.setValueAtTime(.008,n);g.gain.exponentialRampToValueAtTime(.001,n+.045);o.start(n);o.stop(n+.05);
     }else if(kind==='systemHover'){
-      o.type='sine';o.frequency.setValueAtTime(430,n);o.frequency.exponentialRampToValueAtTime(540,n+.055);
-      g.gain.setValueAtTime(.010,n);g.gain.exponentialRampToValueAtTime(.001,n+.065);o.start(n);o.stop(n+.07);
+      o.type='triangle';o.frequency.setValueAtTime(470,n);o.frequency.exponentialRampToValueAtTime(650,n+.06);
+      g.gain.setValueAtTime(.020,n);g.gain.exponentialRampToValueAtTime(.001,n+.075);o.start(n);o.stop(n+.08);
     }else if(kind==='systemSelect'){
       o.type='triangle';o.frequency.setValueAtTime(350,n);o.frequency.exponentialRampToValueAtTime(720,n+.09);
       g.gain.setValueAtTime(.018,n);g.gain.exponentialRampToValueAtTime(.001,n+.11);o.start(n);o.stop(n+.12);
@@ -83,13 +83,13 @@
   let systemHoverKey='';
   document.addEventListener('pointerdown',unlockAudio,{once:true});
   document.addEventListener('pointerover',(e)=>{
-    if(!audioUnlocked)return;
     const system=e.target.closest('.system-node');
     if(system){
       const key=system.dataset.system||system.querySelector('.sys-name')?.textContent||'system';
       if(key!==systemHoverKey){systemHoverKey=key;sfx('systemHover')}
       return;
     }
+    if(!audioUnlocked)return;
     const target=e.target.closest('button,summary');
     if(!target)return;
     const previous=e.relatedTarget?.closest?.('button,summary');
