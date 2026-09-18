@@ -576,6 +576,54 @@ function bestOrderPrices(orders=[]) {
   }
   return{buy,sell};
 }
+const routeJumpCache=new Map();
+async function routeJumps(originSystemId,destinationSystemId){
+  const a=Number(originSystemId),b=Number(destinationSystemId);
+  if(a===b)return 0;
+  const key=`${a}:${b}`;
+  if(routeJumpCache.has(key))return routeJumpCache.get(key);
+  try{
+    const {data}=await esiGet(`https://esi.evetech.net/latest/route/${a}/${b}/?datasource=tranquility&flag=shortest`);
+    const jumps=Math.max(0,(Array.isArray(data)?data.length:0)-1);
+    routeJumpCache.set(key,jumps);
+    return jumps;
+  }catch{
+    routeJumpCache.set(key,Infinity);
+    return Infinity;
+  }
+}
+async function bestPricesReachableAt(orders,targetSystemId,targetLocationId){
+  let sell=null;
+  for(const row of orders){
+    if(row.is_buy_order)continue;
+    if(Number(row.location_id)!==Number(targetLocationId))continue;
+    const price=Number(row.price);
+    if(Number.isFinite(price)&&price>0&&(sell===null||price<sell))sell=price;
+  }
+
+  const buys=orders
+    .filter(row=>row.is_buy_order&&Number.isFinite(Number(row.price))&&Number(row.price)>0)
+    .sort((a,b)=>Number(b.price)-Number(a.price));
+  let buy=null;
+  for(const row of buys){
+    const range=String(row.range||'station');
+    const sameStation=Number(row.location_id)===Number(targetLocationId);
+    const sameSystem=Number(row.system_id)===Number(targetSystemId);
+    let reachable=false;
+    if(range==='station')reachable=sameStation;
+    else if(range==='solarsystem')reachable=sameSystem;
+    else if(range==='region')reachable=true;
+    else{
+      const jumpRange=Number(range);
+      if(Number.isFinite(jumpRange)){
+        const jumps=sameSystem?0:await routeJumps(row.system_id,targetSystemId);
+        reachable=jumps<=jumpRange;
+      }
+    }
+    if(reachable){buy=Number(row.price);break}
+  }
+  return{buy,sell};
+}
 function refinedOreValue(oreName,oreVolume,priceByMineral) {
   const recipe=ORE_REPROCESSING[oreName];
   if(!recipe||!(oreVolume>0))return null;
@@ -685,7 +733,8 @@ async function refreshMarketPrices(force=false) {
   const today=dateUTC();
   const historyCurrent=ORES.every(o=>(state.market?.history?.ore?.[o.name]||[]).some(x=>x.date===today))
     &&Object.keys(ICE_REPROCESSING).every(name=>(state.market?.history?.ice?.[name]||[]).some(x=>x.date===today));
-  if(!force&&valuationCurrent&&historyCurrent&&Number.isFinite(last)&&Date.now()-last<MARKET_REFRESH_MS)return;
+  const jitaBuyBasisCurrent=state.market?.jitaBuyBasis==='reachable-from-jita-4-4';
+  if(!force&&valuationCurrent&&historyCurrent&&jitaBuyBasisCurrent&&Number.isFinite(last)&&Date.now()-last<MARKET_REFRESH_MS)return;
   marketRefreshInProgress=true;
   state.market.lastError=null;
   state.market.privateLastError=null;
@@ -716,7 +765,7 @@ async function refreshMarketPrices(force=false) {
       const typeId=ids.get(mineral);
       if(!typeId){console.warn('Mineral type not resolved',mineral);continue}
       const forgeOrders=await marketOrders(JITA_REGION_ID,typeId);
-      const jita=bestOrderPrices(forgeOrders.filter(o=>Number(o.system_id)===JITA_SYSTEM_ID&&Number(o.location_id)===JITA_44_STATION_ID));
+      const jita=await bestPricesReachableAt(forgeOrders,JITA_SYSTEM_ID,JITA_44_STATION_ID);
       const cn=privateMarket?bestOrderPrices(privateMarket.orders.filter(o=>Number(o.type_id)===Number(typeId))):{buy:null,sell:null};
 
       if(jita.buy!==null)mineralPrices.jita[mineral]=jita.buy;
@@ -733,7 +782,7 @@ async function refreshMarketPrices(force=false) {
       const typeId=ids.get(product);
       if(!typeId){console.warn('Ice product type not resolved',product);continue}
       const forgeOrders=await marketOrders(JITA_REGION_ID,typeId);
-      const jita=bestOrderPrices(forgeOrders.filter(o=>Number(o.system_id)===JITA_SYSTEM_ID&&Number(o.location_id)===JITA_44_STATION_ID));
+      const jita=await bestPricesReachableAt(forgeOrders,JITA_SYSTEM_ID,JITA_44_STATION_ID);
       const cn=privateMarket?bestOrderPrices(privateMarket.orders.filter(o=>Number(o.type_id)===Number(typeId))):{buy:null,sell:null};
       if(jita.buy!==null)iceProductPrices.jita[product]=jita.buy;
       if(cn.buy!==null)iceProductPrices.cn[product]=cn.buy;
@@ -793,7 +842,7 @@ async function refreshMarketPrices(force=false) {
       let rawJita={buy:null,sell:null},rawLocal={buy:null,sell:null},rawLocalSource=privateMarket?'john-private-structure':'unavailable';
       if(typeId){
         const forgeRaw=await marketOrders(JITA_REGION_ID,typeId);
-        rawJita=bestOrderPrices(forgeRaw.filter(o=>Number(o.system_id)===JITA_SYSTEM_ID&&Number(o.location_id)===JITA_44_STATION_ID));
+        rawJita=await bestPricesReachableAt(forgeRaw,JITA_SYSTEM_ID,JITA_44_STATION_ID);
         if(privateMarket)rawLocal=bestOrderPrices(privateMarket.orders.filter(o=>Number(o.type_id)===Number(typeId)));
       }
       const trackPct=Number(ICE_TRACK_PAYOUT[iceName]||0.75);
@@ -837,6 +886,7 @@ async function refreshMarketPrices(force=false) {
     state.market.icePrices=icePrices;
     state.market.iceProducts=iceProductPrices.detail;
     state.market.iceFields=iceFields;
+    state.market.jitaBuyBasis='reachable-from-jita-4-4';
     state.market.history ||= {ore:{},ice:{}};
     state.market.history.ore ||= {};
     state.market.history.ice ||= {};
