@@ -884,7 +884,40 @@
     }
   }
   function renderRanking(){
-    if(!state)return;$('oreRanking').innerHTML='';for(const ore of state.source.ores){const clear=ore.siteM3/fleetM3()*60;const r=document.createElement('div');r.className='rank-row';r.innerHTML=`<div class="rank-badge">#${ore.rank}</div><div><strong>${esc(ore.name)}</strong><small>${ore.systems.join(' • ')}<br>Jita refine ${ore.jbvPerM3.toFixed(2)} ISK/m³ • full site ${fmt(ore.siteJBV)} ISK</small></div><div class="rank-num">${fmt(fleetM3(),'m3')}<small>m³/hr</small></div><div class="rank-num">${fmt(projectedISK(ore))}/hr<small>payout • ~${Number.isFinite(clear)?clear.toFixed(0):'—'} min/site</small></div>`;$('oreRanking').appendChild(r)}
+    if(!state)return;
+    const list=$('oreRanking');
+    list.innerHTML='';
+    const fleetRate=fleetM3();
+    const uptime=Math.min(100,Math.max(1,Number(fleetSettings.uptime)||100));
+    const payout=Number(fleetSettings.payout)||95;
+    $('oreRankingSummary').textContent=fleetRate>0
+      ?`${fmt(fleetRate,'m3')} m³/hr @ ${uptime.toFixed(0)}% uptime • ${payout.toFixed(1)}% payout • Jita max-refine basis`
+      :'Select miners to calculate payout/hr and site clear time.';
+
+    const head=document.createElement('div');
+    head.className='rank-table-head';
+    head.innerHTML='<span>ORE / SYSTEMS</span><span>FULL SITE</span><span>PAYOUT / HR</span><span>EST. CLEAR</span>';
+    list.appendChild(head);
+
+    for(const ore of state.source.ores){
+      const clearHours=fleetRate>0?Number(ore.siteM3)/fleetRate:NaN;
+      const clearMinutes=Number.isFinite(clearHours)?clearHours*60:NaN;
+      const row=document.createElement('div');
+      row.className='rank-row';
+      row.innerHTML=`
+        <div class="rank-main">
+          <div class="rank-badge">#${ore.rank}</div>
+          <div class="rank-ore-copy">
+            <strong>${esc(ore.name)}</strong>
+            <small>${ore.systems.join(' • ')}</small>
+            <small>Jita refine ${ore.jbvPerM3.toFixed(2)} ISK/m³</small>
+          </div>
+        </div>
+        <div class="rank-num"><strong>${fmt(ore.siteM3,'m3')} m³</strong><small>${fmt(ore.siteJBV)} ISK refined</small></div>
+        <div class="rank-num"><strong>${fleetRate>0?fmt(projectedISK(ore))+'/hr':'—'}</strong><small>${payout.toFixed(1)}% payout</small></div>
+        <div class="rank-num"><strong>${Number.isFinite(clearMinutes)?(clearMinutes<60?clearMinutes.toFixed(0)+' min':clearHours.toFixed(1)+' hr'):'—'}</strong><small>at selected fleet target</small></div>`;
+      list.appendChild(row);
+    }
   }
   function renderTimers(){
     if(!state)return;const active=definitions().map(d=>({d,f:field(d.system)})).filter(x=>x.f.status==='cleared'&&x.f.timerEndsAt).sort((a,b)=>Date.parse(a.f.timerEndsAt)-Date.parse(b.f.timerEndsAt));$('timerCount').textContent=`${active.length} respawning`;if(!active.length){$('activeTimers').innerHTML='<div class="timer-item"><div><strong>No fields currently respawning</strong><small>Marking a field RED starts its fixed 10-hour countdown here.</small></div></div>';return}$('activeTimers').innerHTML='';for(const x of active){const d=document.createElement('div');d.className='timer-item';d.innerHTML=`<div><strong>${x.d.system}${x.f.cherryPicked?' 🍒':''}</strong><small>${x.d.ore} • cleared ${ago(x.f.updatedAt)} • time remaining</small></div><div class="timer-value">${timer(x.f.timerEndsAt)}</div>`;$('activeTimers').appendChild(d)}
