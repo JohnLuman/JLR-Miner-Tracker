@@ -299,14 +299,59 @@
   function chooseSystem(system){selectedSystem=system;$('systemSelect').value=system;$('fieldNote').value='';renderSelect();renderBoards();renderSelected();renderNotes()}
   function node(d,f,includeTimer=true){const b=document.createElement('button');b.type='button';b.className='system-node';b.dataset.status=f.status;b.dataset.system=d.system;if(d.system===selectedSystem)b.classList.add('selected');const line=f.status==='cleared'?timer(f.timerEndsAt):f.status==='picked'?'PICKED':'READY';b.innerHTML=`${f.cherryPicked?'<span class="cherry-pin">🍒</span>':''}<span class="sys-name">${esc(d.system)}</span><span class="sys-ore">#${d.rank} ${esc(d.ore)}</span>${includeTimer?`<span class="sys-state">${line}</span>`:''}`;b.title=`${d.system} • ${d.ore} • ${statusText[f.status]}${f.cherryPicked?' • Cherry Picked':''}${f.notes?.length?` • ${f.notes.length} notes`:''}`;b.addEventListener('click',()=>chooseSystem(d.system));return b}
   function renderBoards(){
-    if(!state)return;$('miniMap').innerHTML='';$('fieldBoard').innerHTML='';let counts={ready:0,picked:0,cleared:0,cherry:0};
-    for(const d of definitions()){const f=field(d.system);counts[f.status]++;if(f.cherryPicked)counts.cherry++;$('miniMap').appendChild(node(d,f,false));if(filter==='all'||filter===f.status||(filter==='cherry'&&f.cherryPicked))$('fieldBoard').appendChild(node(d,f,true))}
-    $('statusCounts').textContent=`${counts.ready} G • ${counts.picked} Y • ${counts.cleared} R • ${counts.cherry} 🍒`; $('systemCountLabel').textContent=`${definitions().length} systems`;
+    if(!state)return;$('fieldBoard').innerHTML='';let counts={ready:0,picked:0,cleared:0,cherry:0};
+    for(const d of definitions()){
+      const f=field(d.system);
+      counts[f.status]++;
+      if(f.cherryPicked)counts.cherry++;
+      if(filter==='all'||filter===f.status||(filter==='cherry'&&f.cherryPicked))$('fieldBoard').appendChild(node(d,f,true));
+    }
+    $('statusCounts').textContent=`${counts.ready} G • ${counts.picked} Y • ${counts.cleared} R • ${counts.cherry} 🍒`;
+    $('systemCountLabel').textContent=`${definitions().length} systems`;
   }
   function renderHits(){
     if(!state)return;const arr=definitions().map(d=>({d,f:field(d.system)})).filter(x=>x.f.status!=='cleared').sort((a,b)=>Number(a.f.cherryPicked)-Number(b.f.cherryPicked)||a.d.rank-b.d.rank||a.d.order-b.d.order).slice(0,8);$('hitOrder').innerHTML='';
     for(const [i,x] of arr.entries()){const b=document.createElement('button');b.type='button';b.className=`orb hit-chip ${x.f.cherryPicked?'cherry':x.f.status==='picked'?'yellow':'green'}`;b.textContent=`${i+1}. ${x.d.system}${x.f.cherryPicked?' 🍒':''}`;b.addEventListener('click',()=>chooseSystem(x.d.system));$('hitOrder').appendChild(b)}
   }
+  function renderMiningVisuals(){
+    if(!state||!$('oreValueChart')||!$('fleetOutputChart'))return;
+
+    const ores=state.source?.ores||[];
+    const valueRows=ores.map(ore=>{
+      const jita=Number(ore.market?.jita?.refinedBuyPerM3 ?? ore.market?.jita?.buyPerM3 ?? ore.jbvPerM3);
+      const cn=Number(ore.market?.cn?.refinedBuyPerM3 ?? ore.market?.cn?.buyPerM3);
+      return {name:ore.name,jita:Number.isFinite(jita)&&jita>0?jita:0,cn:Number.isFinite(cn)&&cn>0?cn:0};
+    });
+    const valueMax=Math.max(1,...valueRows.flatMap(row=>[row.jita,row.cn]));
+    $('oreValueChart').innerHTML=valueRows.map(row=>{
+      const jitaPct=Math.max(0,Math.min(100,row.jita/valueMax*100));
+      const cnPct=Math.max(0,Math.min(100,row.cn/valueMax*100));
+      return `<div class="bar-row">
+        <div class="bar-label"><strong>${esc(row.name)}</strong></div>
+        <div class="dual-bars">
+          <div class="bar-track"><span class="bar-fill bar-jita" style="width:${jitaPct.toFixed(2)}%"></span><em>${row.jita?row.jita.toFixed(2):'—'}</em></div>
+          <div class="bar-track"><span class="bar-fill bar-cn" style="width:${cnPct.toFixed(2)}%"></span><em>${row.cn?row.cn.toFixed(2):'—'}</em></div>
+        </div>
+      </div>`;
+    }).join('');
+
+    const fleet=fleetStats();
+    const entries=fleet.entries.filter(x=>x.result);
+    if(!entries.length){
+      $('fleetOutputChart').innerHTML='<div class="visual-empty">Select miners in Fleet Setup to see output bars.</div>';
+      return;
+    }
+    const maxOutput=Math.max(1,...entries.map(x=>Number(x.effectiveM3)||0));
+    $('fleetOutputChart').innerHTML=entries.map(entry=>{
+      const output=Number(entry.effectiveM3)||0;
+      const pct=Math.max(0,Math.min(100,output/maxOutput*100));
+      return `<div class="bar-row fleet-bar-row">
+        <div class="bar-label"><strong>${esc(entry.character.name)}</strong><small>${esc(entry.fit?.shipName||'Ship')}</small></div>
+        <div class="bar-track fleet-track"><span class="bar-fill bar-fleet" style="width:${pct.toFixed(2)}%"></span><em>${fmt(output,'m3')} m³/hr</em></div>
+      </div>`;
+    }).join('')+`<div class="fleet-total-line"><span>Fleet total</span><strong>${fmt(fleet.total,'m3')} m³/hr</strong></div>`;
+  }
+
   function renderRanking(){
     if(!state)return;$('oreRanking').innerHTML='';for(const ore of state.source.ores){const clear=ore.siteM3/fleetM3()*60;const r=document.createElement('div');r.className='rank-row';r.innerHTML=`<div class="rank-badge">#${ore.rank}</div><div><strong>${esc(ore.name)}</strong><small>${ore.systems.join(' • ')}<br>${ore.jbvPerM3.toFixed(2)} JBV/m³ • site ${fmt(ore.siteJBV)} JBV</small></div><div class="rank-num">${fmt(fleetM3(),'m3')}<small>m³/hr</small></div><div class="rank-num">${fmt(projectedISK(ore))}/hr<small>~${Number.isFinite(clear)?clear.toFixed(0):'—'} min/site</small></div>`;$('oreRanking').appendChild(r)}
   }
@@ -406,7 +451,7 @@
 
     localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));
   }
-  function renderAll(){if(!state)return;renderFleet();renderTop();renderSelect();renderBoards();renderHits();renderRanking();renderTimers();renderSelected();renderNotes();renderCharacters();renderCalculator();}
+  function renderAll(){if(!state)return;renderFleet();renderTop();renderSelect();renderBoards();renderHits();renderMiningVisuals();renderRanking();renderTimers();renderSelected();renderNotes();renderCharacters();renderCalculator();}
 
   async function refreshMe(){const p=await api('/api/me');me=p.user;if(me){$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait}return p.authenticated}
   async function loadState(){state=await api('/api/state');renderAll()}
