@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0a0a10">
   <title>JLR Miner Tracker</title>
-  <link rel="stylesheet" href="/styles.css?v=2.3.12">
+  <link rel="stylesheet" href="/styles.css?v=2.3.13">
 </head>
 <body>
   <main id="loginView" class="login-shell hidden">
@@ -61,15 +61,22 @@
       </details>
 
       <section class="glass quick-update">
-        <div class="inline-control">
-          <select id="systemSelect" aria-label="Select T3 system"></select>
-          <select id="statusSelect" aria-label="Select field status"><option value="ready">🟢 Site Up</option><option value="picked">🟡 Picked At</option><option value="cleared">🔴 Cleared / 10h</option></select>
-          <button id="updateField" class="orb purple" type="button">UPDATE</button>
-          <button id="reportCherry" class="orb cherry" type="button">🍒 CHERRY</button>
+        <div class="field-control-box">
+          <div class="field-control-top">
+            <select id="systemSelect" aria-label="Select T3 system"></select>
+            <select id="statusSelect" aria-label="Select field status"><option value="ready">🟢 Site Up</option><option value="picked">🟡 Picked At</option><option value="cleared">🔴 Cleared / 10h</option></select>
+          </div>
+          <div class="field-control-actions">
+            <button id="updateField" class="orb purple" type="button">UPDATE STATUS</button>
+            <button id="reportCherry" class="orb cherry" type="button">🍒 CHERRY</button>
+          </div>
+          <div class="note-entry">
+            <input id="fieldNote" maxlength="240" placeholder="Add a note for this system" aria-label="New system note">
+            <button id="addNote" class="orb blue" type="button">ADD NOTE</button>
+          </div>
+          <div id="fieldNotes" class="field-notes" aria-live="polite"></div>
+          <div id="fieldMessage" class="tiny muted">Select a system, mark its status, or add a note here.</div>
         </div>
-        <div class="note-entry"><input id="fieldNote" maxlength="240" placeholder="Add a note for this system" aria-label="New system note"><button id="addNote" class="orb blue" type="button">ADD NOTE</button></div>
-        <div id="fieldNotes" class="field-notes" aria-live="polite"></div>
-        <div id="fieldMessage" class="tiny muted">Anyone signed in can update asteroid-field status. No player location is attached.</div>
       </section>
     </section>
 
@@ -159,7 +166,7 @@
     </section>
     <div id="toast" class="toast hidden" role="status"></div>
   </main>
-  <script src="/yield-math.js?v=2.3.12" defer></script>
-  <script src="/app.js?v=2.3.12" defer></script>
+  <script src="/yield-math.js?v=2.3.13" defer></script>
+  <script src="/app.js?v=2.3.13" defer></script>
 </body>
 </html>
