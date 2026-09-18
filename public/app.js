@@ -218,23 +218,26 @@
     const o=audio.createOscillator(),g=audio.createGain(),n=audio.currentTime;
     o.connect(g);g.connect(audio.destination);
     if(kind==='hover'){
-      o.type='sine';o.frequency.setValueAtTime(560,n);o.frequency.exponentialRampToValueAtTime(690,n+.035);
-      g.gain.setValueAtTime(.008,n);g.gain.exponentialRampToValueAtTime(.001,n+.045);o.start(n);o.stop(n+.05);
+      o.type='sine';o.frequency.setValueAtTime(560,n);o.frequency.exponentialRampToValueAtTime(710,n+.045);
+      g.gain.setValueAtTime(.018,n);g.gain.exponentialRampToValueAtTime(.001,n+.060);o.start(n);o.stop(n+.065);
     }else if(kind==='systemHover'){
-      o.type='triangle';o.frequency.setValueAtTime(470,n);o.frequency.exponentialRampToValueAtTime(650,n+.06);
-      g.gain.setValueAtTime(.020,n);g.gain.exponentialRampToValueAtTime(.001,n+.075);o.start(n);o.stop(n+.08);
+      o.type='triangle';o.frequency.setValueAtTime(470,n);o.frequency.exponentialRampToValueAtTime(680,n+.07);
+      g.gain.setValueAtTime(.035,n);g.gain.exponentialRampToValueAtTime(.001,n+.090);o.start(n);o.stop(n+.095);
     }else if(kind==='systemSelect'){
-      o.type='triangle';o.frequency.setValueAtTime(350,n);o.frequency.exponentialRampToValueAtTime(720,n+.09);
-      g.gain.setValueAtTime(.018,n);g.gain.exponentialRampToValueAtTime(.001,n+.11);o.start(n);o.stop(n+.12);
+      o.type='triangle';o.frequency.setValueAtTime(350,n);o.frequency.exponentialRampToValueAtTime(760,n+.10);
+      g.gain.setValueAtTime(.034,n);g.gain.exponentialRampToValueAtTime(.001,n+.13);o.start(n);o.stop(n+.135);
+    }else if(kind==='selectOpen'){
+      o.type='sine';o.frequency.setValueAtTime(330,n);o.frequency.exponentialRampToValueAtTime(430,n+.045);
+      g.gain.setValueAtTime(.030,n);g.gain.exponentialRampToValueAtTime(.001,n+.065);o.start(n);o.stop(n+.070);
     }else if(kind==='select'){
-      o.type='triangle';o.frequency.setValueAtTime(520,n);o.frequency.exponentialRampToValueAtTime(860,n+.08);
-      g.gain.setValueAtTime(.026,n);g.gain.exponentialRampToValueAtTime(.001,n+.10);o.start(n);o.stop(n+.105);
+      o.type='triangle';o.frequency.setValueAtTime(540,n);o.frequency.exponentialRampToValueAtTime(930,n+.09);
+      g.gain.setValueAtTime(.045,n);g.gain.exponentialRampToValueAtTime(.001,n+.12);o.start(n);o.stop(n+.125);
     }else if(kind==='toggleOn'){
       o.type='square';o.frequency.setValueAtTime(310,n);o.frequency.exponentialRampToValueAtTime(540,n+.065);
-      g.gain.setValueAtTime(.022,n);g.gain.exponentialRampToValueAtTime(.001,n+.085);o.start(n);o.stop(n+.09);
+      g.gain.setValueAtTime(.040,n);g.gain.exponentialRampToValueAtTime(.001,n+.100);o.start(n);o.stop(n+.105);
     }else if(kind==='toggleOff'){
       o.type='square';o.frequency.setValueAtTime(420,n);o.frequency.exponentialRampToValueAtTime(230,n+.065);
-      g.gain.setValueAtTime(.022,n);g.gain.exponentialRampToValueAtTime(.001,n+.085);o.start(n);o.stop(n+.09);
+      g.gain.setValueAtTime(.040,n);g.gain.exponentialRampToValueAtTime(.001,n+.100);o.start(n);o.stop(n+.105);
     }else if(kind==='toggle'){
       o.type='square';o.frequency.setValueAtTime(250,n);o.frequency.exponentialRampToValueAtTime(430,n+.055);
       g.gain.setValueAtTime(.020,n);g.gain.exponentialRampToValueAtTime(.001,n+.075);o.start(n);o.stop(n+.08);
@@ -255,15 +258,23 @@
   // Chrome/Edge can block WebAudio until a real user gesture. Prime the context on
   // pointer/key DOWN (before a native select opens), so the later change event can
   // actually play the fit/toon selection sound.
-  async function primeAudioFromGesture(){
+  async function primeAudioFromGesture(e){
     unlockAudio();
     if(audio?.state==='suspended'){
       try{await audio.resume()}catch{}
     }
+    if(audio?.state!=='running')return false;
+
+    // Native <select> menus can temporarily leave the page event loop while open.
+    // Play a short audible cue on pointer-down, while the browser still considers
+    // this a direct user gesture. A second tone plays when the chosen value commits.
+    const target=e?.target;
+    if(target?.matches?.('select'))await sfx('selectOpen');
+    return true;
   }
   document.addEventListener('pointerdown',primeAudioFromGesture,{capture:true});
   document.addEventListener('keydown',(e)=>{
-    if(e.key==='Enter'||e.key===' '||e.key==='ArrowUp'||e.key==='ArrowDown')primeAudioFromGesture();
+    if(e.key==='Enter'||e.key===' '||e.key==='ArrowUp'||e.key==='ArrowDown')primeAudioFromGesture(e);
   },{capture:true});
 
   document.addEventListener('pointerover',async(e)=>{
@@ -296,15 +307,22 @@
     if(e.target.closest('button,summary,.app-tab'))sfx('click');
   });
 
-  // Capture this BEFORE fleet controls rerender themselves. This makes dynamic
-  // toon checkboxes, saved-fit selects, booster selects, and other controls reliable.
-  document.addEventListener('change',(e)=>{
-    if(e.target.matches('select')){
-      sfx('select');
-    }else if(e.target.matches('input[type="checkbox"],input[type="radio"]')){
-      sfx(e.target.checked?'toggleOn':'toggleOff');
-    }
-  },{capture:true});
+  // Listen to both input and change because native select behavior differs by
+  // browser/OS. De-dupe the pair so one selection produces one commit tone.
+  const controlSoundState=new WeakMap();
+  function controlSound(e){
+    const target=e.target;
+    if(!target?.matches?.('select,input[type="checkbox"],input[type="radio"]'))return;
+    const signature=target.matches('select')?`select:${target.value}`:`toggle:${target.checked}`;
+    const previous=controlSoundState.get(target);
+    const stamp=performance.now();
+    if(previous&&previous.signature===signature&&stamp-previous.stamp<180)return;
+    controlSoundState.set(target,{signature,stamp});
+    if(target.matches('select'))sfx('select');
+    else sfx(target.checked?'toggleOn':'toggleOff');
+  }
+  document.addEventListener('input',controlSound,{capture:true});
+  document.addEventListener('change',controlSound,{capture:true});
 
   async function api(url, options={}) {
     const headers={...(options.headers||{})}; if(options.body&&!headers['Content-Type'])headers['Content-Type']='application/json';
