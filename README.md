@@ -1,4 +1,4 @@
-# JLR Miner Tracker v2.1 — Website Build
+# JLR Miner Tracker v2.2 — Website Build
 
 This version is designed to work like a normal EVE web app:
 
@@ -36,19 +36,37 @@ This version is designed to work like a normal EVE web app:
 
 Compact mode keeps the mini-map, T3 field tiles, hit order, quick status update, projected m³/hr, projected ISK/hr, and API Actuals visible with minimal screen space.
 
-Expanded mode uses the same data but adds larger controls, #1–#6 ore economics, active timers, connected-toon management, ESI sync controls, and more detailed Actual-vs-Projected information.
+Expanded mode uses the same data but adds larger controls, #1–#6 ore economics, active timers, connected-toon management, ESI sync controls, more detailed Actual-vs-Projected information, and the **Mining Output Calculator**. The calculator can select a linked miner, read that character's mining skills, show saved mining fittings, select a Porpoise or Rorqual booster, and estimate skill-adjusted and boosted m³/hr.
 
 ## ESI Actuals and privacy
 
-JLR requests only:
+JLR requests these ESI scopes:
 
-`esi-industry.read_character_mining.v1`
+- `esi-industry.read_character_mining.v1` — fleet mining Actuals
+- `esi-skills.read_skills.v1` — the linked character's mining and command skill levels
+- `esi-fittings.read_fittings.v1` — the linked character's saved mining fittings
 
-It does **not** request a character-location scope.
+It does **not** request a character-location scope. Skills and saved fittings are shown only to the JLR account that linked that character.
+
+Characters authorized before v2.2 need to use **Authorize** once so EVE can grant the two new read-only scopes.
 
 During an ESI sync, the server temporarily reads the mining ledger's system and ore IDs so it can calculate m³ and apply the supplied T3 workbook value. The persisted mining history is then reduced to **fleet totals by date**. It does not persist which pilot mined in which system.
 
 Actuals on the dashboard come from EVE mining-ledger API data. Projected values come from the user's local fleet calculator.
+
+### Skill / fitting / boost calculator
+
+The v2.2 expanded view adds a calculator that mirrors the supplied workbook's **Yield Calc** sheet:
+
+- reads Mining, Astrogeology, Mining Barge, Exhumers, Mining Exploitation, Mining Precision, Mining Director, Industrial Command Ships, and Capital Industrial Ships levels from ESI
+- lists saved mining fits for barges/exhumers and saved Porpoise, Orca, or Rorqual boost fits
+- reads supported strip miners, Mining Laser Upgrades, and Mining Survey Chipsets from the saved fit
+- reads the booster hull, Industrial Core I/II, and Mining Foreman Burst I/II from the saved boost fit
+- allows crystal, Mining Foreman Mindlink, and Mining Laser Efficiency Charge to be selected when they are not reliably represented in a saved fit
+- applies the same base-yield, critical-success, duration, Mining Laser Optimization, and Mining Laser Efficiency formulas used by the original workbook
+- shows per-ship and fleet m³/hr
+
+The lookup values in `source-data.json` are copied from the workbook's Yield Calc tables. A regression test reproduces the workbook's selected Mackinaw result of **405,704.7772 m³/hr** and its **61.5234375%** Rorqual optimization value. This is intentionally workbook-faithful rather than a separate guessed fitting model.
 
 ## Public website setup
 
@@ -62,9 +80,13 @@ Register this exact callback URL:
 
 `https://YOUR-DOMAIN/auth/eve/callback`
 
-Add this scope:
+Add these scopes:
 
-`esi-industry.read_character_mining.v1`
+```text
+esi-industry.read_character_mining.v1
+esi-skills.read_skills.v1
+esi-fittings.read_fittings.v1
+```
 
 Keep the EVE application Client Secret private. Do not put it in browser JavaScript or share it with users.
 
@@ -78,7 +100,7 @@ EVE_CLIENT_ID=your-client-id
 EVE_CLIENT_SECRET=your-client-secret
 SESSION_SECRET=a-long-random-secret
 TOKEN_ENCRYPTION_KEY=another-long-random-secret
-ESI_USER_AGENT=JLR-Miner-Tracker/2.1 contact=your-contact
+ESI_USER_AGENT=JLR-Miner-Tracker/2.2 contact=your-contact
 PORT=3187
 ```
 
@@ -122,7 +144,7 @@ For the real shared app, use the public HTTPS callback instead.
 
 ## Fountain data in this build
 
-The bundled source data contains **20 T3 systems** from the supplied workbook and the six priority ore classes:
+The bundled source data contains **15 T3 systems** from the supplied workbook and the six priority ore classes:
 
 1. Kylixium
 2. Ueganite
@@ -134,7 +156,7 @@ The bundled source data contains **20 T3 systems** from the supplied workbook an
 Default calculator baselines:
 
 - Hulk + ORE Strip Miner: `406,800 m³/hr` per ship before Abyssal adjustment.
-- Mackinaw + Modulated Strip Miner II: `405,704.7771 m³/hr` per ship before Abyssal adjustment.
+- Mackinaw + Modulated Strip Miner II: `405,704.7772 m³/hr` per ship before Abyssal adjustment.
 
 The default payout display is 95% JBV, but each browser can change its own projection settings without changing the shared field board.
 
@@ -144,7 +166,7 @@ The default payout display is 95% JBV, but each browser can change its own proje
 - Refresh tokens are encrypted at rest.
 - Browser sessions are signed HttpOnly cookies.
 - OAuth `state` is validated.
-- JWT signatures, issuer, expiration, audience, client ID, and mining scope are checked.
+- JWT signatures, issuer, expiration, audience, client ID, and requested ESI scopes are checked before protected ESI data is used.
 - POST/PUT/DELETE API requests are same-origin checked.
 - Character-location permission is never requested.
 - Linked toon names are visible only to the account that linked them.
@@ -153,3 +175,10 @@ The default payout display is 95% JBV, but each browser can change its own proje
 ## v2.1 hosting fix
 
 Static  now lives outside , so a production volume can safely mount at  without hiding the bundled Fountain ore/system definitions.
+
+
+## v2.2 skills, fittings, and boosts
+
+v2.2 adds read-only ESI skill and saved-fitting sync plus a mining-output calculator driven by the original workbook's Yield Calc formulas and lookup tables. Existing linked characters keep working for mining Actuals, but the UI marks them **Authorize** until they grant the new skills/fittings scopes. No character-location scope was added.
+
+The uploaded workbook also reduced the T3 field list from the older 20-system set to the current 15-system set; the bundled source data now matches that workbook list.

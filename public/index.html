@@ -100,6 +100,22 @@
         <section class="glass timers-panel"><div class="section-title"><div><span class="eyebrow">RESPAWN CONTROL</span><strong>ACTIVE TIMERS</strong></div><span id="timerCount" class="muted tiny"></span></div><div id="activeTimers" class="timer-list"></div></section>
       </div>
 
+      <section class="glass calculator-panel">
+        <div class="section-title"><div><span class="eyebrow">ORIGINAL WORKBOOK + ESI</span><strong>MINING OUTPUT CALCULATOR</strong></div><span id="calcStatus" class="status-pill">ESI</span></div>
+        <div class="calc-grid">
+          <label>Miner toon<select id="calcMinerCharacter"></select></label>
+          <label>Saved mining fit<select id="calcFitting"></select></label>
+          <label>Mining crystal<select id="calcCrystal"><option value="Auto">Auto-detect from fit</option></select></label>
+          <label>Booster toon<select id="calcBoosterCharacter"><option value="">No booster</option></select></label>
+          <label>Saved booster fit<select id="calcBoosterFitting"><option value="">No booster fit</option></select></label>
+          <label class="check-label"><input id="calcMindlink" type="checkbox" checked> Mining Foreman Mindlink</label>
+          <label class="check-label"><input id="calcEfficiencyCharge" type="checkbox" checked> Mining Laser Efficiency Charge</label>
+        </div>
+        <div id="calcResults" class="calc-results"></div>
+        <div id="calcFitDetails" class="calc-fit-details"></div>
+        <div class="actual-note">This calculator mirrors the formulas and lookup values from the workbook's <strong>Yield Calc</strong> sheet. ESI supplies your actual skills and saved fittings; JLR reads strip miners, mining laser upgrades, mining survey chipset, booster hull, industrial core, and burst module from those fittings. Crystal, mindlink, and efficiency charge can be overridden here because they may not be present in a saved fit.</div>
+      </section>
+
       <div class="expanded-grid">
         <section class="glass esi-panel">
           <div class="section-title"><div><span class="eyebrow">EVE SSO + ESI</span><strong>MY CONNECTED TOONS</strong></div><span id="esiStatus" class="status-pill">—</span></div>
@@ -132,6 +148,7 @@
     </section>
     <div id="toast" class="toast hidden" role="status"></div>
   </main>
+  <script src="/yield-math.js" defer></script>
   <script src="/app.js" defer></script>
 </body>
 </html>
