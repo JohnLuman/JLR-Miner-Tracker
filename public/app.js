@@ -171,6 +171,18 @@
       localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));
       return;
     }
+    if(miner?.needsReauth||!Object.keys(miner?.skills||{}).length){
+      $('calcResults').innerHTML='<div class="calc-empty">Authorize this miner for ESI skills/fittings, then press Sync Now. JLR will not guess missing skill levels.</div>';
+      $('calcFitDetails').innerHTML=`<strong>${esc(minerFit.shipName+' — '+minerFit.name)}</strong>`;
+      localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));
+      return;
+    }
+    if(booster&&boosterFit&&(booster.needsReauth||!Object.keys(booster.skills||{}).length)){
+      $('calcResults').innerHTML='<div class="calc-empty">Authorize the selected booster for ESI skills/fittings, then press Sync Now.</div>';
+      $('calcFitDetails').innerHTML=`<strong>${esc(boosterFit.shipName+' — '+boosterFit.name)}</strong>`;
+      localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));
+      return;
+    }
 
     try{
       const result=engine.calculate({
