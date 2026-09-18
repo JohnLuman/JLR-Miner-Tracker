@@ -70,6 +70,17 @@ const ORE_REPROCESSING = {
 };
 const ORE_TYPE_NAME={Mordinium:'Mordunium'};
 const REFINING_MINERALS=[...new Set(Object.values(ORE_REPROCESSING).flatMap(x=>Object.keys(x.minerals)))];
+
+// Fountain/Gallente-quarter null-sec ice economics.
+// Quantities are the 100% theoretical reprocessing outputs per 1,000 m³ block.
+const ICE_REPROCESSING = {
+  'Thick Blue Ice':{portionSize:1,volume:1000,products:{'Heavy Water':104,'Liquid Ozone':55,'Strontium Clathrates':1,'Oxygen Isotopes':483}},
+  'Glare Crust':{portionSize:1,volume:1000,products:{'Heavy Water':1381,'Liquid Ozone':691,'Strontium Clathrates':35}},
+  'Dark Glitter':{portionSize:1,volume:1000,products:{'Heavy Water':691,'Liquid Ozone':1381,'Strontium Clathrates':69}},
+  Gelidus:{portionSize:1,volume:1000,products:{'Heavy Water':345,'Liquid Ozone':691,'Strontium Clathrates':104}},
+  Krystallos:{portionSize:1,volume:1000,products:{'Heavy Water':173,'Liquid Ozone':691,'Strontium Clathrates':173}},
+};
+const ICE_PRODUCTS=[...new Set(Object.values(ICE_REPROCESSING).flatMap(x=>Object.keys(x.products)))];
 const JITA_REGION_ID = 10000002;
 const JITA_SYSTEM_ID = 30000142;
 const JITA_44_STATION_ID = 60003760;
@@ -132,7 +143,7 @@ function freshState() {
       typeCache: {}, systemCache: {}, dailyFleet: [], lastSyncAt: null, lastError: null,
     },
     market: {
-      prices: {}, minerals: {}, lastUpdatedAt: null, lastError: null,
+      prices: {}, minerals: {}, icePrices: {}, iceProducts: {}, lastUpdatedAt: null, lastError: null,
       characterId: null, characterName: null, refreshTokenEnc: null, scopes: [], authorizedAt: null,
       structureId: null, structureName: null, privateLastError: null,
     },
@@ -157,6 +168,8 @@ async function loadState() {
     parsed.market = { ...base.market, ...(parsed.market || {}) };
     parsed.market.prices ||= {};
     parsed.market.minerals ||= {};
+    parsed.market.icePrices ||= {};
+    parsed.market.iceProducts ||= {};
     return parsed;
   } catch {
     const x = freshState();
@@ -288,7 +301,7 @@ function publicState() {
   const marketSystems=effectiveSystems(marketOres);
   return {
     app:{name:'JLR Miner Tracker',version:'2.3.15',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state and fleet-level mining totals only. No character-location scope and no per-character mining systems are stored.'},
-    source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,systems:marketSystems},
+    source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null}))},
     fields:state.fields,
     market:{lastUpdatedAt:state.market.lastUpdatedAt,lastError:state.market.lastError,privateLastError:state.market.privateLastError||null,refreshing:marketRefreshInProgress,valuation:'MAX REFINE',maxRefineYield:MAX_REFINE_YIELD,jita:'Jita IV - Moon 4 - Caldari Navy Assembly Plant',local:CN_SYSTEM_NAME,privateAccess:Boolean(state.market.refreshTokenEnc),marketCharacterName:state.market.characterName||null,structureName:state.market.structureName||null},
     esi:{configured:Boolean(EVE_CLIENT_ID),linkedCharacters:Object.keys(state.characters).length,lastSyncAt:state.esi.lastSyncAt,lastError:state.esi.lastError,syncing:syncInProgress,actual:{today:todayActual,week:weekActual}},
@@ -569,27 +582,49 @@ function refinedOreValue(oreName,oreVolume,priceByMineral) {
     breakdown,
   };
 }
+function refinedIceValue(iceName,priceByProduct) {
+  const recipe=ICE_REPROCESSING[iceName];
+  if(!recipe)return null;
+  let grossPerBlock=0;
+  const breakdown={};
+  for(const [product,qty] of Object.entries(recipe.products)){
+    const price=Number(priceByProduct[product]);
+    if(!(price>0))return null;
+    const refinedQty=Number(qty)*MAX_REFINE_YIELD;
+    const value=refinedQty*price;
+    breakdown[product]={grossQty:Number(qty),refinedQty,unitPrice:price,value};
+    grossPerBlock+=value;
+  }
+  return {
+    perM3:grossPerBlock/Number(recipe.volume),
+    perBlock:grossPerBlock,
+    blockM3:Number(recipe.volume),
+    breakdown,
+  };
+}
 async function refreshMarketPrices(force=false) {
   if(marketRefreshInProgress)return;
   const last=Date.parse(state.market?.lastUpdatedAt||'');
-  const valuationCurrent=ORES.every(o=>state.market?.prices?.[o.name]?.valuation==='max-refine-minerals');
+  const valuationCurrent=ORES.every(o=>state.market?.prices?.[o.name]?.valuation==='max-refine-minerals')
+    &&Object.keys(ICE_REPROCESSING).every(name=>state.market?.icePrices?.[name]?.valuation==='max-refine-ice');
   if(!force&&valuationCurrent&&Number.isFinite(last)&&Date.now()-last<MARKET_REFRESH_MS)return;
   marketRefreshInProgress=true;
   state.market.lastError=null;
   state.market.privateLastError=null;
   broadcast();
   try{
-    const names=[...ORES.map(o=>ORE_TYPE_NAME[o.name]||o.name),...REFINING_MINERALS,CN_SYSTEM_NAME];
+    const names=[...ORES.map(o=>ORE_TYPE_NAME[o.name]||o.name),...REFINING_MINERALS,...Object.keys(ICE_REPROCESSING),...ICE_PRODUCTS,CN_SYSTEM_NAME];
     const ids=await resolveUniverseIds(names);
     const cnSystemId=ids.get(CN_SYSTEM_NAME);
     if(!cnSystemId)throw new Error(`${CN_SYSTEM_NAME} system ID could not be resolved`);
 
     const mineralTypeIds=REFINING_MINERALS.map(name=>Number(ids.get(name))).filter(Number.isFinite);
+    const iceProductTypeIds=ICE_PRODUCTS.map(name=>Number(ids.get(name))).filter(Number.isFinite);
     let privateMarket=null;
     if(state.market.refreshTokenEnc){
       try{
         const access=await marketAccessToken();
-        privateMarket=await resolveMarketStructure(cnSystemId,access,mineralTypeIds);
+        privateMarket=await resolveMarketStructure(cnSystemId,access,[...mineralTypeIds,...iceProductTypeIds]);
       }catch(err){
         state.market.privateLastError=String(err.message||err);
         console.warn('Private market refresh unavailable',state.market.privateLastError);
@@ -613,6 +648,28 @@ async function refreshMarketPrices(force=false) {
       if(jita.buy!==null)mineralPrices.jita[mineral]=jita.buy;
       if(cn.buy!==null)mineralPrices.cn[mineral]=cn.buy;
       mineralPrices.detail[mineral]={
+        typeId,
+        jita,
+        cn:{...cn,source:usePrivate?'alliance-structure':'public-region'},
+      };
+    }
+
+    const iceProductPrices={jita:{},cn:{},detail:{}};
+    for(const product of ICE_PRODUCTS){
+      const typeId=ids.get(product);
+      if(!typeId){console.warn('Ice product type not resolved',product);continue}
+      const [forgeOrders,fountainOrders]=await Promise.all([
+        marketOrders(JITA_REGION_ID,typeId),
+        marketOrders(FOUNTAIN_REGION_ID,typeId),
+      ]);
+      const jita=bestOrderPrices(forgeOrders.filter(o=>Number(o.system_id)===JITA_SYSTEM_ID&&Number(o.location_id)===JITA_44_STATION_ID));
+      const publicCn=bestOrderPrices(fountainOrders.filter(o=>Number(o.system_id)===cnSystemId));
+      const privateCn=privateMarket?bestOrderPrices(privateMarket.orders.filter(o=>Number(o.type_id)===Number(typeId))):{buy:null,sell:null};
+      const usePrivate=privateMarket&&(privateCn.buy!==null||privateCn.sell!==null);
+      const cn=usePrivate?privateCn:publicCn;
+      if(jita.buy!==null)iceProductPrices.jita[product]=jita.buy;
+      if(cn.buy!==null)iceProductPrices.cn[product]=cn.buy;
+      iceProductPrices.detail[product]={
         typeId,
         jita,
         cn:{...cn,source:usePrivate?'alliance-structure':'public-region'},
@@ -658,8 +715,43 @@ async function refreshMarketPrices(force=false) {
       };
     }
 
+    const icePrices={...state.market.icePrices};
+    for(const [iceName,recipe] of Object.entries(ICE_REPROCESSING)){
+      const typeId=ids.get(iceName);
+      const jitaValue=refinedIceValue(iceName,iceProductPrices.jita);
+      const cnValue=refinedIceValue(iceName,iceProductPrices.cn);
+      if(!jitaValue){console.warn('Incomplete Jita ice-product prices for',iceName);continue}
+      icePrices[iceName]={
+        typeId:Number(typeId)||null,
+        volume:Number(recipe.volume),
+        updatedAt:now(),
+        valuation:'max-refine-ice',
+        maxRefineYield:MAX_REFINE_YIELD,
+        recipe,
+        jita:{
+          source:'refined-ice-products',
+          buyPerM3:jitaValue.perM3,
+          refinedBuyPerM3:jitaValue.perM3,
+          refinedBlockValue:jitaValue.perBlock,
+          breakdown:jitaValue.breakdown,
+        },
+        cn:{
+          system:CN_SYSTEM_NAME,
+          source:privateMarket?'alliance-structure-ice-products':'public-region-ice-products',
+          structureId:privateMarket?privateMarket.id:null,
+          structureName:privateMarket?privateMarket.name:null,
+          buyPerM3:cnValue?.perM3??null,
+          refinedBuyPerM3:cnValue?.perM3??null,
+          refinedBlockValue:cnValue?.perBlock??null,
+          breakdown:cnValue?.breakdown??null,
+        },
+      };
+    }
+
     state.market.prices=next;
     state.market.minerals=mineralPrices.detail;
+    state.market.icePrices=icePrices;
+    state.market.iceProducts=iceProductPrices.detail;
     state.market.lastUpdatedAt=now();
     state.market.lastError=null;
     await save();
