@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0a0a10">
   <title>JLR Miner Tracker</title>
-  <link rel="stylesheet" href="/styles.css?v=2.3.19">
+  <link rel="stylesheet" href="/styles.css?v=2.3.20">
 </head>
 <body>
   <main id="loginView" class="login-shell hidden">
@@ -105,18 +105,28 @@
 
     </section>
 
-    <section class="glass mini-map-panel">
-      <div class="section-title compact-title"><strong>MINI STATUS MAP</strong><span id="statusCounts" class="muted">—</span></div>
-      <div id="miniMap" class="node-grid mini-map"></div>
-    </section>
-
     <section class="glass hit-panel">
       <div class="section-title compact-title"><strong>NEXT TARGETS</strong><span class="muted">value order • 🍒 goes last</span></div>
       <div id="hitOrder" class="hit-order"></div>
     </section>
 
+    <section class="glass mining-visuals-panel">
+      <div class="section-title"><div><strong>MINING VISUALS</strong></div><span class="muted tiny">live fleet • max refine</span></div>
+      <div class="mining-visual-grid">
+        <article class="mining-visual-card">
+          <div class="visual-card-head"><strong>ORE VALUE</strong><small>Jita vs C-N • ISK/m³</small></div>
+          <div class="visual-legend"><span class="legend-jita">JITA</span><span class="legend-cn">C-N</span></div>
+          <div id="oreValueChart" class="bar-chart"></div>
+        </article>
+        <article class="mining-visual-card">
+          <div class="visual-card-head"><strong>FLEET OUTPUT</strong><small>selected miners • m³/hr</small></div>
+          <div id="fleetOutputChart" class="bar-chart"></div>
+        </article>
+      </div>
+    </section>
+
     <section class="glass board-panel">
-      <div class="section-title"><div><strong>T3 FIELDS</strong><span id="systemCountLabel" class="muted count-label"></span></div><div class="filters">
+      <div class="section-title"><div><strong>T3 FIELDS</strong><span id="systemCountLabel" class="muted count-label"></span><span id="statusCounts" class="muted count-label">—</span></div><div class="filters">
         <button class="orb silver filter active" data-filter="all" type="button">ALL</button><button class="orb green filter" data-filter="ready" type="button">G</button><button class="orb yellow filter" data-filter="picked" type="button">Y</button><button class="orb red filter" data-filter="cleared" type="button">R</button><button class="orb cherry filter" data-filter="cherry" type="button">🍒</button>
       </div></div>
       <div id="fieldBoard" class="node-grid field-board"></div>
@@ -155,7 +165,7 @@
     </section>
     <div id="toast" class="toast hidden" role="status"></div>
   </main>
-  <script src="/yield-math.js?v=2.3.19" defer></script>
-  <script src="/app.js?v=2.3.19" defer></script>
+  <script src="/yield-math.js?v=2.3.20" defer></script>
+  <script src="/app.js?v=2.3.20" defer></script>
 </body>
 </html>
