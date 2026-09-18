@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0a0a10">
   <title>JLR Miner Tracker</title>
-  <link rel="stylesheet" href="/styles.css?v=2.3.24">
+  <link rel="stylesheet" href="/styles.css?v=2.3.25">
 </head>
 <body>
   <main id="loginView" class="login-shell hidden">
@@ -129,8 +129,8 @@
     </section>
 
     <section class="glass board-panel">
-      <div class="section-title"><div><strong>T3 FIELDS</strong><span id="systemCountLabel" class="muted count-label"></span><span id="statusCounts" class="muted count-label">—</span></div><div class="filters">
-        <button class="orb silver filter active" data-filter="all" type="button">ALL</button><button class="orb green filter" data-filter="ready" type="button">G</button><button class="orb yellow filter" data-filter="picked" type="button">Y</button><button class="orb red filter" data-filter="cleared" type="button">R</button><button class="orb cherry filter" data-filter="cherry" type="button">🍒</button>
+      <div class="section-title"><div><strong>FIELD BOARD</strong><span id="systemCountLabel" class="muted count-label"></span><span id="statusCounts" class="muted count-label">—</span></div><div class="filters">
+        <button class="orb silver filter active" data-filter="all" type="button">ALL</button><button class="orb green filter" data-filter="ready" type="button">G</button><button class="orb yellow filter" data-filter="picked" type="button">Y</button><button class="orb red filter" data-filter="cleared" type="button">R</button><button class="orb cherry filter" data-filter="cherry" type="button">🍒</button><button class="orb ice-filter filter" data-filter="ice" type="button">ICE</button>
       </div></div>
       <div id="fieldBoard" class="node-grid field-board"></div>
     </section>
@@ -148,14 +148,9 @@
         <article class="ice-kpi"><span>ICE FIELDS</span><strong id="iceFieldCount">—</strong><small id="iceBridgeRange">within Titan bridge range</small></article>
       </div>
 
-      <div class="ice-layout">
+      <div class="ice-layout ice-layout-single">
         <article class="ice-chart-card">
-          <div class="visual-card-head"><strong>ICE FIELDS IN RANGE</strong><small id="iceFieldSummary">C-N4OD → max Titan bridge</small></div>
-          <div id="iceFieldList" class="ice-field-list"></div>
-        </article>
-
-        <article class="ice-chart-card">
-          <div class="visual-card-head"><strong>BLOCK TRACKING</strong><small>raw block JBV → local tracking value</small></div>
+          <div class="visual-card-head"><strong>BLOCK TRACKING</strong><small>Jita refine → local tracking value</small></div>
           <div id="iceBlockTable" class="ice-block-table"></div>
         </article>
       </div>
@@ -209,7 +204,7 @@
     </section>
     <div id="toast" class="toast hidden" role="status"></div>
   </main>
-  <script src="/yield-math.js?v=2.3.24" defer></script>
-  <script src="/app.js?v=2.3.24" defer></script>
+  <script src="/yield-math.js?v=2.3.25" defer></script>
+  <script src="/app.js?v=2.3.25" defer></script>
 </body>
 </html>
