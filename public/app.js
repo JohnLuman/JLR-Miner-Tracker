@@ -24,9 +24,9 @@
     } catch { return { members:{}, uptime:100, payout:95 }; }
   }
   let fleetSettings = loadFleet();
-  const DEFAULT_CALC = { minerCharacterId:'', fittingId:'', crystal:'Auto', boosterCharacterId:'', boosterFittingId:'', mindlink:true, efficiencyCharge:true };
+  const DEFAULT_CALC = { minerCharacterId:'', fittingId:'', crystal:'Auto', boosterCharacterId:'', boosterFittingId:'', mindlink:true };
   function loadCalc(){try{return{...DEFAULT_CALC,...JSON.parse(localStorage.getItem('jlrMiningCalc')||'{}')}}catch{return{...DEFAULT_CALC}}}
-  let calcSettings=loadCalc();
+  let calcSettings=loadCalc(); delete calcSettings.efficiencyCharge;
   const statusText = {ready:'GREEN',picked:'YELLOW',cleared:'RED'};
 
   function fmt(v, kind='num') {
@@ -97,7 +97,6 @@
           boosterSkills:booster?.skills||{},
           boosterFit:calcSettings.boosterCharacterId?boosterFit:null,
           mindlink:Boolean(calcSettings.mindlink),
-          efficiencyCharge:Boolean(calcSettings.efficiencyCharge),
         });
         entries.push({character,fit,result,rawM3:result.m3PerHour,effectiveM3:result.m3PerHour*uptime});
       }catch(error){entries.push({character,fit,error:String(error.message||error)})}
@@ -159,8 +158,9 @@
     const boostBits=[];
     if(booster&&boosterFit){
       boostBits.push(`${booster.name} — ${boosterFit.shipName}`);
+      const charges=window.JLRYieldMath?.detectBoostCharges?.(boosterFit)?.names||[];
+      if(charges.length)boostBits.push(`Charges: ${charges.join(' + ')}`);
       if(calcSettings.mindlink)boostBits.push('Mindlink');
-      if(calcSettings.efficiencyCharge)boostBits.push('Efficiency Charge');
     }
     $('fleetBoosterSummary').textContent=boostBits.length?`Booster: ${boostBits.join(' • ')}`:'Booster: none selected';
 
@@ -283,9 +283,9 @@
     boosterFitSel.value=calcSettings.boosterFittingId;
     const boosterFit=calcFitting(booster,calcSettings.boosterFittingId);
 
-    if(boosterFit&&calcSettings.efficiencyCharge===DEFAULT_CALC.efficiencyCharge&&engine.detectEfficiencyCharge(boosterFit))calcSettings.efficiencyCharge=true;
+    const detectedBoostCharges=engine.detectBoostCharges(boosterFit);
+    $('calcBoostCharges').textContent=detectedBoostCharges.names.length?detectedBoostCharges.names.join(' + '):'None';
     $('calcMindlink').checked=Boolean(calcSettings.mindlink);
-    $('calcEfficiencyCharge').checked=Boolean(calcSettings.efficiencyCharge);
 
     const needsReauth=Boolean(miner?.needsReauth||(booster&&booster.needsReauth));
     $('calcStatus').textContent=needsReauth?'AUTHORIZE':'READY';
@@ -318,7 +318,6 @@
         boosterSkills:booster?.skills||{},
         boosterFit:calcSettings.boosterCharacterId?boosterFit:null,
         mindlink:Boolean(calcSettings.mindlink),
-        efficiencyCharge:Boolean(calcSettings.efficiencyCharge),
       });
       const fleetView=fleetStats(),fleetCount=fleetView.count,fleet=fleetView.total;
       const firstLaser=result.lasers[0];
@@ -419,12 +418,11 @@
       boosterCharacterId:$('calcBoosterCharacter').value,
       boosterFittingId:$('calcBoosterFitting').value,
       mindlink:$('calcMindlink').checked,
-      efficiencyCharge:$('calcEfficiencyCharge').checked,
     };
     saveCalc();
   }
   ['calcFitting','calcCrystal'].forEach(id=>$(id).addEventListener('change',readCalc));
-  ['calcBoosterFitting','calcMindlink','calcEfficiencyCharge'].forEach(id=>$(id).addEventListener('change',()=>{readCalc();renderFleet();renderTop()}));
+  ['calcBoosterFitting','calcMindlink'].forEach(id=>$(id).addEventListener('change',()=>{readCalc();renderFleet();renderTop()}));
   $('calcMinerCharacter').addEventListener('change',()=>{calcSettings.minerCharacterId=$('calcMinerCharacter').value;calcSettings.fittingId='';saveCalc()});
   $('calcBoosterCharacter').addEventListener('change',()=>{
     calcSettings.boosterCharacterId=$('calcBoosterCharacter').value;
