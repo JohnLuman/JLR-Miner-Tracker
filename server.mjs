@@ -154,7 +154,7 @@ function freshState() {
       typeCache: {}, systemCache: {}, dailyFleet: [], lastSyncAt: null, lastError: null,
     },
     market: {
-      prices: {}, minerals: {}, icePrices: {}, iceProducts: {}, iceFields: [], lastUpdatedAt: null, lastError: null,
+      prices: {}, minerals: {}, icePrices: {}, iceProducts: {}, iceFields: [], history: { ore:{}, ice:{} }, lastUpdatedAt: null, lastError: null,
       characterId: null, characterName: null, refreshTokenEnc: null, scopes: [], authorizedAt: null,
       structureId: null, structureName: null, privateLastError: null,
     },
@@ -182,6 +182,9 @@ async function loadState() {
     parsed.market.icePrices ||= {};
     parsed.market.iceProducts ||= {};
     parsed.market.iceFields ||= [];
+    parsed.market.history ||= {ore:{},ice:{}};
+    parsed.market.history.ore ||= {};
+    parsed.market.history.ice ||= {};
     return parsed;
   } catch {
     const x = freshState();
@@ -315,7 +318,7 @@ function publicState() {
     app:{name:'JLR Miner Tracker',version:'2.3.15',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state and fleet-level mining totals only. No character-location scope and no per-character mining systems are stored.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[]},
     fields:state.fields,
-    market:{lastUpdatedAt:state.market.lastUpdatedAt,lastError:state.market.lastError,privateLastError:state.market.privateLastError||null,refreshing:marketRefreshInProgress,valuation:'MAX REFINE',maxRefineYield:MAX_REFINE_YIELD,jita:'Jita IV - Moon 4 - Caldari Navy Assembly Plant',local:CN_SYSTEM_NAME,titanBridgeRangeLy:TITAN_BRIDGE_RANGE_LY,privateAccess:Boolean(state.market.refreshTokenEnc),marketCharacterName:state.market.characterName||null,structureName:state.market.structureName||null},
+    market:{lastUpdatedAt:state.market.lastUpdatedAt,lastError:state.market.lastError,privateLastError:state.market.privateLastError||null,refreshing:marketRefreshInProgress,valuation:'MAX REFINE',maxRefineYield:MAX_REFINE_YIELD,jita:'Jita IV - Moon 4 - Caldari Navy Assembly Plant',local:CN_SYSTEM_NAME,titanBridgeRangeLy:TITAN_BRIDGE_RANGE_LY,history:marketHistoryPublic(),privateAccess:Boolean(state.market.refreshTokenEnc),marketCharacterName:state.market.characterName||null,structureName:state.market.structureName||null},
     esi:{configured:Boolean(EVE_CLIENT_ID),linkedCharacters:Object.keys(state.characters).length,lastSyncAt:state.esi.lastSyncAt,lastError:state.esi.lastError,syncing:syncInProgress,actual:{today:todayActual,week:weekActual}},
     serverNow:now(),
   };
@@ -656,6 +659,24 @@ async function refreshIceFields(ids) {
   }
   return rows.sort((a,b)=>a.distanceLy-b.distanceLy||a.system.localeCompare(b.system));
 }
+function pushMarketHistory(bucket,key,row) {
+  bucket[key] ||= [];
+  const date=String(row.date||dateUTC());
+  const next={date,jita:Number(row.jita)||null,cn:Number(row.cn)||null};
+  const existing=bucket[key].findIndex(x=>x.date===date);
+  if(existing>=0)bucket[key][existing]=next;
+  else bucket[key].push(next);
+  bucket[key]=bucket[key]
+    .filter(x=>x&&x.date)
+    .sort((a,b)=>String(a.date).localeCompare(String(b.date)))
+    .slice(-31);
+}
+function marketHistoryPublic() {
+  return {
+    ore:Object.fromEntries(Object.entries(state.market?.history?.ore||{}).map(([k,v])=>[k,(v||[]).slice(-31)])),
+    ice:Object.fromEntries(Object.entries(state.market?.history?.ice||{}).map(([k,v])=>[k,(v||[]).slice(-31)])),
+  };
+}
 async function refreshMarketPrices(force=false) {
   if(marketRefreshInProgress)return;
   const last=Date.parse(state.market?.lastUpdatedAt||'');
@@ -830,6 +851,28 @@ async function refreshMarketPrices(force=false) {
     state.market.icePrices=icePrices;
     state.market.iceProducts=iceProductPrices.detail;
     state.market.iceFields=iceFields;
+    state.market.history ||= {ore:{},ice:{}};
+    state.market.history.ore ||= {};
+    state.market.history.ice ||= {};
+    const snapshotDate=dateUTC();
+    for(const ore of ORES){
+      const row=next[ore.name];
+      if(!row)continue;
+      pushMarketHistory(state.market.history.ore,ore.name,{
+        date:snapshotDate,
+        jita:row.jita?.refinedBuyPerM3??row.jita?.buyPerM3,
+        cn:row.cn?.refinedBuyPerM3??row.cn?.buyPerM3,
+      });
+    }
+    for(const iceName of Object.keys(ICE_REPROCESSING)){
+      const row=icePrices[iceName];
+      if(!row)continue;
+      pushMarketHistory(state.market.history.ice,iceName,{
+        date:snapshotDate,
+        jita:row.jita?.refinedBlockValue,
+        cn:row.cn?.refinedBlockValue,
+      });
+    }
     state.market.lastUpdatedAt=now();
     state.market.lastError=null;
     await save();
