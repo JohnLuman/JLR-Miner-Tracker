@@ -25,7 +25,8 @@ const ESI_COMPAT_DATE = String(process.env.ESI_COMPATIBILITY_DATE || '2026-09-16
 const MINING_SCOPE = 'esi-industry.read_character_mining.v1';
 const SKILLS_SCOPE = 'esi-skills.read_skills.v1';
 const FITTINGS_SCOPE = 'esi-fittings.read_fittings.v1';
-const ESI_SCOPES = [MINING_SCOPE, SKILLS_SCOPE, FITTINGS_SCOPE];
+const ASSETS_SCOPE = 'esi-assets.read_assets.v1';
+const ESI_SCOPES = [MINING_SCOPE, SKILLS_SCOPE, FITTINGS_SCOPE, ASSETS_SCOPE];
 const MINING_SKILLS = {
   3386: 'Mining',
   3410: 'Astrogeology',
@@ -39,6 +40,13 @@ const MINING_SKILLS = {
   22536: 'Mining Foreman',
 };
 const MINING_HULLS = new Set(['Hulk','Mackinaw','Skiff','Covetor','Retriever','Procurer','Porpoise','Orca','Rorqual']);
+const ABYSSAL_STRIP_TYPES = new Map([
+  [90467,'Abyssal Modulated Strip Miner'],
+  [90487,'Abyssal Modulated Deep Core Strip Miner'],
+  [90493,'Abyssal Strip Miner'],
+  [90498,'Abyssal Deep Core Strip Miner'],
+]);
+const dogmaAttributeCache = new Map();
 const TEN_HOURS = 10 * 60 * 60 * 1000;
 const SESSION_TTL = 30 * 24 * 60 * 60 * 1000;
 const source = JSON.parse(await fsp.readFile(SOURCE_FILE, 'utf8'));
@@ -294,6 +302,9 @@ async function handleCallback(req,res,url) {
       skillsUpdatedAt:old?.skillsUpdatedAt||null,
       fittings:old?.fittings||[],
       fittingsUpdatedAt:old?.fittingsUpdatedAt||null,
+      savedFittingsCount:old?.savedFittingsCount||0,
+      abyssalStripCount:old?.abyssalStripCount||0,
+      assetsUpdatedAt:old?.assetsUpdatedAt||null,
     };
     if(!user.characterIds.includes(charId))user.characterIds.push(charId); user.lastLoginAt=now(); if(!user.primaryCharacterId)user.primaryCharacterId=charId;
     await save(); setSessionCookie(res,user.id,req); setTimeout(()=>syncAll().catch(console.error),250); return redirect(res,pending.intent==='link'?'/?linked=1':'/?login=1');
@@ -314,6 +325,71 @@ async function characterSkills(characterId,access) {
 async function characterFittings(characterId,access) {
   return (await esiGet(`https://esi.evetech.net/latest/characters/${characterId}/fittings/?datasource=tranquility`,access)).data;
 }
+async function characterAssets(characterId,access) {
+  const first=await esiGet(`https://esi.evetech.net/latest/characters/${characterId}/assets/?datasource=tranquility&page=1`,access);
+  let rows=[...first.data];
+  const pages=Math.max(1,Number(first.headers.get('x-pages')||1));
+  for(let p=2;p<=pages;p++)rows.push(...(await esiGet(`https://esi.evetech.net/latest/characters/${characterId}/assets/?datasource=tranquility&page=${p}`,access)).data);
+  return rows;
+}
+async function dogmaAttributeName(attributeId) {
+  const key=String(attributeId);
+  if(dogmaAttributeCache.has(key))return dogmaAttributeCache.get(key);
+  try{
+    const {data}=await esiGet(`https://esi.evetech.net/latest/dogma/attributes/${attributeId}/?datasource=tranquility`);
+    const name=String(data.name||data.display_name||`attribute_${attributeId}`);
+    dogmaAttributeCache.set(key,name);
+    return name;
+  }catch{
+    const name=`attribute_${attributeId}`;dogmaAttributeCache.set(key,name);return name;
+  }
+}
+async function dynamicDogmaItem(typeId,itemId) {
+  return (await esiGet(`https://esi.evetech.net/latest/dogma/dynamic/items/${typeId}/${itemId}/?datasource=tranquility`)).data;
+}
+function pickDogmaValue(attributes,...needles) {
+  const entries=Object.entries(attributes||{});
+  for(const needle of needles){
+    const target=String(needle).toLowerCase().replace(/[^a-z0-9]/g,'');
+    const hit=entries.find(([name])=>String(name).toLowerCase().replace(/[^a-z0-9]/g,'')===target);
+    if(hit)return Number(hit[1]);
+  }
+  return null;
+}
+async function abyssalStripSnapshot(assets=[]) {
+  const assetById=new Map(assets.map(a=>[String(a.item_id),a]));
+  const rows=assets.filter(a=>ABYSSAL_STRIP_TYPES.has(Number(a.type_id)));
+  const out=[];
+  for(const asset of rows){
+    try{
+      const dyn=await dynamicDogmaItem(asset.type_id,asset.item_id);
+      const attributes={};
+      for(const row of dyn.dogma_attributes||[])attributes[await dogmaAttributeName(row.attribute_id)]=Number(row.value);
+      const sourceTypeId=Number(dyn.source_type_id||0);
+      if(sourceTypeId)await ensureType([sourceTypeId]);
+      const parent=assetById.get(String(asset.location_id));
+      if(parent)await ensureType([parent.type_id]);
+      out.push({
+        itemId:String(asset.item_id),
+        typeId:Number(asset.type_id),
+        name:ABYSSAL_STRIP_TYPES.get(Number(asset.type_id))||`Type ${asset.type_id}`,
+        locationFlag:String(asset.location_flag||''),
+        parentItemId:parent?String(parent.item_id):null,
+        shipTypeId:parent?Number(parent.type_id):null,
+        shipName:parent?(state.esi.typeCache[String(parent.type_id)]?.name||null):null,
+        sourceTypeId,
+        sourceName:sourceTypeId?(state.esi.typeCache[String(sourceTypeId)]?.name||null):null,
+        miningAmount:pickDogmaValue(attributes,'miningAmount'),
+        duration:pickDogmaValue(attributes,'duration'),
+        criticalSuccessChance:pickDogmaValue(attributes,'criticalSuccessChance'),
+        criticalSuccessBonusYield:pickDogmaValue(attributes,'criticalSuccessBonusYield'),
+      });
+    }catch(err){
+      console.warn('Abyssal strip lookup failed',asset.item_id,String(err.message||err));
+    }
+  }
+  return out;
+}
 function skillSnapshot(payload) {
   const out={};
   for(const row of payload?.skills||[]) {
@@ -322,23 +398,51 @@ function skillSnapshot(payload) {
   }
   return out;
 }
-async function miningFittingSnapshot(fittings=[]) {
+async function miningFittingSnapshot(fittings=[],abyssalModules=[]) {
   await ensureType(fittings.map(f=>f.ship_type_id));
   const mine=fittings.filter(f=>MINING_HULLS.has(state.esi.typeCache[String(f.ship_type_id)]?.name));
   await ensureType(mine.flatMap(f=>(f.items||[]).map(i=>i.type_id)));
-  return mine.map(f=>({
-    fittingId:f.fitting_id,
-    name:f.name||'Unnamed fit',
-    description:f.description||'',
-    shipTypeId:f.ship_type_id,
-    shipName:state.esi.typeCache[String(f.ship_type_id)]?.name||`Type ${f.ship_type_id}`,
-    items:(f.items||[]).map(i=>({
+  return mine.map(f=>{
+    const shipName=state.esi.typeCache[String(f.ship_type_id)]?.name||`Type ${f.ship_type_id}`;
+    const items=(f.items||[]).map(i=>({
       typeId:i.type_id,
       name:state.esi.typeCache[String(i.type_id)]?.name||`Type ${i.type_id}`,
       flag:i.flag,
       quantity:Number(i.quantity||1),
-    })),
-  }));
+    }));
+    const required=items.filter(i=>ABYSSAL_STRIP_TYPES.has(Number(i.typeId)));
+    let matched=[];
+    let abyssalMatch='none';
+    if(required.length){
+      const groups=new Map();
+      for(const mod of abyssalModules.filter(x=>x.shipName===shipName&&x.parentItemId)){
+        if(!groups.has(mod.parentItemId))groups.set(mod.parentItemId,[]);
+        groups.get(mod.parentItemId).push(mod);
+      }
+      const needed=new Map();
+      for(const row of required)needed.set(Number(row.typeId),(needed.get(Number(row.typeId))||0)+Number(row.quantity||1));
+      const candidates=[...groups.values()].filter(group=>{
+        const have=new Map();
+        for(const mod of group)have.set(Number(mod.typeId),(have.get(Number(mod.typeId))||0)+1);
+        return [...needed].every(([typeId,count])=>(have.get(typeId)||0)>=count);
+      });
+      if(candidates.length===1){
+        matched=candidates[0].map(({parentItemId,...safe})=>safe);
+        abyssalMatch='matched';
+      }else if(candidates.length>1)abyssalMatch='ambiguous';
+      else abyssalMatch='missing';
+    }
+    return {
+      fittingId:f.fitting_id,
+      name:f.name||'Unnamed fit',
+      description:f.description||'',
+      shipTypeId:f.ship_type_id,
+      shipName,
+      items,
+      abyssalMatch,
+      abyssalLasers:matched,
+    };
+  });
 }
 async function ensureType(ids) { for(const id of [...new Set(ids.map(String))]) if(!state.esi.typeCache[id]){const {data}=await esiGet(`https://esi.evetech.net/latest/universe/types/${id}/?datasource=tranquility`);state.esi.typeCache[id]={name:data.name||`Type ${id}`,volume:Number(data.volume||0)}} }
 async function ensureSystem(ids) { for(const id of [...new Set(ids.map(String))]) if(!state.esi.systemCache[id]){const {data}=await esiGet(`https://esi.evetech.net/latest/universe/systems/${id}/?datasource=tranquility`);state.esi.systemCache[id]={name:data.name||`System ${id}`}} }
@@ -358,10 +462,17 @@ async function syncAll() {
           const skills=await characterSkills(ch.characterId,tokens.access_token);
           ch.skills=skillSnapshot(skills); ch.skillsUpdatedAt=now();
         }
+        let abyssalModules=[];
+        if(id.scopes.includes(ASSETS_SCOPE)){
+          const assets=await characterAssets(ch.characterId,tokens.access_token);
+          abyssalModules=await abyssalStripSnapshot(assets);
+          ch.abyssalStripCount=abyssalModules.length;
+          ch.assetsUpdatedAt=now();
+        }
         if(id.scopes.includes(FITTINGS_SCOPE)){
           const fits=await characterFittings(ch.characterId,tokens.access_token);
           ch.savedFittingsCount=Array.isArray(fits)?fits.length:0;
-          ch.fittings=await miningFittingSnapshot(fits);
+          ch.fittings=await miningFittingSnapshot(fits,abyssalModules);
           ch.fittingsUpdatedAt=now();
         }
         ch.lastSyncAt=now();ch.lastError=null;ledgers.push(rows);
@@ -390,10 +501,12 @@ function myProfile(user) {
         lastError:c.lastError,
         portrait:`https://images.evetech.net/characters/${c.characterId}/portrait?size=64`,
         scopes,
-        needsReauth:!scopes.includes(SKILLS_SCOPE)||!scopes.includes(FITTINGS_SCOPE),
+        needsReauth:!scopes.includes(SKILLS_SCOPE)||!scopes.includes(FITTINGS_SCOPE)||!scopes.includes(ASSETS_SCOPE),
         skills:c.skills||{},
         skillsUpdatedAt:c.skillsUpdatedAt||null,
         savedFittingsCount:Number.isFinite(Number(c.savedFittingsCount))?Number(c.savedFittingsCount):(c.fittings||[]).length,
+        abyssalStripCount:Number(c.abyssalStripCount||0),
+        assetsUpdatedAt:c.assetsUpdatedAt||null,
         fittings:c.fittings||[],
         fittingsUpdatedAt:c.fittingsUpdatedAt||null,
       };
@@ -407,7 +520,7 @@ async function serveStatic(req,res,pathname) {
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.2.0',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,scopes:ESI_SCOPES});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.1',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,scopes:ESI_SCOPES});
   if(req.method==='GET'&&url.pathname==='/api/me'){const u=readSession(req);return json(res,200,{authenticated:Boolean(u),user:u?myProfile(u):null})}
   const user=requireUser(req,res);if(!user)return;
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
