@@ -54,7 +54,12 @@
   function unlockAudio(){if(audioUnlocked)return;const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;audio=new AC();audioUnlocked=true;}
   function sfx(kind='click'){unlockAudio();if(!audio)return;if(audio.state==='suspended')audio.resume().catch(()=>{});const o=audio.createOscillator(),g=audio.createGain(),n=audio.currentTime;o.connect(g);g.connect(audio.destination);if(kind==='hover'){o.type='sine';o.frequency.setValueAtTime(560,n);o.frequency.exponentialRampToValueAtTime(690,n+.035);g.gain.setValueAtTime(.008,n);g.gain.exponentialRampToValueAtTime(.001,n+.045);o.start(n);o.stop(n+.05)}else if(kind==='timer'){o.type='sawtooth';o.frequency.setValueAtTime(330,n);o.frequency.exponentialRampToValueAtTime(100,n+.14);g.gain.setValueAtTime(.025,n);g.gain.exponentialRampToValueAtTime(.001,n+.15);o.start(n);o.stop(n+.16)}else{o.type='square';o.frequency.setValueAtTime(290,n);o.frequency.exponentialRampToValueAtTime(470,n+.05);g.gain.setValueAtTime(.014,n);g.gain.exponentialRampToValueAtTime(.001,n+.07);o.start(n);o.stop(n+.08)}}
   document.addEventListener('pointerdown',unlockAudio,{once:true});
-  document.addEventListener('pointerover',(e)=>{if(audioUnlocked&&e.target.closest('button,summary,.system-node')&&!e.relatedTarget?.closest?.('button,summary,.system-node'))sfx('hover')});
+  document.addEventListener('pointerover',(e)=>{
+    const target=e.target.closest('button,summary');
+    if(!audioUnlocked||!target||target.classList.contains('system-node'))return;
+    const previous=e.relatedTarget?.closest?.('button,summary');
+    if(previous!==target)sfx('hover');
+  });
   document.addEventListener('click',(e)=>{if(e.target.closest('button,summary'))sfx('click')});
 
   async function api(url, options={}) {
@@ -205,7 +210,10 @@
     localStorage.setItem('jlrFleet',JSON.stringify(fleetSettings));
   }
   function renderSelect(){
-    if(!state)return; const old=selectedSystem||$('systemSelect').value; $('systemSelect').innerHTML='';
+    if(!state)return;
+    const systemSelect=$('systemSelect');
+    if(document.activeElement===systemSelect)return;
+    const old=selectedSystem||systemSelect.value; systemSelect.innerHTML='';
     for(const ore of state.source.ores){const g=document.createElement('optgroup');g.label=`#${ore.rank} ${ore.name.toUpperCase()}`;for(const d of definitions().filter(x=>x.rank===ore.rank)){const f=field(d.system),o=document.createElement('option');o.value=d.system;o.textContent=`${d.system} — ${f.status==='cleared'?`RED ${timer(f.timerEndsAt)}`:statusText[f.status]}${f.cherryPicked?' 🍒':''}`;g.appendChild(o)}$('systemSelect').appendChild(g)}
     selectedSystem=definitions().some(x=>x.system===old)?old:(definitions()[0]?.system||'');$('systemSelect').value=selectedSystem;const f=field(selectedSystem);if(f){const timerActive=f.status==='cleared'&&Date.parse(f.timerEndsAt)>Date.now();if(timerActive)fieldDraftDirty=false;if(!fieldDraftDirty)$('statusSelect').value=f.status;$('statusSelect').disabled=timerActive;$('updateField').disabled=timerActive}
   }
@@ -316,10 +324,11 @@
       const firstLaser=result.lasers[0];
       const detectedCrystal=calcSettings.crystal==='Auto'?engine.detectCrystal(minerFit):result.crystal;
       $('calcResults').innerHTML=`
-        <article class="calc-card"><span>Per ship</span><strong>${fmt(result.m3PerHour,'m3')} m³/hr</strong><small>${result.m3PerSecond.toFixed(2)} m³/s</small></article>
-        <article class="calc-card"><span>Cycle</span><strong>${firstLaser?firstLaser.duration.toFixed(2):'—'} sec</strong><small>${esc(result.shipName)} • crystal ${esc(detectedCrystal)}</small></article>
-        <article class="calc-card"><span>Boost</span><strong>${(result.boost.cycleReduction*100).toFixed(2)}%</strong><small>${result.boost.ship==='None'?'No booster':esc(result.boost.ship+' '+result.boost.core+' / Burst '+result.boost.burst)}</small></article>
-        <article class="calc-card"><span>Fleet × ${fleetCount}</span><strong>${fmt(fleet,'m3')} m³/hr</strong><small>selected miners @ ${Number(fleetSettings.uptime).toFixed(0)}% uptime</small></article>`;
+        <article class="calc-card compact-ship-stat"><span>Ship</span><strong>${esc(result.shipName)}</strong><small>${esc(minerFit.name||'Saved fit')}</small></article>
+        <article class="calc-card expanded-stat"><span>Per ship</span><strong>${fmt(result.m3PerHour,'m3')} m³/hr</strong><small>${result.m3PerSecond.toFixed(2)} m³/s</small></article>
+        <article class="calc-card cycle-stat"><span>Cycle</span><strong>${firstLaser?firstLaser.duration.toFixed(2):'—'} sec</strong><small>${esc(result.shipName)} • crystal ${esc(detectedCrystal)}</small></article>
+        <article class="calc-card boost-stat"><span>Boost</span><strong>${(result.boost.cycleReduction*100).toFixed(2)}%</strong><small>${result.boost.ship==='None'?'No booster':esc(result.boost.ship+' '+result.boost.core+' / Burst '+result.boost.burst)}</small></article>
+        <article class="calc-card expanded-stat"><span>Fleet × ${fleetCount}</span><strong>${fmt(fleet,'m3')} m³/hr</strong><small>selected miners @ ${Number(fleetSettings.uptime).toFixed(0)}% uptime</small></article>`;
 
     }catch(err){
       $('calcResults').innerHTML=`<div class="calc-empty">⚠ ${esc(err.message||err)}</div>`;
