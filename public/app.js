@@ -731,28 +731,34 @@
     for(const [i,x] of arr.entries()){
       const b=document.createElement('button');
       b.type='button';
-      b.className=`target-card ${x.f.cherryPicked?'cherry':x.f.status==='picked'?'yellow':'green'}`;
+      b.className=`target-card ${x.f.cherryPicked?'cherry':x.f.status==='picked'?'yellow':'green'} ${i===0?'priority-first':''}`;
 
-      const distance=Number(x.d.distanceLy);
+      const distance=x.d.distanceLy==null?NaN:Number(x.d.distanceLy);
       const payout=projectedISK(state.source.ores[x.d.rank-1]);
       const stateLabel=x.f.cherryPicked?'CHERRY PICKED':x.f.status==='picked'?'PICKED':'MINEABLE';
+      const priorityLabel=i===0?'MINE FIRST':i===1?'NEXT':'PRIORITY';
 
       b.innerHTML=`
-        <span class="target-rank">#${i+1}</span>
+        <span class="target-rank">
+          <strong>${i+1}</strong>
+          <small>${priorityLabel}</small>
+        </span>
         <span class="target-main">
           <strong>${esc(x.d.system)}</strong>
-          <small>#${x.d.rank} ${esc(x.d.ore)}</small>
+          <span class="target-ore">#${x.d.rank} ${esc(x.d.ore)}</span>
+          <span class="target-state">${stateLabel}</span>
         </span>
         <span class="target-meta">
-          <strong>${Number.isFinite(distance)?distance.toFixed(2)+' LY':'LY —'}</strong>
-          <small>from C-N4OD</small>
+          <span>DISTANCE FROM C-N</span>
+          <strong>${Number.isFinite(distance)?distance.toFixed(2)+' LY':'—'}</strong>
         </span>
-        <span class="target-meta">
-          <strong>${fmt(payout)}/hr</strong>
-          <small>${stateLabel}</small>
+        <span class="target-meta target-payout">
+          <span>FLEET PAYOUT / HR</span>
+          <strong>${fmt(payout)}</strong>
+          <small>ISK/hr</small>
         </span>`;
 
-      b.title=`${x.d.system} • #${x.d.rank} ${x.d.ore}${Number.isFinite(distance)?` • ${distance.toFixed(2)} LY from C-N4OD`:''} • ${fmt(payout)} payout/hr • ${stateLabel}`;
+      b.setAttribute('aria-label',`Priority ${i+1}: ${x.d.system}, ${x.d.ore}, ${Number.isFinite(distance)?distance.toFixed(2)+' light years from C-N4OD, ':''}${fmt(payout)} ISK per hour, ${stateLabel}`);
       b.addEventListener('click',()=>chooseSystem(x.d.system));
       host.appendChild(b);
     }
