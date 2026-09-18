@@ -484,16 +484,48 @@
   }
   function chooseSystem(system){selectedSystem=system;$('systemSelect').value=system;$('fieldNote').value='';renderSelect();renderBoards();renderSelected();renderNotes()}
   function node(d,f,includeTimer=true){const b=document.createElement('button');b.type='button';b.className='system-node';b.dataset.status=f.status;b.dataset.system=d.system;if(d.system===selectedSystem)b.classList.add('selected');const line=f.status==='cleared'?timer(f.timerEndsAt):f.status==='picked'?'PICKED':'READY';b.innerHTML=`${f.cherryPicked?'<span class="cherry-pin">🍒</span>':''}<span class="sys-name">${esc(d.system)}</span><span class="sys-ore">#${d.rank} ${esc(d.ore)}</span>${includeTimer?`<span class="sys-state">${line}</span>`:''}`;b.title=`${d.system} • ${d.ore} • ${statusText[f.status]}${f.cherryPicked?' • Cherry Picked':''}${f.notes?.length?` • ${f.notes.length} notes`:''}`;b.addEventListener('click',()=>chooseSystem(d.system));return b}
+  function iceBoardNode(row){
+    const card=document.createElement('div');
+    card.className='system-node ice-system-node';
+    card.dataset.status='ice';
+    card.dataset.system=row.system;
+    const fields=Math.max(1,Number(row.iceBelts)||1);
+    const distance=Number(row.distanceLy);
+    card.innerHTML='<span class="sys-name">'+esc(row.system)+'</span>'+
+      '<span class="sys-ore">'+fields+' ICE FIELD'+(fields===1?'':'S')+'</span>'+
+      '<span class="sys-state">READY'+(Number.isFinite(distance)?' • '+distance.toFixed(2)+' LY':'')+'</span>';
+    card.title=row.system+' • '+fields+' ice field'+(fields===1?'':'s')+(Number.isFinite(distance)?' • '+distance.toFixed(2)+' LY from C-N4OD':'')+' • READY';
+    return card;
+  }
+
   function renderBoards(){
-    if(!state)return;$('fieldBoard').innerHTML='';let counts={ready:0,picked:0,cleared:0,cherry:0};
-    for(const d of definitions()){
-      const f=field(d.system);
-      counts[f.status]++;
-      if(f.cherryPicked)counts.cherry++;
-      if(filter==='all'||filter===f.status||(filter==='cherry'&&f.cherryPicked))$('fieldBoard').appendChild(node(d,f,true));
+    if(!state)return;
+    const board=$('fieldBoard');
+    board.innerHTML='';
+    let counts={ready:0,picked:0,cleared:0,cherry:0};
+    const iceFields=Array.isArray(state.source?.iceFields)?state.source.iceFields:[];
+
+    if(filter!=='ice'){
+      for(const d of definitions()){
+        const f=field(d.system);
+        counts[f.status]++;
+        if(f.cherryPicked)counts.cherry++;
+        if(filter==='all'||filter===f.status||(filter==='cherry'&&f.cherryPicked))board.appendChild(node(d,f,true));
+      }
+    }else{
+      for(const d of definitions()){
+        const f=field(d.system);
+        counts[f.status]++;
+        if(f.cherryPicked)counts.cherry++;
+      }
     }
-    $('statusCounts').textContent=`${counts.ready} G • ${counts.picked} Y • ${counts.cleared} R • ${counts.cherry} 🍒`;
-    $('systemCountLabel').textContent=`${definitions().length} systems`;
+
+    if(filter==='all'||filter==='ice'){
+      for(const row of iceFields)board.appendChild(iceBoardNode(row));
+    }
+
+    $('statusCounts').textContent=`${counts.ready} G • ${counts.picked} Y • ${counts.cleared} R • ${counts.cherry} 🍒 • ${iceFields.length} ICE`;
+    $('systemCountLabel').textContent=`${definitions().length} T3 • ${iceFields.length} ICE`;
   }
   function renderHits(){
     if(!state)return;const arr=definitions().map(d=>({d,f:field(d.system)})).filter(x=>x.f.status!=='cleared').sort((a,b)=>Number(a.f.cherryPicked)-Number(b.f.cherryPicked)||a.d.rank-b.d.rank||a.d.order-b.d.order).slice(0,8);$('hitOrder').innerHTML='';
@@ -573,22 +605,6 @@
     const fields=Array.isArray(state.source?.iceFields)?state.source.iceFields:[];
     $('iceFieldCount').textContent=String(fields.length);
     $('iceBridgeRange').textContent='≤ '+range.toFixed(1)+' LY from C-N4OD';
-    $('iceFieldSummary').textContent='C-N4OD umbrella • Titan bridge ≤ '+range.toFixed(1)+' LY';
-
-    if(!fields.length){
-      $('iceFieldList').innerHTML='<div class="visual-empty">Ice field range is refreshing.</div>';
-    }else{
-      $('iceFieldList').innerHTML=fields.map(row=>{
-        const types=Array.isArray(row.iceTypes)?row.iceTypes:[];
-        const primary=iceClass(types[types.length-1]||'');
-        const chips=types.map(type=>'<span class="ice-chip ice-'+iceClass(type)+'">'+esc(type)+'</span>').join('');
-        return '<article class="ice-field-card ice-field-'+primary+'">'+
-          '<div class="ice-field-main"><strong>'+esc(row.system)+'</strong><span>'+Number(row.distanceLy).toFixed(2)+' LY</span></div>'+
-          '<div class="ice-field-meta"><span>'+(Number(row.iceBelts)||1)+' ice field'+(Number(row.iceBelts)===1?'':'s')+'</span><span>sec '+Number(row.security).toFixed(2)+'</span></div>'+
-          '<div class="ice-chips">'+chips+'</div>'+
-        '</article>';
-      }).join('');
-    }
 
     if(!iceRows.length){
       $('iceBlockTable').innerHTML='<div class="visual-empty">Ice market data is not loaded yet.</div>';
