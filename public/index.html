@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0a0a10">
   <title>JLR Miner Tracker</title>
-  <link rel="stylesheet" href="/styles.css?v=2.3.21">
+  <link rel="stylesheet" href="/styles.css?v=2.3.22">
 </head>
 <body>
   <main id="loginView" class="login-shell hidden">
@@ -134,20 +134,43 @@
 
     <section class="glass ice-mining-panel">
       <div class="section-title">
-        <div><span class="eyebrow">FOUNTAIN</span><strong>ICE MINING</strong></div>
-        <span class="muted tiny">max refine • Jita + C-N</span>
+        <div><span class="eyebrow">C-N UMBRELLA</span><strong>ICE MINING</strong></div>
+        <div class="ice-title-tools"><label for="iceTypeSelect">Track ice</label><select id="iceTypeSelect" aria-label="Ice type to track"></select></div>
       </div>
+
       <div class="ice-kpis">
-        <article class="ice-kpi"><span>BEST JITA</span><strong id="iceBestJita">—</strong><small id="iceBestJitaSub">waiting for market</small></article>
-        <article class="ice-kpi"><span>BEST C-N</span><strong id="iceBestCn">—</strong><small id="iceBestCnSub">waiting for local market</small></article>
-        <article class="ice-kpi"><span>MAX REFINE</span><strong id="iceRefineRate">90.63%</strong><small>T2 Tatara • max skills • RX-804</small></article>
-        <article class="ice-kpi"><span>BLOCK SIZE</span><strong>1,000 m³</strong><small>uncompressed ice block</small></article>
+        <article class="ice-kpi"><span>TRACK VALUE</span><strong id="iceTrackValue">—</strong><small id="iceTrackValueSub">Blue 95% • others 75% JBV</small></article>
+        <article class="ice-kpi"><span>JITA REFINE</span><strong id="iceBestJita">—</strong><small id="iceBestJitaSub">Heavy Water excluded</small></article>
+        <article class="ice-kpi"><span>C-N REFINE</span><strong id="iceBestCn">—</strong><small id="iceBestCnSub">Heavy Water excluded</small></article>
+        <article class="ice-kpi"><span>ICE FIELDS</span><strong id="iceFieldCount">—</strong><small id="iceBridgeRange">within Titan bridge range</small></article>
       </div>
-      <div class="ice-chart-card">
-        <div class="visual-card-head"><strong>REFINED ICE VALUE</strong><small>Fountain ice • ISK per 1,000 m³ block</small></div>
-        <div class="visual-legend"><span class="legend-jita">JITA</span><span class="legend-cn">C-N</span></div>
-        <div id="iceValueChart" class="bar-chart ice-value-chart"></div>
+
+      <div class="ice-layout">
+        <article class="ice-chart-card">
+          <div class="visual-card-head"><strong>ICE FIELDS IN RANGE</strong><small id="iceFieldSummary">C-N4OD → max Titan bridge</small></div>
+          <div id="iceFieldList" class="ice-field-list"></div>
+        </article>
+
+        <article class="ice-chart-card">
+          <div class="visual-card-head"><strong>BLOCK TRACKING</strong><small>raw block JBV → local tracking value</small></div>
+          <div id="iceBlockTable" class="ice-block-table"></div>
+        </article>
       </div>
+
+      <div class="ice-layout">
+        <article class="ice-chart-card">
+          <div class="visual-card-head"><strong>REFINED ICE VALUE</strong><small>max refine • Heavy Water excluded</small></div>
+          <div class="visual-legend"><span class="legend-jita">JITA</span><span class="legend-cn">C-N</span></div>
+          <div id="iceValueChart" class="bar-chart ice-value-chart"></div>
+        </article>
+
+        <article class="ice-chart-card">
+          <div class="visual-card-head"><strong>ICE FLEET OUTPUT</strong><small>uses Fleet Setup + saved ice fits</small></div>
+          <div id="iceFleetOutput" class="ice-fleet-output"></div>
+        </article>
+      </div>
+
+      <div class="ice-note">Block tracking pays Blue Ice IV-Grade at 95% Jita Buy Value and all other ice at 75%. Refined-sale value counts all sellable ice products except Heavy Water.</div>
     </section>
 
     <section id="expandedArea" class="expanded-area">
@@ -183,7 +206,7 @@
     </section>
     <div id="toast" class="toast hidden" role="status"></div>
   </main>
-  <script src="/yield-math.js?v=2.3.21" defer></script>
-  <script src="/app.js?v=2.3.21" defer></script>
+  <script src="/yield-math.js?v=2.3.22" defer></script>
+  <script src="/app.js?v=2.3.22" defer></script>
 </body>
 </html>
