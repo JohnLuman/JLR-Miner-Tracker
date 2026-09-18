@@ -57,6 +57,8 @@
     if(!ship)throw new Error(`${shipName||'This hull'} is not supported by the workbook Yield Calc.`);
     const fitItems=items(minerFit);
     const laserRows=fitItems.filter(row=>Object.prototype.hasOwnProperty.call(data.lasers||{},String(row.name||'')));
+    const abyssalRows=fitItems.filter(row=>/Abyssal.*Strip Miner/i.test(String(row.name||'')));
+    if(!laserRows.length&&abyssalRows.length)throw new Error('Abyssal strip miner detected — exact roll stats are required.');
     if(!laserRows.length)throw new Error('No supported strip miner was found in this saved fit.');
     const ids=data.skillIds||{}, sb=data.skillBonuses||{};
     const mining=level(minerSkills,ids.mining);
