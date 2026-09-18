@@ -23,9 +23,13 @@
     } catch { return { members:{}, uptime:100, payout:95 }; }
   }
   let fleetSettings = loadFleet();
-  const DEFAULT_CALC = { minerCharacterId:'', fittingId:'', crystal:'Auto', boosterCharacterId:'', boosterFittingId:'', mindlink:true };
+  const DEFAULT_CALC = { boosterCharacterId:'', boosterFittingId:'', mindlink:true };
   function loadCalc(){try{return{...DEFAULT_CALC,...JSON.parse(localStorage.getItem('jlrMiningCalc')||'{}')}}catch{return{...DEFAULT_CALC}}}
-  let calcSettings=loadCalc(); delete calcSettings.efficiencyCharge;
+  let calcSettings=loadCalc();
+  delete calcSettings.efficiencyCharge;
+  delete calcSettings.minerCharacterId;
+  delete calcSettings.fittingId;
+  delete calcSettings.crystal;
   const statusText = {ready:'GREEN',picked:'YELLOW',cleared:'RED'};
 
   function fmt(v, kind='num') {
@@ -83,14 +87,13 @@
   let systemHoverKey='';
   document.addEventListener('pointerdown',unlockAudio,{once:true});
   document.addEventListener('pointerover',(e)=>{
+    if(!audioUnlocked)return;
     const system=e.target.closest('.system-node');
     if(system){
-      if(!audioUnlocked)return;
       const key=system.dataset.system||system.querySelector('.sys-name')?.textContent||'system';
       if(key!==systemHoverKey){systemHoverKey=key;sfx('systemHover')}
       return;
     }
-    if(!audioUnlocked)return;
     const target=e.target.closest('button,summary');
     if(!target)return;
     const previous=e.relatedTarget?.closest?.('button,summary');
@@ -336,31 +339,16 @@
     $('characterList').querySelectorAll('.disconnect').forEach(b=>b.addEventListener('click',async()=>{if(!confirm('Disconnect this mining toon from JLR?'))return;try{const p=await api(`/api/me/characters/${b.dataset.id}`,{method:'DELETE'});me=p.user;renderCharacters();renderCalculator();toast('Toon disconnected.')}catch(e){toast(e.message)}}));
   }
   function renderCalculator(){
-    if(!me||!$('calcMinerCharacter'))return;
+    if(!me||!$('calcResults'))return;
     const data=calcData(),engine=window.JLRYieldMath;
     if(!data||!engine){$('calcResults').innerHTML='<div class="calc-empty">Calculator data is not loaded.</div>';return}
+
     const chars=me.characters||[];
-    const minerSel=$('calcMinerCharacter'),fitSel=$('calcFitting'),crystalSel=$('calcCrystal'),boosterSel=$('calcBoosterCharacter'),boosterFitSel=$('calcBoosterFitting');
-    const oldMiner=calcSettings.minerCharacterId||minerSel.value;
-    minerSel.innerHTML=chars.map(ch=>`<option value="${ch.characterId}">${esc(ch.name)}</option>`).join('');
-    if(!chars.length){$('calcResults').innerHTML='<div class="calc-empty">Connect a mining toon first.</div>';fitSel.innerHTML='';return}
-    calcSettings.minerCharacterId=chars.some(ch=>String(ch.characterId)===String(oldMiner))?String(oldMiner):String(chars[0].characterId);
-    minerSel.value=calcSettings.minerCharacterId;
-    const miner=calcCharacter(calcSettings.minerCharacterId);
-    const fits=miningFits(miner);
-    fitSel.innerHTML=fits.length?fits.map(f=>`<option value="${f.fittingId}">${esc(f.shipName)} — ${esc(f.name)}</option>`).join(''):'<option value="">No supported mining fits synced</option>';
-    if(!fits.some(f=>String(f.fittingId)===String(calcSettings.fittingId)))calcSettings.fittingId=fits[0]?String(fits[0].fittingId):'';
-    fitSel.value=calcSettings.fittingId;
-    const minerFit=calcFitting(miner,calcSettings.fittingId);
-
-    const crystals=Object.keys(data.crystals||{});
-    crystalSel.innerHTML='<option value="Auto">Auto-detect from fit</option>'+crystals.map(name=>`<option value="${esc(name)}">${esc(name)}</option>`).join('');
-    if(!['Auto',...crystals].includes(calcSettings.crystal))calcSettings.crystal='Auto';
-    crystalSel.value=calcSettings.crystal;
-
+    const boosterSel=$('calcBoosterCharacter'),boosterFitSel=$('calcBoosterFitting');
     boosterSel.innerHTML='<option value="">No booster</option>'+chars.map(ch=>`<option value="${ch.characterId}">${esc(ch.name)}</option>`).join('');
     if(!chars.some(ch=>String(ch.characterId)===String(calcSettings.boosterCharacterId)))calcSettings.boosterCharacterId='';
     boosterSel.value=calcSettings.boosterCharacterId;
+
     const booster=calcCharacter(calcSettings.boosterCharacterId);
     const boostFits=boosterFits(booster);
     boosterFitSel.innerHTML='<option value="">No booster fit</option>'+boostFits.map(f=>`<option value="${f.fittingId}">${esc(f.shipName)} — ${esc(f.name)}</option>`).join('');
@@ -373,49 +361,49 @@
     $('calcBoostCharges').textContent=detectedBoostCharges.names.length?detectedBoostCharges.names.join(' + '):'None';
     $('calcMindlink').checked=Boolean(calcSettings.mindlink);
 
-    const needsReauth=Boolean(miner?.needsReauth||(boosterInFleet()&&booster&&booster.needsReauth));
-    $('calcStatus').textContent=needsReauth?'AUTHORIZE':'READY';
+    if(!chars.length){
+      $('calcStatus').textContent='SETUP';
+      $('calcResults').innerHTML='<div class="calc-empty">Connect a mining toon first.</div>';
+      return;
+    }
 
-    if(!minerFit){
-      $('calcResults').innerHTML='<div class="calc-empty">Save a supported barge/exhumer fit, authorize access, then refresh.</div>';
-      localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));
+    const boosterId=String(calcSettings.boosterCharacterId||'');
+    const enabledMiners=chars.filter(ch=>fleetSettings.members?.[String(ch.characterId)]?.enabled&&String(ch.characterId)!==boosterId);
+    const minerNeedsReauth=enabledMiners.some(ch=>ch.needsReauth||!Object.keys(ch.skills||{}).length);
+    const boosterNeedsReauth=Boolean(boosterInFleet()&&booster&&boosterFit&&(booster.needsReauth||!Object.keys(booster.skills||{}).length));
+    $('calcStatus').textContent=(minerNeedsReauth||boosterNeedsReauth)?'AUTHORIZE':'READY';
+
+    if(!enabledMiners.length){
+      $('calcResults').innerHTML='<div class="calc-empty">Select your miners and saved fits in Fleet Setup.</div>';
       return;
     }
-    if(miner?.needsReauth||!Object.keys(miner?.skills||{}).length){
-      $('calcResults').innerHTML='<div class="calc-empty">Authorize this miner, then press Refresh.</div>';
-      localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));
-      return;
-    }
-    if(boosterInFleet()&&booster&&boosterFit&&(booster.needsReauth||!Object.keys(booster.skills||{}).length)){
+    if(boosterNeedsReauth){
       $('calcResults').innerHTML='<div class="calc-empty">Authorize the selected booster, then press Refresh.</div>';
-      localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));
       return;
     }
 
-    try{
-      const activeBooster=boosterInFleet();
-      const result=engine.calculate({
-        data,
-        minerSkills:miner?.skills||{},
-        minerFit,
-        crystalKey:calcSettings.crystal,
-        boosterSkills:activeBooster?(booster?.skills||{}):{},
-        boosterFit:activeBooster?boosterFit:null,
-        mindlink:activeBooster&&Boolean(calcSettings.mindlink),
-      });
-      const fleetView=fleetStats(),fleetCount=fleetView.count,fleet=fleetView.total;
-      const firstLaser=result.lasers[0];
-      const detectedCrystal=calcSettings.crystal==='Auto'?engine.detectCrystal(minerFit):result.crystal;
-      $('calcResults').innerHTML=`
-        <article class="calc-card compact-ship-stat"><span>Ship</span><strong>${esc(result.shipName)}</strong><small>${esc(minerFit.name||'Saved fit')}</small></article>
-        <article class="calc-card expanded-stat"><span>Per ship</span><strong>${fmt(result.m3PerHour,'m3')} m³/hr</strong><small>${result.m3PerSecond.toFixed(2)} m³/s</small></article>
-        <article class="calc-card cycle-stat"><span>Cycle</span><strong>${firstLaser?firstLaser.duration.toFixed(2):'—'} sec</strong><small>${esc(result.shipName)} • crystal ${esc(detectedCrystal)}</small></article>
-        <article class="calc-card boost-stat"><span>Boost</span><strong>${(result.boost.cycleReduction*100).toFixed(2)}%</strong><small>${result.boost.ship==='None'?'No booster':esc(result.boost.ship+' '+result.boost.core+' / Burst '+result.boost.burst)}</small></article>
-        <article class="calc-card expanded-stat"><span>Fleet × ${fleetCount}</span><strong>${fmt(fleet,'m3')} m³/hr</strong><small>selected miners @ ${Number(fleetSettings.uptime).toFixed(0)}% uptime</small></article>`;
-
-    }catch(err){
-      $('calcResults').innerHTML=`<div class="calc-empty">⚠ ${esc(err.message||err)}</div>`;
+    const fleetView=fleetStats();
+    const representative=fleetView.entries.find(x=>x.result);
+    if(!representative){
+      const firstError=fleetView.entries.find(x=>x.error)?.error;
+      $('calcResults').innerHTML=`<div class="calc-empty">${firstError?`⚠ ${esc(firstError)}`:'Select supported mining fits in Fleet Setup, then Refresh.'}</div>`;
+      return;
     }
+
+    const result=representative.result;
+    const minerFit=representative.fit;
+    const firstLaser=result.lasers[0];
+    const detectedCrystal=engine.detectCrystal(minerFit);
+    const fleetCount=fleetView.count,fleet=fleetView.total;
+    const shipSub=fleetCount>1?`${esc(representative.character.name)} • ${fleetCount} miners selected`:`${esc(representative.character.name)} • ${esc(minerFit.name||'Saved fit')}`;
+
+    $('calcResults').innerHTML=`
+      <article class="calc-card compact-ship-stat"><span>Ship</span><strong>${esc(result.shipName)}</strong><small>${shipSub}</small></article>
+      <article class="calc-card expanded-stat"><span>Per ship</span><strong>${fmt(representative.rawM3,'m3')} m³/hr</strong><small>${result.m3PerSecond.toFixed(2)} m³/s • Fleet Setup</small></article>
+      <article class="calc-card cycle-stat"><span>Cycle</span><strong>${firstLaser?firstLaser.duration.toFixed(2):'—'} sec</strong><small>${esc(result.shipName)} • crystal ${esc(detectedCrystal)}</small></article>
+      <article class="calc-card boost-stat"><span>Boost</span><strong>${(result.boost.cycleReduction*100).toFixed(2)}%</strong><small>${result.boost.ship==='None'?'No booster':esc(result.boost.ship+' '+result.boost.core+' / Burst '+result.boost.burst)}</small></article>
+      <article class="calc-card expanded-stat"><span>Fleet × ${fleetCount}</span><strong>${fmt(fleet,'m3')} m³/hr</strong><small>selected miners @ ${Number(fleetSettings.uptime).toFixed(0)}% uptime</small></article>`;
+
     localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));
   }
   function renderAll(){if(!state)return;renderFleet();renderTop();renderSelect();renderBoards();renderHits();renderRanking();renderTimers();renderSelected();renderNotes();renderCharacters();renderCalculator();}
@@ -478,20 +466,12 @@
     }
   });
 
-  function readCalc(){
-    calcSettings={
-      minerCharacterId:$('calcMinerCharacter').value,
-      fittingId:$('calcFitting').value,
-      crystal:$('calcCrystal').value,
-      boosterCharacterId:$('calcBoosterCharacter').value,
-      boosterFittingId:$('calcBoosterFitting').value,
-      mindlink:$('calcMindlink').checked,
-    };
+  function readBoosterCalc(){
+    calcSettings.boosterFittingId=$('calcBoosterFitting').value;
+    calcSettings.mindlink=$('calcMindlink').checked;
     saveCalc();
   }
-  ['calcFitting','calcCrystal'].forEach(id=>$(id).addEventListener('change',readCalc));
-  ['calcBoosterFitting','calcMindlink'].forEach(id=>$(id).addEventListener('change',()=>{readCalc();renderFleet();renderTop()}));
-  $('calcMinerCharacter').addEventListener('change',()=>{calcSettings.minerCharacterId=$('calcMinerCharacter').value;calcSettings.fittingId='';saveCalc()});
+  ['calcBoosterFitting','calcMindlink'].forEach(id=>$(id).addEventListener('change',readBoosterCalc));
   $('calcBoosterCharacter').addEventListener('change',()=>{
     calcSettings.boosterCharacterId=$('calcBoosterCharacter').value;
     calcSettings.boosterFittingId='';
@@ -502,8 +482,6 @@
       localStorage.setItem('jlrFleet',JSON.stringify(fleetSettings));
     }
     saveCalc();
-    renderFleet();
-    renderTop();
   });
 
   function readFleet(){
