@@ -57,6 +57,17 @@ const dogmaAttributeCache = new Map();
 const TEN_HOURS = 10 * 60 * 60 * 1000;
 const SESSION_TTL = 30 * 24 * 60 * 60 * 1000;
 const MARKET_REFRESH_MS = 24 * 60 * 60 * 1000;
+// Perfect null-sec refine: T2 rigged Tatara + max skills + RX-804 implant.
+const MAX_REFINE_YIELD = 0.90628105568;
+const ORE_REPROCESSING = {
+  Kylixium:{portionSize:100,minerals:{Tritanium:300,Pyerite:200,Mexallon:550}},
+  Ueganite:{portionSize:100,minerals:{Tritanium:800,Megacyte:40}},
+  Griemeer:{portionSize:100,minerals:{Tritanium:250,Isogen:80}},
+  Nocxite:{portionSize:100,minerals:{Tritanium:900,Pyerite:150,Nocxium:105}},
+  Hezorime:{portionSize:100,minerals:{Tritanium:2000,Isogen:120,Zydrine:60}},
+  Mordunium:{portionSize:100,minerals:{Pyerite:97}},
+};
+const REFINING_MINERALS=[...new Set(Object.values(ORE_REPROCESSING).flatMap(x=>Object.keys(x.minerals)))];
 const JITA_REGION_ID = 10000002;
 const JITA_SYSTEM_ID = 30000142;
 const JITA_44_STATION_ID = 60003760;
@@ -276,7 +287,7 @@ function publicState() {
     app:{name:'JLR Miner Tracker',version:'2.3.15',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state and fleet-level mining totals only. No character-location scope and no per-character mining systems are stored.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,systems:marketSystems},
     fields:state.fields,
-    market:{lastUpdatedAt:state.market.lastUpdatedAt,lastError:state.market.lastError,privateLastError:state.market.privateLastError||null,refreshing:marketRefreshInProgress,jita:'Jita IV - Moon 4 - Caldari Navy Assembly Plant',local:CN_SYSTEM_NAME,privateAccess:Boolean(state.market.refreshTokenEnc),marketCharacterName:state.market.characterName||null,structureName:state.market.structureName||null},
+    market:{lastUpdatedAt:state.market.lastUpdatedAt,lastError:state.market.lastError,privateLastError:state.market.privateLastError||null,refreshing:marketRefreshInProgress,valuation:'MAX REFINE',maxRefineYield:MAX_REFINE_YIELD,jita:'Jita IV - Moon 4 - Caldari Navy Assembly Plant',local:CN_SYSTEM_NAME,privateAccess:Boolean(state.market.refreshTokenEnc),marketCharacterName:state.market.characterName||null,structureName:state.market.structureName||null},
     esi:{configured:Boolean(EVE_CLIENT_ID),linkedCharacters:Object.keys(state.characters).length,lastSyncAt:state.esi.lastSyncAt,lastError:state.esi.lastError,syncing:syncInProgress,actual:{today:todayActual,week:weekActual}},
     serverNow:now(),
   };
@@ -534,6 +545,27 @@ function bestOrderPrices(orders=[]) {
   }
   return{buy,sell};
 }
+function refinedOreValue(oreName,oreVolume,priceByMineral) {
+  const recipe=ORE_REPROCESSING[oreName];
+  if(!recipe||!(oreVolume>0))return null;
+  let grossPerBatch=0;
+  const breakdown={};
+  for(const [mineral,qty] of Object.entries(recipe.minerals)){
+    const price=Number(priceByMineral[mineral]);
+    if(!(price>0))return null;
+    const refinedQty=Number(qty)*MAX_REFINE_YIELD;
+    const value=refinedQty*price;
+    breakdown[mineral]={grossQty:Number(qty),refinedQty,unitPrice:price,value};
+    grossPerBatch+=value;
+  }
+  const batchM3=Number(recipe.portionSize)*Number(oreVolume);
+  return {
+    perM3:grossPerBatch/batchM3,
+    perBatch:grossPerBatch,
+    batchM3,
+    breakdown,
+  };
+}
 async function refreshMarketPrices(force=false) {
   if(marketRefreshInProgress)return;
   const last=Date.parse(state.market?.lastUpdatedAt||'');
@@ -543,31 +575,27 @@ async function refreshMarketPrices(force=false) {
   state.market.privateLastError=null;
   broadcast();
   try{
-    const names=[...ORES.map(o=>o.name),CN_SYSTEM_NAME];
+    const names=[...ORES.map(o=>o.name),...REFINING_MINERALS,CN_SYSTEM_NAME];
     const ids=await resolveUniverseIds(names);
     const cnSystemId=ids.get(CN_SYSTEM_NAME);
     if(!cnSystemId)throw new Error(`${CN_SYSTEM_NAME} system ID could not be resolved`);
 
-    const typeIds=ORES.map(o=>Number(ids.get(o.name))).filter(Number.isFinite);
+    const mineralTypeIds=REFINING_MINERALS.map(name=>Number(ids.get(name))).filter(Number.isFinite);
     let privateMarket=null;
     if(state.market.refreshTokenEnc){
       try{
         const access=await marketAccessToken();
-        privateMarket=await resolveMarketStructure(cnSystemId,access,typeIds);
+        privateMarket=await resolveMarketStructure(cnSystemId,access,mineralTypeIds);
       }catch(err){
         state.market.privateLastError=String(err.message||err);
         console.warn('Private market refresh unavailable',state.market.privateLastError);
       }
     }
 
-    const next={...state.market.prices};
-    for(const ore of ORES){
-      const typeId=ids.get(ore.name);
-      if(!typeId){console.warn('Market type not resolved',ore.name);continue}
-      await ensureType([typeId]);
-      const volume=Number(state.esi.typeCache[String(typeId)]?.volume||0);
-      if(!(volume>0)){console.warn('Market type has no volume',ore.name,typeId);continue}
-
+    const mineralPrices={jita:{},cn:{},detail:{}};
+    for(const mineral of REFINING_MINERALS){
+      const typeId=ids.get(mineral);
+      if(!typeId){console.warn('Mineral type not resolved',mineral);continue}
       const [forgeOrders,fountainOrders]=await Promise.all([
         marketOrders(JITA_REGION_ID,typeId),
         marketOrders(FOUNTAIN_REGION_ID,typeId),
@@ -578,30 +606,56 @@ async function refreshMarketPrices(force=false) {
       const usePrivate=privateMarket&&(privateCn.buy!==null||privateCn.sell!==null);
       const cn=usePrivate?privateCn:publicCn;
 
+      if(jita.buy!==null)mineralPrices.jita[mineral]=jita.buy;
+      if(cn.buy!==null)mineralPrices.cn[mineral]=cn.buy;
+      mineralPrices.detail[mineral]={
+        typeId,
+        jita,
+        cn:{...cn,source:usePrivate?'alliance-structure':'public-region'},
+      };
+    }
+
+    const next={...state.market.prices};
+    for(const ore of ORES){
+      const typeId=ids.get(ore.name);
+      if(!typeId){console.warn('Ore type not resolved',ore.name);continue}
+      await ensureType([typeId]);
+      const volume=Number(state.esi.typeCache[String(typeId)]?.volume||0);
+      if(!(volume>0)){console.warn('Ore type has no volume',ore.name,typeId);continue}
+
+      const jitaValue=refinedOreValue(ore.name,volume,mineralPrices.jita);
+      const cnValue=refinedOreValue(ore.name,volume,mineralPrices.cn);
+      if(!jitaValue){console.warn('Incomplete Jita mineral prices for',ore.name);continue}
+
       next[ore.name]={
         typeId,
         volume,
         updatedAt:now(),
+        valuation:'max-refine-minerals',
+        maxRefineYield:MAX_REFINE_YIELD,
+        recipe:ORE_REPROCESSING[ore.name],
         jita:{
-          buy:jita.buy,
-          sell:jita.sell,
-          buyPerM3:jita.buy===null?null:jita.buy/volume,
-          sellPerM3:jita.sell===null?null:jita.sell/volume,
+          source:'refined-minerals',
+          buyPerM3:jitaValue.perM3,
+          refinedBuyPerM3:jitaValue.perM3,
+          refinedBatchValue:jitaValue.perBatch,
+          breakdown:jitaValue.breakdown,
         },
         cn:{
           system:CN_SYSTEM_NAME,
-          source:usePrivate?'alliance-structure':'public-region',
-          structureId:usePrivate?privateMarket.id:null,
-          structureName:usePrivate?privateMarket.name:null,
-          buy:cn.buy,
-          sell:cn.sell,
-          buyPerM3:cn.buy===null?null:cn.buy/volume,
-          sellPerM3:cn.sell===null?null:cn.sell/volume,
+          source:privateMarket?'alliance-structure-minerals':'public-region-minerals',
+          structureId:privateMarket?privateMarket.id:null,
+          structureName:privateMarket?privateMarket.name:null,
+          buyPerM3:cnValue?.perM3??null,
+          refinedBuyPerM3:cnValue?.perM3??null,
+          refinedBatchValue:cnValue?.perBatch??null,
+          breakdown:cnValue?.breakdown??null,
         },
       };
     }
 
     state.market.prices=next;
+    state.market.minerals=mineralPrices.detail;
     state.market.lastUpdatedAt=now();
     state.market.lastError=null;
     await save();
