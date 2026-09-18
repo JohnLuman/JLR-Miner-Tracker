@@ -352,6 +352,47 @@
     }).join('')+`<div class="fleet-total-line"><span>Fleet total</span><strong>${fmt(fleet.total,'m3')} m³/hr</strong></div>`;
   }
 
+  function renderIceMining(){
+    if(!state||!$('iceValueChart'))return;
+    const rows=(state.source?.ice||[]).map(ice=>{
+      const jita=Number(ice.market?.jita?.refinedBlockValue);
+      const cn=Number(ice.market?.cn?.refinedBlockValue);
+      return {
+        name:ice.name,
+        jita:Number.isFinite(jita)&&jita>0?jita:0,
+        cn:Number.isFinite(cn)&&cn>0?cn:0,
+      };
+    }).sort((a,b)=>b.jita-a.jita);
+
+    const refine=Number(state.market?.maxRefineYield);
+    if(Number.isFinite(refine)&&refine>0)$('iceRefineRate').textContent=`${(refine*100).toFixed(2)}%`;
+
+    const bestJita=rows.find(x=>x.jita>0)||null;
+    const bestCn=[...rows].sort((a,b)=>b.cn-a.cn).find(x=>x.cn>0)||null;
+    $('iceBestJita').textContent=bestJita?bestJita.name:'—';
+    $('iceBestJitaSub').textContent=bestJita?`${fmt(bestJita.jita)} ISK/block`:'Waiting for Jita ice-product prices';
+    $('iceBestCn').textContent=bestCn?bestCn.name:'—';
+    $('iceBestCnSub').textContent=bestCn?`${fmt(bestCn.cn)} ISK/block`:'No local ice-product prices yet';
+
+    if(!rows.length){
+      $('iceValueChart').innerHTML='<div class="visual-empty">Ice market data is not loaded yet.</div>';
+      return;
+    }
+
+    const max=Math.max(1,...rows.flatMap(row=>[row.jita,row.cn]));
+    $('iceValueChart').innerHTML=rows.map(row=>{
+      const jitaPct=Math.max(0,Math.min(100,row.jita/max*100));
+      const cnPct=Math.max(0,Math.min(100,row.cn/max*100));
+      return `<div class="bar-row ice-bar-row">
+        <div class="bar-label"><strong>${esc(row.name)}</strong><small>1 block = 1,000 m³</small></div>
+        <div class="dual-bars">
+          <div class="bar-track ice-track"><span class="bar-fill bar-jita" style="width:${jitaPct.toFixed(2)}%"></span><em>${row.jita?fmt(row.jita)+' ISK':'—'}</em></div>
+          <div class="bar-track ice-track"><span class="bar-fill bar-cn" style="width:${cnPct.toFixed(2)}%"></span><em>${row.cn?fmt(row.cn)+' ISK':'—'}</em></div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
   function renderRanking(){
     if(!state)return;$('oreRanking').innerHTML='';for(const ore of state.source.ores){const clear=ore.siteM3/fleetM3()*60;const r=document.createElement('div');r.className='rank-row';r.innerHTML=`<div class="rank-badge">#${ore.rank}</div><div><strong>${esc(ore.name)}</strong><small>${ore.systems.join(' • ')}<br>${ore.jbvPerM3.toFixed(2)} JBV/m³ • site ${fmt(ore.siteJBV)} JBV</small></div><div class="rank-num">${fmt(fleetM3(),'m3')}<small>m³/hr</small></div><div class="rank-num">${fmt(projectedISK(ore))}/hr<small>~${Number.isFinite(clear)?clear.toFixed(0):'—'} min/site</small></div>`;$('oreRanking').appendChild(r)}
   }
@@ -451,7 +492,7 @@
 
     localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));
   }
-  function renderAll(){if(!state)return;renderFleet();renderTop();renderSelect();renderBoards();renderHits();renderMiningVisuals();renderRanking();renderTimers();renderSelected();renderNotes();renderCharacters();renderCalculator();}
+  function renderAll(){if(!state)return;renderFleet();renderTop();renderSelect();renderBoards();renderHits();renderMiningVisuals();renderIceMining();renderRanking();renderTimers();renderSelected();renderNotes();renderCharacters();renderCalculator();}
 
   async function refreshMe(){const p=await api('/api/me');me=p.user;if(me){$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait}return p.authenticated}
   async function loadState(){state=await api('/api/state');renderAll()}
