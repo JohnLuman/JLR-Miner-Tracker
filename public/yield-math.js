@@ -49,17 +49,36 @@
     const efficiencyBoost=efficiencyCharge?n(b.efficiencyBase)*common:0;
     return {ship,core,burst,commandSkill,director,cycleReduction,efficiencyBoost,commonMultiplier:common};
   }
+  function normalizeDuration(v,fallback){
+    const x=n(v,NaN);
+    if(!Number.isFinite(x))return n(fallback);
+    return x>1000?x/1000:x;
+  }
+  function normalizeChance(v,fallback){
+    const x=n(v,NaN);
+    if(!Number.isFinite(x))return n(fallback);
+    return x>0.5?x/100:x;
+  }
+  function normalizeBonusYield(v,fallback){
+    const x=n(v,NaN);
+    if(!Number.isFinite(x))return n(fallback);
+    return x>10?x/100:x;
+  }
   function calculate({data,minerSkills={},minerFit=null,crystalKey='None',boosterSkills={},boosterFit=null,mindlink=false,efficiencyCharge=false}={}){
     if(!data)throw new Error('Yield calculator data is missing.');
     if(!minerFit)throw new Error('Select a saved mining fit.');
     const shipName=String(minerFit.shipName||'');
     const ship=data.ships?.[shipName];
-    if(!ship)throw new Error(`${shipName||'This hull'} is not supported by the workbook Yield Calc.`);
+    if(!ship)throw new Error(`${shipName||'This hull'} is not supported.`);
     const fitItems=items(minerFit);
-    const laserRows=fitItems.filter(row=>Object.prototype.hasOwnProperty.call(data.lasers||{},String(row.name||'')));
+    const normalLaserRows=fitItems.filter(row=>Object.prototype.hasOwnProperty.call(data.lasers||{},String(row.name||'')));
     const abyssalRows=fitItems.filter(row=>/Abyssal.*Strip Miner/i.test(String(row.name||'')));
-    if(!laserRows.length&&abyssalRows.length)throw new Error('Abyssal strip miner detected — exact roll stats are required.');
-    if(!laserRows.length)throw new Error('No supported strip miner was found in this saved fit.');
+    if(!normalLaserRows.length&&!abyssalRows.length)throw new Error('No supported strip miner was found in this saved fit.');
+    if(abyssalRows.length&&minerFit.abyssalMatch!=='matched'){
+      if(minerFit.abyssalMatch==='ambiguous')throw new Error('More than one matching Abyssal-fitted ship was found. Leave only the intended ship fitted, then Refresh.');
+      throw new Error('Abyssal strip miner found, but its exact rolled module could not be matched from this character’s fitted assets.');
+    }
+
     const ids=data.skillIds||{}, sb=data.skillBonuses||{};
     const mining=level(minerSkills,ids.mining);
     const astro=level(minerSkills,ids.astrogeology);
@@ -76,44 +95,84 @@
         upgradeBonus+=bonus*q; upgradeParts.push({name,quantity:q,bonus});
       }
     }
+
     const chipsetName=firstRecognized(fitItems,data.chipsets||{});
     const chipset=data.chipsets?.[chipsetName]||data.chipsets?.None||{};
     let chosenCrystal=String(crystalKey||'None');
     if(chosenCrystal==='Auto')chosenCrystal=detectCrystal(minerFit);
     if(!data.crystals?.[chosenCrystal])chosenCrystal='None';
     const boost=boostBreakdown(data,boosterSkills,boosterFit,mindlink,efficiencyCharge);
+
     let totalM3s=0,totalBasePerCycle=0,totalBonusPerCycle=0;
     const lasers=[];
-    for(const row of laserRows){
-      const name=String(row.name||''), q=itemCount(row), laser=data.lasers[name];
-      const modulated=/^Modulated (Deep Core )?Strip Miner II$/.test(name);
-      const c=modulated?(data.crystals?.[chosenCrystal]||data.crystals?.None):(data.crystals?.None||{yieldModifier:1,durationMultiplier:1});
-      const baseYield=n(laser.miningAmount)*n(c.yieldModifier,1)*
+
+    function addLaser({displayName,sourceName,quantity=1,miningAmount,duration,criticalSuccessChance,criticalSuccessBonusYield,abyssal=false}){
+      const modulated=/^Modulated (Deep Core )?Strip Miner II$/.test(sourceName);
+      const crystal=modulated?(data.crystals?.[chosenCrystal]||data.crystals?.None):(data.crystals?.None||{yieldModifier:1,durationMultiplier:1});
+      const baseYield=n(miningAmount)*n(crystal.yieldModifier,1)*
         (1+n(ship.roleYield))*
         (1+n(sb.miningYieldPerLevel)*mining)*
         (1+n(sb.astrogeologyYieldPerLevel)*astro)*
         (1+n(ship.miningBargeYieldPerLevel)*barge)*
         (1+n(ship.exhumerYieldPerLevel)*exhumers)*
         (1+upgradeBonus);
-      const critChance=n(laser.criticalSuccessChance)*
+      const critChance=n(criticalSuccessChance)*
         (1+n(sb.miningExploitationCritChancePerLevel)*exploitation)*
         (1+n(chipset.criticalSuccessChanceBonus))*
         (1+n(boost.efficiencyBoost));
-      const critYield=n(laser.criticalSuccessBonusYield)*
+      const critYield=n(criticalSuccessBonusYield)*
         (1+n(sb.miningPrecisionCritYieldPerLevel)*precision)*
         (1+n(chipset.criticalSuccessYieldBonus));
       const bonusYield=baseYield*critChance*critYield;
-      const duration=n(laser.duration)*
-        n(c.durationMultiplier,1)*
+      const finalDuration=n(duration)*
+        n(crystal.durationMultiplier,1)*
         (1+n(ship.exhumerDurationPerLevel)*exhumers)*
         (1+n(ship.roleDuration))*
         Math.max(0.001,1-n(boost.cycleReduction));
-      const m3s=(baseYield+bonusYield)/duration;
-      totalM3s+=m3s*q;
-      totalBasePerCycle+=baseYield*q;
-      totalBonusPerCycle+=bonusYield*q;
-      lasers.push({name,quantity:q,baseYield,bonusYield,totalYield:baseYield+bonusYield,duration,m3s,crystal:modulated?chosenCrystal:'None'});
+      const m3s=(baseYield+bonusYield)/finalDuration;
+      totalM3s+=m3s*quantity;
+      totalBasePerCycle+=baseYield*quantity;
+      totalBonusPerCycle+=bonusYield*quantity;
+      lasers.push({name:displayName,sourceName,quantity,baseYield,bonusYield,totalYield:baseYield+bonusYield,duration:finalDuration,m3s,crystal:modulated?chosenCrystal:'None',abyssal});
     }
+
+    for(const row of normalLaserRows){
+      const name=String(row.name||''),q=itemCount(row),laser=data.lasers[name];
+      addLaser({
+        displayName:name,sourceName:name,quantity:q,
+        miningAmount:n(laser.miningAmount),
+        duration:n(laser.duration),
+        criticalSuccessChance:n(laser.criticalSuccessChance),
+        criticalSuccessBonusYield:n(laser.criticalSuccessBonusYield),
+      });
+    }
+
+    const dynamicByType=new Map();
+    for(const mod of Array.isArray(minerFit.abyssalLasers)?minerFit.abyssalLasers:[]){
+      const key=String(mod.typeId);
+      if(!dynamicByType.has(key))dynamicByType.set(key,[]);
+      dynamicByType.get(key).push(mod);
+    }
+    for(const row of abyssalRows){
+      const needed=itemCount(row),mods=dynamicByType.get(String(row.typeId))||[];
+      if(mods.length<needed)throw new Error('Abyssal roll data is incomplete for this fit.');
+      for(const mod of mods.slice(0,needed)){
+        const sourceName=String(mod.sourceName||'');
+        const base=data.lasers?.[sourceName];
+        if(!base)throw new Error(`Abyssal source ${sourceName||mod.sourceTypeId||'unknown'} is not supported.`);
+        addLaser({
+          displayName:String(mod.name||row.name||'Abyssal Strip Miner'),
+          sourceName,
+          quantity:1,
+          miningAmount:Number.isFinite(Number(mod.miningAmount))?Number(mod.miningAmount):n(base.miningAmount),
+          duration:normalizeDuration(mod.duration,base.duration),
+          criticalSuccessChance:normalizeChance(mod.criticalSuccessChance,base.criticalSuccessChance),
+          criticalSuccessBonusYield:normalizeBonusYield(mod.criticalSuccessBonusYield,base.criticalSuccessBonusYield),
+          abyssal:true,
+        });
+      }
+    }
+
     return {
       sourceSheet:data.sourceSheet||'Yield Calc',
       shipName,
@@ -125,6 +184,7 @@
       boost,
       skills:{mining,astrogeology:astro,miningBarge:barge,exhumers,miningExploitation:exploitation,miningPrecision:precision},
       lasers,
+      abyssalLasers:lasers.filter(x=>x.abyssal),
       baseYieldPerCycle:totalBasePerCycle,
       expectedCriticalBonusPerCycle:totalBonusPerCycle,
       m3PerSecond:totalM3s,
