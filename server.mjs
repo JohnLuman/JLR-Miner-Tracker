@@ -26,7 +26,12 @@ const MINING_SCOPE = 'esi-industry.read_character_mining.v1';
 const SKILLS_SCOPE = 'esi-skills.read_skills.v1';
 const FITTINGS_SCOPE = 'esi-fittings.read_fittings.v1';
 const ASSETS_SCOPE = 'esi-assets.read_assets.v1';
+const MARKET_STRUCTURE_SCOPE = 'esi-markets.structure_markets.v1';
+const SEARCH_STRUCTURES_SCOPE = 'esi-search.search_structures.v1';
+const READ_STRUCTURES_SCOPE = 'esi-universe.read_structures.v1';
 const ESI_SCOPES = [MINING_SCOPE, SKILLS_SCOPE, FITTINGS_SCOPE, ASSETS_SCOPE];
+const MARKET_SCOPES = [MARKET_STRUCTURE_SCOPE, SEARCH_STRUCTURES_SCOPE, READ_STRUCTURES_SCOPE];
+const MARKET_CHARACTER_NAME = String(process.env.MARKET_CHARACTER_NAME || 'John Luman Raholan').trim();
 const MINING_SKILLS = {
   3386: 'Mining',
   3410: 'Astrogeology',
@@ -113,6 +118,8 @@ function freshState() {
     },
     market: {
       prices: {}, lastUpdatedAt: null, lastError: null,
+      characterId: null, characterName: null, refreshTokenEnc: null, scopes: [], authorizedAt: null,
+      structureId: null, structureName: null,
     },
   };
 }
@@ -267,7 +274,7 @@ function publicState() {
     app:{name:'JLR Miner Tracker',version:'2.3.15',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state and fleet-level mining totals only. No character-location scope and no per-character mining systems are stored.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,systems:marketSystems},
     fields:state.fields,
-    market:{lastUpdatedAt:state.market.lastUpdatedAt,lastError:state.market.lastError,refreshing:marketRefreshInProgress,jita:'Jita IV - Moon 4 - Caldari Navy Assembly Plant',local:CN_SYSTEM_NAME},
+    market:{lastUpdatedAt:state.market.lastUpdatedAt,lastError:state.market.lastError,refreshing:marketRefreshInProgress,jita:'Jita IV - Moon 4 - Caldari Navy Assembly Plant',local:CN_SYSTEM_NAME,privateAccess:Boolean(state.market.refreshTokenEnc),marketCharacterName:state.market.characterName||null,structureName:state.market.structureName||null},
     esi:{configured:Boolean(EVE_CLIENT_ID),linkedCharacters:Object.keys(state.characters).length,lastSyncAt:state.esi.lastSyncAt,lastError:state.esi.lastError,syncing:syncInProgress,actual:{today:todayActual,week:weekActual}},
     serverNow:now(),
   };
@@ -282,6 +289,43 @@ async function getSsoMetadata() {
   const r=await fetch('https://login.eveonline.com/.well-known/oauth-authorization-server',{headers:{'User-Agent':ESI_USER_AGENT}}); if(!r.ok)throw new Error(`SSO metadata ${r.status}`);
   ssoMetadata=await r.json(); ssoMetadataAt=Date.now(); return ssoMetadata;
 }
+async function startMarketSso(req,res,url) {
+  if(!EVE_CLIENT_ID)return redirect(res,'/?error=sso-not-configured');
+  const user=readSession(req);
+  if(!user)return redirect(res,'/?error=login-required');
+  const requestedId=String(url.searchParams.get('character')||'');
+  const character=state.characters[requestedId];
+  if(!requestedId||!user.characterIds.includes(requestedId)||!character)return redirect(res,'/?error=market-character-not-linked');
+  if(String(character.name)!==MARKET_CHARACTER_NAME)return redirect(res,'/?error=market-character-not-allowed');
+
+  const meta=await getSsoMetadata();
+  const stateId=randomId();
+  const verifier=EVE_CLIENT_SECRET?'':randomId(32);
+  const redirectUri=callbackUrl(req);
+  oauthStates.set(stateId,{
+    intent:'market',
+    userId:user.id,
+    expectedCharacterId:requestedId,
+    verifier,
+    redirectUri,
+    createdAt:Date.now(),
+  });
+  for(const [k,v] of oauthStates)if(Date.now()-v.createdAt>15*60_000)oauthStates.delete(k);
+
+  const u=new URL(meta.authorization_endpoint||'https://login.eveonline.com/v2/oauth/authorize');
+  u.searchParams.set('response_type','code');
+  u.searchParams.set('client_id',EVE_CLIENT_ID);
+  u.searchParams.set('redirect_uri',redirectUri);
+  u.searchParams.set('scope',MARKET_SCOPES.join(' '));
+  u.searchParams.set('state',stateId);
+  if(!EVE_CLIENT_SECRET){
+    const challenge=crypto.createHash('sha256').update(verifier).digest('base64url');
+    u.searchParams.set('code_challenge',challenge);
+    u.searchParams.set('code_challenge_method','S256');
+  }
+  redirect(res,u.toString());
+}
+
 async function startSso(req,res,url) {
   if (!EVE_CLIENT_ID) return redirect(res,'/?error=sso-not-configured');
   const user=readSession(req); const intent=url.searchParams.get('intent')==='link'?'link':'login';
@@ -324,7 +368,30 @@ async function handleCallback(req,res,url) {
   const stateId=url.searchParams.get('state'); const pending=stateId?oauthStates.get(stateId):null; const code=url.searchParams.get('code');
   if(!pending||!code)return redirect(res,'/?error=sso-state'); oauthStates.delete(stateId);
   try{
-    const tokens=await exchangeCode(code,pending); const identity=await verifyJwt(tokens.access_token,true); const charId=String(identity.characterId); let user;
+    const tokens=await exchangeCode(code,pending);
+    const identity=await verifyJwt(tokens.access_token,pending.intent!=='market');
+    const charId=String(identity.characterId);
+
+    if(pending.intent==='market'){
+      const user=state.users[pending.userId];
+      if(!user)throw new Error('Market authorization session expired');
+      if(charId!==String(pending.expectedCharacterId||''))throw new Error('Authorize the selected John character only');
+      const linked=state.characters[charId];
+      if(!linked||linked.ownerUserId!==user.id||linked.name!==MARKET_CHARACTER_NAME)throw new Error('This character is not the configured market character');
+      for(const scope of MARKET_SCOPES)if(!identity.scopes.includes(scope))throw new Error(`Market scope missing: ${scope}`);
+      state.market.characterId=charId;
+      state.market.characterName=identity.characterName;
+      state.market.refreshTokenEnc=encrypt(tokens.refresh_token);
+      state.market.scopes=identity.scopes;
+      state.market.authorizedAt=now();
+      state.market.lastError=null;
+      await save();
+      setSessionCookie(res,user.id,req);
+      setTimeout(()=>refreshMarketPrices(true).catch(console.error),250);
+      return redirect(res,'/?market=authorized');
+    }
+
+    let user;
     if(pending.intent==='link'){
       user=state.users[pending.userId]; if(!user)throw new Error('Link session expired');
       const existing=state.characters[charId]; if(existing&&existing.ownerUserId!==user.id)throw new Error('That character is already linked to another JLR account');
@@ -641,6 +708,8 @@ function myProfile(user) {
         portrait:`https://images.evetech.net/characters/${c.characterId}/portrait?size=64`,
         scopes,
         needsReauth:!scopes.includes(SKILLS_SCOPE)||!scopes.includes(FITTINGS_SCOPE)||!scopes.includes(ASSETS_SCOPE),
+        marketEligible:c.name===MARKET_CHARACTER_NAME,
+        marketAuthorized:c.name===MARKET_CHARACTER_NAME&&String(state.market.characterId||'')===String(c.characterId)&&Boolean(state.market.refreshTokenEnc),
         skills:c.skills||{},
         skillsUpdatedAt:c.skillsUpdatedAt||null,
         savedFittingsCount:Number.isFinite(Number(c.savedFittingsCount))?Number(c.savedFittingsCount):(c.fittings||[]).length,
@@ -659,7 +728,7 @@ async function serveStatic(req,res,pathname) {
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.1',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,scopes:ESI_SCOPES});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.16',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){const u=readSession(req);return json(res,200,{authenticated:Boolean(u),user:u?myProfile(u):null})}
   const user=requireUser(req,res);if(!user)return;
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
@@ -677,6 +746,7 @@ async function routeApi(req,res,url) {
 }
 
 const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const url=new URL(req.url,requestBaseUrl(req));
+  if(req.method==='GET'&&url.pathname==='/auth/eve/market/start')return await startMarketSso(req,res,url);
   if(req.method==='GET'&&url.pathname==='/auth/eve/start')return await startSso(req,res,url);
   if(req.method==='GET'&&url.pathname==='/auth/eve/callback')return await handleCallback(req,res,url);
   if(req.method==='POST'&&url.pathname==='/auth/logout'){clearSessionCookie(res,req);return json(res,200,{ok:true})}
