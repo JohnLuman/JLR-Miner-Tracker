@@ -123,7 +123,7 @@
   function calcCharacter(id){return me?.characters?.find(c=>String(c.characterId)===String(id))||null}
   function calcFitting(character,id){return character?.fittings?.find(f=>String(f.fittingId)===String(id))||null}
   function miningFits(character){const data=calcData();return(character?.fittings||[]).filter(f=>Boolean(data?.ships?.[f.shipName]))}
-  function boosterFits(character){return(character?.fittings||[]).filter(f=>['Porpoise','Orca','Rorqual'].includes(f.shipName))}
+  function boosterFits(character){return(character?.fittings||[]).filter(f=>['Porpoise','Orca','Rorqual','Outrider'].includes(f.shipName))}
 
   function definitions(){return [...(state?.source?.systems||[])].sort((a,b)=>a.rank-b.rank||a.order-b.order||a.system.localeCompare(b.system))}
   function field(system){return state?.fields?.[system]||null}
@@ -310,7 +310,8 @@
       const boosterSkillBits=[];
       if(booster&&boosterFit){
         boosterSkillBits.push(skillLabelKey(booster,'miningDirector'));
-        boosterSkillBits.push(skillLabelKey(booster,boosterFit.shipName==='Rorqual'?'capitalIndustrialShips':'industrialCommandShips'));
+        const boostSkillKey=boosterFit.shipName==='Rorqual'?'capitalIndustrialShips':boosterFit.shipName==='Outrider'?'commandDestroyers':'industrialCommandShips';
+        boosterSkillBits.push(skillLabelKey(booster,boostSkillKey));
       }
       const upgradeText=result.miningUpgrades.length?result.miningUpgrades.map(x=>`${x.name} ×${x.quantity}`).join(' • '):'No recognized Mining Laser Upgrade';
       const laserText=result.lasers.map(x=>`${x.name}${x.abyssal&&x.sourceName?` [${x.sourceName} roll]`:''} ×${x.quantity}`).join(' • ');
