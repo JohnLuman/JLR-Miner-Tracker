@@ -155,14 +155,7 @@
 
     const booster=calcCharacter(calcSettings.boosterCharacterId);
     const boosterFit=calcFitting(booster,calcSettings.boosterFittingId);
-    const boostBits=[];
-    if(booster&&boosterFit){
-      boostBits.push(`${booster.name} — ${boosterFit.shipName}`);
-      const charges=window.JLRYieldMath?.detectBoostCharges?.(boosterFit)?.names||[];
-      if(charges.length)boostBits.push(`Charges: ${charges.join(' + ')}`);
-      if(calcSettings.mindlink)boostBits.push('Mindlink');
-    }
-    $('fleetBoosterSummary').textContent=boostBits.length?`Booster: ${boostBits.join(' • ')}`:'Booster: none selected';
+    const boosterCharges=boosterFit?(window.JLRYieldMath?.detectBoostCharges?.(boosterFit)?.names||[]):[];
 
     const list=$('fleetMemberList');
     list.innerHTML='';
@@ -187,11 +180,16 @@
           else output=entry?.error||'Needs fit';
         }
         const isBooster=id===String(calcSettings.boosterCharacterId||'');
-        if(isBooster)output='Booster';
+        const boosterFitText=isBooster?(boosterFit?`${boosterFit.shipName} — ${boosterFit.name}`:'No booster fit'):'';
+        const boosterInfo=isBooster?[
+          boosterCharges.length?boosterCharges.join(' + '):'No mining charge',
+          calcSettings.mindlink?'Mindlink':'No Mindlink'
+        ].join(' • '):'';
+        if(isBooster)row.classList.add('booster');
         row.innerHTML=`
           <label class="fleet-member-toggle"><input class="fleet-member-check" data-id="${id}" type="checkbox" ${cfg.enabled&&!isBooster?'checked':''} ${fits.length&&!isBooster?'':'disabled'}><img src="${esc(character.portrait)}" alt=""><span><strong>${esc(character.name)}</strong><small>${isBooster?'Selected booster':fits.length?`${fits.length} mining fit${fits.length===1?'':'s'}`:'No mining fits'}</small></span></label>
-          <select class="fleet-fit-select" data-id="${id}" ${fits.length&&!isBooster?'':'disabled'}>${fitOptions}</select>
-          <strong class="fleet-member-output">${esc(output)}</strong>`;
+          ${isBooster?`<div class="fleet-booster-fit-inline">${esc(boosterFitText)}</div>`:`<select class="fleet-fit-select" data-id="${id}" ${fits.length?'':'disabled'}>${fitOptions}</select>`}
+          <strong class="fleet-member-output">${esc(isBooster?boosterInfo:output)}</strong>`;
         list.appendChild(row);
       }
     }
