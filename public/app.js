@@ -30,6 +30,7 @@
   delete calcSettings.minerCharacterId;
   delete calcSettings.fittingId;
   delete calcSettings.crystal;
+  let iceTrackType=localStorage.getItem('jlrIceType')||'Blue Ice IV-Grade';
   const statusText = {ready:'GREEN',picked:'YELLOW',cleared:'RED'};
 
   function fmt(v, kind='num') {
@@ -173,7 +174,7 @@
   function saveFleet(){localStorage.setItem('jlrFleet',JSON.stringify(fleetSettings));renderAll()}
   function saveCalc(){
     localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));
-    if(state){renderFleet();renderTop()}
+    if(state){renderFleet();renderTop();renderIceMining()}
     renderCalculator();
   }
   function calcData(){return state?.source?.yieldCalculator||null}
@@ -186,6 +187,92 @@
   function boosterInFleet(){
     const id=String(calcSettings.boosterCharacterId||'');
     return Boolean(id&&fleetSettings.members?.[id]?.enabled);
+  }
+
+
+  const ICE_HARVESTERS={
+    'Ice Harvester I':240,
+    'Ice Harvester II':200,
+    'ORE Ice Harvester':200,
+  };
+  const ICE_UPGRADES={
+    'Ice Harvester Upgrade I':0.05,
+    'Frigoris Restrained Ice Harvester Upgrade':0.08,
+    'Ice Harvester Upgrade II':0.09,
+    "'Anguis' Ice Harvester Upgrade":0.09,
+    "'Ingenii' Ice Harvester Upgrade":0.10,
+  };
+  const ICE_SHIP_BONUSES={
+    Covetor:{barge:0.03,exhumers:0,role:0.30},
+    Retriever:{barge:0.02,exhumers:0,role:0.125},
+    Procurer:{barge:0.02,exhumers:0,role:0},
+    Hulk:{barge:0.03,exhumers:0.04,role:0.30},
+    Mackinaw:{barge:0.04,exhumers:0,role:0.125},
+    Skiff:{barge:0.04,exhumers:0,role:0},
+  };
+  function skillLevel(character,id){return Number(character?.skills?.[String(id)]?.level||0)}
+  function selectedFleetFit(character){
+    const cfg=fleetSettings.members?.[String(character?.characterId)]||{};
+    const fits=miningFits(character);
+    return fits.find(f=>String(f.fittingId)===String(cfg.fittingId))||fits[0]||null;
+  }
+  function iceFitStats(character,fit){
+    if(!character||!fit)return null;
+    const ship=ICE_SHIP_BONUSES[fit.shipName];
+    if(!ship)return null;
+    const items=Array.isArray(fit.items)?fit.items:[];
+    const harvesters=items.filter(row=>Object.prototype.hasOwnProperty.call(ICE_HARVESTERS,String(row.name||'')));
+    if(!harvesters.length)return null;
+    if(!Object.prototype.hasOwnProperty.call(character.skills||{},'16281'))return{character,fit,error:'Refresh to sync Ice Harvesting skill'};
+
+    const iceSkill=skillLevel(character,16281);
+    const barge=skillLevel(character,17940);
+    const exhumers=skillLevel(character,22551);
+    let upgradeReduction=0,rigReduction=0;
+    for(const row of items){
+      const name=String(row.name||''),q=Math.max(1,Number(row.quantity||1));
+      if(Object.prototype.hasOwnProperty.call(ICE_UPGRADES,name))upgradeReduction+=Number(ICE_UPGRADES[name])*q;
+      if(name==='Medium Ice Harvester Accelerator I')rigReduction+=0.12*q;
+    }
+
+    const booster=calcCharacter(calcSettings.boosterCharacterId);
+    const boosterFit=calcFitting(booster,calcSettings.boosterFittingId);
+    const activeBooster=boosterInFleet();
+    const boost=window.JLRYieldMath?.boostBreakdown(
+      calcData(),
+      activeBooster?(booster?.skills||{}):{},
+      activeBooster?boosterFit:null,
+      activeBooster&&Boolean(calcSettings.mindlink),
+    )||{cycleReduction:0,ship:'None'};
+
+    const common=
+      Math.max(.05,1-.05*iceSkill)*
+      Math.max(.05,1-ship.barge*barge)*
+      Math.max(.05,1-ship.exhumers*exhumers)*
+      Math.max(.05,1-ship.role)*
+      Math.max(.05,1-upgradeReduction)*
+      Math.max(.05,1-rigReduction)*
+      Math.max(.05,1-Number(boost.cycleReduction||0));
+
+    let blocksPerHour=0,harvesterCount=0;
+    const modules=[];
+    for(const row of harvesters){
+      const name=String(row.name||''),q=Math.max(1,Number(row.quantity||1));
+      const duration=Number(ICE_HARVESTERS[name])*common;
+      harvesterCount+=q;
+      blocksPerHour+=(3600/duration)*q;
+      modules.push({name,quantity:q,duration});
+    }
+    const cycle=blocksPerHour>0?harvesterCount*3600/blocksPerHour:0;
+    return{character,fit,ship:fit.shipName,modules,harvesterCount,cycle,blocksPerHour,m3PerHour:blocksPerHour*1000,iceSkill,barge,exhumers,upgradeReduction,rigReduction,boost};
+  }
+  function iceClass(name){
+    if(name==='Blue Ice IV-Grade')return'blue';
+    if(name==='Glare Crust')return'glare';
+    if(name==='Dark Glitter')return'dark';
+    if(name==='Gelidus')return'gelidus';
+    if(name==='Krystallos')return'krystallos';
+    return'other';
   }
 
   function definitions(){return [...(state?.source?.systems||[])].sort((a,b)=>a.rank-b.rank||a.order-b.order||a.system.localeCompare(b.system))}
@@ -352,47 +439,129 @@
     }).join('')+`<div class="fleet-total-line"><span>Fleet total</span><strong>${fmt(fleet.total,'m3')} m³/hr</strong></div>`;
   }
 
+
   function renderIceMining(){
     if(!state||!$('iceValueChart'))return;
-    const rows=(state.source?.ice||[]).map(ice=>{
-      const jita=Number(ice.market?.jita?.refinedBlockValue);
-      const cn=Number(ice.market?.cn?.refinedBlockValue);
-      return {
+    const iceRows=(state.source?.ice||[]).map(ice=>{
+      const market=ice.market||{};
+      const rawJita=Number(market.rawMarket?.jita?.buy);
+      const track=Number(market.trackingBlockValue);
+      const jita=Number(market.jita?.refinedBlockValue);
+      const cn=Number(market.cn?.refinedBlockValue);
+      return{
         name:ice.name,
+        market,
+        rawJita:Number.isFinite(rawJita)&&rawJita>0?rawJita:0,
+        track:Number.isFinite(track)&&track>0?track:0,
         jita:Number.isFinite(jita)&&jita>0?jita:0,
         cn:Number.isFinite(cn)&&cn>0?cn:0,
+        pct:Number(market.trackingPct||0),
       };
-    }).sort((a,b)=>b.jita-a.jita);
+    });
 
-    const refine=Number(state.market?.maxRefineYield);
-    if(Number.isFinite(refine)&&refine>0)$('iceRefineRate').textContent=`${(refine*100).toFixed(2)}%`;
+    const names=iceRows.map(x=>x.name);
+    if(!names.includes(iceTrackType))iceTrackType=names[0]||'Blue Ice IV-Grade';
+    const select=$('iceTypeSelect');
+    if(select&&document.activeElement!==select){
+      select.innerHTML=iceRows.map(row=>'<option value="'+esc(row.name)+'">'+esc(row.name)+'</option>').join('');
+      select.value=iceTrackType;
+    }
+    const selected=iceRows.find(x=>x.name===iceTrackType)||iceRows[0]||null;
 
-    const bestJita=rows.find(x=>x.jita>0)||null;
-    const bestCn=[...rows].sort((a,b)=>b.cn-a.cn).find(x=>x.cn>0)||null;
-    $('iceBestJita').textContent=bestJita?bestJita.name:'—';
-    $('iceBestJitaSub').textContent=bestJita?`${fmt(bestJita.jita)} ISK/block`:'Waiting for Jita ice-product prices';
-    $('iceBestCn').textContent=bestCn?bestCn.name:'—';
-    $('iceBestCnSub').textContent=bestCn?`${fmt(bestCn.cn)} ISK/block`:'No local ice-product prices yet';
+    $('iceTrackValue').textContent=selected?.track?fmt(selected.track)+' ISK':'—';
+    $('iceTrackValueSub').textContent=selected?(selected.name+' • '+Math.round(selected.pct*100)+'% JBV'):'Waiting for raw block prices';
+    $('iceBestJita').textContent=selected?.jita?fmt(selected.jita)+' ISK':'—';
+    $('iceBestJitaSub').textContent=selected?(selected.name+' • /block • no Heavy Water'):'Heavy Water excluded';
+    $('iceBestCn').textContent=selected?.cn?fmt(selected.cn)+' ISK':'—';
+    $('iceBestCnSub').textContent=selected?(selected.name+' • /block • no Heavy Water'):'Heavy Water excluded';
 
-    if(!rows.length){
-      $('iceValueChart').innerHTML='<div class="visual-empty">Ice market data is not loaded yet.</div>';
-      return;
+    const range=Number(state.market?.titanBridgeRangeLy||6);
+    const fields=Array.isArray(state.source?.iceFields)?state.source.iceFields:[];
+    $('iceFieldCount').textContent=String(fields.length);
+    $('iceBridgeRange').textContent='≤ '+range.toFixed(1)+' LY from C-N4OD';
+    $('iceFieldSummary').textContent='C-N4OD umbrella • Titan bridge ≤ '+range.toFixed(1)+' LY';
+
+    if(!fields.length){
+      $('iceFieldList').innerHTML='<div class="visual-empty">Ice field range is refreshing.</div>';
+    }else{
+      $('iceFieldList').innerHTML=fields.map(row=>{
+        const types=Array.isArray(row.iceTypes)?row.iceTypes:[];
+        const primary=iceClass(types[types.length-1]||'');
+        const chips=types.map(type=>'<span class="ice-chip ice-'+iceClass(type)+'">'+esc(type)+'</span>').join('');
+        return '<article class="ice-field-card ice-field-'+primary+'">'+
+          '<div class="ice-field-main"><strong>'+esc(row.system)+'</strong><span>'+Number(row.distanceLy).toFixed(2)+' LY</span></div>'+
+          '<div class="ice-field-meta"><span>'+(Number(row.iceBelts)||1)+' ice field'+(Number(row.iceBelts)===1?'':'s')+'</span><span>sec '+Number(row.security).toFixed(2)+'</span></div>'+
+          '<div class="ice-chips">'+chips+'</div>'+
+        '</article>';
+      }).join('');
     }
 
-    const max=Math.max(1,...rows.flatMap(row=>[row.jita,row.cn]));
-    $('iceValueChart').innerHTML=rows.map(row=>{
-      const jitaPct=Math.max(0,Math.min(100,row.jita/max*100));
-      const cnPct=Math.max(0,Math.min(100,row.cn/max*100));
-      return `<div class="bar-row ice-bar-row">
-        <div class="bar-label"><strong>${esc(row.name)}</strong><small>1 block = 1,000 m³</small></div>
-        <div class="dual-bars">
-          <div class="bar-track ice-track"><span class="bar-fill bar-jita" style="width:${jitaPct.toFixed(2)}%"></span><em>${row.jita?fmt(row.jita)+' ISK':'—'}</em></div>
-          <div class="bar-track ice-track"><span class="bar-fill bar-cn" style="width:${cnPct.toFixed(2)}%"></span><em>${row.cn?fmt(row.cn)+' ISK':'—'}</em></div>
-        </div>
-      </div>`;
-    }).join('');
-  }
+    if(!iceRows.length){
+      $('iceBlockTable').innerHTML='<div class="visual-empty">Ice market data is not loaded yet.</div>';
+      $('iceValueChart').innerHTML='<div class="visual-empty">Ice market data is not loaded yet.</div>';
+    }else{
+      $('iceBlockTable').innerHTML=iceRows.map(row=>
+        '<div class="ice-block-row">'+
+          '<div><strong>'+esc(row.name)+'</strong><small>'+Math.round(row.pct*100)+'% JBV tracking</small></div>'+
+          '<div><span>Jita buy</span><strong>'+(row.rawJita?fmt(row.rawJita):'—')+'</strong></div>'+
+          '<div><span>Track</span><strong>'+(row.track?fmt(row.track):'—')+'</strong></div>'+
+        '</div>'
+      ).join('');
 
+      const sorted=[...iceRows].sort((a,b)=>b.jita-a.jita);
+      const max=Math.max(1,...sorted.flatMap(row=>[row.jita,row.cn]));
+      $('iceValueChart').innerHTML=sorted.map(row=>{
+        const jitaPct=Math.max(0,Math.min(100,row.jita/max*100));
+        const cnPct=Math.max(0,Math.min(100,row.cn/max*100));
+        return '<div class="bar-row ice-bar-row">'+
+          '<div class="bar-label"><strong>'+esc(row.name)+'</strong><small>Heavy Water excluded</small></div>'+
+          '<div class="dual-bars">'+
+            '<div class="bar-track ice-track"><span class="bar-fill bar-jita" style="width:'+jitaPct.toFixed(2)+'%"></span><em>'+(row.jita?fmt(row.jita)+' ISK':'—')+'</em></div>'+
+            '<div class="bar-track ice-track"><span class="bar-fill bar-cn" style="width:'+cnPct.toFixed(2)+'%"></span><em>'+(row.cn?fmt(row.cn)+' ISK':'—')+'</em></div>'+
+          '</div>'+
+        '</div>';
+      }).join('');
+    }
+
+    const boosterId=String(calcSettings.boosterCharacterId||'');
+    const selectedMiners=(me?.characters||[]).filter(ch=>{
+      const id=String(ch.characterId);
+      return fleetSettings.members?.[id]?.enabled&&id!==boosterId;
+    });
+    const stats=selectedMiners.map(ch=>{
+      const fit=selectedFleetFit(ch);
+      return iceFitStats(ch,fit)||{character:ch,fit,error:'Selected Fleet Setup fit is not an ice fit'};
+    });
+
+    if(!stats.length){
+      $('iceFleetOutput').innerHTML='<div class="visual-empty">Select miners in Fleet Setup to calculate ice output.</div>';
+    }else{
+      let totalBlocks=0,totalM3=0,totalTrack=0,totalJita=0,totalCn=0;
+      const body=stats.map(row=>{
+        if(row.error||!row.blocksPerHour){
+          return '<div class="ice-fleet-row error"><div><strong>'+esc(row.character?.name||'Miner')+'</strong><small>'+esc(row.fit?.name||'No selected fit')+'</small></div><span>'+esc(row.error||'No supported ice harvester')+'</span></div>';
+        }
+        const blocks=row.blocksPerHour,m3=row.m3PerHour;
+        const track=blocks*Number(selected?.track||0);
+        const jita=blocks*Number(selected?.jita||0);
+        const cn=blocks*Number(selected?.cn||0);
+        totalBlocks+=blocks;totalM3+=m3;totalTrack+=track;totalJita+=jita;totalCn+=cn;
+        return '<div class="ice-fleet-row">'+
+          '<div><strong>'+esc(row.character.name)+'</strong><small>'+esc(row.fit.shipName)+' • '+esc(row.fit.name||'Saved fit')+' • '+row.cycle.toFixed(1)+'s cycle</small></div>'+
+          '<div><span>Blocks/hr</span><strong>'+blocks.toFixed(1)+'</strong></div>'+
+          '<div><span>m³/hr</span><strong>'+fmt(m3,'m3')+'</strong></div>'+
+          '<div><span>Track/hr</span><strong>'+(track?fmt(track):'—')+'</strong></div>'+
+          '<div><span>Jita refine/hr</span><strong>'+(jita?fmt(jita):'—')+'</strong></div>'+
+          '<div><span>C-N refine/hr</span><strong>'+(cn?fmt(cn):'—')+'</strong></div>'+
+        '</div>';
+      }).join('');
+      $('iceFleetOutput').innerHTML=body+
+        '<div class="ice-fleet-total"><span>'+esc(iceTrackType)+' fleet total</span><strong>'+
+        totalBlocks.toFixed(1)+' blocks/hr • '+fmt(totalM3,'m3')+' m³/hr</strong><small>Track '+
+        (totalTrack?fmt(totalTrack):'—')+'/hr • Jita refine '+(totalJita?fmt(totalJita):'—')+
+        '/hr • C-N refine '+(totalCn?fmt(totalCn):'—')+'/hr</small></div>';
+    }
+  }
   function renderRanking(){
     if(!state)return;$('oreRanking').innerHTML='';for(const ore of state.source.ores){const clear=ore.siteM3/fleetM3()*60;const r=document.createElement('div');r.className='rank-row';r.innerHTML=`<div class="rank-badge">#${ore.rank}</div><div><strong>${esc(ore.name)}</strong><small>${ore.systems.join(' • ')}<br>${ore.jbvPerM3.toFixed(2)} JBV/m³ • site ${fmt(ore.siteJBV)} JBV</small></div><div class="rank-num">${fmt(fleetM3(),'m3')}<small>m³/hr</small></div><div class="rank-num">${fmt(projectedISK(ore))}/hr<small>~${Number.isFinite(clear)?clear.toFixed(0):'—'} min/site</small></div>`;$('oreRanking').appendChild(r)}
   }
@@ -550,6 +719,13 @@
       toast(e.message);
       setTimeout(()=>{button.textContent='REFRESH';button.disabled=false},3000);
     }
+  });
+
+  $('iceTypeSelect').addEventListener('change',()=>{
+    iceTrackType=$('iceTypeSelect').value||'Blue Ice IV-Grade';
+    localStorage.setItem('jlrIceType',iceTrackType);
+    renderIceMining();
+    sfx('select');
   });
 
   function readBoosterCalc(){
