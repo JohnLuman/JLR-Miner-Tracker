@@ -729,7 +729,7 @@ async function refreshMarketPrices(force=false) {
   if(marketRefreshInProgress)return;
   const last=Date.parse(state.market?.lastUpdatedAt||'');
   const valuationCurrent=ORES.every(o=>state.market?.prices?.[o.name]?.valuation==='max-refine-minerals')
-    &&Object.keys(ICE_REPROCESSING).every(name=>state.market?.icePrices?.[name]?.valuation==='max-refine-ice');
+    &&Object.keys(ICE_REPROCESSING).every(name=>state.market?.icePrices?.[name]?.valuation==='max-refine-ice'&&state.market?.icePrices?.[name]?.trackingBasis==='jita-refine-ex-heavy-water');
   const today=dateUTC();
   const historyCurrent=ORES.every(o=>(state.market?.history?.ore?.[o.name]||[]).some(x=>x.date===today))
     &&Object.keys(ICE_REPROCESSING).every(name=>(state.market?.history?.ice?.[name]||[]).some(x=>x.date===today));
@@ -846,7 +846,9 @@ async function refreshMarketPrices(force=false) {
         if(privateMarket)rawLocal=bestOrderPrices(privateMarket.orders.filter(o=>Number(o.type_id)===Number(typeId)));
       }
       const trackPct=Number(ICE_TRACK_PAYOUT[iceName]||0.75);
-      const trackingBlockValue=rawJita.buy===null?null:Number(rawJita.buy)*trackPct;
+      // Local block tracking is based on Jita max-refine value (Heavy Water excluded),
+      // then paid at 95% for Blue Ice IV-Grade and 75% for all other tracked ice.
+      const trackingBlockValue=jitaValue?.perBlock==null?null:Number(jitaValue.perBlock)*trackPct;
 
       icePrices[iceName]={
         typeId:Number(typeId)||null,
@@ -855,6 +857,7 @@ async function refreshMarketPrices(force=false) {
         valuation:'max-refine-ice',
         maxRefineYield:MAX_REFINE_YIELD,
         trackingPct:trackPct,
+        trackingBasis:'jita-refine-ex-heavy-water',
         trackingBlockValue,
         rawMarket:{
           jita:rawJita,
