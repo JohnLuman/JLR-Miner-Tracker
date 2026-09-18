@@ -706,16 +706,41 @@
       .filter(x=>x.f.status!=='cleared')
       .sort((a,b)=>Number(a.f.cherryPicked)-Number(b.f.cherryPicked)||a.d.rank-b.d.rank||a.d.order-b.d.order)
       .slice(0,8);
-    $('hitOrder').innerHTML='';
+
+    const host=$('hitOrder');
+    host.innerHTML='';
+
     for(const [i,x] of arr.entries()){
       const b=document.createElement('button');
       b.type='button';
-      b.className=`orb hit-chip ${x.f.cherryPicked?'cherry':x.f.status==='picked'?'yellow':'green'}`;
-      b.textContent=`${i+1}. ${x.d.system} • #${x.d.rank} ${x.d.ore}${x.f.cherryPicked?' 🍒':''}`;
+      b.className=`target-card ${x.f.cherryPicked?'cherry':x.f.status==='picked'?'yellow':'green'}`;
+
       const distance=Number(x.d.distanceLy);
-      b.title=`${x.d.system} • ${x.d.ore}${Number.isFinite(distance)?` • ${distance.toFixed(2)} LY from C-N4OD`:''} • ${fmt(projectedISK(state.source.ores[x.d.rank-1]))} payout/hr`;
+      const payout=projectedISK(state.source.ores[x.d.rank-1]);
+      const stateLabel=x.f.cherryPicked?'CHERRY PICKED':x.f.status==='picked'?'PICKED':'MINEABLE';
+
+      b.innerHTML=`
+        <span class="target-rank">#${i+1}</span>
+        <span class="target-main">
+          <strong>${esc(x.d.system)}</strong>
+          <small>#${x.d.rank} ${esc(x.d.ore)}</small>
+        </span>
+        <span class="target-meta">
+          <strong>${Number.isFinite(distance)?distance.toFixed(2)+' LY':'LY —'}</strong>
+          <small>from C-N4OD</small>
+        </span>
+        <span class="target-meta">
+          <strong>${fmt(payout)}/hr</strong>
+          <small>${stateLabel}</small>
+        </span>`;
+
+      b.title=`${x.d.system} • #${x.d.rank} ${x.d.ore}${Number.isFinite(distance)?` • ${distance.toFixed(2)} LY from C-N4OD`:''} • ${fmt(payout)} payout/hr • ${stateLabel}`;
       b.addEventListener('click',()=>chooseSystem(x.d.system));
-      $('hitOrder').appendChild(b);
+      host.appendChild(b);
+    }
+
+    if(!arr.length){
+      host.innerHTML='<div class="target-empty">No mineable T3 fields right now. Cleared fields will return after their respawn timers finish.</div>';
     }
   }
   function renderMiningVisuals(){
