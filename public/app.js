@@ -593,18 +593,49 @@
     const fleet=fleetStats();
     const entries=fleet.entries.filter(x=>x.result);
     if(!entries.length){
-      $('fleetOutputChart').innerHTML='<div class="visual-empty">Select miners in Fleet Setup to see output bars.</div>';
+      $('fleetOutputChart').innerHTML='<div class="visual-empty">Select miners in Fleet Setup to see fleet performance.</div>';
       return;
     }
-    const maxOutput=Math.max(1,...entries.map(x=>Number(x.effectiveM3)||0));
-    $('fleetOutputChart').innerHTML=entries.map(entry=>{
+
+    const uptime=Math.min(100,Math.max(1,Number(fleetSettings.uptime)||100));
+    const potential=entries.reduce((sum,x)=>sum+Number(x.rawM3||0),0);
+    const effective=Number(fleet.total||0);
+    const lost=Math.max(0,potential-effective);
+    const average=entries.length?effective/entries.length:0;
+    const best=entries.reduce((top,row)=>!top||Number(row.effectiveM3)>Number(top.effectiveM3)?row:top,null);
+
+    const contributionRows=entries.map((entry,index)=>{
       const output=Number(entry.effectiveM3)||0;
-      const pct=Math.max(0,Math.min(100,output/maxOutput*100));
-      return `<div class="bar-row fleet-bar-row">
-        <div class="bar-label"><strong>${esc(entry.character.name)}</strong><small>${esc(entry.fit?.shipName||'Ship')}</small></div>
-        <div class="bar-track fleet-track"><span class="bar-fill bar-fleet" style="width:${pct.toFixed(2)}%"></span><em>${fmt(output,'m3')} m³/hr</em></div>
+      const share=effective>0?output/effective*100:0;
+      const delta=average>0?(output-average)/average*100:0;
+      return `<div class="fleet-perf-row">
+        <div class="fleet-perf-miner">
+          <strong>${esc(entry.character.name)}</strong>
+          <small>${esc(entry.fit?.shipName||'Ship')} • ${delta>=0?'+':''}${delta.toFixed(1)}% vs fleet avg</small>
+        </div>
+        <div class="fleet-share-track"><span style="width:${share.toFixed(2)}%"></span></div>
+        <div class="fleet-perf-number"><strong>${fmt(output,'m3')}</strong><small>${share.toFixed(1)}% share</small></div>
       </div>`;
-    }).join('')+`<div class="fleet-total-line"><span>Fleet total</span><strong>${fmt(fleet.total,'m3')} m³/hr</strong></div>`;
+    }).join('');
+
+    $('fleetOutputChart').innerHTML=`
+      <div class="fleet-perf-kpis">
+        <div><span>EFFECTIVE</span><strong>${fmt(effective,'m3')}</strong><small>m³/hr now</small></div>
+        <div><span>POTENTIAL</span><strong>${fmt(potential,'m3')}</strong><small>m³/hr @ 100%</small></div>
+        <div><span>UPTIME</span><strong>${uptime.toFixed(0)}%</strong><small>fleet setting</small></div>
+        <div><span>LOST</span><strong>${fmt(lost,'m3')}</strong><small>m³/hr to downtime</small></div>
+      </div>
+      <div class="fleet-capacity-chart">
+        <div class="fleet-capacity-head"><span>CAPACITY USE</span><strong>${potential>0?(effective/potential*100).toFixed(1):'0.0'}%</strong></div>
+        <div class="fleet-capacity-track"><span style="width:${potential>0?Math.min(100,effective/potential*100).toFixed(2):0}%"></span></div>
+        <div class="fleet-capacity-scale"><span>0</span><span>${fmt(potential,'m3')} m³/hr potential</span></div>
+      </div>
+      <div class="fleet-perf-list">${contributionRows}</div>
+      <div class="fleet-perf-footer">
+        <span>Average <strong>${fmt(average,'m3')} m³/hr</strong></span>
+        <span>Top miner <strong>${best?esc(best.character.name):'—'}</strong></span>
+        <span>${entries.length} miner${entries.length===1?'':'s'} selected</span>
+      </div>`;
   }
 
 
