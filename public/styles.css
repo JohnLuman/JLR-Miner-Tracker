@@ -92,7 +92,7 @@
 
 
 /* Mode-aware dashboard sizing: keep cards useful instead of stretching across ultrawide screens. */
-.app.compact{max-width:1180px}
+.app.compact{max-width:1120px}
 .app.expanded{max-width:1600px}
 .app-tabs{width:max-content;max-width:100%;margin-left:auto;margin-right:auto}
 .tab-host{width:100%}
@@ -109,8 +109,6 @@
   .app.compact .tab-panel{max-width:none}
   .app.compact .tab-panel>*{width:100%;max-width:none;margin-left:0;margin-right:0}
 
-  .app.compact .mining-visual-grid{grid-template-columns:1fr}
-  .app.compact .ice-layout{grid-template-columns:1fr}
   .app.compact .market-line-chart{min-height:250px}
   .app.compact .market-line-svg{min-height:235px}
   .app.compact .fleet-performance{min-height:0}
@@ -161,6 +159,26 @@
   .app.compact .calc-card strong{font-size:14px}
   .app.expanded .calc-card strong{font-size:17px}
   .app.expanded .section-title strong{font-size:12px}
+}
+
+@media(min-width:1001px){
+  .app.compact .tab-panel[data-tab="fields"].active{
+    display:grid;
+    grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);
+    grid-template-areas:
+      "control stats"
+      "board board"
+      "hits hits";
+    gap:8px;
+    align-items:stretch;
+  }
+  .app.compact .tab-panel[data-tab="fields"]>.quick-update{grid-area:control;margin-bottom:0}
+  .app.compact .tab-panel[data-tab="fields"]>.shared-calculator{grid-area:stats;margin-bottom:0;display:flex;flex-direction:column}
+  .app.compact .tab-panel[data-tab="fields"]>.board-panel{grid-area:board;margin-bottom:0}
+  .app.compact .tab-panel[data-tab="fields"]>.hit-panel{grid-area:hits;margin-bottom:0}
+  .app.compact .tab-panel[data-tab="fields"] .calc-results{flex:1;grid-template-columns:1fr;grid-template-rows:repeat(3,minmax(0,1fr))}
+  .app.compact .mining-visual-grid{grid-template-columns:1.15fr .85fr}
+  .app.compact .ice-layout:not(.ice-layout-single){grid-template-columns:1fr 1fr}
 }
 
 @media(max-width:1100px) and (min-width:761px){
