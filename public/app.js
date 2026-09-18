@@ -349,18 +349,43 @@
   $('reportCherry').addEventListener('click',cherry);$('cherryExpanded').addEventListener('click',cherry);
   $('confirmNo').addEventListener('click',()=>{pending=null;$('confirmPanel').classList.add('hidden')});
   $('confirmYes').addEventListener('click',async()=>{if(!pending)return;const p=pending;pending=null;$('confirmPanel').classList.add('hidden');try{const result=await api(`/api/fields/${encodeURIComponent(p.system)}`,{method:'PUT',body:JSON.stringify({status:'cleared',confirm:true})});applyFieldUpdate(p.system,result.field);sfx('timer');$('fieldMessage').textContent=`${p.system} RED — 10-hour timer started.`}catch(e){toast(e.message)}});
-  $('syncNow').addEventListener('click',async()=>{try{
-    await api('/api/esi/sync',{method:'POST',body:'{}'});
-    toast('Refreshing character data...');
-    setTimeout(async()=>{try{await refreshMe();renderCalculator();renderCharacters()}catch{}},3500);
-    setTimeout(async()=>{try{
-      await refreshMe();renderCalculator();renderCharacters();
-      const chars=me?.characters||[];
-      const saved=chars.reduce((n,c)=>n+(Number(c.savedFittingsCount ?? (c.fittings||[]).length)||0),0);
-      const mining=chars.reduce((n,c)=>n+(c.fittings||[]).length,0);
-      toast(`${saved} saved fits found • ${mining} mining fits available`);
-    }catch{}},9000);
-  }catch(e){toast(e.message)}});
+  $('syncNow').addEventListener('click',async()=>{
+    const button=$('syncNow');
+    const before=state?.esi?.lastSyncAt||null;
+    button.disabled=true;
+    button.textContent='REFRESHING…';
+    try{
+      await api('/api/esi/sync',{method:'POST',body:'{}'});
+      toast('Refreshing character data...');
+      let completed=false;
+      for(let attempt=0;attempt<60;attempt++){
+        await new Promise(resolve=>setTimeout(resolve,1000));
+        const next=await api('/api/state');
+        state=next;
+        const finished=!next.esi?.syncing&&next.esi?.lastSyncAt&&next.esi.lastSyncAt!==before;
+        if(finished){completed=true;break}
+      }
+      await refreshMe();
+      renderAll();
+      if(completed){
+        const chars=me?.characters||[];
+        const saved=chars.reduce((n,c)=>n+(Number(c.savedFittingsCount ?? (c.fittings||[]).length)||0),0);
+        const mining=chars.reduce((n,c)=>n+(c.fittings||[]).length,0);
+        const abyssal=chars.reduce((n,c)=>n+(Number(c.abyssalStripCount)||0),0);
+        button.textContent='UPDATED ✓';
+        toast(`${saved} saved fits • ${mining} mining fits${abyssal?` • ${abyssal} Abyssal`:''}`);
+        setTimeout(()=>{button.textContent='REFRESH';button.disabled=false},2200);
+      }else{
+        button.textContent='STILL REFRESHING';
+        toast('Refresh is taking longer than expected.');
+        setTimeout(()=>{button.textContent='REFRESH';button.disabled=false},3000);
+      }
+    }catch(e){
+      button.textContent='REFRESH FAILED';
+      toast(e.message);
+      setTimeout(()=>{button.textContent='REFRESH';button.disabled=false},3000);
+    }
+  });
 
   function readCalc(){
     calcSettings={
