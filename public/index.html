@@ -5,14 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0a0a10">
   <title>JLR Miner Tracker</title>
-  <link rel="stylesheet" href="/styles.css?v=2.3.37">
+  <link rel="stylesheet" href="/styles.css?v=2.3.38">
 </head>
 <body>
   <main id="loginView" class="login-shell hidden">
     <section class="login-card">
       <div class="brand-kicker">JLR INDUSTRIAL NETWORK // FOUNTAIN</div>
       <h1>JLR MINER TRACKER</h1>
-      <p class="login-copy">Shared T3 field status, 10-hour respawn timers, fleet mining actuals, and compact/expanded ops views.</p>
+      <p class="login-copy">Shared T3/ice field board, fixed 10-hour T3 respawn timers, saved-fit mining projections, EVE mining-ledger rates, and Jita/C-N refine values.</p>
       <div class="privacy-card"><strong>Tracks fields, not pilots.</strong><span>No EVE location permission is requested. JLR stores fleet-level mining totals and shared asteroid-field status.</span></div>
       <a id="eveLogin" class="eve-login" href="/auth/eve/start?intent=login" aria-label="Log in with EVE Online">
         <img src="https://web.ccpgamescdn.com/eveonlineassets/developers/eve-sso-login-white-large.png" alt="Log in with EVE Online">
@@ -30,8 +30,8 @@
         <div class="brand-line"><span class="brand-mark">JLR</span><h1>MINER TRACKER</h1><span id="liveBadge" class="status-pill" title="Latest EVE data sync status">● DATA LOADING</span></div>
       </div>
       <div class="top-actions">
-        <button id="compactMode" class="orb purple active" type="button">COMPACT</button>
-        <button id="expandedMode" class="orb silver" type="button">EXPANDED</button>
+        <button id="compactMode" class="orb purple active" type="button" title="Condensed operations view with smaller cards and fewer detail panels">COMPACT</button>
+        <button id="expandedMode" class="orb silver" type="button" title="Full command view with larger layouts and additional T3 economics and timer panels">EXPANDED</button>
         <div class="user-chip"><img id="userPortrait" alt=""><span id="userName">—</span></div>
         <button id="addToonTop" class="orb blue" type="button">+ ADD TOON</button>
         <button id="logout" class="orb dark" type="button">LOG OUT</button>
@@ -145,14 +145,14 @@
     <section class="glass ice-mining-panel">
       <div class="section-title">
         <div><span class="eyebrow">C-N UMBRELLA</span><strong>ICE MINING</strong></div>
-        <div class="ice-title-tools"><label for="iceTypeSelect">Track ice</label><select id="iceTypeSelect" aria-label="Ice type to track"></select></div>
+        <div class="ice-title-tools"><label for="iceTypeSelect">VALUATION ICE TYPE</label><select id="iceTypeSelect" aria-label="Ice type used for payout and market valuation"></select></div>
       </div>
 
       <div class="ice-kpis">
         <article class="ice-kpi"><span>TRACK PAYOUT / BLOCK</span><strong id="iceTrackValue">—</strong><small id="iceTrackValueSub">Blue 95% • others 75% of Jita refine</small></article>
         <article class="ice-kpi"><span>JITA REFINE / BLOCK</span><strong id="iceBestJita">—</strong><small id="iceBestJitaSub">Heavy Water excluded from value</small></article>
         <article class="ice-kpi"><span>C-N REFINE / BLOCK</span><strong id="iceBestCn">—</strong><small id="iceBestCnSub">private market • Heavy Water excluded</small></article>
-        <article class="ice-kpi"><span>ICE FIELDS</span><strong id="iceFieldCount">—</strong><small id="iceBridgeRange">within Titan bridge range</small></article>
+        <article class="ice-kpi"><span>ICE SYSTEMS IN RANGE</span><strong id="iceFieldCount">—</strong><small id="iceBridgeRange">within configured Titan bridge range</small></article>
       </div>
 
       <div class="ice-layout ice-layout-single">
@@ -195,12 +195,12 @@
         <section class="glass actual-panel">
           <div class="section-title"><div><strong>MINING LEDGER TOTALS</strong></div></div>
           <div class="actual-grid">
-            <article class="actual-card"><span>Today mined</span><strong id="actualExpTodayM3">—</strong><small>m³ mined</small></article>
-            <article class="actual-card"><span>Today value</span><strong id="actualExpTodayValue">—</strong><small>estimated payout</small></article>
-            <article class="actual-card"><span>This week</span><strong id="actualWeekM3">—</strong><small>fleet m³</small></article>
-            <article class="actual-card"><span>Week value</span><strong id="actualWeekValue">—</strong><small>estimated payout</small></article>
+            <article class="actual-card"><span>TODAY LEDGER M³</span><strong id="actualExpTodayM3">—</strong><small>recorded mining volume</small></article>
+            <article class="actual-card"><span>TODAY PAYOUT</span><strong id="actualExpTodayValue">—</strong><small>tracked T3 ore × payout %</small></article>
+            <article class="actual-card"><span>THIS WEEK LEDGER M³</span><strong id="actualWeekM3">—</strong><small>Monday UTC through today</small></article>
+            <article class="actual-card"><span>THIS WEEK PAYOUT</span><strong id="actualWeekValue">—</strong><small>tracked T3 ore × payout %</small></article>
           </div>
-          <div class="actual-note">Recorded EVE mining-ledger totals. Value uses the current payout setting; this panel is not a fit projection.</div>
+          <div class="actual-note">Recorded EVE mining-ledger totals. “This week” runs Monday UTC through today. Payout values use tracked T3 ore and the current payout setting; they are not fit projections.</div>
         </section>
       </div>
 
@@ -211,7 +211,7 @@
     </section>
     <div id="toast" class="toast hidden" role="status"></div>
   </main>
-  <script src="/yield-math.js?v=2.3.37" defer></script>
-  <script src="/app.js?v=2.3.37" defer></script>
+  <script src="/yield-math.js?v=2.3.38" defer></script>
+  <script src="/app.js?v=2.3.38" defer></script>
 </body>
 </html>
