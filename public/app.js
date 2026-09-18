@@ -31,6 +31,7 @@
   delete calcSettings.fittingId;
   delete calcSettings.crystal;
   let iceTrackType=localStorage.getItem('jlrIceType')||'Blue Ice IV-Grade';
+  let oreTrendType=localStorage.getItem('jlrOreTrend')||'Kylixium';
   const statusText = {ready:'GREEN',picked:'YELLOW',cleared:'RED'};
 
   function fmt(v, kind='num') {
@@ -54,6 +55,104 @@
   }
   function esc(s){return String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
   function toast(msg){$('toast').textContent=msg;$('toast').classList.remove('hidden');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.add('hidden'),3000)}
+
+  function compactNumber(v){
+    const n=Number(v);
+    if(!Number.isFinite(n))return'—';
+    const a=Math.abs(n);
+    if(a>=1e9)return(n/1e9).toFixed(a>=1e10?0:1)+'B';
+    if(a>=1e6)return(n/1e6).toFixed(a>=1e7?0:1)+'M';
+    if(a>=1e3)return(n/1e3).toFixed(a>=1e4?0:1)+'K';
+    return n.toFixed(a>=100?0:a>=10?1:2);
+  }
+  function chartDateLabel(date){
+    const d=new Date(String(date)+'T00:00:00Z');
+    if(!Number.isFinite(d.getTime()))return String(date||'');
+    return d.toLocaleDateString(undefined,{month:'short',day:'numeric',timeZone:'UTC'});
+  }
+  function marketHistoryPoints(bucket,key,currentJita,currentCn){
+    const source=Array.isArray(state?.market?.history?.[bucket]?.[key])?state.market.history[bucket][key]:[];
+    const points=source.slice(-31).map(row=>({
+      date:String(row.date||''),
+      jita:Number.isFinite(Number(row.jita))?Number(row.jita):null,
+      cn:Number.isFinite(Number(row.cn))?Number(row.cn):null,
+    })).filter(row=>row.date);
+    const today=new Date().toISOString().slice(0,10);
+    if(!points.some(row=>row.date===today)){
+      points.push({
+        date:today,
+        jita:Number.isFinite(Number(currentJita))&&Number(currentJita)>0?Number(currentJita):null,
+        cn:Number.isFinite(Number(currentCn))&&Number(currentCn)>0?Number(currentCn):null,
+      });
+    }
+    return points.sort((a,b)=>a.date.localeCompare(b.date)).slice(-31);
+  }
+  function renderMarketLineChart(el,points,{unit='',decimals=2}={}){
+    if(!el)return;
+    const rows=(points||[]).filter(row=>row&&row.date).slice(-31);
+    const vals=rows.flatMap(row=>[row.jita,row.cn]).filter(v=>Number.isFinite(Number(v))&&Number(v)>0).map(Number);
+    if(!vals.length){
+      el.innerHTML='<div class="visual-empty">Market history is collecting its first daily point.</div>';
+      return;
+    }
+
+    const W=640,H=220,L=54,R=16,T=12,B=30;
+    const pw=W-L-R,ph=H-T-B;
+    let min=Math.min(...vals),max=Math.max(...vals);
+    if(min===max){min*=.97;max*=1.03}
+    else{const pad=(max-min)*.08;min=Math.max(0,min-pad);max+=pad}
+    const range=Math.max(1e-9,max-min);
+    const x=i=>rows.length<=1?L+pw/2:L+(i/(rows.length-1))*pw;
+    const y=v=>T+(max-Number(v))/range*ph;
+
+    const ticks=4;
+    let grid='';
+    for(let i=0;i<=ticks;i++){
+      const yy=T+(i/ticks)*ph;
+      const value=max-(i/ticks)*range;
+      grid+='<line x1="'+L+'" y1="'+yy.toFixed(1)+'" x2="'+(W-R)+'" y2="'+yy.toFixed(1)+'" class="market-grid"/>'+
+        '<text x="'+(L-7)+'" y="'+(yy+3).toFixed(1)+'" text-anchor="end" class="market-axis-label">'+esc(compactNumber(value))+'</text>';
+    }
+
+    const labelCount=Math.min(5,rows.length);
+    const tickIndexes=new Set();
+    if(rows.length===1)tickIndexes.add(0);
+    else for(let i=0;i<labelCount;i++)tickIndexes.add(Math.round(i*(rows.length-1)/(labelCount-1)));
+    let xLabels='';
+    for(const i of tickIndexes){
+      xLabels+='<text x="'+x(i).toFixed(1)+'" y="'+(H-8)+'" text-anchor="middle" class="market-axis-label">'+esc(chartDateLabel(rows[i].date))+'</text>';
+    }
+
+    function seriesPath(key){
+      let d='',started=false;
+      for(let i=0;i<rows.length;i++){
+        const v=Number(rows[i][key]);
+        if(!(Number.isFinite(v)&&v>0)){started=false;continue}
+        d+=(started?' L ':'M ')+x(i).toFixed(1)+' '+y(v).toFixed(1);
+        started=true;
+      }
+      return d;
+    }
+    function dots(key,cls){
+      return rows.map((row,i)=>{
+        const v=Number(row[key]);
+        if(!(Number.isFinite(v)&&v>0))return'';
+        const label=chartDateLabel(row.date)+' • '+(key==='jita'?'Jita':'C-N')+' '+v.toFixed(decimals)+(unit?' '+unit:'');
+        return '<circle cx="'+x(i).toFixed(1)+'" cy="'+y(v).toFixed(1)+'" r="2.7" class="'+cls+'"><title>'+esc(label)+'</title></circle>';
+      }).join('');
+    }
+
+    const jitaPath=seriesPath('jita'),cnPath=seriesPath('cn');
+    const first=rows[0]?.date,last=rows[rows.length-1]?.date;
+    const collecting=rows.length<30?'<div class="market-history-note">History started '+esc(chartDateLabel(first))+' • '+rows.length+' daily point'+(rows.length===1?'':'s')+' collected</div>':'';
+    el.innerHTML='<svg class="market-line-svg" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Jita versus C-N 30 day market trend">'+
+      grid+xLabels+
+      (jitaPath?'<path d="'+jitaPath+'" class="market-line market-line-jita"/>':'')+
+      (cnPath?'<path d="'+cnPath+'" class="market-line market-line-cn"/>':'')+
+      dots('jita','market-dot market-dot-jita')+dots('cn','market-dot market-dot-cn')+
+      '<text x="'+(W-R)+'" y="10" text-anchor="end" class="market-unit-label">'+esc(unit)+'</text>'+
+      '</svg>'+collecting;
+  }
 
   function unlockAudio(){if(audioUnlocked)return;const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;audio=new AC();audioUnlocked=true;}
   function sfx(kind='click'){
@@ -404,23 +503,18 @@
     if(!state||!$('oreValueChart')||!$('fleetOutputChart'))return;
 
     const ores=state.source?.ores||[];
-    const valueRows=ores.map(ore=>{
-      const jita=Number(ore.market?.jita?.refinedBuyPerM3 ?? ore.market?.jita?.buyPerM3 ?? ore.jbvPerM3);
-      const cn=Number(ore.market?.cn?.refinedBuyPerM3 ?? ore.market?.cn?.buyPerM3);
-      return {name:ore.name,jita:Number.isFinite(jita)&&jita>0?jita:0,cn:Number.isFinite(cn)&&cn>0?cn:0};
-    });
-    const valueMax=Math.max(1,...valueRows.flatMap(row=>[row.jita,row.cn]));
-    $('oreValueChart').innerHTML=valueRows.map(row=>{
-      const jitaPct=Math.max(0,Math.min(100,row.jita/valueMax*100));
-      const cnPct=Math.max(0,Math.min(100,row.cn/valueMax*100));
-      return `<div class="bar-row">
-        <div class="bar-label"><strong>${esc(row.name)}</strong></div>
-        <div class="dual-bars">
-          <div class="bar-track"><span class="bar-fill bar-jita" style="width:${jitaPct.toFixed(2)}%"></span><em>${row.jita?row.jita.toFixed(2):'—'}</em></div>
-          <div class="bar-track"><span class="bar-fill bar-cn" style="width:${cnPct.toFixed(2)}%"></span><em>${row.cn?row.cn.toFixed(2):'—'}</em></div>
-        </div>
-      </div>`;
-    }).join('');
+    const oreNames=ores.map(ore=>ore.name);
+    if(!oreNames.includes(oreTrendType))oreTrendType=oreNames[0]||'Kylixium';
+    const oreSelect=$('oreTrendSelect');
+    if(oreSelect&&document.activeElement!==oreSelect){
+      oreSelect.innerHTML=ores.map(ore=>'<option value="'+esc(ore.name)+'">'+esc(ore.name)+'</option>').join('');
+      oreSelect.value=oreTrendType;
+    }
+    const trendOre=ores.find(ore=>ore.name===oreTrendType)||ores[0]||null;
+    const currentJita=Number(trendOre?.market?.jita?.refinedBuyPerM3 ?? trendOre?.market?.jita?.buyPerM3 ?? trendOre?.jbvPerM3);
+    const currentCn=Number(trendOre?.market?.cn?.refinedBuyPerM3 ?? trendOre?.market?.cn?.buyPerM3);
+    const oreHistory=marketHistoryPoints('ore',trendOre?.name||oreTrendType,currentJita,currentCn);
+    renderMarketLineChart($('oreValueChart'),oreHistory,{unit:'ISK/m³',decimals:2});
 
     const fleet=fleetStats();
     const entries=fleet.entries.filter(x=>x.result);
@@ -508,19 +602,8 @@
         '</div>'
       ).join('');
 
-      const sorted=[...iceRows].sort((a,b)=>b.jita-a.jita);
-      const max=Math.max(1,...sorted.flatMap(row=>[row.jita,row.cn]));
-      $('iceValueChart').innerHTML=sorted.map(row=>{
-        const jitaPct=Math.max(0,Math.min(100,row.jita/max*100));
-        const cnPct=Math.max(0,Math.min(100,row.cn/max*100));
-        return '<div class="bar-row ice-bar-row">'+
-          '<div class="bar-label"><strong>'+esc(row.name)+'</strong><small>Heavy Water excluded</small></div>'+
-          '<div class="dual-bars">'+
-            '<div class="bar-track ice-track"><span class="bar-fill bar-jita" style="width:'+jitaPct.toFixed(2)+'%"></span><em>'+(row.jita?fmt(row.jita)+' ISK':'—')+'</em></div>'+
-            '<div class="bar-track ice-track"><span class="bar-fill bar-cn" style="width:'+cnPct.toFixed(2)+'%"></span><em>'+(row.cn?fmt(row.cn)+' ISK':'—')+'</em></div>'+
-          '</div>'+
-        '</div>';
-      }).join('');
+      const iceHistory=marketHistoryPoints('ice',selected?.name||iceTrackType,selected?.jita,selected?.cn);
+      renderMarketLineChart($('iceValueChart'),iceHistory,{unit:'ISK/block',decimals:0});
     }
 
     const boosterId=String(calcSettings.boosterCharacterId||'');
@@ -719,6 +802,13 @@
       toast(e.message);
       setTimeout(()=>{button.textContent='REFRESH';button.disabled=false},3000);
     }
+  });
+
+  $('oreTrendSelect').addEventListener('change',()=>{
+    oreTrendType=$('oreTrendSelect').value||'Kylixium';
+    localStorage.setItem('jlrOreTrend',oreTrendType);
+    renderMiningVisuals();
+    sfx('select');
   });
 
   $('iceTypeSelect').addEventListener('change',()=>{
