@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 await import('../public/yield-math.js');
 const data=JSON.parse(await fs.readFile(new URL('../source-data.json',import.meta.url),'utf8')).yieldCalculator;
 const ids=data.skillIds;
-const skillKeys=['mining','astrogeology','miningBarge','exhumers','miningExploitation','miningPrecision','miningDirector','industrialCommandShips','capitalIndustrialShips'];
+const skillKeys=['mining','astrogeology','miningBarge','exhumers','miningExploitation','miningPrecision','miningDirector','industrialCommandShips','capitalIndustrialShips','commandDestroyers'];
 const skills={};
 for(const key of skillKeys)skills[String(ids[key])]={name:key,level:5};
 
@@ -45,4 +45,19 @@ const result=globalThis.JLRYieldMath.calculate({
 assert.ok(Math.abs(result.m3PerHour-data.regression.expectedM3PerHour)<0.01,`m3/hr ${result.m3PerHour}`);
 assert.ok(Math.abs(result.boost.cycleReduction-data.regression.expectedCycleReduction)<1e-12,`cycle reduction ${result.boost.cycleReduction}`);
 assert.ok(Math.abs(result.boost.efficiencyBoost-data.regression.expectedEfficiencyBoost)<1e-12,`efficiency ${result.boost.efficiencyBoost}`);
+
+const outriderFit={
+  fittingId:3,
+  name:'Outrider Booster',
+  shipName:'Outrider',
+  items:[
+    {name:'Mining Foreman Burst II',quantity:1},
+    {name:'Mining Laser Efficiency Charge',quantity:1},
+  ],
+};
+const outriderBoost=globalThis.JLRYieldMath.boostBreakdown(data,skills,outriderFit,true,true);
+assert.ok(Math.abs(outriderBoost.cycleReduction-0.38671875)<1e-12,`Outrider cycle reduction ${outriderBoost.cycleReduction}`);
+assert.ok(Math.abs(outriderBoost.efficiencyBoost-1.2890625)<1e-12,`Outrider efficiency ${outriderBoost.efficiencyBoost}`);
+
 console.log('Yield Calc regression passed:',result.m3PerHour.toFixed(4),'m3/hr');
+console.log('Outrider boost regression passed:',(outriderBoost.cycleReduction*100).toFixed(4)+'%');
