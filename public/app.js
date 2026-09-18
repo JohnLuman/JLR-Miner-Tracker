@@ -96,31 +96,31 @@
       return;
     }
 
-    const W=640,H=220,L=54,R=16,T=12,B=30;
+    const W=760,H=300,L=62,R=18,T=34,B=36;
     const pw=W-L-R,ph=H-T-B;
     let min=Math.min(...vals),max=Math.max(...vals);
     if(min===max){min*=.97;max*=1.03}
-    else{const pad=(max-min)*.08;min=Math.max(0,min-pad);max+=pad}
+    else{const pad=(max-min)*.10;min=Math.max(0,min-pad);max+=pad}
     const range=Math.max(1e-9,max-min);
     const x=i=>rows.length<=1?L+pw/2:L+(i/(rows.length-1))*pw;
     const y=v=>T+(max-Number(v))/range*ph;
 
-    const ticks=4;
+    const ticks=5;
     let grid='';
     for(let i=0;i<=ticks;i++){
       const yy=T+(i/ticks)*ph;
       const value=max-(i/ticks)*range;
       grid+='<line x1="'+L+'" y1="'+yy.toFixed(1)+'" x2="'+(W-R)+'" y2="'+yy.toFixed(1)+'" class="market-grid"/>'+
-        '<text x="'+(L-7)+'" y="'+(yy+3).toFixed(1)+'" text-anchor="end" class="market-axis-label">'+esc(compactNumber(value))+'</text>';
+        '<text x="'+(L-8)+'" y="'+(yy+3).toFixed(1)+'" text-anchor="end" class="market-axis-label">'+esc(compactNumber(value))+'</text>';
     }
 
-    const labelCount=Math.min(5,rows.length);
+    const labelCount=Math.min(6,rows.length);
     const tickIndexes=new Set();
     if(rows.length===1)tickIndexes.add(0);
     else for(let i=0;i<labelCount;i++)tickIndexes.add(Math.round(i*(rows.length-1)/(labelCount-1)));
     let xLabels='';
     for(const i of tickIndexes){
-      xLabels+='<text x="'+x(i).toFixed(1)+'" y="'+(H-8)+'" text-anchor="middle" class="market-axis-label">'+esc(chartDateLabel(rows[i].date))+'</text>';
+      xLabels+='<text x="'+x(i).toFixed(1)+'" y="'+(H-10)+'" text-anchor="middle" class="market-axis-label">'+esc(chartDateLabel(rows[i].date))+'</text>';
     }
 
     function seriesPath(key){
@@ -133,27 +133,55 @@
       }
       return d;
     }
+    function areaPaths(){
+      const paths=[];
+      let segment=[];
+      const flush=()=>{
+        if(segment.length<2){segment=[];return}
+        const top=segment.map(p=>x(p.i).toFixed(1)+' '+y(Math.max(p.jita,p.cn)).toFixed(1));
+        const bottom=[...segment].reverse().map(p=>x(p.i).toFixed(1)+' '+y(Math.min(p.jita,p.cn)).toFixed(1));
+        paths.push('M '+top.join(' L ')+' L '+bottom.join(' L ')+' Z');
+        segment=[];
+      };
+      rows.forEach((row,i)=>{
+        const j=Number(row.jita),n=Number(row.cn);
+        if(Number.isFinite(j)&&j>0&&Number.isFinite(n)&&n>0)segment.push({i,jita:j,cn:n});
+        else flush();
+      });
+      flush();
+      return paths;
+    }
     function dots(key,cls){
       return rows.map((row,i)=>{
         const v=Number(row[key]);
         if(!(Number.isFinite(v)&&v>0))return'';
         const label=chartDateLabel(row.date)+' • '+(key==='jita'?'Jita':'C-N')+' '+v.toFixed(decimals)+(unit?' '+unit:'');
-        return '<circle cx="'+x(i).toFixed(1)+'" cy="'+y(v).toFixed(1)+'" r="2.7" class="'+cls+'"><title>'+esc(label)+'</title></circle>';
+        return '<circle cx="'+x(i).toFixed(1)+'" cy="'+y(v).toFixed(1)+'" r="3.3" class="'+cls+'"><title>'+esc(label)+'</title></circle>';
       }).join('');
     }
 
     const jitaPath=seriesPath('jita'),cnPath=seriesPath('cn');
-    const first=rows[0]?.date,last=rows[rows.length-1]?.date;
+    const areas=areaPaths().map(d=>'<path d="'+d+'" class="market-range-area"/>').join('');
+    const first=rows[0]?.date;
+    const last=rows[rows.length-1]?.date;
+    const monthLabel=last?new Date(last+'T00:00:00Z').toLocaleDateString(undefined,{month:'short',year:'numeric',timeZone:'UTC'}):'';
     const collecting=rows.length<30?'<div class="market-history-note">History started '+esc(chartDateLabel(first))+' • '+rows.length+' daily point'+(rows.length===1?'':'s')+' collected</div>':'';
-    el.innerHTML='<svg class="market-line-svg" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Jita versus C-N 30 day market trend">'+
-      grid+xLabels+
-      (jitaPath?'<path d="'+jitaPath+'" class="market-line market-line-jita"/>':'')+
-      (cnPath?'<path d="'+cnPath+'" class="market-line market-line-cn"/>':'')+
-      dots('jita','market-dot market-dot-jita')+dots('cn','market-dot market-dot-cn')+
-      '<text x="'+(W-R)+'" y="10" text-anchor="end" class="market-unit-label">'+esc(unit)+'</text>'+
-      '</svg>'+collecting;
-  }
 
+    el.innerHTML='<div class="market-chart-shell">'+
+      '<div class="market-chart-month">'+esc(monthLabel)+'</div>'+
+      '<div class="market-chart-legend"><span class="legend-market-jita">Jita</span><span class="legend-market-cn">C-N</span><span class="legend-market-range">Price range</span></div>'+
+      '<svg class="market-line-svg" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Jita versus C-N 30 day market trend">'+
+        '<defs><pattern id="marketDots" width="18" height="18" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r=".7" class="market-bg-dot"/></pattern></defs>'+
+        '<rect x="'+L+'" y="'+T+'" width="'+pw+'" height="'+ph+'" class="market-bg-grid"/>'+
+        grid+xLabels+areas+
+        (jitaPath?'<path d="'+jitaPath+'" class="market-line market-line-jita"/>':'')+
+        (cnPath?'<path d="'+cnPath+'" class="market-line market-line-cn"/>':'')+
+        dots('jita','market-dot market-dot-jita')+dots('cn','market-dot market-dot-cn')+
+        '<text x="'+(W-R)+'" y="'+(T-10)+'" text-anchor="end" class="market-unit-label">'+esc(unit)+'</text>'+
+      '</svg>'+
+      collecting+
+    '</div>';
+  }
   function unlockAudio(){if(audioUnlocked)return;const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;audio=new AC();audioUnlocked=true;}
   function sfx(kind='click'){
     unlockAudio();
