@@ -127,7 +127,7 @@
     grid-template-areas:
       "control board"
       "calc board"
-      "calc hits"
+      "hits hits"
       "advanced advanced";
     gap:8px;
     align-items:start;
@@ -175,6 +175,11 @@
   .app.expanded .tab-panel[data-tab="fleet"]>*{margin-bottom:6px}
   .app.expanded .mining-visual-grid{grid-template-columns:1fr}
   .app.expanded .node-grid{grid-template-columns:repeat(auto-fill,minmax(125px,145px))}
+  .app.expanded .tab-panel[data-tab="fields"]>.hit-panel .hit-order{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
+@media(min-width:1450px){
+  .app.expanded .tab-panel[data-tab="fields"]>.hit-panel .hit-order{grid-template-columns:repeat(4,minmax(0,1fr))}
 }
 
 @media(max-width:900px){
