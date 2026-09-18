@@ -56,7 +56,15 @@
 
   function showLogin(){$('app').classList.add('hidden');$('loginView').classList.remove('hidden');}
   function showApp(){$('loginView').classList.add('hidden');$('app').classList.remove('hidden');}
-  function applyMode(mode){$('app').classList.toggle('compact',mode==='compact');$('app').classList.toggle('expanded',mode==='expanded');$('compactMode').classList.toggle('active',mode==='compact');$('expandedMode').classList.toggle('active',mode==='expanded');localStorage.setItem('jlrMode',mode)}
+  function applyMode(mode){
+    $('app').classList.toggle('compact',mode==='compact');
+    $('app').classList.toggle('expanded',mode==='expanded');
+    $('compactMode').classList.toggle('active',mode==='compact');
+    $('expandedMode').classList.toggle('active',mode==='expanded');
+    const details=document.querySelector('.calc-detail-drawer');
+    if(details)details.open=mode==='expanded';
+    localStorage.setItem('jlrMode',mode);
+  }
 
   function perShip(){const s=fleetSettings;return Number(s.baseOutput)*(1+Number(s.abyssalAverage)/100)*(Number(s.uptime)/100)}
   function fleetM3(){return perShip()*Number(fleetSettings.shipCount)}
