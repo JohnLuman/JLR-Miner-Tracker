@@ -88,7 +88,8 @@
       "miningPrecision": 90727,
       "miningDirector": 22552,
       "industrialCommandShips": 29637,
-      "capitalIndustrialShips": 28374
+      "capitalIndustrialShips": 28374,
+      "commandDestroyers": 37615
     },
     "skillBonuses": {
       "miningYieldPerLevel": 0.05,
@@ -326,6 +327,11 @@
         "coreBurstStrengthBonus": 0.4,
         "commandShipBonus": 0.05,
         "capitalIndustrialShipsBonus": 0.05
+      },
+      "Outrider-None": {
+        "coreBurstStrengthBonus": 0,
+        "commandShipBonus": 0.02,
+        "capitalIndustrialShipsBonus": 0
       }
     },
     "regression": {
