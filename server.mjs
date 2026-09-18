@@ -38,8 +38,9 @@ const MINING_SKILLS = {
   28374: 'Capital Industrial Ships',
   22552: 'Mining Director',
   22536: 'Mining Foreman',
+  37615: 'Command Destroyers',
 };
-const MINING_HULLS = new Set(['Hulk','Mackinaw','Skiff','Covetor','Retriever','Procurer','Porpoise','Orca','Rorqual']);
+const MINING_HULLS = new Set(['Hulk','Mackinaw','Skiff','Covetor','Retriever','Procurer','Porpoise','Orca','Rorqual','Outrider']);
 const ABYSSAL_STRIP_TYPES = new Map([
   [90467,'Abyssal Modulated Strip Miner'],
   [90487,'Abyssal Modulated Deep Core Strip Miner'],
