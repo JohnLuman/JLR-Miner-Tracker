@@ -79,6 +79,7 @@
     if(!data||!engine)return{count:0,total:0,average:0,entries:[]};
     const booster=calcCharacter(calcSettings.boosterCharacterId);
     const boosterFit=calcFitting(booster,calcSettings.boosterFittingId);
+    const activeBooster=boosterInFleet();
     const entries=[];
     for(const character of chars){
       const id=String(character.characterId),cfg=fleetSettings.members?.[id]||{};
@@ -92,9 +93,9 @@
           minerSkills:character.skills||{},
           minerFit:fit,
           crystalKey:'Auto',
-          boosterSkills:booster?.skills||{},
-          boosterFit:calcSettings.boosterCharacterId?boosterFit:null,
-          mindlink:Boolean(calcSettings.mindlink),
+          boosterSkills:activeBooster?(booster?.skills||{}):{},
+          boosterFit:activeBooster?boosterFit:null,
+          mindlink:activeBooster&&Boolean(calcSettings.mindlink),
         });
         entries.push({character,fit,result,rawM3:result.m3PerHour,effectiveM3:result.m3PerHour*uptime});
       }catch(error){entries.push({character,fit,error:String(error.message||error)})}
@@ -121,6 +122,10 @@
   function calcFitting(character,id){return character?.fittings?.find(f=>String(f.fittingId)===String(id))||null}
   function miningFits(character){const data=calcData();return(character?.fittings||[]).filter(f=>Boolean(data?.ships?.[f.shipName]))}
   function boosterFits(character){return(character?.fittings||[]).filter(f=>['Porpoise','Orca','Rorqual','Outrider'].includes(f.shipName))}
+  function boosterInFleet(){
+    const id=String(calcSettings.boosterCharacterId||'');
+    return Boolean(id&&fleetSettings.members?.[id]?.enabled);
+  }
 
   function definitions(){return [...(state?.source?.systems||[])].sort((a,b)=>a.rank-b.rank||a.order-b.order||a.system.localeCompare(b.system))}
   function field(system){return state?.fields?.[system]||null}
@@ -153,8 +158,6 @@
 
     const booster=calcCharacter(calcSettings.boosterCharacterId);
     const boosterFit=calcFitting(booster,calcSettings.boosterFittingId);
-    const boosterCharges=boosterFit?(window.JLRYieldMath?.detectBoostCharges?.(boosterFit)?.names||[]):[];
-
     const list=$('fleetMemberList');
     list.innerHTML='';
     for(const character of chars){
@@ -179,15 +182,11 @@
         }
         const isBooster=id===String(calcSettings.boosterCharacterId||'');
         const boosterFitText=isBooster?(boosterFit?`${boosterFit.shipName} — ${boosterFit.name}`:'No booster fit'):'';
-        const boosterInfo=isBooster?[
-          boosterCharges.length?boosterCharges.join(' + '):'No mining charge',
-          calcSettings.mindlink?'Mindlink':'No Mindlink'
-        ].join(' • '):'';
         if(isBooster)row.classList.add('booster');
         row.innerHTML=`
-          <label class="fleet-member-toggle"><input class="fleet-member-check" data-id="${id}" type="checkbox" ${cfg.enabled&&!isBooster?'checked':''} ${fits.length&&!isBooster?'':'disabled'}><img src="${esc(character.portrait)}" alt=""><span><strong>${esc(character.name)}</strong><small>${isBooster?'Selected booster':fits.length?`${fits.length} mining fit${fits.length===1?'':'s'}`:'No mining fits'}</small></span></label>
+          <label class="fleet-member-toggle"><input class="fleet-member-check" data-id="${id}" type="checkbox" ${cfg.enabled?'checked':''} ${!isBooster&&!fits.length?'disabled':''}><img src="${esc(character.portrait)}" alt=""><span><strong>${esc(character.name)}</strong><small>${isBooster?(cfg.enabled?'Selected booster • in fleet':'Selected booster • not in fleet'):fits.length?`${fits.length} mining fit${fits.length===1?'':'s'}`:'No mining fits'}</small></span></label>
           ${isBooster?`<div class="fleet-booster-fit-inline">${esc(boosterFitText)}</div>`:`<select class="fleet-fit-select" data-id="${id}" ${fits.length?'':'disabled'}>${fitOptions}</select>`}
-          <strong class="fleet-member-output">${esc(isBooster?boosterInfo:output)}</strong>`;
+          <strong class="fleet-member-output">${esc(isBooster?(cfg.enabled?'Booster':'Not in fleet'):output)}</strong>`;
         list.appendChild(row);
       }
     }
@@ -201,7 +200,7 @@
       fleetSettings.members[id].fittingId=select.value;saveFleet();
     }));
 
-    const boostLabel=booster&&boosterFit?` • ${boosterFit.shipName} boost`:'';
+    const boostLabel=booster&&boosterFit&&boosterInFleet()?` • ${boosterFit.shipName} boost`:'';
     $('setupSummary').textContent=stats.count?`${stats.count} miners • ${fmt(stats.total,'m3')} m³/hr${boostLabel} • ${Number(fleetSettings.payout).toFixed(1)}% payout`:`Select miners${boostLabel}`;
     localStorage.setItem('jlrFleet',JSON.stringify(fleetSettings));
   }
@@ -303,14 +302,15 @@
     }
 
     try{
+      const activeBooster=boosterInFleet();
       const result=engine.calculate({
         data,
         minerSkills:miner?.skills||{},
         minerFit,
         crystalKey:calcSettings.crystal,
-        boosterSkills:booster?.skills||{},
-        boosterFit:calcSettings.boosterCharacterId?boosterFit:null,
-        mindlink:Boolean(calcSettings.mindlink),
+        boosterSkills:activeBooster?(booster?.skills||{}):{},
+        boosterFit:activeBooster?boosterFit:null,
+        mindlink:activeBooster&&Boolean(calcSettings.mindlink),
       });
       const fleetView=fleetStats(),fleetCount=fleetView.count,fleet=fleetView.total;
       const firstLaser=result.lasers[0];
@@ -405,6 +405,12 @@
   $('calcBoosterCharacter').addEventListener('change',()=>{
     calcSettings.boosterCharacterId=$('calcBoosterCharacter').value;
     calcSettings.boosterFittingId='';
+    const id=String(calcSettings.boosterCharacterId||'');
+    if(id){
+      const existing=fleetSettings.members[id]&&typeof fleetSettings.members[id]==='object'?fleetSettings.members[id]:{};
+      fleetSettings.members[id]={...existing,enabled:true,fittingId:existing.fittingId||''};
+      localStorage.setItem('jlrFleet',JSON.stringify(fleetSettings));
+    }
     saveCalc();
     renderFleet();
     renderTop();
