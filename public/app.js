@@ -892,7 +892,6 @@
     $('calcMindlink').checked=Boolean(calcSettings.mindlink);
 
     if(!chars.length){
-      $('calcStatus').textContent='SETUP';
       $('calcResults').innerHTML='<div class="calc-empty">Connect a mining toon first.</div>';
       return;
     }
@@ -901,10 +900,13 @@
     const enabledMiners=chars.filter(ch=>fleetSettings.members?.[String(ch.characterId)]?.enabled&&String(ch.characterId)!==boosterId);
     const minerNeedsReauth=enabledMiners.some(ch=>ch.needsReauth||!Object.keys(ch.skills||{}).length);
     const boosterNeedsReauth=Boolean(boosterInFleet()&&booster&&boosterFit&&(booster.needsReauth||!Object.keys(booster.skills||{}).length));
-    $('calcStatus').textContent=(minerNeedsReauth||boosterNeedsReauth)?'AUTHORIZE':'READY';
 
     if(!enabledMiners.length){
       $('calcResults').innerHTML='<div class="calc-empty">Select your miners and saved fits in Fleet Setup.</div>';
+      return;
+    }
+    if(minerNeedsReauth){
+      $('calcResults').innerHTML='<div class="calc-empty">Authorize the selected miner data, then press Refresh.</div>';
       return;
     }
     if(boosterNeedsReauth){
