@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0a0a10">
   <title>JLR Miner Tracker</title>
-  <link rel="stylesheet" href="/styles.css?v=2.3.22">
+  <link rel="stylesheet" href="/styles.css?v=2.3.23">
 </head>
 <body>
   <main id="loginView" class="login-shell hidden">
@@ -114,9 +114,12 @@
       <div class="section-title"><div><strong>MINING VISUALS</strong></div><span class="muted tiny">live fleet • max refine</span></div>
       <div class="mining-visual-grid">
         <article class="mining-visual-card">
-          <div class="visual-card-head"><strong>ORE VALUE</strong><small>Jita vs C-N • ISK/m³</small></div>
+          <div class="visual-card-head trend-head">
+            <div><strong>ORE VALUE TREND</strong><small>Jita vs C-N • last 30 days • ISK/m³</small></div>
+            <select id="oreTrendSelect" aria-label="Ore value trend"></select>
+          </div>
           <div class="visual-legend"><span class="legend-jita">JITA</span><span class="legend-cn">C-N</span></div>
-          <div id="oreValueChart" class="bar-chart"></div>
+          <div id="oreValueChart" class="market-line-chart"></div>
         </article>
         <article class="mining-visual-card">
           <div class="visual-card-head"><strong>FLEET OUTPUT</strong><small>selected miners • m³/hr</small></div>
@@ -159,9 +162,9 @@
 
       <div class="ice-layout">
         <article class="ice-chart-card">
-          <div class="visual-card-head"><strong>REFINED ICE VALUE</strong><small>max refine • Heavy Water excluded</small></div>
+          <div class="visual-card-head"><strong>REFINED ICE VALUE TREND</strong><small>Jita vs C-N • last 30 days • Heavy Water excluded</small></div>
           <div class="visual-legend"><span class="legend-jita">JITA</span><span class="legend-cn">C-N</span></div>
-          <div id="iceValueChart" class="bar-chart ice-value-chart"></div>
+          <div id="iceValueChart" class="market-line-chart ice-value-chart"></div>
         </article>
 
         <article class="ice-chart-card">
@@ -206,7 +209,7 @@
     </section>
     <div id="toast" class="toast hidden" role="status"></div>
   </main>
-  <script src="/yield-math.js?v=2.3.22" defer></script>
-  <script src="/app.js?v=2.3.22" defer></script>
+  <script src="/yield-math.js?v=2.3.23" defer></script>
+  <script src="/app.js?v=2.3.23" defer></script>
 </body>
 </html>
