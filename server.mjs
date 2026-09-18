@@ -151,7 +151,7 @@ function freshState() {
       status: 'ready', cherryPicked: false, timerEndsAt: null, notes: [], updatedAt: null,
     }])),
     esi: {
-      typeCache: {}, systemCache: {}, dailyFleet: [], lastSyncAt: null, lastError: null,
+      typeCache: {}, systemCache: {}, dailyFleet: [], ledgerActivity: {}, lastSyncAt: null, lastError: null,
     },
     market: {
       prices: {}, minerals: {}, icePrices: {}, iceProducts: {}, iceFields: [], t3Distances: {}, history: { ore:{}, ice:{} }, lastUpdatedAt: null, lastError: null,
@@ -175,7 +175,7 @@ async function loadState() {
       delete field.note;
     }
     parsed.esi = { ...base.esi, ...(parsed.esi || {}) };
-    parsed.esi.typeCache ||= {}; parsed.esi.systemCache ||= {}; parsed.esi.dailyFleet ||= [];
+    parsed.esi.typeCache ||= {}; parsed.esi.systemCache ||= {}; parsed.esi.dailyFleet ||= []; parsed.esi.ledgerActivity ||= {};
     parsed.market = { ...base.market, ...(parsed.market || {}) };
     parsed.market.prices ||= {};
     parsed.market.minerals ||= {};
@@ -1097,6 +1097,58 @@ async function miningFittingSnapshot(fittings=[],abyssalModules=[]) {
 }
 async function ensureType(ids) { for(const id of [...new Set(ids.map(String))]) if(!state.esi.typeCache[id]){const {data}=await esiGet(`https://esi.evetech.net/latest/universe/types/${id}/?datasource=tranquility`);state.esi.typeCache[id]={name:data.name||`Type ${id}`,volume:Number(data.volume||0)}} }
 async function ensureSystem(ids) { for(const id of [...new Set(ids.map(String))]) if(!state.esi.systemCache[id]){const {data}=await esiGet(`https://esi.evetech.net/latest/universe/systems/${id}/?datasource=tranquility`);state.esi.systemCache[id]={name:data.name||`System ${id}`}} }
+function updateLedgerActivity(characterId,totalM3,sampleAt=now()) {
+  const key=String(characterId);
+  const day=dateUTC(new Date(sampleAt));
+  const total=Math.max(0,Number(totalM3)||0);
+  const prev=state.esi.ledgerActivity?.[key];
+  if(!state.esi.ledgerActivity)state.esi.ledgerActivity={};
+
+  if(!prev||prev.date!==day||!Number.isFinite(Number(prev.lastTotalM3))){
+    const seeded={
+      date:day,
+      lastTotalM3:total,
+      lastSampleAt:sampleAt,
+      activeSeconds:0,
+      activeM3:0,
+      actualM3PerHour:null,
+      lastIntervalM3:0,
+      lastIntervalSeconds:0,
+      lastIntervalRate:null,
+      miningDetected:false,
+      firstMiningAt:null,
+      lastMiningAt:null,
+    };
+    state.esi.ledgerActivity[key]=seeded;
+    return seeded;
+  }
+
+  const lastTotal=Math.max(0,Number(prev.lastTotalM3)||0);
+  const rawDelta=total-lastTotal;
+  const delta=rawDelta>0?rawDelta:0;
+  const elapsed=Math.max(0,(Date.parse(sampleAt)-Date.parse(prev.lastSampleAt||sampleAt))/1000);
+  // Normal ESI polling is every ~10 minutes. Cap a stale gap so downtime is not
+  // mistaken for hours of continuous mining.
+  const activeInterval=delta>0&&elapsed>0?Math.min(elapsed,20*60):0;
+
+  prev.lastTotalM3=total;
+  prev.lastSampleAt=sampleAt;
+  prev.lastIntervalM3=delta;
+  prev.lastIntervalSeconds=activeInterval;
+  prev.lastIntervalRate=activeInterval>0?delta/(activeInterval/3600):null;
+
+  if(delta>0&&activeInterval>0){
+    prev.activeSeconds=Math.max(0,Number(prev.activeSeconds)||0)+activeInterval;
+    prev.activeM3=Math.max(0,Number(prev.activeM3)||0)+delta;
+    prev.actualM3PerHour=prev.activeSeconds>0?prev.activeM3/(prev.activeSeconds/3600):null;
+    prev.miningDetected=true;
+    prev.firstMiningAt=prev.firstMiningAt||sampleAt;
+    prev.lastMiningAt=sampleAt;
+  }
+  state.esi.ledgerActivity[key]=prev;
+  return prev;
+}
+
 async function syncAll() {
   if(syncInProgress||!EVE_CLIENT_ID)return; const entries=Object.values(state.characters); if(!entries.length)return; syncInProgress=true;state.esi.lastError=null;broadcast();
   try{
@@ -1126,10 +1178,22 @@ async function syncAll() {
           ch.fittings=await miningFittingSnapshot(fits,abyssalModules);
           ch.fittingsUpdatedAt=now();
         }
-        ch.lastSyncAt=now();ch.lastError=null;ledgers.push(rows);
-      }catch(err){ch.lastError=String(err.message||err);ledgers.push([])}
+        ch.lastSyncAt=now();ch.lastError=null;ledgers.push({characterId:String(ch.characterId),rows});
+      }catch(err){ch.lastError=String(err.message||err);ledgers.push({characterId:String(ch.characterId),rows:[]})}
     }
-    const rows=ledgers.flat(); await ensureType(rows.map(r=>r.type_id)); await ensureSystem(rows.map(r=>r.solar_system_id));
+    const rows=ledgers.flatMap(x=>x.rows); await ensureType(rows.map(r=>r.type_id)); await ensureSystem(rows.map(r=>r.solar_system_id));
+    const sampleAt=now();
+    const today=dateUTC(new Date(sampleAt));
+    for(const ledger of ledgers){
+      let totalM3=0;
+      for(const row of ledger.rows){
+        if(String(row.date)!==today)continue;
+        const type=state.esi.typeCache[String(row.type_id)]||{volume:0};
+        totalM3+=Number(row.quantity||0)*Number(type.volume||0);
+      }
+      updateLedgerActivity(ledger.characterId,totalM3,sampleAt);
+    }
+
     const daily=new Map();
     for(const row of rows){const type=state.esi.typeCache[String(row.type_id)]||{volume:0};const sys=state.esi.systemCache[String(row.solar_system_id)]||{name:''};const m3=Number(row.quantity||0)*Number(type.volume||0);let jbv=0;const def=SYSTEM_MAP.get(sys.name);if(def)jbv=m3*effectiveJbvPerM3(def.ore);const key=String(row.date);const x=daily.get(key)||{date:key,m3:0,jbv:0};x.m3+=m3;x.jbv+=jbv;daily.set(key,x)}
     state.esi.dailyFleet=[...daily.values()].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,90);state.esi.lastSyncAt=now();await save();
@@ -1162,6 +1226,23 @@ function myProfile(user) {
         assetsUpdatedAt:c.assetsUpdatedAt||null,
         fittings:c.fittings||[],
         fittingsUpdatedAt:c.fittingsUpdatedAt||null,
+        ledgerActivity:(()=>{
+          const p=state.esi.ledgerActivity?.[String(c.characterId)]||null;
+          if(!p)return null;
+          return {
+            date:p.date||null,
+            activeSeconds:Number(p.activeSeconds||0),
+            activeM3:Number(p.activeM3||0),
+            actualM3PerHour:Number.isFinite(Number(p.actualM3PerHour))?Number(p.actualM3PerHour):null,
+            lastIntervalM3:Number(p.lastIntervalM3||0),
+            lastIntervalSeconds:Number(p.lastIntervalSeconds||0),
+            lastIntervalRate:Number.isFinite(Number(p.lastIntervalRate))?Number(p.lastIntervalRate):null,
+            miningDetected:Boolean(p.miningDetected),
+            firstMiningAt:p.firstMiningAt||null,
+            lastMiningAt:p.lastMiningAt||null,
+            lastSampleAt:p.lastSampleAt||null,
+          };
+        })(),
       };
     }),
   };
