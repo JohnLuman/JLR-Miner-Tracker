@@ -218,7 +218,8 @@
       const r=document.createElement('div');r.className='character-row';
       const savedFits=Number(c.savedFittingsCount ?? (c.fittings||[]).length)||0;
       const miningFits=(c.fittings||[]).length;
-      const scopeState=c.needsReauth?' • authorization needed':` • ${savedFits} saved fits • ${miningFits} mining fits`;
+      const abyssal=Number(c.abyssalStripCount||0);
+      const scopeState=c.needsReauth?' • authorization needed':` • ${savedFits} saved fits • ${miningFits} mining fits${abyssal?` • ${abyssal} Abyssal`:''}`;
       r.innerHTML=`<img src="${esc(c.portrait)}" alt=""><div><strong>${esc(c.name)}</strong><small>${c.lastError?`⚠ ${esc(c.lastError)}`:`last refresh ${ago(c.lastSyncAt)}`}${scopeState}</small></div><div class="character-actions">${c.needsReauth?'<button class="orb blue reauth" type="button">AUTHORIZE</button>':''}<button class="orb red disconnect" data-id="${c.characterId}" type="button">DISCONNECT</button></div>`;
       $('characterList').appendChild(r)
     }
@@ -312,7 +313,7 @@
         boosterSkillBits.push(skillLabelKey(booster,boosterFit.shipName==='Rorqual'?'capitalIndustrialShips':'industrialCommandShips'));
       }
       const upgradeText=result.miningUpgrades.length?result.miningUpgrades.map(x=>`${x.name} ×${x.quantity}`).join(' • '):'No recognized Mining Laser Upgrade';
-      const laserText=result.lasers.map(x=>`${x.name} ×${x.quantity}`).join(' • ');
+      const laserText=result.lasers.map(x=>`${x.name}${x.abyssal&&x.sourceName?` [${x.sourceName} roll]`:''} ×${x.quantity}`).join(' • ');
       const boosterText=boosterFit?`<div class="fit-modules"><span>BOOSTER: ${esc(boosterFit.shipName)} — ${esc(boosterFit.name)}</span>${(boosterFit.items||[]).map(i=>`<span>${esc(i.name)} ×${i.quantity}</span>`).join('')}</div>`:'';
       $('calcFitDetails').innerHTML=`<strong>${esc(minerFit.shipName+' — '+minerFit.name)}</strong>
         <div class="calc-skills">${[...minerSkillBits,...boosterSkillBits].map(x=>`<span>${esc(x)}</span>`).join('')}</div>
