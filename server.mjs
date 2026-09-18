@@ -360,7 +360,9 @@ async function syncAll() {
         }
         if(id.scopes.includes(FITTINGS_SCOPE)){
           const fits=await characterFittings(ch.characterId,tokens.access_token);
-          ch.fittings=await miningFittingSnapshot(fits); ch.fittingsUpdatedAt=now();
+          ch.savedFittingsCount=Array.isArray(fits)?fits.length:0;
+          ch.fittings=await miningFittingSnapshot(fits);
+          ch.fittingsUpdatedAt=now();
         }
         ch.lastSyncAt=now();ch.lastError=null;ledgers.push(rows);
       }catch(err){ch.lastError=String(err.message||err);ledgers.push([])}
@@ -391,6 +393,7 @@ function myProfile(user) {
         needsReauth:!scopes.includes(SKILLS_SCOPE)||!scopes.includes(FITTINGS_SCOPE),
         skills:c.skills||{},
         skillsUpdatedAt:c.skillsUpdatedAt||null,
+        savedFittingsCount:Number.isFinite(Number(c.savedFittingsCount))?Number(c.savedFittingsCount):(c.fittings||[]).length,
         fittings:c.fittings||[],
         fittingsUpdatedAt:c.fittingsUpdatedAt||null,
       };
