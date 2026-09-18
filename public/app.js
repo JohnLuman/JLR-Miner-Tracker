@@ -604,9 +604,20 @@
     const average=entries.length?effective/entries.length:0;
     const best=entries.reduce((top,row)=>!top||Number(row.effectiveM3)>Number(top.effectiveM3)?row:top,null);
 
+    function activeTimeLabel(seconds){
+      const s=Math.max(0,Number(seconds)||0);
+      if(!s)return'waiting for mining';
+      const h=Math.floor(s/3600),m=Math.floor((s%3600)/60);
+      return h?(`${h}h ${m}m active`):(`${Math.max(1,m)}m active`);
+    }
+
     const contributionRows=entries.map((entry,index)=>{
       const fullRate=Number(entry.rawM3)||0;
       const output=Number(entry.effectiveM3)||0;
+      const ledger=entry.character?.ledgerActivity||null;
+      const actual=Number(ledger?.actualM3PerHour);
+      const hasActual=Boolean(ledger?.miningDetected)&&Number.isFinite(actual)&&actual>0;
+      const targetPct=output>0&&hasActual?actual/output*100:null;
       const share=effective>0?output/effective*100:0;
       const delta=average>0?(output-average)/average*100:0;
       return `<div class="fleet-perf-row">
@@ -616,29 +627,39 @@
         </div>
         <div class="fleet-rate-pair">
           <div><span>100% RATE</span><strong>${fmt(fullRate,'m3')}</strong><small>m³/hr</small></div>
-          <div><span>@ ${uptime.toFixed(0)}% UPTIME</span><strong>${fmt(output,'m3')}</strong><small>m³/hr</small></div>
+          <div><span>@ ${uptime.toFixed(0)}% TARGET</span><strong>${fmt(output,'m3')}</strong><small>m³/hr</small></div>
+          <div class="ledger-rate"><span>LEDGER ACTIVE</span><strong>${hasActual?fmt(actual,'m3'):'—'}</strong><small>${hasActual?activeTimeLabel(ledger.activeSeconds):'starts after ledger increases'}</small></div>
         </div>
-        <div class="fleet-share-track"><span style="width:${share.toFixed(2)}%"></span></div>
-        <div class="fleet-perf-number"><strong>${share.toFixed(1)}%</strong><small>fleet share</small></div>
+        <div class="fleet-share-track"><span style="width:${targetPct==null?0:Math.min(100,targetPct).toFixed(2)}%"></span></div>
+        <div class="fleet-perf-number"><strong>${targetPct==null?'—':targetPct.toFixed(0)+'%'}</strong><small>of uptime target</small></div>
       </div>`;
     }).join('');
 
+    const actualRates=entries.map(entry=>{
+      const p=entry.character?.ledgerActivity;
+      const v=Number(p?.actualM3PerHour);
+      return p?.miningDetected&&Number.isFinite(v)&&v>0?v:null;
+    });
+    const activeActual=actualRates.filter(v=>v!==null);
+    const ledgerActual=activeActual.reduce((sum,v)=>sum+v,0);
+    const actualVsTarget=effective>0&&activeActual.length?ledgerActual/effective*100:null;
+
     $('fleetOutputChart').innerHTML=`
       <div class="fleet-perf-kpis">
-        <div><span>@ ${uptime.toFixed(0)}% UPTIME</span><strong>${fmt(effective,'m3')}</strong><small>projected m³/hr</small></div>
+        <div class="ledger-kpi"><span>LEDGER ACTIVE</span><strong>${activeActual.length?fmt(ledgerActual,'m3'):'—'}</strong><small>${activeActual.length} of ${entries.length} miners detected</small></div>
+        <div><span>@ ${uptime.toFixed(0)}% TARGET</span><strong>${fmt(effective,'m3')}</strong><small>projected m³/hr</small></div>
         <div><span>100% RATE</span><strong>${fmt(potential,'m3')}</strong><small>full calculated m³/hr</small></div>
-        <div><span>UPTIME</span><strong>${uptime.toFixed(0)}%</strong><small>fleet setting</small></div>
-        <div><span>LOST</span><strong>${fmt(lost,'m3')}</strong><small>m³/hr to downtime</small></div>
+        <div><span>VS TARGET</span><strong>${actualVsTarget==null?'—':actualVsTarget.toFixed(0)+'%'}</strong><small>ledger active ÷ uptime target</small></div>
       </div>
       <div class="fleet-capacity-chart">
-        <div class="fleet-capacity-head"><span>UPTIME EFFECT</span><strong>${fmt(potential,'m3')} → ${fmt(effective,'m3')} m³/hr</strong></div>
-        <div class="fleet-capacity-track"><span style="width:${potential>0?Math.min(100,effective/potential*100).toFixed(2):0}%"></span></div>
-        <div class="fleet-capacity-scale"><span>0</span><span>${fmt(potential,'m3')} m³/hr potential</span></div>
+        <div class="fleet-capacity-head"><span>ACTUAL VS UPTIME TARGET</span><strong>${activeActual.length?fmt(ledgerActual,'m3'):'—'} / ${fmt(effective,'m3')} m³/hr</strong></div>
+        <div class="fleet-capacity-track actual-target"><span style="width:${actualVsTarget==null?0:Math.min(100,actualVsTarget).toFixed(2)}%"></span></div>
+        <div class="fleet-capacity-scale"><span>ledger detected active mining only</span><span>${uptime.toFixed(0)}% target</span></div>
       </div>
       <div class="fleet-perf-list">${contributionRows}</div>
       <div class="fleet-perf-footer">
-        <span>Average <strong>${fmt(average,'m3')} m³/hr</strong></span>
-        <span>Top miner <strong>${best?esc(best.character.name):'—'}</strong></span>
+        <span>Ledger time counts only intervals where mined m³ increased.</span>
+        <span>Idle intervals are excluded.</span>
         <span>${entries.length} miner${entries.length===1?'':'s'} selected</span>
       </div>`;
   }
@@ -842,7 +863,20 @@
 
   async function refreshMe(){const p=await api('/api/me');me=p.user;if(me){$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait}return p.authenticated}
   async function loadState(){state=await api('/api/state');renderAll()}
-  function connectSse(){if(eventSource)eventSource.close();eventSource=new EventSource('/api/events');eventSource.addEventListener('state',e=>{state=JSON.parse(e.data);renderAll();$('liveBadge').textContent='● LIVE'});eventSource.onerror=()=>{$('liveBadge').textContent='● RECONNECTING'}}
+  function connectSse(){
+    if(eventSource)eventSource.close();
+    eventSource=new EventSource('/api/events');
+    eventSource.addEventListener('state',e=>{
+      const previousSync=state?.esi?.lastSyncAt||null;
+      state=JSON.parse(e.data);
+      renderAll();
+      $('liveBadge').textContent='● LIVE';
+      if(state?.esi?.lastSyncAt&&state.esi.lastSyncAt!==previousSync){
+        refreshMe().then(()=>renderAll()).catch(()=>{});
+      }
+    });
+    eventSource.onerror=()=>{$('liveBadge').textContent='● RECONNECTING'};
+  }
 
   function addToon(){location.href='/auth/eve/start?intent=link'}
   $('addToon').addEventListener('click',addToon);$('addToonTop').addEventListener('click',addToon);
