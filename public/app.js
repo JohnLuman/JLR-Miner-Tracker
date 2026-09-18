@@ -125,8 +125,10 @@
     if(!me)return;$('characterList').innerHTML='';if(!me.characters.length){$('characterList').innerHTML='<div class="character-row"><div></div><div><strong>No mining toons linked</strong><small>Use Add Toon to connect one.</small></div></div>';return}
     for(const c of me.characters){
       const r=document.createElement('div');r.className='character-row';
-      const scopeState=c.needsReauth?' • skills/fits need authorization':` • ${Object.keys(c.skills||{}).length} mining skills • ${(c.fittings||[]).length} mining fits`;
-      r.innerHTML=`<img src="${esc(c.portrait)}" alt=""><div><strong>${esc(c.name)}</strong><small>${c.lastError?`⚠ ${esc(c.lastError)}`:`last sync ${ago(c.lastSyncAt)}`}${scopeState}</small></div><div class="character-actions">${c.needsReauth?'<button class="orb blue reauth" type="button">AUTHORIZE</button>':''}<button class="orb red disconnect" data-id="${c.characterId}" type="button">DISCONNECT</button></div>`;
+      const savedFits=Number(c.savedFittingsCount ?? (c.fittings||[]).length)||0;
+      const miningFits=(c.fittings||[]).length;
+      const scopeState=c.needsReauth?' • authorization needed':` • ${savedFits} saved fits • ${miningFits} mining fits`;
+      r.innerHTML=`<img src="${esc(c.portrait)}" alt=""><div><strong>${esc(c.name)}</strong><small>${c.lastError?`⚠ ${esc(c.lastError)}`:`last refresh ${ago(c.lastSyncAt)}`}${scopeState}</small></div><div class="character-actions">${c.needsReauth?'<button class="orb blue reauth" type="button">AUTHORIZE</button>':''}<button class="orb red disconnect" data-id="${c.characterId}" type="button">DISCONNECT</button></div>`;
       $('characterList').appendChild(r)
     }
     $('characterList').querySelectorAll('.reauth').forEach(b=>b.addEventListener('click',()=>{location.href='/auth/eve/start?intent=link'}));
@@ -255,7 +257,18 @@
   $('reportCherry').addEventListener('click',cherry);$('cherryExpanded').addEventListener('click',cherry);
   $('confirmNo').addEventListener('click',()=>{pending=null;$('confirmPanel').classList.add('hidden')});
   $('confirmYes').addEventListener('click',async()=>{if(!pending)return;const p=pending;pending=null;$('confirmPanel').classList.add('hidden');try{const result=await api(`/api/fields/${encodeURIComponent(p.system)}`,{method:'PUT',body:JSON.stringify({status:'cleared',confirm:true})});applyFieldUpdate(p.system,result.field);sfx('timer');$('fieldMessage').textContent=`${p.system} RED — 10-hour timer started.`}catch(e){toast(e.message)}});
-  $('syncNow').addEventListener('click',async()=>{try{await api('/api/esi/sync',{method:'POST',body:'{}'});toast('Refreshing character data...');setTimeout(async()=>{try{await refreshMe();renderCalculator();renderCharacters()}catch{}},3500);setTimeout(async()=>{try{await refreshMe();renderCalculator();renderCharacters()}catch{}},9000)}catch(e){toast(e.message)}});
+  $('syncNow').addEventListener('click',async()=>{try{
+    await api('/api/esi/sync',{method:'POST',body:'{}'});
+    toast('Refreshing character data...');
+    setTimeout(async()=>{try{await refreshMe();renderCalculator();renderCharacters()}catch{}},3500);
+    setTimeout(async()=>{try{
+      await refreshMe();renderCalculator();renderCharacters();
+      const chars=me?.characters||[];
+      const saved=chars.reduce((n,c)=>n+(Number(c.savedFittingsCount ?? (c.fittings||[]).length)||0),0);
+      const mining=chars.reduce((n,c)=>n+(c.fittings||[]).length,0);
+      toast(`${saved} saved fits found • ${mining} mining fits available`);
+    }catch{}},9000);
+  }catch(e){toast(e.message)}});
 
   function readCalc(){
     calcSettings={
