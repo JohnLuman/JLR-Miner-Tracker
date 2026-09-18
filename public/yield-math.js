@@ -33,14 +33,14 @@
   }
   function boostBreakdown(data,skills,fit,mindlink,efficiencyCharge){
     const ship=String(fit?.shipName||'');
-    if(!['Porpoise','Orca','Rorqual'].includes(ship)){
+    if(!['Porpoise','Orca','Rorqual','Outrider'].includes(ship)){
       return {ship:'None',core:'None',burst:'T1',cycleReduction:0,efficiencyBoost:0,commonMultiplier:1};
     }
     const core=detectCoreTier(fit),burst=detectBurstTier(fit);
     const row=data.boostShips?.[`${ship}-${core}`]||data.boostShips?.[`${ship}-None`];
     if(!row)return {ship,core,burst,cycleReduction:0,efficiencyBoost:0,commonMultiplier:1};
     const ids=data.skillIds||{}, bonuses=data.skillBonuses||{}, b=data.boost||{};
-    const commandSkill=level(skills,ship==='Rorqual'?ids.capitalIndustrialShips:ids.industrialCommandShips);
+    const commandSkill=level(skills,ship==='Rorqual'?ids.capitalIndustrialShips:(ship==='Outrider'?ids.commandDestroyers:ids.industrialCommandShips));
     const director=level(skills,ids.miningDirector);
     const burstBonus=burst==='T2'?n(b.burstModuleT2Bonus):n(b.burstModuleT1Bonus);
     const mindlinkBonus=mindlink?n(b.mindlinkBonus):0;
