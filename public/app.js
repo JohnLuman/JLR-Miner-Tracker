@@ -50,7 +50,7 @@
     return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
   }
   function ago(iso) {
-    if (!iso) return 'never'; const ms=Date.now()-Date.parse(iso); if(!Number.isFinite(ms))return 'unknown';
+    if (!iso) return 'not yet'; const ms=Date.now()-Date.parse(iso); if(!Number.isFinite(ms))return 'time unavailable';
     const m=Math.max(0,Math.floor(ms/60000)); if(m<1)return 'just now'; if(m<60)return `${m}m ago`; const h=Math.floor(m/60); if(h<24)return `${h}h ${m%60}m ago`; return `${Math.floor(h/24)}d ago`;
   }
   function renderDataStatus(){
@@ -442,7 +442,7 @@
     const items=Array.isArray(fit.items)?fit.items:[];
     const harvesters=items.filter(row=>Object.prototype.hasOwnProperty.call(ICE_HARVESTERS,String(row.name||'')));
     if(!harvesters.length)return null;
-    if(!Object.prototype.hasOwnProperty.call(character.skills||{},'16281'))return{character,fit,error:'Refresh to sync Ice Harvesting skill'};
+    if(!Object.prototype.hasOwnProperty.call(character.skills||{},'16281'))return{character,fit,error:'Use Sync EVE Data to load the Ice Harvesting skill'};
 
     const iceSkill=skillLevel(character,16281);
     const barge=skillLevel(character,17940);
@@ -524,9 +524,9 @@
     const cnHourly=Number.isFinite(cnPerM3)&&cnPerM3>0?fleetRate*cnPerM3*payout:null;
 
     $('jitaValueKpi').textContent=jitaHourly===null?'—':`${fmt(jitaHourly)}/hr`;
-    $('jitaValueSub').textContent=Number.isFinite(jitaPerM3)?`${jitaPerM3.toFixed(2)} ISK/m³ • ${(payout*100).toFixed(1)}% payout • ${top?.name||'ore'}`:'Jita refined-mineral price unavailable';
+    $('jitaValueSub').textContent=Number.isFinite(jitaPerM3)?`${jitaPerM3.toFixed(2)} ISK/m³ • ${(payout*100).toFixed(1)}% payout • prices ${ago(state.market?.lastUpdatedAt)}`:'Jita refined-mineral price unavailable';
     $('cnValueKpi').textContent=cnHourly===null?'—':`${fmt(cnHourly)}/hr`;
-    $('cnValueSub').textContent=cnHourly===null?'C-N private mineral price unavailable':`${cnPerM3.toFixed(2)} ISK/m³ • ${(payout*100).toFixed(1)}% payout • ${top?.name||'ore'}`;
+    $('cnValueSub').textContent=cnHourly===null?'C-N private mineral price unavailable':`${cnPerM3.toFixed(2)} ISK/m³ • ${(payout*100).toFixed(1)}% payout • prices ${ago(state.market?.lastUpdatedAt)}`;
 
     $('actualTodayM3').textContent=fmt(state.esi.actual.today.m3,'m3');
     $('actualTodayIsk').textContent=fmt(actualValue(state.esi.actual.today.jbv));
@@ -536,7 +536,8 @@
     $('actualExpTodayValue').textContent=`${fmt(actualValue(state.esi.actual.today.jbv))} ISK`;
     $('actualWeekM3').textContent=`${fmt(state.esi.actual.week.m3,'m3')} m³`;
     $('actualWeekValue').textContent=`${fmt(actualValue(state.esi.actual.week.jbv))} ISK`;
-    $('esiStatus').textContent=`${state.esi.linkedCharacters} LINKED`;
+    const accessNeeded=(me?.characters||[]).filter(c=>c.needsReauth).length;
+    $('esiStatus').textContent=accessNeeded?`${state.esi.linkedCharacters} LINKED • ${accessNeeded} NEED ACCESS`:`${state.esi.linkedCharacters} LINKED • ACCESS CURRENT`;
     $('lastSync').textContent=state.esi.lastSyncAt?`EVE data synced ${ago(state.esi.lastSyncAt)}`:(state.esi.lastError?`Sync error: ${state.esi.lastError}`:'No successful sync yet');
     renderDataStatus();
   }
@@ -576,14 +577,14 @@
       for(const character of chars){
         const id=String(character.characterId),cfg=fleetSettings.members[id],fits=miningFits(character),entry=byId.get(id);
         const row=document.createElement('div');row.className=`fleet-member${cfg.enabled?' selected':''}`;
-        const fitOptions=fits.length?fits.map(f=>`<option value="${f.fittingId}" ${String(f.fittingId)===String(cfg.fittingId)?'selected':''}>${esc(f.shipName)} — ${esc(f.name)}</option>`).join(''):'<option value="">No mining fit</option>';
+        const fitOptions=fits.length?fits.map(f=>`<option value="${f.fittingId}" ${String(f.fittingId)===String(cfg.fittingId)?'selected':''}>${esc(f.shipName)} — ${esc(f.name)}</option>`).join(''):'<option value="">No supported saved mining fit</option>';
         let output='Excluded from fleet output';
         if(cfg.enabled){
           if(entry?.result)output=`${fmt(entry.effectiveM3,'m3')} m³/hr @ ${Number(fleetSettings.uptime).toFixed(0)}%`;
-          else output=entry?.error||'Needs fit';
+          else output=entry?.error||'Select a supported saved mining fit';
         }
         const isBooster=id===String(calcSettings.boosterCharacterId||'');
-        const boosterFitText=isBooster?(boosterFit?`${boosterFit.shipName} — ${boosterFit.name}`:'No booster fit'):'';
+        const boosterFitText=isBooster?(boosterFit?`${boosterFit.shipName} — ${boosterFit.name}` :'No saved booster fit'):'';
         if(isBooster)row.classList.add('booster');
         row.innerHTML=`
           <label class="fleet-member-toggle"><input class="fleet-member-check" data-id="${id}" type="checkbox" ${cfg.enabled?'checked':''} ${!isBooster&&!fits.length?'disabled':''}><img src="${esc(character.portrait)}" alt=""><span><strong>${esc(character.name)}</strong><small>${isBooster?(cfg.enabled?'Selected booster • in fleet':'Selected booster • not in fleet'):fits.length?`${fits.length} mining fit${fits.length===1?'':'s'}`:'No mining fits'}</small></span></label>
@@ -613,7 +614,7 @@
     const systemSelect=$('systemSelect');
     if(document.activeElement===systemSelect)return;
     const old=selectedSystem||systemSelect.value; systemSelect.innerHTML='';
-    for(const ore of state.source.ores){const g=document.createElement('optgroup');g.label=`#${ore.rank} ${ore.name.toUpperCase()}`;for(const d of definitions().filter(x=>x.rank===ore.rank)){const f=field(d.system),o=document.createElement('option');o.value=d.system;o.textContent=`${d.system} — ${f.status==='cleared'?`RED ${timer(f.timerEndsAt)}`:statusText[f.status]}${f.cherryPicked?' 🍒':''}`;g.appendChild(o)}systemSelect.appendChild(g)}
+    for(const ore of state.source.ores){const g=document.createElement('optgroup');g.label=`#${ore.rank} ${ore.name.toUpperCase()}`;for(const d of definitions().filter(x=>x.rank===ore.rank)){const f=field(d.system),o=document.createElement('option');o.value=d.system;o.textContent=`${d.system} — ${f.status==='cleared'?`RED • RESPAWN ${timer(f.timerEndsAt)}`:statusText[f.status]}${f.cherryPicked?' 🍒 CHERRY':''}`;g.appendChild(o)}systemSelect.appendChild(g)}
     selectedSystem=definitions().some(x=>x.system===old)?old:(definitions()[0]?.system||'');
     systemSelect.value=selectedSystem;
   }
@@ -677,8 +678,23 @@
     $('systemCountLabel').textContent=`${definitions().length} T3 • ${iceFields.length} ICE`;
   }
   function renderHits(){
-    if(!state)return;const arr=definitions().map(d=>({d,f:field(d.system)})).filter(x=>x.f.status!=='cleared').sort((a,b)=>Number(a.f.cherryPicked)-Number(b.f.cherryPicked)||a.d.rank-b.d.rank||a.d.order-b.d.order).slice(0,8);$('hitOrder').innerHTML='';
-    for(const [i,x] of arr.entries()){const b=document.createElement('button');b.type='button';b.className=`orb hit-chip ${x.f.cherryPicked?'cherry':x.f.status==='picked'?'yellow':'green'}`;b.textContent=`${i+1}. ${x.d.system}${x.f.cherryPicked?' 🍒':''}`;b.addEventListener('click',()=>chooseSystem(x.d.system));$('hitOrder').appendChild(b)}
+    if(!state)return;
+    const arr=definitions()
+      .map(d=>({d,f:field(d.system)}))
+      .filter(x=>x.f.status!=='cleared')
+      .sort((a,b)=>Number(a.f.cherryPicked)-Number(b.f.cherryPicked)||a.d.rank-b.d.rank||a.d.order-b.d.order)
+      .slice(0,8);
+    $('hitOrder').innerHTML='';
+    for(const [i,x] of arr.entries()){
+      const b=document.createElement('button');
+      b.type='button';
+      b.className=`orb hit-chip ${x.f.cherryPicked?'cherry':x.f.status==='picked'?'yellow':'green'}`;
+      b.textContent=`${i+1}. ${x.d.system} • #${x.d.rank} ${x.d.ore}${x.f.cherryPicked?' 🍒':''}`;
+      const distance=Number(x.d.distanceLy);
+      b.title=`${x.d.system} • ${x.d.ore}${Number.isFinite(distance)?` • ${distance.toFixed(2)} LY from C-N4OD`:''} • ${fmt(projectedISK(state.source.ores[x.d.rank-1]))} payout/hr`;
+      b.addEventListener('click',()=>chooseSystem(x.d.system));
+      $('hitOrder').appendChild(b);
+    }
   }
   function renderMiningVisuals(){
     if(!state||!$('oreValueChart')||!$('fleetOutputChart'))return;
@@ -742,26 +758,26 @@
       </div>`;
     }).join('');
 
-    const actualRates=entries.map(entry=>{
+    const detectedRows=entries.map(entry=>{
       const p=entry.character?.ledgerActivity;
       const v=Number(p?.actualM3PerHour);
-      return p?.miningDetected&&Number.isFinite(v)&&v>0?v:null;
-    });
-    const activeActual=actualRates.filter(v=>v!==null);
-    const ledgerActual=activeActual.reduce((sum,v)=>sum+v,0);
-    const actualVsTarget=effective>0&&activeActual.length?ledgerActual/effective*100:null;
+      return p?.miningDetected&&Number.isFinite(v)&&v>0?{actual:v,target:Number(entry.effectiveM3)||0}:null;
+    }).filter(Boolean);
+    const ledgerActual=detectedRows.reduce((sum,row)=>sum+row.actual,0);
+    const detectedTarget=detectedRows.reduce((sum,row)=>sum+row.target,0);
+    const actualVsTarget=detectedTarget>0?ledgerActual/detectedTarget*100:null;
 
     $('fleetOutputChart').innerHTML=`
       <div class="fleet-perf-kpis">
-        <div class="ledger-kpi"><span>LEDGER ACTIVE RATE</span><strong>${activeActual.length?fmt(ledgerActual,'m3'):'—'}</strong><small>${activeActual.length} of ${entries.length} miners detected</small></div>
+        <div class="ledger-kpi"><span>LEDGER ACTIVE RATE</span><strong>${detectedRows.length?fmt(ledgerActual,'m3'):'—'}</strong><small>${detectedRows.length} of ${entries.length} miners detected</small></div>
         <div><span>@ ${uptime.toFixed(0)}% TARGET</span><strong>${fmt(effective,'m3')}</strong><small>projected m³/hr</small></div>
         <div><span>100% RATE</span><strong>${fmt(potential,'m3')}</strong><small>full calculated m³/hr</small></div>
-        <div><span>VS TARGET</span><strong>${actualVsTarget==null?'—':actualVsTarget.toFixed(0)+'%'}</strong><small>ledger active ÷ uptime target</small></div>
+        <div><span>VS DETECTED TARGET</span><strong>${actualVsTarget==null?'—':actualVsTarget.toFixed(0)+'%'}</strong><small>actual rate ÷ target for detected miners</small></div>
       </div>
       <div class="fleet-capacity-chart">
-        <div class="fleet-capacity-head"><span>ACTUAL VS UPTIME TARGET</span><strong>${activeActual.length?fmt(ledgerActual,'m3'):'—'} / ${fmt(effective,'m3')} m³/hr</strong></div>
+        <div class="fleet-capacity-head"><span>ACTUAL VS UPTIME TARGET</span><strong>${detectedRows.length?fmt(ledgerActual,'m3'):'—'} / ${fmt(effective,'m3')} m³/hr</strong></div>
         <div class="fleet-capacity-track actual-target"><span style="width:${actualVsTarget==null?0:Math.min(100,actualVsTarget).toFixed(2)}%"></span></div>
-        <div class="fleet-capacity-scale"><span>ledger detected active mining only</span><span>${uptime.toFixed(0)}% target</span></div>
+        <div class="fleet-capacity-scale"><span>only miners with detected ledger increases</span><span>${uptime.toFixed(0)}% target for detected miners</span></div>
       </div>
       <div class="fleet-perf-list">${contributionRows}</div>
       <div class="fleet-perf-footer">
@@ -801,7 +817,7 @@
     const selected=iceRows.find(x=>x.name===iceTrackType)||iceRows[0]||null;
 
     $('iceTrackValue').textContent=selected?.track?fmt(selected.track)+' ISK':'—';
-    $('iceTrackValueSub').textContent=selected?(selected.name+' • '+Math.round(selected.pct*100)+'% of Jita max-refine value'):'Waiting for Jita refined-product prices';
+    $('iceTrackValueSub').textContent=selected?(selected.name+' • '+Math.round(selected.pct*100)+'% of Jita refine • prices '+ago(state.market?.lastUpdatedAt)):'Waiting for Jita refined-product prices';
     $('iceBestJita').textContent=selected?.jita?fmt(selected.jita)+' ISK':'—';
     $('iceBestJitaSub').textContent=selected?(selected.name+' • refined ISK/block • Heavy Water excluded'):'Jita refined-product prices unavailable';
     $('iceBestCn').textContent=selected?.cn?fmt(selected.cn)+' ISK':'—';
@@ -862,7 +878,7 @@
       }).join('');
       $('iceFleetOutput').innerHTML=body+
         '<div class="ice-fleet-total"><span>'+esc(iceTrackType)+' fleet total</span><strong>'+
-        totalBlocks.toFixed(1)+' blocks/hr • '+fmt(totalM3,'m3')+' m³/hr</strong><small>Track '+
+        totalBlocks.toFixed(1)+' blocks/hr • '+fmt(totalM3,'m3')+' m³/hr</strong><small>Payout '+
         (totalTrack?fmt(totalTrack):'—')+'/hr • Jita refine '+(totalJita?fmt(totalJita):'—')+
         '/hr • C-N refine '+(totalCn?fmt(totalCn):'—')+'/hr</small></div>';
     }
