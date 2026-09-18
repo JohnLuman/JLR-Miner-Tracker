@@ -6,11 +6,350 @@
     "mack_mod2": 405704.7771
   },
   "ores": [
-    {"name":"Kylixium","upgrade":"Mexallon 3","jbvPerM3":243.3728258,"siteJBV":3163621347,"siteM3":12999073.9,"systems":["RP2-OQ","APM-6K","R3W-XU","FM-JK5","YQX-7U"]},
-    {"name":"Ueganite","upgrade":"Megacyte 3","jbvPerM3":180.9082083,"siteJBV":2893292473,"siteM3":15993152,"systems":["3WE-KY","D2AH-Z","E-BWUU"]},
-    {"name":"Griemeer","upgrade":"Isogen 3","jbvPerM3":180.4080852,"siteJBV":2363105251,"siteM3":13098666,"systems":["J5A-IX","CHA2-Q","H-S80W","AC2E-3","NOL-M9"]},
-    {"name":"Nocxite","upgrade":"Nocxium 3","jbvPerM3":174.2187243,"siteJBV":2282196820,"siteM3":13099607,"systems":["K8L-X7","B17O-R","RE-C26"]},
-    {"name":"Hezorime","upgrade":"Zydrine 3","jbvPerM3":170.8334106,"siteJBV":3959557144,"siteM3":23177885,"systems":["PNQY-Y","5-D82P","SPLE-Y"]},
-    {"name":"Mordinium","upgrade":"Pyerite 3","jbvPerM3":149.8800477,"siteJBV":3746666254,"siteM3":24997765.3,"systems":["YZS5-4"]}
-  ]
+    {
+      "name": "Kylixium",
+      "upgrade": "Mexallon 3",
+      "jbvPerM3": 243.3728258,
+      "siteJBV": 3163621347,
+      "siteM3": 12999073.9,
+      "systems": [
+        "RP2-OQ",
+        "APM-6K",
+        "R3W-XU",
+        "FM-JK5",
+        "YQX-7U"
+      ]
+    },
+    {
+      "name": "Ueganite",
+      "upgrade": "Megacyte 3",
+      "jbvPerM3": 180.9082083,
+      "siteJBV": 2893292473,
+      "siteM3": 15993152,
+      "systems": [
+        "3WE-KY",
+        "D2AH-Z",
+        "E-BWUU"
+      ]
+    },
+    {
+      "name": "Griemeer",
+      "upgrade": "Isogen 3",
+      "jbvPerM3": 180.4080852,
+      "siteJBV": 2363105251,
+      "siteM3": 13098666,
+      "systems": [
+        "J5A-IX",
+        "CHA2-Q",
+        "H-S80W",
+        "AC2E-3",
+        "NOL-M9"
+      ]
+    },
+    {
+      "name": "Nocxite",
+      "upgrade": "Nocxium 3",
+      "jbvPerM3": 174.2187243,
+      "siteJBV": 2282196820,
+      "siteM3": 13099607,
+      "systems": [
+        "K8L-X7",
+        "B17O-R",
+        "RE-C26"
+      ]
+    },
+    {
+      "name": "Hezorime",
+      "upgrade": "Zydrine 3",
+      "jbvPerM3": 170.8334106,
+      "siteJBV": 3959557144,
+      "siteM3": 23177885,
+      "systems": [
+        "PNQY-Y",
+        "5-D82P",
+        "SPLE-Y"
+      ]
+    },
+    {
+      "name": "Mordinium",
+      "upgrade": "Pyerite 3",
+      "jbvPerM3": 149.8800477,
+      "siteJBV": 3746666254,
+      "siteM3": 24997765.3,
+      "systems": [
+        "YZS5-4"
+      ]
+    }
+  ],
+  "yieldCalculator": {
+    "sourceSheet": "Yield Calc",
+    "skillIds": {
+      "mining": 3386,
+      "astrogeology": 3410,
+      "miningBarge": 17940,
+      "exhumers": 22551,
+      "miningExploitation": 90728,
+      "miningPrecision": 90727,
+      "miningDirector": 22552,
+      "industrialCommandShips": 29637,
+      "capitalIndustrialShips": 28374
+    },
+    "skillBonuses": {
+      "miningYieldPerLevel": 0.05,
+      "astrogeologyYieldPerLevel": 0.05,
+      "miningExploitationCritChancePerLevel": 0.1,
+      "miningPrecisionCritYieldPerLevel": 0.05,
+      "miningDirectorBurstPerLevel": 0.1
+    },
+    "boost": {
+      "optimizationBase": 0.15,
+      "efficiencyBase": 0.5,
+      "mindlinkBonus": 0.25,
+      "burstModuleT1Bonus": 0,
+      "burstModuleT2Bonus": 0.25
+    },
+    "ships": {
+      "Covetor": {
+        "miningBargeYieldPerLevel": 0.03,
+        "exhumerYieldPerLevel": 0,
+        "exhumerDurationPerLevel": 0,
+        "roleDuration": -0.25,
+        "roleYield": 0,
+        "turrets": 2,
+        "lowSlots": 3
+      },
+      "Retriever": {
+        "miningBargeYieldPerLevel": 0.03,
+        "exhumerYieldPerLevel": 0,
+        "exhumerDurationPerLevel": 0,
+        "roleDuration": 0,
+        "roleYield": 0.1,
+        "turrets": 2,
+        "lowSlots": 3
+      },
+      "Procurer": {
+        "miningBargeYieldPerLevel": 0.02,
+        "exhumerYieldPerLevel": 0,
+        "exhumerDurationPerLevel": 0,
+        "roleDuration": 0,
+        "roleYield": 0,
+        "turrets": 2,
+        "lowSlots": 3
+      },
+      "Hulk": {
+        "miningBargeYieldPerLevel": 0.03,
+        "exhumerYieldPerLevel": 0.06,
+        "exhumerDurationPerLevel": -0.03,
+        "roleDuration": -0.15,
+        "roleYield": 0,
+        "turrets": 2,
+        "lowSlots": 3
+      },
+      "Mackinaw": {
+        "miningBargeYieldPerLevel": 0.03,
+        "exhumerYieldPerLevel": 0.04,
+        "exhumerDurationPerLevel": 0,
+        "roleDuration": -0.1,
+        "roleYield": 0,
+        "turrets": 2,
+        "lowSlots": 3
+      },
+      "Skiff": {
+        "miningBargeYieldPerLevel": 0.02,
+        "exhumerYieldPerLevel": 0.02,
+        "exhumerDurationPerLevel": 0,
+        "roleDuration": 0,
+        "roleYield": 0,
+        "turrets": 2,
+        "lowSlots": 3
+      }
+    },
+    "lasers": {
+      "Strip Miner I": {
+        "miningAmount": 150,
+        "duration": 45,
+        "residueVolumeMultiplier": 0,
+        "residueProbability": 0,
+        "criticalSuccessChance": 0.01,
+        "criticalSuccessBonusYield": 2
+      },
+      "Modulated Strip Miner II": {
+        "miningAmount": 120,
+        "duration": 45,
+        "residueVolumeMultiplier": 1,
+        "residueProbability": 0.34,
+        "criticalSuccessChance": 0.01,
+        "criticalSuccessBonusYield": 2
+      },
+      "ORE Strip Miner": {
+        "miningAmount": 200,
+        "duration": 45,
+        "residueVolumeMultiplier": 0,
+        "residueProbability": 0,
+        "criticalSuccessChance": 0.01,
+        "criticalSuccessBonusYield": 2
+      },
+      "Modulated Deep Core Strip Miner II": {
+        "miningAmount": 80,
+        "duration": 45,
+        "residueVolumeMultiplier": 1,
+        "residueProbability": 0.34,
+        "criticalSuccessChance": 0.01,
+        "criticalSuccessBonusYield": 2
+      },
+      "ORE Deep Core Strip Miner": {
+        "miningAmount": 133,
+        "duration": 45,
+        "residueVolumeMultiplier": 0,
+        "residueProbability": 0,
+        "criticalSuccessChance": 0.01,
+        "criticalSuccessBonusYield": 2
+      }
+    },
+    "crystals": {
+      "None": {
+        "yieldModifier": 1,
+        "durationMultiplier": 1,
+        "residueVolumeMultiplierBonus": 0,
+        "residueProbabilityBonus": 0
+      },
+      "A-Type T1": {
+        "yieldModifier": 1.5,
+        "durationMultiplier": 1,
+        "residueVolumeMultiplierBonus": 0,
+        "residueProbabilityBonus": 0
+      },
+      "A-Type T2": {
+        "yieldModifier": 1.8,
+        "durationMultiplier": 1,
+        "residueVolumeMultiplierBonus": 0,
+        "residueProbabilityBonus": 0.036
+      },
+      "B-Type T1": {
+        "yieldModifier": 1.5,
+        "durationMultiplier": 0.9,
+        "residueVolumeMultiplierBonus": 0,
+        "residueProbabilityBonus": 0.2
+      },
+      "B-Type T2": {
+        "yieldModifier": 1.8,
+        "durationMultiplier": 0.8,
+        "residueVolumeMultiplierBonus": 0,
+        "residueProbabilityBonus": 0.3
+      },
+      "C-Type T1": {
+        "yieldModifier": 0.25,
+        "durationMultiplier": 1,
+        "residueVolumeMultiplierBonus": 0.18,
+        "residueProbabilityBonus": 0.4
+      },
+      "C-Type T2": {
+        "yieldModifier": 0.2,
+        "durationMultiplier": 1,
+        "residueVolumeMultiplierBonus": 0.28,
+        "residueProbabilityBonus": 0.59
+      }
+    },
+    "miningUpgrades": {
+      "Mining Laser Upgrade I": 0.05,
+      "Mining Laser Upgrade II": 0.0983,
+      "Elara Restrained Mining Laser Upgrade": 0.08,
+      "Carpo' Mining Laser Upgrade": 0.09,
+      "Aoede' Mining Laser Upgrade": 0.1,
+      "Filmir's Modified Mining Laser Upgrade": 0.11
+    },
+    "chipsets": {
+      "Mining Survey Chipset I": {
+        "criticalSuccessChanceBonus": 0.12,
+        "criticalSuccessYieldBonus": 0.12,
+        "residueProbabilityReduction": -0.12
+      },
+      "ML-3 Compact Mining Survey Chipset": {
+        "criticalSuccessChanceBonus": 0.16,
+        "criticalSuccessYieldBonus": 0.16,
+        "residueProbabilityReduction": -0.16
+      },
+      "Mining Survey Chipset II": {
+        "criticalSuccessChanceBonus": 0.2,
+        "criticalSuccessYieldBonus": 0.2,
+        "residueProbabilityReduction": -0.2
+      },
+      "Republic Fleet Mining Survey Chipset": {
+        "criticalSuccessChanceBonus": 0.21,
+        "criticalSuccessYieldBonus": 0.21,
+        "residueProbabilityReduction": -0.21
+      },
+      "None": {
+        "criticalSuccessChanceBonus": 0,
+        "criticalSuccessYieldBonus": 0,
+        "residueProbabilityReduction": 0
+      }
+    },
+    "boostShips": {
+      "Porpoise-None": {
+        "coreBurstStrengthBonus": 0,
+        "commandShipBonus": 0.02,
+        "capitalIndustrialShipsBonus": 0
+      },
+      "Porpoise-T1": {
+        "coreBurstStrengthBonus": 0.05,
+        "commandShipBonus": 0.02,
+        "capitalIndustrialShipsBonus": 0
+      },
+      "Porpoise-T2": {
+        "coreBurstStrengthBonus": 0.075,
+        "commandShipBonus": 0.02,
+        "capitalIndustrialShipsBonus": 0
+      },
+      "Orca-None": {
+        "coreBurstStrengthBonus": 0,
+        "commandShipBonus": 0.03,
+        "capitalIndustrialShipsBonus": 0
+      },
+      "Orca-T1": {
+        "coreBurstStrengthBonus": 0.1,
+        "commandShipBonus": 0.03,
+        "capitalIndustrialShipsBonus": 0
+      },
+      "Orca-T2": {
+        "coreBurstStrengthBonus": 0.15,
+        "commandShipBonus": 0.03,
+        "capitalIndustrialShipsBonus": 0
+      },
+      "Rorqual-None": {
+        "coreBurstStrengthBonus": 0,
+        "commandShipBonus": 0.05,
+        "capitalIndustrialShipsBonus": 0.05
+      },
+      "Rorqual-T1": {
+        "coreBurstStrengthBonus": 0.3,
+        "commandShipBonus": 0.05,
+        "capitalIndustrialShipsBonus": 0.05
+      },
+      "Rorqual-T2": {
+        "coreBurstStrengthBonus": 0.4,
+        "commandShipBonus": 0.05,
+        "capitalIndustrialShipsBonus": 0.05
+      }
+    },
+    "regression": {
+      "workbookSelection": {
+        "ship": "Mackinaw",
+        "laser": "Modulated Strip Miner II",
+        "crystal": "B-Type T2",
+        "miningUpgrade": "Mining Laser Upgrade II",
+        "miningUpgradeCount": 3,
+        "chipset": "Mining Survey Chipset II",
+        "boosterShip": "Rorqual",
+        "core": "T2",
+        "burstModule": "T2",
+        "mindlink": true,
+        "efficiencyCharge": true,
+        "allRelevantSkills": 5
+      },
+      "expectedM3PerHour": 405704.7772,
+      "expectedCycleReduction": 0.615234375,
+      "expectedEfficiencyBoost": 2.05078125
+    }
+  }
 }
