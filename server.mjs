@@ -32,6 +32,7 @@ const READ_STRUCTURES_SCOPE = 'esi-universe.read_structures.v1';
 const ESI_SCOPES = [MINING_SCOPE, SKILLS_SCOPE, FITTINGS_SCOPE, ASSETS_SCOPE];
 const MARKET_SCOPES = [MARKET_STRUCTURE_SCOPE, SEARCH_STRUCTURES_SCOPE, READ_STRUCTURES_SCOPE];
 const MARKET_CHARACTER_NAME = String(process.env.MARKET_CHARACTER_NAME || 'John Luman Raholan').trim();
+const MARKET_STRUCTURE_ID_ENV = String(process.env.MARKET_STRUCTURE_ID || '').trim();
 const MINING_SKILLS = {
   3386: 'Mining',
   3410: 'Astrogeology',
@@ -61,6 +62,7 @@ const JITA_SYSTEM_ID = 30000142;
 const JITA_44_STATION_ID = 60003760;
 const FOUNTAIN_REGION_ID = 10000058;
 const CN_SYSTEM_NAME = 'C-N4OD';
+const MARKET_STRUCTURE_SEARCH = String(process.env.MARKET_STRUCTURE_SEARCH || CN_SYSTEM_NAME).trim();
 const source = JSON.parse(await fsp.readFile(SOURCE_FILE, 'utf8'));
 const ORES = source.ores.map((o, rankIndex) => ({
   rank: rankIndex + 1,
@@ -119,7 +121,7 @@ function freshState() {
     market: {
       prices: {}, lastUpdatedAt: null, lastError: null,
       characterId: null, characterName: null, refreshTokenEnc: null, scopes: [], authorizedAt: null,
-      structureId: null, structureName: null,
+      structureId: null, structureName: null, privateLastError: null,
     },
   };
 }
@@ -274,7 +276,7 @@ function publicState() {
     app:{name:'JLR Miner Tracker',version:'2.3.15',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state and fleet-level mining totals only. No character-location scope and no per-character mining systems are stored.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,systems:marketSystems},
     fields:state.fields,
-    market:{lastUpdatedAt:state.market.lastUpdatedAt,lastError:state.market.lastError,refreshing:marketRefreshInProgress,jita:'Jita IV - Moon 4 - Caldari Navy Assembly Plant',local:CN_SYSTEM_NAME,privateAccess:Boolean(state.market.refreshTokenEnc),marketCharacterName:state.market.characterName||null,structureName:state.market.structureName||null},
+    market:{lastUpdatedAt:state.market.lastUpdatedAt,lastError:state.market.lastError,privateLastError:state.market.privateLastError||null,refreshing:marketRefreshInProgress,jita:'Jita IV - Moon 4 - Caldari Navy Assembly Plant',local:CN_SYSTEM_NAME,privateAccess:Boolean(state.market.refreshTokenEnc),marketCharacterName:state.market.characterName||null,structureName:state.market.structureName||null},
     esi:{configured:Boolean(EVE_CLIENT_ID),linkedCharacters:Object.keys(state.characters).length,lastSyncAt:state.esi.lastSyncAt,lastError:state.esi.lastError,syncing:syncInProgress,actual:{today:todayActual,week:weekActual}},
     serverNow:now(),
   };
@@ -450,6 +452,77 @@ async function marketOrders(regionId,typeId) {
   for(let page=2;page<=pages;page++)rows.push(...(await esiGet(`${base}&page=${page}`)).data);
   return rows;
 }
+async function structureMarketOrders(structureId,access) {
+  const base=`https://esi.evetech.net/latest/markets/structures/${structureId}/?datasource=tranquility`;
+  const first=await esiGet(`${base}&page=1`,access);
+  let rows=[...first.data];
+  const pages=Math.max(1,Number(first.headers.get('x-pages')||1));
+  for(let page=2;page<=pages;page++)rows.push(...(await esiGet(`${base}&page=${page}`,access)).data);
+  return rows;
+}
+async function structureInfo(structureId,access) {
+  return (await esiGet(`https://esi.evetech.net/latest/universe/structures/${structureId}/?datasource=tranquility`,access)).data;
+}
+async function searchStructures(characterId,query,access) {
+  const q=new URLSearchParams({
+    categories:'structure',
+    datasource:'tranquility',
+    language:'en',
+    search:String(query),
+    strict:'false',
+  });
+  const {data}=await esiGet(`https://esi.evetech.net/latest/characters/${characterId}/search/?${q}`,access);
+  return Array.isArray(data?.structure)?data.structure.map(String):[];
+}
+async function marketAccessToken() {
+  if(!state.market?.refreshTokenEnc||!state.market.characterId)return null;
+  const tokens=await refreshToken(decrypt(state.market.refreshTokenEnc));
+  const identity=await verifyJwt(tokens.access_token,false);
+  if(String(identity.characterId)!==String(state.market.characterId))throw new Error('Market token changed character');
+  for(const scope of MARKET_SCOPES)if(!identity.scopes.includes(scope))throw new Error(`Market scope missing: ${scope}`);
+  if(tokens.refresh_token)state.market.refreshTokenEnc=encrypt(tokens.refresh_token);
+  state.market.scopes=identity.scopes;
+  state.market.characterName=identity.characterName;
+  return{access:tokens.access_token,identity};
+}
+async function resolveMarketStructure(cnSystemId,marketAccess,targetTypeIds=[]) {
+  if(!marketAccess)return null;
+  const candidates=[];
+
+  const pinned=String(state.market.structureId||MARKET_STRUCTURE_ID_ENV||'').trim();
+  if(pinned)candidates.push(pinned);
+
+  if(!pinned){
+    const terms=[MARKET_STRUCTURE_SEARCH,CN_SYSTEM_NAME].filter((x,i,a)=>x&&a.indexOf(x)===i);
+    for(const term of terms){
+      try{
+        for(const id of await searchStructures(state.market.characterId,term,marketAccess.access))if(!candidates.includes(id))candidates.push(id);
+      }catch(err){console.warn('Structure search failed',term,String(err.message||err))}
+    }
+  }
+
+  const inSystem=[];
+  for(const id of candidates.slice(0,30)){
+    try{
+      const info=await structureInfo(id,marketAccess.access);
+      if(Number(info.solar_system_id)===Number(cnSystemId))inSystem.push({id:String(id),name:String(info.name||id)});
+    }catch{}
+  }
+  if(!inSystem.length)return null;
+
+  let selected=inSystem[0],selectedOrders=null,bestScore=-1;
+  for(const row of inSystem){
+    try{
+      const orders=await structureMarketOrders(row.id,marketAccess.access);
+      const score=orders.filter(o=>targetTypeIds.includes(Number(o.type_id))).length;
+      if(score>bestScore){bestScore=score;selected=row;selectedOrders=orders}
+    }catch(err){console.warn('Structure market candidate failed',row.name,String(err.message||err))}
+  }
+  if(bestScore<0)return null;
+  state.market.structureId=selected.id;
+  state.market.structureName=selected.name;
+  return{...selected,orders:selectedOrders||[]};
+}
 function bestOrderPrices(orders=[]) {
   let buy=null,sell=null;
   for(const row of orders){
@@ -467,14 +540,27 @@ async function refreshMarketPrices(force=false) {
   if(!force&&Number.isFinite(last)&&Date.now()-last<MARKET_REFRESH_MS)return;
   marketRefreshInProgress=true;
   state.market.lastError=null;
+  state.market.privateLastError=null;
   broadcast();
   try{
     const names=[...ORES.map(o=>o.name),CN_SYSTEM_NAME];
     const ids=await resolveUniverseIds(names);
     const cnSystemId=ids.get(CN_SYSTEM_NAME);
     if(!cnSystemId)throw new Error(`${CN_SYSTEM_NAME} system ID could not be resolved`);
-    const next={...state.market.prices};
 
+    const typeIds=ORES.map(o=>Number(ids.get(o.name))).filter(Number.isFinite);
+    let privateMarket=null;
+    if(state.market.refreshTokenEnc){
+      try{
+        const access=await marketAccessToken();
+        privateMarket=await resolveMarketStructure(cnSystemId,access,typeIds);
+      }catch(err){
+        state.market.privateLastError=String(err.message||err);
+        console.warn('Private market refresh unavailable',state.market.privateLastError);
+      }
+    }
+
+    const next={...state.market.prices};
     for(const ore of ORES){
       const typeId=ids.get(ore.name);
       if(!typeId){console.warn('Market type not resolved',ore.name);continue}
@@ -487,7 +573,11 @@ async function refreshMarketPrices(force=false) {
         marketOrders(FOUNTAIN_REGION_ID,typeId),
       ]);
       const jita=bestOrderPrices(forgeOrders.filter(o=>Number(o.system_id)===JITA_SYSTEM_ID&&Number(o.location_id)===JITA_44_STATION_ID));
-      const cn=bestOrderPrices(fountainOrders.filter(o=>Number(o.system_id)===cnSystemId));
+      const publicCn=bestOrderPrices(fountainOrders.filter(o=>Number(o.system_id)===cnSystemId));
+      const privateCn=privateMarket?bestOrderPrices(privateMarket.orders.filter(o=>Number(o.type_id)===Number(typeId))):{buy:null,sell:null};
+      const usePrivate=privateMarket&&(privateCn.buy!==null||privateCn.sell!==null);
+      const cn=usePrivate?privateCn:publicCn;
+
       next[ore.name]={
         typeId,
         volume,
@@ -500,6 +590,9 @@ async function refreshMarketPrices(force=false) {
         },
         cn:{
           system:CN_SYSTEM_NAME,
+          source:usePrivate?'alliance-structure':'public-region',
+          structureId:usePrivate?privateMarket.id:null,
+          structureName:usePrivate?privateMarket.name:null,
           buy:cn.buy,
           sell:cn.sell,
           buyPerM3:cn.buy===null?null:cn.buy/volume,
@@ -741,7 +834,7 @@ async function routeApi(req,res,url) {
   const cm=url.pathname.match(/^\/api\/fields\/([^/]+)\/cherry$/);
   if(cm&&req.method==='POST'){const system=decodeURIComponent(cm[1]);const f=state.fields[system];if(!f)return json(res,404,{error:'UNKNOWN_SYSTEM'});f.cherryPicked=true;f.updatedAt=now();await save();broadcast();return json(res,200,{ok:true,field:f})}
   if(req.method==='POST'&&url.pathname==='/api/esi/sync'){syncAll().catch(console.error);return json(res,202,{ok:true})}
-  if(req.method==='DELETE'&&url.pathname.startsWith('/api/me/characters/')){const id=url.pathname.split('/').pop();if(!user.characterIds.includes(id))return json(res,404,{error:'NOT_LINKED'});if(user.characterIds.length<=1)return json(res,409,{error:'LAST_LOGIN_TOON',message:'Add another toon before disconnecting your last EVE login character.'});delete state.characters[id];user.characterIds=user.characterIds.filter(x=>x!==id);if(user.primaryCharacterId===id){user.primaryCharacterId=user.characterIds[0];const next=state.characters[user.primaryCharacterId];if(next)user.displayName=next.name;}await save();broadcast();return json(res,200,{ok:true,user:myProfile(user)})}
+  if(req.method==='DELETE'&&url.pathname.startsWith('/api/me/characters/')){const id=url.pathname.split('/').pop();if(!user.characterIds.includes(id))return json(res,404,{error:'NOT_LINKED'});if(user.characterIds.length<=1)return json(res,409,{error:'LAST_LOGIN_TOON',message:'Add another toon before disconnecting your last EVE login character.'});delete state.characters[id];user.characterIds=user.characterIds.filter(x=>x!==id);if(String(state.market.characterId||'')===String(id)){state.market.characterId=null;state.market.characterName=null;state.market.refreshTokenEnc=null;state.market.scopes=[];state.market.authorizedAt=null;state.market.structureId=null;state.market.structureName=null;}if(user.primaryCharacterId===id){user.primaryCharacterId=user.characterIds[0];const next=state.characters[user.primaryCharacterId];if(next)user.displayName=next.name;}await save();broadcast();return json(res,200,{ok:true,user:myProfile(user)})}
   return json(res,404,{error:'NOT_FOUND'});
 }
 
