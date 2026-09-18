@@ -65,8 +65,10 @@ const ORE_REPROCESSING = {
   Griemeer:{portionSize:100,minerals:{Tritanium:250,Isogen:80}},
   Nocxite:{portionSize:100,minerals:{Tritanium:900,Pyerite:150,Nocxium:105}},
   Hezorime:{portionSize:100,minerals:{Tritanium:2000,Isogen:120,Zydrine:60}},
-  Mordunium:{portionSize:100,minerals:{Pyerite:97}},
+  // The workbook/app uses "Mordinium"; the live EVE type is "Mordunium".
+  Mordinium:{portionSize:100,minerals:{Pyerite:97}},
 };
+const ORE_TYPE_NAME={Mordinium:'Mordunium'};
 const REFINING_MINERALS=[...new Set(Object.values(ORE_REPROCESSING).flatMap(x=>Object.keys(x.minerals)))];
 const JITA_REGION_ID = 10000002;
 const JITA_SYSTEM_ID = 30000142;
@@ -130,7 +132,7 @@ function freshState() {
       typeCache: {}, systemCache: {}, dailyFleet: [], lastSyncAt: null, lastError: null,
     },
     market: {
-      prices: {}, lastUpdatedAt: null, lastError: null,
+      prices: {}, minerals: {}, lastUpdatedAt: null, lastError: null,
       characterId: null, characterName: null, refreshTokenEnc: null, scopes: [], authorizedAt: null,
       structureId: null, structureName: null, privateLastError: null,
     },
@@ -154,6 +156,7 @@ async function loadState() {
     parsed.esi.typeCache ||= {}; parsed.esi.systemCache ||= {}; parsed.esi.dailyFleet ||= [];
     parsed.market = { ...base.market, ...(parsed.market || {}) };
     parsed.market.prices ||= {};
+    parsed.market.minerals ||= {};
     return parsed;
   } catch {
     const x = freshState();
@@ -569,13 +572,14 @@ function refinedOreValue(oreName,oreVolume,priceByMineral) {
 async function refreshMarketPrices(force=false) {
   if(marketRefreshInProgress)return;
   const last=Date.parse(state.market?.lastUpdatedAt||'');
-  if(!force&&Number.isFinite(last)&&Date.now()-last<MARKET_REFRESH_MS)return;
+  const valuationCurrent=ORES.every(o=>state.market?.prices?.[o.name]?.valuation==='max-refine-minerals');
+  if(!force&&valuationCurrent&&Number.isFinite(last)&&Date.now()-last<MARKET_REFRESH_MS)return;
   marketRefreshInProgress=true;
   state.market.lastError=null;
   state.market.privateLastError=null;
   broadcast();
   try{
-    const names=[...ORES.map(o=>o.name),...REFINING_MINERALS,CN_SYSTEM_NAME];
+    const names=[...ORES.map(o=>ORE_TYPE_NAME[o.name]||o.name),...REFINING_MINERALS,CN_SYSTEM_NAME];
     const ids=await resolveUniverseIds(names);
     const cnSystemId=ids.get(CN_SYSTEM_NAME);
     if(!cnSystemId)throw new Error(`${CN_SYSTEM_NAME} system ID could not be resolved`);
@@ -617,7 +621,7 @@ async function refreshMarketPrices(force=false) {
 
     const next={...state.market.prices};
     for(const ore of ORES){
-      const typeId=ids.get(ore.name);
+      const typeId=ids.get(ORE_TYPE_NAME[ore.name]||ore.name);
       if(!typeId){console.warn('Ore type not resolved',ore.name);continue}
       await ensureType([typeId]);
       const volume=Number(state.esi.typeCache[String(typeId)]?.volume||0);
