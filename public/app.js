@@ -605,6 +605,7 @@
     const best=entries.reduce((top,row)=>!top||Number(row.effectiveM3)>Number(top.effectiveM3)?row:top,null);
 
     const contributionRows=entries.map((entry,index)=>{
+      const fullRate=Number(entry.rawM3)||0;
       const output=Number(entry.effectiveM3)||0;
       const share=effective>0?output/effective*100:0;
       const delta=average>0?(output-average)/average*100:0;
@@ -613,20 +614,24 @@
           <strong>${esc(entry.character.name)}</strong>
           <small>${esc(entry.fit?.shipName||'Ship')} • ${delta>=0?'+':''}${delta.toFixed(1)}% vs fleet avg</small>
         </div>
+        <div class="fleet-rate-pair">
+          <div><span>100% RATE</span><strong>${fmt(fullRate,'m3')}</strong><small>m³/hr</small></div>
+          <div><span>@ ${uptime.toFixed(0)}% UPTIME</span><strong>${fmt(output,'m3')}</strong><small>m³/hr</small></div>
+        </div>
         <div class="fleet-share-track"><span style="width:${share.toFixed(2)}%"></span></div>
-        <div class="fleet-perf-number"><strong>${fmt(output,'m3')}</strong><small>${share.toFixed(1)}% share</small></div>
+        <div class="fleet-perf-number"><strong>${share.toFixed(1)}%</strong><small>fleet share</small></div>
       </div>`;
     }).join('');
 
     $('fleetOutputChart').innerHTML=`
       <div class="fleet-perf-kpis">
-        <div><span>EFFECTIVE</span><strong>${fmt(effective,'m3')}</strong><small>m³/hr now</small></div>
-        <div><span>POTENTIAL</span><strong>${fmt(potential,'m3')}</strong><small>m³/hr @ 100%</small></div>
+        <div><span>@ ${uptime.toFixed(0)}% UPTIME</span><strong>${fmt(effective,'m3')}</strong><small>projected m³/hr</small></div>
+        <div><span>100% RATE</span><strong>${fmt(potential,'m3')}</strong><small>full calculated m³/hr</small></div>
         <div><span>UPTIME</span><strong>${uptime.toFixed(0)}%</strong><small>fleet setting</small></div>
         <div><span>LOST</span><strong>${fmt(lost,'m3')}</strong><small>m³/hr to downtime</small></div>
       </div>
       <div class="fleet-capacity-chart">
-        <div class="fleet-capacity-head"><span>CAPACITY USE</span><strong>${potential>0?(effective/potential*100).toFixed(1):'0.0'}%</strong></div>
+        <div class="fleet-capacity-head"><span>UPTIME EFFECT</span><strong>${fmt(potential,'m3')} → ${fmt(effective,'m3')} m³/hr</strong></div>
         <div class="fleet-capacity-track"><span style="width:${potential>0?Math.min(100,effective/potential*100).toFixed(2):0}%"></span></div>
         <div class="fleet-capacity-scale"><span>0</span><span>${fmt(potential,'m3')} m³/hr potential</span></div>
       </div>
