@@ -282,7 +282,7 @@
     $('calcBoostCharges').textContent=detectedBoostCharges.names.length?detectedBoostCharges.names.join(' + '):'None';
     $('calcMindlink').checked=Boolean(calcSettings.mindlink);
 
-    const needsReauth=Boolean(miner?.needsReauth||(booster&&booster.needsReauth));
+    const needsReauth=Boolean(miner?.needsReauth||(boosterInFleet()&&booster&&booster.needsReauth));
     $('calcStatus').textContent=needsReauth?'AUTHORIZE':'READY';
 
     if(!minerFit){
@@ -295,7 +295,7 @@
       localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));
       return;
     }
-    if(booster&&boosterFit&&(booster.needsReauth||!Object.keys(booster.skills||{}).length)){
+    if(boosterInFleet()&&booster&&boosterFit&&(booster.needsReauth||!Object.keys(booster.skills||{}).length)){
       $('calcResults').innerHTML='<div class="calc-empty">Authorize the selected booster, then press Refresh.</div>';
       localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));
       return;
