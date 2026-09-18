@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0a0a10">
   <title>JLR Miner Tracker</title>
-  <link rel="stylesheet" href="/styles.css?v=2.2.1">
+  <link rel="stylesheet" href="/styles.css?v=2.2.2">
 </head>
 <body>
   <main id="loginView" class="login-shell hidden">
@@ -43,8 +43,8 @@
       <article class="kpi"><span>FLEET</span><strong id="fleetKpi">—</strong><small>m³/hr projected</small></article>
       <article class="kpi"><span>TOP TARGET</span><strong id="topOreKpi">—</strong><small id="topOreSub">—</small></article>
       <article class="kpi"><span>PROJECTED ISK</span><strong id="projectedIskKpi">—</strong><small>per hour @ payout</small></article>
-      <article class="kpi api-kpi"><span>ACTUAL TODAY</span><strong id="actualTodayM3">—</strong><small>m³ from ESI</small></article>
-      <article class="kpi api-kpi"><span>ACTUAL VALUE</span><strong id="actualTodayIsk">—</strong><small>API m³ × sheet JBV</small></article>
+      <article class="kpi api-kpi"><span>ACTUAL TODAY</span><strong id="actualTodayM3">—</strong><small>m³ mined</small></article>
+      <article class="kpi api-kpi"><span>ACTUAL VALUE</span><strong id="actualTodayIsk">—</strong><small>estimated value</small></article>
     </section>
 
     <section class="compact-row">
@@ -79,8 +79,8 @@
 
     <section class="glass calculator-panel shared-calculator">
       <div class="section-title calculator-title">
-        <div><span class="eyebrow">ORIGINAL WORKBOOK + ESI</span><strong>MINING OUTPUT CALCULATOR</strong></div>
-        <div class="calculator-title-right"><span class="muted tiny">same calculator in Compact + Expanded</span><span id="calcStatus" class="status-pill">ESI</span></div>
+        <div><strong>MINING OUTPUT CALCULATOR</strong></div>
+        <div class="calculator-title-right"><span id="calcStatus" class="status-pill">READY</span></div>
       </div>
 
       <div class="calculator-workspace">
@@ -107,11 +107,10 @@
       <div id="calcResults" class="calc-results"></div>
 
       <details class="calc-detail-drawer">
-        <summary><span>FIT + SKILL DETAILS</span><span class="muted tiny">click to inspect what ESI loaded</span></summary>
+        <summary><span>FIT + SKILL DETAILS</span></summary>
         <div id="calcFitDetails" class="calc-fit-details"></div>
       </details>
 
-      <div class="actual-note calculator-note">Workbook Yield Calc math + your ESI skills/fits. JLR reads supported miners, upgrades, chipsets, booster hull, industrial core, and burst module from the saved fittings.</div>
     </section>
 
     <section class="glass mini-map-panel">
@@ -139,21 +138,21 @@
 
       <div class="expanded-grid">
         <section class="glass esi-panel">
-          <div class="section-title"><div><span class="eyebrow">EVE SSO + ESI</span><strong>MY CONNECTED TOONS</strong></div><span id="esiStatus" class="status-pill">—</span></div>
-          <div class="esi-actions"><button id="addToon" class="orb purple" type="button">+ ADD TOON THROUGH EVE SSO</button><button id="syncNow" class="orb blue" type="button">SYNC NOW</button><span id="lastSync" class="tiny muted">Never synced</span></div>
+          <div class="section-title"><div><strong>MY CONNECTED TOONS</strong></div><span id="esiStatus" class="status-pill">—</span></div>
+          <div class="esi-actions"><button id="addToon" class="orb purple" type="button">+ ADD TOON</button><button id="syncNow" class="orb blue" type="button">REFRESH</button><span id="lastSync" class="tiny muted">Never refreshed</span></div>
           <div id="characterList" class="character-list"></div>
-          <div class="privacy-box"><strong>Privacy:</strong><p>JLR never asks for EVE character-location permission. Mining-ledger system IDs are used only during sync to value ore, then discarded. Persisted Actuals are fleet totals by date, not pilot locations.</p></div>
+          <div class="privacy-box"><strong>Privacy:</strong><p>No character-location access is requested.</p></div>
         </section>
 
         <section class="glass actual-panel">
-          <div class="section-title"><div><span class="eyebrow">API ACTUALS</span><strong>FLEET PERFORMANCE</strong></div></div>
+          <div class="section-title"><div><strong>FLEET PERFORMANCE</strong></div></div>
           <div class="actual-grid">
-            <article class="actual-card"><span>Today mined</span><strong id="actualExpTodayM3">—</strong><small>from ESI</small></article>
-            <article class="actual-card"><span>Today value</span><strong id="actualExpTodayValue">—</strong><small>sheet JBV × your payout</small></article>
+            <article class="actual-card"><span>Today mined</span><strong id="actualExpTodayM3">—</strong><small>m³ mined</small></article>
+            <article class="actual-card"><span>Today value</span><strong id="actualExpTodayValue">—</strong><small>estimated payout</small></article>
             <article class="actual-card"><span>This week</span><strong id="actualWeekM3">—</strong><small>fleet m³</small></article>
-            <article class="actual-card"><span>Week value</span><strong id="actualWeekValue">—</strong><small>sheet JBV × your payout</small></article>
+            <article class="actual-card"><span>Week value</span><strong id="actualWeekValue">—</strong><small>estimated payout</small></article>
           </div>
-          <div class="actual-note">Projected numbers come from your local fleet setup. <strong>Actual</strong> numbers come only from connected EVE mining-ledger APIs.</div>
+          <div class="actual-note">Projected and recorded fleet performance.</div>
         </section>
       </div>
 
@@ -169,7 +168,7 @@
     </section>
     <div id="toast" class="toast hidden" role="status"></div>
   </main>
-  <script src="/yield-math.js?v=2.2.1" defer></script>
-  <script src="/app.js?v=2.2.1" defer></script>
+  <script src="/yield-math.js?v=2.2.2" defer></script>
+  <script src="/app.js?v=2.2.2" defer></script>
 </body>
 </html>
