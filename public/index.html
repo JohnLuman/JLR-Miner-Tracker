@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0a0a10">
   <title>JLR Miner Tracker</title>
-  <link rel="stylesheet" href="/styles.css?v=2.3.6">
+  <link rel="stylesheet" href="/styles.css?v=2.3.7">
 </head>
 <body>
   <main id="loginView" class="login-shell hidden">
@@ -95,8 +95,8 @@
           <div class="calc-grid calc-booster-grid">
             <label><span>Booster toon</span><select id="calcBoosterCharacter"><option value="">No booster</option></select></label>
             <label><span>Saved booster fit</span><select id="calcBoosterFitting"><option value="">No booster fit</option></select></label>
-            <label class="check-label"><input id="calcMindlink" type="checkbox" checked><span>Mining Foreman Mindlink</span></label>
-            <label class="check-label"><input id="calcEfficiencyCharge" type="checkbox" checked><span>Mining Laser Efficiency Charge</span></label>
+            <label><span>Detected charges</span><div id="calcBoostCharges" class="calc-readout">None</div></label>
+            <label class="check-label"><input id="calcMindlink" type="checkbox" checked><span>Mindlink equipped</span></label>
           </div>
         </div>
       </div>
@@ -165,7 +165,7 @@
     </section>
     <div id="toast" class="toast hidden" role="status"></div>
   </main>
-  <script src="/yield-math.js?v=2.3.6" defer></script>
-  <script src="/app.js?v=2.3.6" defer></script>
+  <script src="/yield-math.js?v=2.3.7" defer></script>
+  <script src="/app.js?v=2.3.7" defer></script>
 </body>
 </html>
