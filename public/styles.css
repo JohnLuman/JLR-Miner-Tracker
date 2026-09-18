@@ -185,14 +185,6 @@
   .rank-num:nth-child(4){text-align:right}
 }
 
-@media(min-width:761px){
-  .app.compact .hit-order{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .app.expanded .hit-order{grid-template-columns:repeat(3,minmax(0,1fr))}
-}
-@media(max-width:760px){
-  .hit-order{grid-template-columns:1fr}
-  .target-card{grid-template-columns:34px minmax(100px,1fr) 68px 78px;padding:7px}
-}
 
 @media(min-width:761px){
   .app.compact .hit-order{grid-template-columns:repeat(2,minmax(0,1fr))}
