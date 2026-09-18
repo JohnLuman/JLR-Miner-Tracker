@@ -142,27 +142,27 @@
     if(document.activeElement!==$('payout'))$('payout').value=Number(fleetSettings.payout)||95;
 
     const chars=me.characters||[];
-    const boosterSel=$('fleetBoosterCharacter');
-    const boosterFitSel=$('fleetBoosterFitting');
-
-    boosterSel.innerHTML='<option value="">No booster</option>'+chars.map(character=>`<option value="${character.characterId}">${esc(character.name)}</option>`).join('');
     if(!chars.some(character=>String(character.characterId)===String(calcSettings.boosterCharacterId))){
       calcSettings.boosterCharacterId='';
       calcSettings.boosterFittingId='';
     }
-    boosterSel.value=calcSettings.boosterCharacterId||'';
-
     const selectedBooster=calcCharacter(calcSettings.boosterCharacterId);
     const selectedBoostFits=boosterFits(selectedBooster);
-    boosterFitSel.innerHTML='<option value="">No booster fit</option>'+selectedBoostFits.map(fit=>`<option value="${fit.fittingId}">${esc(fit.shipName)} — ${esc(fit.name)}</option>`).join('');
     if(calcSettings.boosterCharacterId&&!selectedBoostFits.some(fit=>String(fit.fittingId)===String(calcSettings.boosterFittingId))){
       calcSettings.boosterFittingId=selectedBoostFits[0]?String(selectedBoostFits[0].fittingId):'';
     }
     if(!calcSettings.boosterCharacterId)calcSettings.boosterFittingId='';
-    boosterFitSel.value=calcSettings.boosterFittingId||'';
-    $('fleetMindlink').checked=Boolean(calcSettings.mindlink);
-    $('fleetEfficiencyCharge').checked=Boolean(calcSettings.efficiencyCharge);
     localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));
+
+    const booster=calcCharacter(calcSettings.boosterCharacterId);
+    const boosterFit=calcFitting(booster,calcSettings.boosterFittingId);
+    const boostBits=[];
+    if(booster&&boosterFit){
+      boostBits.push(`${booster.name} — ${boosterFit.shipName}`);
+      if(calcSettings.mindlink)boostBits.push('Mindlink');
+      if(calcSettings.efficiencyCharge)boostBits.push('Efficiency Charge');
+    }
+    $('fleetBoosterSummary').textContent=boostBits.length?`Booster: ${boostBits.join(' • ')}`:'Booster: none selected';
 
     const list=$('fleetMemberList');
     list.innerHTML='';
@@ -205,7 +205,6 @@
       fleetSettings.members[id].fittingId=select.value;saveFleet();
     }));
 
-    const booster=calcCharacter(calcSettings.boosterCharacterId),boosterFit=calcFitting(booster,calcSettings.boosterFittingId);
     const boostLabel=booster&&boosterFit?` • ${boosterFit.shipName} boost`:'';
     $('setupSummary').textContent=stats.count?`${stats.count} miners • ${fmt(stats.total,'m3')} m³/hr${boostLabel} • ${Number(fleetSettings.payout).toFixed(1)}% payout`:`Select miners${boostLabel}`;
     localStorage.setItem('jlrFleet',JSON.stringify(fleetSettings));
@@ -424,9 +423,16 @@
     };
     saveCalc();
   }
-  ['calcFitting','calcCrystal','calcBoosterFitting','calcMindlink','calcEfficiencyCharge'].forEach(id=>$(id).addEventListener('change',readCalc));
+  ['calcFitting','calcCrystal'].forEach(id=>$(id).addEventListener('change',readCalc));
+  ['calcBoosterFitting','calcMindlink','calcEfficiencyCharge'].forEach(id=>$(id).addEventListener('change',()=>{readCalc();renderFleet();renderTop()}));
   $('calcMinerCharacter').addEventListener('change',()=>{calcSettings.minerCharacterId=$('calcMinerCharacter').value;calcSettings.fittingId='';saveCalc()});
-  $('calcBoosterCharacter').addEventListener('change',()=>{calcSettings.boosterCharacterId=$('calcBoosterCharacter').value;calcSettings.boosterFittingId='';saveCalc()});
+  $('calcBoosterCharacter').addEventListener('change',()=>{
+    calcSettings.boosterCharacterId=$('calcBoosterCharacter').value;
+    calcSettings.boosterFittingId='';
+    saveCalc();
+    renderFleet();
+    renderTop();
+  });
 
   function readFleet(){
     fleetSettings.uptime=Math.min(100,Math.max(1,Number($('uptime').value)||100));
@@ -434,24 +440,6 @@
     saveFleet();
   }
   ['uptime','payout'].forEach(id=>$(id).addEventListener('input',readFleet));
-  $('fleetBoosterCharacter').addEventListener('change',()=>{
-    calcSettings.boosterCharacterId=$('fleetBoosterCharacter').value;
-    calcSettings.boosterFittingId='';
-    saveCalc();
-  });
-  $('fleetBoosterFitting').addEventListener('change',()=>{
-    calcSettings.boosterFittingId=$('fleetBoosterFitting').value;
-    saveCalc();
-  });
-  $('fleetMindlink').addEventListener('change',()=>{
-    calcSettings.mindlink=$('fleetMindlink').checked;
-    saveCalc();
-  });
-  $('fleetEfficiencyCharge').addEventListener('change',()=>{
-    calcSettings.efficiencyCharge=$('fleetEfficiencyCharge').checked;
-    saveCalc();
-  });
-
   async function boot(){
     try{
       const config=await fetch('/api/config').then(r=>r.json());
