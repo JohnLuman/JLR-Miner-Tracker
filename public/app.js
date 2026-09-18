@@ -563,7 +563,7 @@
     const selected=iceRows.find(x=>x.name===iceTrackType)||iceRows[0]||null;
 
     $('iceTrackValue').textContent=selected?.track?fmt(selected.track)+' ISK':'—';
-    $('iceTrackValueSub').textContent=selected?(selected.name+' • '+Math.round(selected.pct*100)+'% JBV'):'Waiting for raw block prices';
+    $('iceTrackValueSub').textContent=selected?(selected.name+' • '+Math.round(selected.pct*100)+'% Jita refine'):'Waiting for Jita refined value';
     $('iceBestJita').textContent=selected?.jita?fmt(selected.jita)+' ISK':'—';
     $('iceBestJitaSub').textContent=selected?(selected.name+' • /block • no Heavy Water'):'Heavy Water excluded';
     $('iceBestCn').textContent=selected?.cn?fmt(selected.cn)+' ISK':'—';
@@ -596,8 +596,8 @@
     }else{
       $('iceBlockTable').innerHTML=iceRows.map(row=>
         '<div class="ice-block-row">'+
-          '<div><strong>'+esc(row.name)+'</strong><small>'+Math.round(row.pct*100)+'% JBV tracking</small></div>'+
-          '<div><span>Jita buy</span><strong>'+(row.rawJita?fmt(row.rawJita):'—')+'</strong></div>'+
+          '<div><strong>'+esc(row.name)+'</strong><small>'+Math.round(row.pct*100)+'% Jita refine tracking</small></div>'+
+          '<div><span>Jita refine</span><strong>'+(row.jita?fmt(row.jita):'—')+'</strong></div>'+
           '<div><span>Track</span><strong>'+(row.track?fmt(row.track):'—')+'</strong></div>'+
         '</div>'
       ).join('');
