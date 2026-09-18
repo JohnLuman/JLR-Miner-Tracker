@@ -182,11 +182,22 @@
       collecting+
     '</div>';
   }
-  function unlockAudio(){if(audioUnlocked)return;const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;audio=new AC();audioUnlocked=true;}
-  function sfx(kind='click'){
+  function unlockAudio(){
+    if(audioUnlocked&&audio)return audio;
+    const AC=window.AudioContext||window.webkitAudioContext;
+    if(!AC)return null;
+    audio=new AC();
+    audioUnlocked=true;
+    return audio;
+  }
+  async function sfx(kind='click'){
     unlockAudio();
-    if(!audio)return;
-    if(audio.state==='suspended')audio.resume().catch(()=>{});
+    if(!audio)return false;
+    if(audio.state==='suspended'){
+      try{await audio.resume()}catch{}
+    }
+    if(audio.state!=='running')return false;
+
     const o=audio.createOscillator(),g=audio.createGain(),n=audio.currentTime;
     o.connect(g);g.connect(audio.destination);
     if(kind==='hover'){
@@ -211,21 +222,28 @@
       o.type='square';o.frequency.setValueAtTime(290,n);o.frequency.exponentialRampToValueAtTime(470,n+.05);
       g.gain.setValueAtTime(.014,n);g.gain.exponentialRampToValueAtTime(.001,n+.07);o.start(n);o.stop(n+.08);
     }
+    return true;
   }
   let systemHoverKey='';
-  document.addEventListener('pointerdown',unlockAudio,{once:true});
-  document.addEventListener('pointerover',(e)=>{
-    if(!audioUnlocked)return;
+  // Try immediately. Browsers that permit WebAudio without a gesture will have hover sound right away.
+  unlockAudio();
+  if(audio?.state==='suspended')audio.resume().catch(()=>{});
+  // Fallback for browsers that enforce autoplay/user-activation rules.
+  document.addEventListener('pointerdown',()=>{unlockAudio();audio?.resume?.().catch(()=>{})},{once:true});
+  document.addEventListener('pointerover',async(e)=>{
     const system=e.target.closest('.system-node');
     if(system){
       const key=system.dataset.system||system.querySelector('.sys-name')?.textContent||'system';
-      if(key!==systemHoverKey){systemHoverKey=key;sfx('systemHover')}
+      if(key!==systemHoverKey){
+        const played=await sfx('systemHover');
+        if(played)systemHoverKey=key;
+      }
       return;
     }
-    const target=e.target.closest('button,summary');
+    const target=e.target.closest('button,summary,.app-tab');
     if(!target)return;
-    const previous=e.relatedTarget?.closest?.('button,summary');
-    if(previous!==target)sfx('hover');
+    const previous=e.relatedTarget?.closest?.('button,summary,.app-tab');
+    if(previous!==target)await sfx('hover');
   });
   document.addEventListener('pointerout',(e)=>{
     const system=e.target.closest('.system-node');
@@ -239,7 +257,7 @@
   });
   document.addEventListener('click',(e)=>{
     if(e.target.closest('.system-node')){sfx('systemSelect');return}
-    if(e.target.closest('button,summary'))sfx('click');
+    if(e.target.closest('button,summary,.app-tab'))sfx('click');
   });
   document.addEventListener('change',(e)=>{
     if(e.target.matches('select'))sfx('select');
@@ -254,6 +272,62 @@
 
   function showLogin(){$('app').classList.add('hidden');$('loginView').classList.remove('hidden');}
   function showApp(){$('loginView').classList.add('hidden');$('app').classList.remove('hidden');}
+  let activeTab=localStorage.getItem('jlrTab')||'fields';
+  function applyTab(tab){
+    const valid=['fields','fleet','ice','toons'];
+    activeTab=valid.includes(tab)?tab:'fields';
+    localStorage.setItem('jlrTab',activeTab);
+    document.querySelectorAll('.app-tab').forEach(button=>button.classList.toggle('active',button.dataset.tab===activeTab));
+    document.querySelectorAll('.tab-panel').forEach(panel=>panel.classList.toggle('active',panel.dataset.tab===activeTab));
+  }
+  function initTabs(){
+    const host=$('tabHost');
+    if(!host||host.dataset.ready==='1')return;
+    host.dataset.ready='1';
+
+    const makePanel=(name)=>{
+      const panel=document.createElement('div');
+      panel.className='tab-panel';
+      panel.dataset.tab=name;
+      host.appendChild(panel);
+      return panel;
+    };
+    const fields=makePanel('fields');
+    const fleet=makePanel('fleet');
+    const ice=makePanel('ice');
+    const toons=makePanel('toons');
+
+    const quick=document.querySelector('.quick-update');
+    const calculator=document.querySelector('.shared-calculator');
+    const board=document.querySelector('.board-panel');
+    const hits=document.querySelector('.hit-panel');
+    [quick,calculator,board,hits].filter(Boolean).forEach(el=>fields.appendChild(el));
+
+    const advanced=document.createElement('div');
+    advanced.className='tab-advanced expanded-grid';
+    const ranking=document.querySelector('.ranking-panel');
+    const timers=document.querySelector('.timers-panel');
+    if(ranking)advanced.appendChild(ranking);
+    if(timers)advanced.appendChild(timers);
+    if(advanced.children.length)fields.appendChild(advanced);
+
+    const setup=document.querySelector('.setup-drawer');
+    const visuals=document.querySelector('.mining-visuals-panel');
+    const actual=document.querySelector('.actual-panel');
+    [setup,visuals,actual].filter(Boolean).forEach(el=>fleet.appendChild(el));
+
+    const icePanel=document.querySelector('.ice-mining-panel');
+    if(icePanel)ice.appendChild(icePanel);
+
+    const toonPanel=document.querySelector('.esi-panel');
+    if(toonPanel)toons.appendChild(toonPanel);
+
+    document.querySelector('.compact-row')?.remove();
+    $('expandedArea')?.remove();
+
+    document.querySelectorAll('.app-tab').forEach(button=>button.addEventListener('click',()=>applyTab(button.dataset.tab)));
+    applyTab(activeTab);
+  }
   function applyMode(mode){
     $('app').classList.toggle('compact',mode==='compact');
     $('app').classList.toggle('expanded',mode==='expanded');
@@ -976,7 +1050,7 @@
       if(!config.ssoConfigured){$('setupWarning').classList.remove('hidden');$('setupWarning').textContent='Login is not configured yet.';}
       const auth=await fetch('/api/me',{credentials:'same-origin'}).then(r=>r.json());
       if(!auth.authenticated){showLogin();return}
-      me=auth.user;showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');await loadState();connectSse();
+      me=auth.user;initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');await loadState();connectSse();
       const params=new URLSearchParams(location.search);if(params.get('linked'))toast('Mining toon connected.');if(params.get('login'))toast('Logged in.');if(params.get('market')==='authorized')toast('John market access authorized.');if(params.get('error'))toast(decodeURIComponent(params.get('error')));if(params.toString())history.replaceState({},'',location.pathname);
     }catch(e){console.error(e);showLogin();$('setupWarning').classList.remove('hidden');$('setupWarning').textContent=`JLR could not load: ${e.message}`}
   }
