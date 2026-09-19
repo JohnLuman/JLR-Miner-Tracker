@@ -1097,7 +1097,9 @@
         if(filter==='all'||filter===entry.f.status||(filter==='cherry'&&entry.f.cherryPicked))board.appendChild(node(entry.d,entry.f,true));
       }else if(entry.kind==='ice'&&(filter==='all'||filter==='ice')){
         board.appendChild(iceBoardNode(entry.row));
-      }else if(entry.kind==='a0'&&filter==='a0'){
+      }else if(entry.kind==='a0'&&(filter==='a0'||(filter==='all'&&entry.row.scan?.detected))){
+        // Confirmed A0 sites belong on the main board too. Once confirmed, they
+        // remain visible there when stale so the 12-hour NEEDS UPDATE state is obvious.
         board.appendChild(a0BoardNode(entry.row));
       }
     }
