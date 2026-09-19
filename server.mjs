@@ -4,7 +4,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { parseProbeScan } from './lib/probe-scan.mjs';
+import { parseProbeScan, parseA0Scan } from './lib/probe-scan.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -61,6 +61,7 @@ const dogmaAttributePromises = new Map();
 const typeLookupPromises = new Map();
 const systemLookupPromises = new Map();
 const TEN_HOURS = 10 * 60 * 60 * 1000;
+const A0_REPORT_TTL = 12 * 60 * 60 * 1000;
 const SESSION_TTL = 30 * 24 * 60 * 60 * 1000;
 const MARKET_REFRESH_MS = 24 * 60 * 60 * 1000;
 const ESI_AUTO_REFRESH_MS = 15 * 60 * 1000;
@@ -175,7 +176,7 @@ function freshState() {
       typeCache: {}, systemCache: {}, dailyFleet: [], ledgerActivity: {}, ledgerFieldSnapshots: {}, lastSyncAt: null, lastError: null,
     },
     market: {
-      prices: {}, minerals: {}, icePrices: {}, iceProducts: {}, iceFields: [], a0Fields: [], a0ScannedAt: null, t3Distances: {}, history: { ore:{}, ice:{} }, lastUpdatedAt: null, lastError: null,
+      prices: {}, minerals: {}, icePrices: {}, iceProducts: {}, iceFields: [], a0Fields: [], a0Reports: {}, a0ScannedAt: null, t3Distances: {}, history: { ore:{}, ice:{} }, lastUpdatedAt: null, lastError: null,
       characterId: null, characterName: null, refreshTokenEnc: null, scopes: [], authorizedAt: null,
       structureId: null, structureName: null, privateLastError: null,
     },
@@ -204,6 +205,7 @@ async function loadState() {
     parsed.market.iceProducts ||= {};
     parsed.market.iceFields ||= [];
     parsed.market.a0Fields ||= [];
+    parsed.market.a0Reports ||= {};
     parsed.market.a0ScannedAt ||= null;
     parsed.market.t3Distances ||= {};
     parsed.market.history ||= {ore:{},ice:{}};
@@ -332,6 +334,46 @@ function effectiveSystems(ores=effectiveOres()) {
     };
   });
 }
+function a0PublicFields() {
+  const rows=new Map((state.market?.a0Fields||[]).map(row=>[row.system,{...row}]));
+  for(const [system,report] of Object.entries(state.market?.a0Reports||{})){
+    if(!report||!(Number(report.distanceLy)<=TITAN_BRIDGE_RANGE_LY))continue;
+    if(!rows.has(system)){
+      rows.set(system,{
+        system,
+        systemId:Number(report.systemId)||null,
+        distanceLy:Number(report.distanceLy),
+        security:Number(report.security),
+        starId:Number(report.starId)||null,
+        spectralClass:String(report.spectralClass||'A0'),
+        eligibility:'Probe Scanner confirmed A0 Rare Asteroids',
+        discoveredByScan:true,
+      });
+    }
+  }
+  const at=Date.now();
+  return [...rows.values()].map(row=>{
+    const report=state.market?.a0Reports?.[row.system]||null;
+    const checkedAt=report?.lastCheckedAt||null;
+    const checkedMs=Date.parse(checkedAt||'');
+    const due=!Number.isFinite(checkedMs)||at-checkedMs>=A0_REPORT_TTL;
+    const nextUpdateAt=Number.isFinite(checkedMs)?new Date(checkedMs+A0_REPORT_TTL).toISOString():null;
+    return {
+      ...row,
+      scan:{
+        status:due?'needs-update':report?.detected?'active':'clear',
+        due,
+        detected:Boolean(report?.detected),
+        lastCheckedAt:checkedAt,
+        nextUpdateAt,
+        siteName:report?.siteName||null,
+        scannerRowCount:Number(report?.scannerRowCount)||0,
+        reportedBy:report?.reportedBy||null,
+      },
+    };
+  }).sort((a,b)=>Number(a.distanceLy)-Number(b.distanceLy)||a.system.localeCompare(b.system));
+}
+
 function publicState() {
   resetExpired(false);
   const daily = state.esi.dailyFleet;
@@ -341,8 +383,8 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.3.59',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state and fleet-level mining totals only. Character location is read only when importing a Probe Scanner copy and is not stored or shared.'},
-    source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],a0Fields:state.market.a0Fields||[],a0ScannedAt:state.market.a0ScannedAt||null},
+    app:{name:'JLR Miner Tracker',version:'2.3.60',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state and fleet-level mining totals only. Character location is read only when importing a Probe Scanner copy and is not stored or shared.'},
+    source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     market:{lastUpdatedAt:state.market.lastUpdatedAt,lastError:state.market.lastError,privateLastError:state.market.privateLastError||null,refreshing:marketRefreshInProgress,valuation:'MAX REFINE',maxRefineYield:MAX_REFINE_YIELD,jita:'Jita IV - Moon 4 - Caldari Navy Assembly Plant',local:CN_SYSTEM_NAME,titanBridgeRangeLy:TITAN_BRIDGE_RANGE_LY,history:marketHistoryPublic(),privateAccess:Boolean(state.market.refreshTokenEnc),marketCharacterName:state.market.characterName||null,structureName:state.market.structureName||null},
     esi:{configured:Boolean(EVE_CLIENT_ID),linkedCharacters:Object.keys(state.characters).length,lastSyncAt:state.esi.lastSyncAt,lastError:state.esi.lastError,syncing:syncInProgress||manualSyncCount>0,actual:{today:todayActual,week:weekActual}},
@@ -1369,6 +1411,71 @@ async function characterAccess(ch){
   return pending;
 }
 
+async function a0CandidateForScan(systemId,system,a0Detected=false){
+  const known=(state.market?.a0Fields||[]).find(row=>row.system===system);
+  if(known)return {...known};
+  if(!a0Detected)return null;
+
+  const ids=await resolveUniverseIds([CN_SYSTEM_NAME]);
+  const originId=ids.get(CN_SYSTEM_NAME);
+  if(!originId)return null;
+  const [origin,target]=await Promise.all([
+    esiGet(`https://esi.evetech.net/latest/universe/systems/${originId}/?datasource=tranquility`).then(x=>x.data),
+    esiGet(`https://esi.evetech.net/latest/universe/systems/${systemId}/?datasource=tranquility`).then(x=>x.data),
+  ]);
+  const distance=lyDistance(origin.position,target.position);
+  if(!Number.isFinite(distance)||distance>TITAN_BRIDGE_RANGE_LY+1e-9)return null;
+
+  let spectralClass='A0',starId=Number(target.star_id)||null;
+  if(starId){
+    try{
+      const star=(await esiGet(`https://esi.evetech.net/latest/universe/stars/${starId}/?datasource=tranquility`)).data;
+      spectralClass=String(star.spectral_class||spectralClass).trim()||spectralClass;
+    }catch{}
+  }
+  return {
+    system,
+    systemId:Number(systemId),
+    distanceLy:distance,
+    security:Number(target.security_status),
+    starId,
+    spectralClass,
+    eligibility:'Probe Scanner confirmed A0 Rare Asteroids',
+    discoveredByScan:true,
+  };
+}
+
+async function recordA0ProbeScan({characterName,systemId,system,text}){
+  const scan=parseA0Scan(text);
+  const candidate=await a0CandidateForScan(systemId,system,scan.detected);
+  if(!candidate)return {tracked:false,inRange:false,scan};
+
+  state.market.a0Reports ||= {};
+  const checkedAt=now();
+  state.market.a0Reports[system]={
+    systemId:Number(systemId),
+    distanceLy:Number(candidate.distanceLy),
+    security:Number(candidate.security),
+    starId:Number(candidate.starId)||null,
+    spectralClass:String(candidate.spectralClass||'A0'),
+    detected:Boolean(scan.detected),
+    siteName:scan.siteName,
+    scannerRowCount:Number(scan.scannerRowCount)||0,
+    lastCheckedAt:checkedAt,
+    nextUpdateAt:new Date(Date.parse(checkedAt)+A0_REPORT_TTL).toISOString(),
+    reportedBy:String(characterName||''),
+  };
+  return {
+    tracked:true,
+    inRange:true,
+    candidate,
+    scan,
+    status:scan.detected?'active':'clear',
+    lastCheckedAt:checkedAt,
+    nextUpdateAt:state.market.a0Reports[system].nextUpdateAt,
+  };
+}
+
 async function probeScanPreview(ch,text){
   const {access,identity}=await characterAccess(ch);
   if(!identity.scopes.includes(LOCATION_SCOPE)){
@@ -1383,6 +1490,7 @@ async function probeScanPreview(ch,text){
   const system=state.esi.systemCache[systemId]?.name||`System ${systemId}`;
   const definition=SYSTEM_MAP.get(system)||null;
   const scan=definition?parseProbeScan(text,definition.ore):null;
+  const a0=await recordA0ProbeScan({characterName:ch.name,systemId,system,text});
   return{
     characterId:String(ch.characterId),
     characterName:ch.name,
@@ -1392,6 +1500,7 @@ async function probeScanPreview(ch,text){
     definition:definition?{system:definition.system,ore:definition.ore,rank:definition.rank}:null,
     scan,
     field:definition?state.fields[system]:null,
+    a0,
   };
 }
 
@@ -1587,7 +1696,7 @@ async function serveStatic(req,res,pathname) {
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.59',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.60',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){const u=readSession(req);return json(res,200,{authenticated:Boolean(u),user:u?myProfile(u):null})}
   const user=requireUser(req,res);if(!user)return;
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
@@ -1604,8 +1713,10 @@ async function routeApi(req,res,url) {
     if(!(Array.isArray(ch.scopes)&&ch.scopes.includes(LOCATION_SCOPE)))return json(res,409,{error:'LOCATION_SCOPE_REQUIRED',message:'Update this toon’s EVE access before importing scans.'});
     try{
       const preview=await probeScanPreview(ch,scanText);
+      const valid=Boolean(preview.scan?.valid||preview.a0?.scan?.valid);
+      if((preview.tracked||preview.a0?.tracked)&&!valid)return json(res,400,{error:'INVALID_SCAN',message:'This does not look like copied Probe Scanner rows. Copy the complete scanner list and try again.',preview});
       await save();
-      if(preview.tracked&&!preview.scan.valid)return json(res,400,{error:'INVALID_SCAN',message:'This does not look like copied Probe Scanner rows. Copy the complete scanner list and try again.',preview});
+      if(preview.a0?.tracked)broadcast();
       return json(res,200,{ok:true,...preview});
     }catch(err){
       if(err.code==='LOCATION_SCOPE_REQUIRED')return json(res,409,{error:err.code,message:err.message});

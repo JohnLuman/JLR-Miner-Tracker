@@ -374,3 +374,12 @@ html[data-theme] .api-kpi{background:linear-gradient(180deg,color-mix(in srgb,#2
 .a0-system-node .sys-state{color:#e2e9ff}
 .orb.a0-filter{border-color:#9fb8ff;background:linear-gradient(180deg,#c0d0ff,#718fff 58%,#425cc4);color:#0b1434;box-shadow:inset 0 2px #ffffff8f}
 .orb.a0-filter.active{outline:2px solid #cbd7ff;outline-offset:1px}
+
+
+/* A0 Probe Scanner freshness states. */
+.a0-system-node[data-a0-state="needs-update"]{border-color:#e3a543;box-shadow:inset 0 -2px 0 #e3a543,0 0 0 1px #e3a54322}
+.a0-system-node[data-a0-state="needs-update"] .sys-state{color:#ffd889}
+.a0-system-node[data-a0-state="active"]{border-color:#60d989;box-shadow:inset 0 -2px 0 #60d989,0 0 0 1px #60d98922}
+.a0-system-node[data-a0-state="active"] .sys-state{color:#a8ffc3}
+.a0-system-node[data-a0-state="clear"]{border-color:#637595;box-shadow:inset 0 -2px 0 #637595}
+.a0-system-node[data-a0-state="clear"] .sys-state{color:#9ba8bf}

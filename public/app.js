@@ -1041,8 +1041,13 @@
     const card=document.createElement('div');
     const key=boardKey('a0',row.system);
     const favorite=isBoardFavorite('a0',row.system);
+    const scan=row.scan||{};
+    const checkedMs=Date.parse(scan.lastCheckedAt||'');
+    const due=scan.due||!Number.isFinite(checkedMs)||Date.now()-checkedMs>=12*60*60*1000;
+    const a0State=due?'needs-update':scan.detected?'active':'clear';
     card.className='system-node a0-system-node';
     card.dataset.status='a0';
+    card.dataset.a0State=a0State;
     card.dataset.system=row.system;
     card.dataset.boardKey=key;
     card.classList.toggle('favorite',favorite);
@@ -1051,12 +1056,17 @@
     card.setAttribute('role','group');
     const distance=Number(row.distanceLy);
     const spectral=String(row.spectralClass||'A0');
+    const stateLine=due
+      ?'NEEDS UPDATE • PASTE SCAN'
+      :scan.detected
+        ?`A0 SITE ACTIVE • ${ago(scan.lastCheckedAt).toUpperCase()}`
+        :`NO A0 SITE • CHECKED ${ago(scan.lastCheckedAt).toUpperCase()}`;
     card.innerHTML='<button class="favorite-toggle" type="button" aria-pressed="'+favorite+'" title="'+(favorite?'Remove from favorites':'Favorite this system')+'">'+(favorite?'★':'☆')+'</button>'+
       (boardArrangeMode?'<span class="drag-grip" aria-hidden="true">⠿</span>':'')+
       '<span class="sys-name">'+esc(row.system)+'</span>'+
-      '<span class="sys-ore">BLUE '+esc(spectral)+' STAR</span>'+
-      '<span class="sys-state">A0 RARE ORE ELIGIBLE'+(Number.isFinite(distance)?' • '+distance.toFixed(2)+' LY':'')+'</span>';
-    card.title=row.system+' • '+spectral+' Blue star'+(favorite?' • Favorite':'')+(Number.isFinite(distance)?' • '+distance.toFixed(2)+' LY from C-N4OD':'')+' • eligible for Nullsec Blue A0 Rare Asteroids; active site presence is not exposed by ESI';
+      '<span class="sys-ore">BLUE '+esc(spectral)+' STAR'+(Number.isFinite(distance)?' • '+distance.toFixed(2)+' LY':'')+'</span>'+
+      '<span class="sys-state">'+esc(stateLine)+'</span>';
+    card.title=row.system+' • '+spectral+' Blue star'+(favorite?' • Favorite':'')+(Number.isFinite(distance)?' • '+distance.toFixed(2)+' LY from C-N4OD':'')+(due?' • Needs Probe Scanner update':scan.detected?' • A0 rare asteroid site detected':' • Checked; no active A0 site detected')+' • refresh due every 12 hours';
     card.querySelector('.favorite-toggle').addEventListener('click',e=>{
       e.preventDefault();e.stopPropagation();toggleBoardFavorite('a0',row.system);sfx('select');
     });
@@ -1072,6 +1082,9 @@
     let counts={ready:0,picked:0,cleared:0,cherry:0};
     const iceFields=Array.isArray(state.source?.iceFields)?state.source.iceFields:[];
     const a0Fields=Array.isArray(state.source?.a0Fields)?state.source.a0Fields:[];
+    const a0Due=a0Fields.filter(row=>row.scan?.due||!row.scan?.lastCheckedAt||Date.now()-Date.parse(row.scan.lastCheckedAt)>=12*60*60*1000).length;
+    const a0Filter=document.querySelector('.filter[data-filter="a0"]');
+    if(a0Filter)a0Filter.textContent=a0Due?`A0 • ${a0Due} UPDATE`:'A0 ✓';
 
     for(const d of definitions()){
       const f=field(d.system);
@@ -1089,7 +1102,7 @@
       }
     }
 
-    $('statusCounts').textContent=`${counts.ready} mineable • ${counts.picked} picked • ${counts.cleared} respawning • ${counts.cherry} cherry • ${iceFields.length} ice • ${a0Fields.length} A0`;
+    $('statusCounts').textContent=`${counts.ready} mineable • ${counts.picked} picked • ${counts.cleared} respawning • ${counts.cherry} cherry • ${iceFields.length} ice • ${a0Fields.length} A0 • ${a0Due} need update`;
     $('systemCountLabel').textContent=`${definitions().length} T3 • ${iceFields.length} ICE • ${a0Fields.length} A0`;
     if(filter==='a0'&&!a0Fields.length)board.innerHTML='<div class="target-empty"><strong>No A0 systems found within 6 LY.</strong><span>The server scans Fountain star spectral classes through ESI. Active rare-asteroid anomalies themselves are not exposed remotely.</span></div>';
   }
@@ -1570,9 +1583,18 @@
     scanBusy=true;renderScanCharacters();setScanStatus(`Checking ${selected.name} location…`);
     try{
       const preview=await api('/api/scans/preview',{method:'POST',body:JSON.stringify({characterId:selected.characterId,text})});
+      if(preview.a0?.tracked){
+        if(preview.a0.scan?.detected){
+          setScanStatus(`${preview.system}: A0 rare asteroid site detected — board updated for 12 hours.`,'success');
+          toast(`${preview.system} A0 site added/updated on the board.`);
+        }else{
+          setScanStatus(`${preview.system}: A0 checked — no active site detected. Update due again in 12 hours.`,'success');
+        }
+      }
       if(!preview.tracked){
-        setScanStatus(`${preview.characterName} is in ${preview.system}, which is not on the T3 board.`,'warning');
-        toast(`No tracked T3 field for ${preview.system}.`);
+        if(preview.a0?.tracked)return;
+        setScanStatus(`${preview.characterName} is in ${preview.system}, which is not on the tracked T3/A0 board.`,'warning');
+        toast(`No tracked T3 or A0 field for ${preview.system}.`);
         return;
       }
       chooseSystem(preview.system);
