@@ -407,3 +407,13 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
   .field-board.board-size-large .system-node{min-height:68px}
   .field-board.board-size-large .sys-scan{font-size:7px}
 }
+
+
+/* Ice systems can contain multiple independent ice fields; show scanner coverage. */
+.ice-system-node .sys-ice-coverage{display:block;margin-top:2px;font-size:6px;font-weight:1000;letter-spacing:.025em;color:#9ff0c0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ice-system-node .sys-ice-coverage.missing{color:#ffd27a}
+@media(min-width:761px){
+  .field-board .ice-system-node{min-height:64px}
+  .field-board.board-size-large .ice-system-node{min-height:76px}
+  .field-board.board-size-large .sys-ice-coverage{font-size:7px}
+}

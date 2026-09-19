@@ -4,7 +4,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { parseProbeScan, parseA0Scan } from './lib/probe-scan.mjs';
+import { parseProbeScan, parseA0Scan, parseIceScan } from './lib/probe-scan.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -349,6 +349,11 @@ function scanActivityPublic() {
       nextUpdateAt:Number.isFinite(ms)?new Date(ms+A0_REPORT_TTL).toISOString():null,
       scannerRowCount:Number(row?.scannerRowCount)||0,
       kinds:Array.isArray(row?.kinds)?row.kinds:[],
+      ice:row?.ice&&Number(row.ice.expected)>0?{
+        expected:Number(row.ice.expected),
+        seen:Math.max(0,Number(row.ice.seen)||0),
+        missing:Math.max(0,Number(row.ice.missing)||0),
+      }:null,
     };
   };
   for(const [system,row] of Object.entries(state.scans||{}))add(system,row);
@@ -418,7 +423,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.3.66',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.3.67',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -1515,23 +1520,30 @@ async function recordA0ProbeScan({characterName,systemId,system,text}){
 
 function recordBoardScan({system,text,a0}){
   const parsed=parseA0Scan(text);
+  const iceParsed=parseIceScan(text);
   const kinds=[];
   if(SYSTEM_MAP.has(system))kinds.push('t3');
-  if((state.market?.iceFields||[]).some(row=>row.system===system))kinds.push('ice');
+  const iceField=(state.market?.iceFields||[]).find(row=>row.system===system)||null;
+  if(iceField)kinds.push('ice');
   if((state.market?.a0Fields||[]).some(row=>row.system===system)||a0?.tracked)kinds.push('a0');
   if(!parsed.valid||!kinds.length)return {recorded:false,valid:parsed.valid,boardTracked:Boolean(kinds.length),kinds};
   state.scans ||= {};
   const lastScanAt=now();
+  const expectedIce=iceField?Math.max(1,Number(iceField.iceBelts)||1):0;
+  const seenIce=expectedIce?Math.min(expectedIce,Math.max(0,Number(iceParsed.detectedCount)||0)):0;
+  const ice=expectedIce?{expected:expectedIce,seen:seenIce,missing:Math.max(0,expectedIce-seenIce)}:null;
   state.scans[system]={
     lastScanAt,
     scannerRowCount:Number(parsed.scannerRowCount)||0,
     kinds:[...new Set(kinds)],
+    ice,
   };
   return {
     recorded:true,
     valid:true,
     boardTracked:true,
     kinds:state.scans[system].kinds,
+    ice,
     lastScanAt,
     nextUpdateAt:new Date(Date.parse(lastScanAt)+A0_REPORT_TTL).toISOString(),
   };
@@ -1759,7 +1771,7 @@ async function serveStatic(req,res,pathname) {
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.66',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.67',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){const u=readSession(req);return json(res,200,{authenticated:Boolean(u),user:u?myProfile(u):null})}
   const user=requireUser(req,res);if(!user)return;
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());

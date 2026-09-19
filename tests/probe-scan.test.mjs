@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { parseProbeScan } from '../lib/probe-scan.mjs';
+import { parseProbeScan, parseIceScan } from '../lib/probe-scan.mjs';
 
 const present = [
   'ID\tGroup\tType\tName\tSignal Strength\tDistance',
@@ -28,5 +28,14 @@ assert.equal(
 );
 assert.equal(parseProbeScan('random clipboard text', 'Kylixium').valid, false);
 assert.equal(parseProbeScan('ID\tGroup\tType\tName\tSignal Strength\tDistance', 'Kylixium').valid, false);
+
+const iceCoverage = parseIceScan([
+  'AAA-111\tCosmic Anomaly\tOre Site\tIce Field\t100.0%\t1.0 AU',
+  'BBB-222\tCosmic Anomaly\tOre Site\tLarge Ice Field\t100.0%\t2.0 AU',
+  'CCC-333\tCosmic Anomaly\tCombat Site\tForsaken Hub\t100.0%\t3.0 AU',
+].join('\n'));
+assert.equal(iceCoverage.valid, true);
+assert.equal(iceCoverage.detectedCount, 2);
+assert.equal(parseIceScan('CCC-333\tCosmic Anomaly\tCombat Site\tForsaken Hub\t100.0%\t3.0 AU').detectedCount, 0);
 
 console.log('Probe Scanner parser regression passed');

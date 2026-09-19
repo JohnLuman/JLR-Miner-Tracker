@@ -1039,13 +1039,22 @@
     const fields=Math.max(1,Number(row.iceBelts)||1);
     const distance=Number(row.distanceLy);
     const scanLine=boardScanLine(row.system);
+    const iceScan=state?.scans?.[row.system]?.ice||null;
+    const seen=iceScan?Math.min(fields,Math.max(0,Number(iceScan.seen)||0)):null;
+    const missing=seen==null?null:Math.max(0,fields-seen);
+    const coverage=seen==null
+      ?`ICE ?/${fields} • NEED SCAN`
+      :missing>0
+        ?`ICE ${seen}/${fields} SEEN • ${missing} MISSING`
+        :`ICE ${seen}/${fields} SEEN • ALL PRESENT`;
     card.innerHTML='<button class="favorite-toggle" type="button" aria-pressed="'+favorite+'" title="'+(favorite?'Remove from favorites':'Favorite this system')+'">'+(favorite?'★':'☆')+'</button>'+
       (boardArrangeMode?'<span class="drag-grip" aria-hidden="true">⠿</span>':'')+
       '<span class="sys-name">'+esc(row.system)+'</span>'+
       '<span class="sys-ore">'+fields+' ICE FIELD'+(fields===1?'':'S')+'</span>'+
       '<span class="sys-state">IN TITAN RANGE'+(Number.isFinite(distance)?' • '+distance.toFixed(2)+' LY':'')+'</span>'+
+      '<span class="sys-ice-coverage'+(missing>0||seen==null?' missing':'')+'">'+esc(coverage)+'</span>'+
       '<span class="sys-scan'+(scanLine.stale?' stale':'')+'">'+esc(scanLine.text)+'</span>';
-    card.title=row.system+' • '+fields+' ice field'+(fields===1?'':'s')+(favorite?' • Favorite':'')+(Number.isFinite(distance)?' • '+distance.toFixed(2)+' LY from C-N4OD':'')+' • '+scanLine.title+' • within configured Titan bridge range';
+    card.title=row.system+' • '+fields+' ice field'+(fields===1?'':'s')+(favorite?' • Favorite':'')+(Number.isFinite(distance)?' • '+distance.toFixed(2)+' LY from C-N4OD':'')+' • '+coverage+' • '+scanLine.title+' • within configured Titan bridge range';
     card.querySelector('.favorite-toggle').addEventListener('click',e=>{
       e.preventDefault();e.stopPropagation();toggleBoardFavorite('ice',row.system);sfx('select');
     });
@@ -1610,8 +1619,15 @@
       if(!preview.tracked){
         if(preview.a0?.tracked)return;
         if(preview.boardScan?.recorded){
-          setScanStatus(`${preview.system}: board scan time updated. Next update requested in 12 hours.`,'success');
-          toast(`${preview.system} scan timestamp updated.`);
+          const ice=preview.boardScan.ice;
+          if(ice){
+            const summary=ice.missing>0?`${ice.seen}/${ice.expected} ice fields seen • ${ice.missing} missing`:`${ice.seen}/${ice.expected} ice fields seen • all present`;
+            setScanStatus(`${preview.system}: ${summary}. Next update requested in 12 hours.`,ice.missing>0?'warning':'success');
+            toast(`${preview.system}: ${summary}.`);
+          }else{
+            setScanStatus(`${preview.system}: board scan time updated. Next update requested in 12 hours.`,'success');
+            toast(`${preview.system} scan timestamp updated.`);
+          }
           return;
         }
         setScanStatus(`${preview.characterName} is in ${preview.system}, which is not on the tracked T3/ICE/A0 board.`,'warning');
