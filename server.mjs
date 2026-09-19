@@ -67,7 +67,15 @@ const MARKET_REFRESH_MS = 24 * 60 * 60 * 1000;
 const ESI_AUTO_REFRESH_MS = 15 * 60 * 1000;
 const ESI_AUTO_SPREAD_MS = 12 * 60 * 1000;
 const ESI_METADATA_REFRESH_MS = 6 * 60 * 60 * 1000;
-const ESI_MAX_CHARACTER_CONCURRENCY = 24;
+// Global cap across automatic + every user's manual sync. This prevents many
+// simultaneous users from multiplying ESI concurrency.
+const ESI_MAX_CHARACTER_CONCURRENCY = 8;
+// Auto-sync starts are spread across the target window. Small installations
+// get a wide gap; large installations shrink the gap until this safe floor.
+// Above the floor, the cycle naturally takes longer instead of creating a burst.
+const ESI_MIN_CHARACTER_START_GAP_MS = 250;
+const ESI_MAX_CHARACTER_START_GAP_MS = 30_000;
+const ESI_MANUAL_CHARACTER_START_GAP_MS = 500;
 const ESI_MAX_RETRIES = 4;
 // Perfect null-sec refine: T2 rigged Tatara + max skills + RX-804 implant.
 const MAX_REFINE_YIELD = 0.90628105568;
@@ -141,6 +149,9 @@ const characterSyncPromises = new Map();
 const characterAccessPromises = new Map();
 const userSyncPromises = new Map();
 const ledgerRowsByCharacter = new Map();
+let esiCharacterSyncActive = 0;
+const esiCharacterSyncWaiters = [];
+let esiBackoffUntil = 0;
 
 function loadEnv(file) {
   if (!fs.existsSync(file)) return;
@@ -423,12 +434,12 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.3.71',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.3.72',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
     market:{lastUpdatedAt:state.market.lastUpdatedAt,lastError:state.market.lastError,privateLastError:state.market.privateLastError||null,refreshing:marketRefreshInProgress,valuation:'MAX REFINE',maxRefineYield:MAX_REFINE_YIELD,jita:'Jita IV - Moon 4 - Caldari Navy Assembly Plant',local:CN_SYSTEM_NAME,titanBridgeRangeLy:TITAN_BRIDGE_RANGE_LY,history:marketHistoryPublic(),privateAccess:Boolean(state.market.refreshTokenEnc),marketCharacterName:state.market.characterName||null,structureName:state.market.structureName||null},
-    esi:{configured:Boolean(EVE_CLIENT_ID),linkedCharacters:Object.keys(state.characters).length,lastSyncAt:state.esi.lastSyncAt,lastError:state.esi.lastError,syncing:syncInProgress||manualSyncCount>0,actual:{today:todayActual,week:weekActual}},
+    esi:{configured:Boolean(EVE_CLIENT_ID),linkedCharacters:Object.keys(state.characters).length,lastSyncAt:state.esi.lastSyncAt,lastError:state.esi.lastError,syncing:syncInProgress||manualSyncCount>0,scheduler:{...autoSyncPlan(Object.keys(state.characters).length||1),active:esiCharacterSyncActive,queued:esiCharacterSyncWaiters.length,backoffUntil:esiBackoffUntil>Date.now()?new Date(esiBackoffUntil).toISOString():null},actual:{today:todayActual,week:weekActual}},
     serverNow:now(),
   };
 }
@@ -575,8 +586,24 @@ async function handleCallback(req,res,url) {
   }catch(err){console.error('SSO callback',err);return redirect(res,`/?error=${encodeURIComponent(String(err.message||err).slice(0,120))}`)}
 }
 
+async function waitForEsiBackoff(){
+  const delay=esiBackoffUntil-Date.now();
+  if(delay>0)await sleep(delay);
+}
+function extendEsiBackoff(ms){
+  const duration=Math.max(0,Number(ms)||0);
+  if(duration>0)esiBackoffUntil=Math.max(esiBackoffUntil,Date.now()+duration);
+}
+function observeEsiErrorLimit(headers){
+  const remain=Number(headers?.get?.('x-esi-error-limit-remain'));
+  const reset=Number(headers?.get?.('x-esi-error-limit-reset'));
+  if(Number.isFinite(remain)&&remain<=10&&Number.isFinite(reset)&&reset>0){
+    extendEsiBackoff(Math.min(15*60*1000,reset*1000)+Math.floor(Math.random()*500));
+  }
+}
 async function esiRequest(url,options={}) {
   for(let attempt=0;attempt<=ESI_MAX_RETRIES;attempt++){
+    await waitForEsiBackoff();
     let r;
     try{
       r=await fetch(url,options);
@@ -585,10 +612,13 @@ async function esiRequest(url,options={}) {
       await sleep(Math.min(8_000,500*(2**attempt))+Math.floor(Math.random()*250));
       continue;
     }
-    if(r.status===429){
-      const retrySeconds=clamp(r.headers.get('retry-after'),1,15*60,5);
-      if(attempt>=ESI_MAX_RETRIES)throw new Error(`ESI 429: rate limited; retry after ${retrySeconds}s`);
-      await sleep(retrySeconds*1000+Math.floor(Math.random()*250));
+    observeEsiErrorLimit(r.headers);
+    if(r.status===420||r.status===429){
+      const errorReset=Number(r.headers.get('x-esi-error-limit-reset'));
+      const retrySeconds=clamp(r.headers.get('retry-after'),1,15*60,Number.isFinite(errorReset)&&errorReset>0?errorReset:5);
+      extendEsiBackoff(retrySeconds*1000+Math.floor(Math.random()*500));
+      if(attempt>=ESI_MAX_RETRIES)throw new Error(`ESI ${r.status}: rate limited; retry after ${retrySeconds}s`);
+      await waitForEsiBackoff();
       continue;
     }
     if([502,503,504].includes(r.status)&&attempt<ESI_MAX_RETRIES){
@@ -1639,6 +1669,36 @@ async function syncCharacterOnce(ch,{forceMetadata=false}={}){
   }
 }
 
+async function acquireEsiCharacterSyncSlot(){
+  while(esiCharacterSyncActive>=ESI_MAX_CHARACTER_CONCURRENCY){
+    await new Promise(resolve=>esiCharacterSyncWaiters.push(resolve));
+  }
+  esiCharacterSyncActive++;
+}
+function releaseEsiCharacterSyncSlot(){
+  esiCharacterSyncActive=Math.max(0,esiCharacterSyncActive-1);
+  const next=esiCharacterSyncWaiters.shift();
+  if(next)next();
+}
+function autoSyncPlan(characterCount){
+  const count=Math.max(1,Number(characterCount)||1);
+  const desiredGap=Math.floor(ESI_AUTO_SPREAD_MS/count);
+  const startGapMs=clamp(
+    desiredGap,
+    ESI_MIN_CHARACTER_START_GAP_MS,
+    ESI_MAX_CHARACTER_START_GAP_MS,
+    ESI_MAX_CHARACTER_START_GAP_MS,
+  );
+  const estimatedSpreadMs=Math.max(0,(count-1)*startGapMs);
+  return{
+    characterCount:count,
+    startGapMs,
+    concurrency:ESI_MAX_CHARACTER_CONCURRENCY,
+    estimatedSpreadMs,
+    targetRefreshMs:ESI_AUTO_REFRESH_MS,
+  };
+}
+
 async function syncCharacter(ch,options={}){
   const key=String(ch.characterId);
   const existing=characterSyncPromises.get(key);
@@ -1647,7 +1707,11 @@ async function syncCharacter(ch,options={}){
     if(options.forceMetadata&&!result.metadataRefreshed)return syncCharacter(ch,options);
     return result;
   }
-  const pending=syncCharacterOnce(ch,options).finally(()=>characterSyncPromises.delete(key));
+  const pending=(async()=>{
+    await acquireEsiCharacterSyncSlot();
+    try{return await syncCharacterOnce(ch,options)}
+    finally{releaseEsiCharacterSyncSlot()}
+  })().finally(()=>characterSyncPromises.delete(key));
   characterSyncPromises.set(key,pending);
   return pending;
 }
@@ -1704,17 +1768,32 @@ async function applyLedgerResults(results,{fullCycle=false}={}){
     state.esi.dailyFleet=[...daily.values()].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,90);
   }
   if(successful.length)state.esi.lastSyncAt=sampleAt;
-  const failed=results.length-successful.length;
-  state.esi.lastError=failed?`${failed} of ${results.length} character refreshes failed.`:null;
+  const failedRows=results.filter(result=>!result.ok);
+  const failed=failedRows.length;
+  const failureKinds=[...new Set(failedRows.map(result=>{
+    const match=String(result.error||'').match(/ESI\s+(\d{3})/i);
+    return match?`ESI ${match[1]}`:'request error';
+  }))];
+  state.esi.lastError=failed
+    ?`${failed} of ${results.length} character refreshes failed${failureKinds.length?` (${failureKinds.slice(0,3).join(', ')})`:''}.`
+    :null;
 }
 
 async function syncAll(){
   if(syncInProgress||!EVE_CLIENT_ID)return;
-  const entries=Object.values(state.characters);if(!entries.length)return;
+  const entries=Object.values(state.characters)
+    .sort((a,b)=>{
+      const ams=Date.parse(a.lastSyncAt||'');
+      const bms=Date.parse(b.lastSyncAt||'');
+      const av=Number.isFinite(ams)?ams:0;
+      const bv=Number.isFinite(bms)?bms:0;
+      return av-bv||String(a.characterId).localeCompare(String(b.characterId));
+    });
+  if(!entries.length)return;
+  const plan=autoSyncPlan(entries.length);
   syncInProgress=true;state.esi.lastError=null;broadcast();
   try{
-    const startGapMs=clamp(Math.floor(ESI_AUTO_SPREAD_MS/entries.length),100,1000,350);
-    const results=await syncCharacters(entries,{forceMetadata:false,startGapMs,concurrency:ESI_MAX_CHARACTER_CONCURRENCY});
+    const results=await syncCharacters(entries,{forceMetadata:false,startGapMs:plan.startGapMs,concurrency:plan.concurrency});
     await applyLedgerResults(results,{fullCycle:true});
     await save();
   }catch(err){state.esi.lastError=String(err.message||err);await save()}
@@ -1730,7 +1809,7 @@ function syncUserCharacters(user,characterIds=user.characterIds){
     const entries=characterIds.map(String).filter(id=>allowed.has(id)).map(id=>state.characters[id]).filter(Boolean);if(!entries.length)return;
     manualSyncCount++;broadcast();
     try{
-      const results=await syncCharacters(entries,{forceMetadata:true,startGapMs:100,concurrency:8});
+      const results=await syncCharacters(entries,{forceMetadata:true,startGapMs:ESI_MANUAL_CHARACTER_START_GAP_MS,concurrency:ESI_MAX_CHARACTER_CONCURRENCY});
       await applyLedgerResults(results);
       await save();
     }catch(err){state.esi.lastError=String(err.message||err);await save()}
@@ -1795,7 +1874,7 @@ async function serveStatic(req,res,pathname) {
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.71',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.72',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){const u=readSession(req);return json(res,200,{authenticated:Boolean(u),user:u?myProfile(u):null})}
   const user=requireUser(req,res);if(!user)return;
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
