@@ -1139,14 +1139,16 @@
     if(!state||!$('oreValueChart')||!$('fleetOutputChart'))return;
 
     const ores=state.source?.ores||[];
-    const oreNames=ores.map(ore=>ore.name);
+    const trendOnly=state.source?.trendOres||[];
+    const trendOres=[...ores,...trendOnly.filter(extra=>!ores.some(ore=>ore.name===extra.name))];
+    const oreNames=trendOres.map(ore=>ore.name);
     if(!oreNames.includes(oreTrendType))oreTrendType=oreNames[0]||'Kylixium';
     const oreSelect=$('oreTrendSelect');
     if(oreSelect&&document.activeElement!==oreSelect){
-      oreSelect.innerHTML=ores.map(ore=>'<option value="'+esc(ore.name)+'">'+esc(ore.name)+'</option>').join('');
+      oreSelect.innerHTML=trendOres.map(ore=>'<option value="'+esc(ore.name)+'">'+esc(ore.name)+(trendOnly.some(extra=>extra.name===ore.name)?' • A0 ORE':'')+'</option>').join('');
       oreSelect.value=oreTrendType;
     }
-    const trendOre=ores.find(ore=>ore.name===oreTrendType)||ores[0]||null;
+    const trendOre=trendOres.find(ore=>ore.name===oreTrendType)||trendOres[0]||null;
     const currentJita=Number(trendOre?.market?.jita?.refinedBuyPerM3 ?? trendOre?.market?.jita?.buyPerM3 ?? trendOre?.jbvPerM3);
     const currentCn=Number(trendOre?.market?.cn?.refinedBuyPerM3 ?? trendOre?.market?.cn?.buyPerM3);
     const oreHistory=marketHistoryPoints('ore',trendOre?.name||oreTrendType,currentJita,currentCn);

@@ -78,6 +78,8 @@ const ORE_REPROCESSING = {
   Hezorime:{portionSize:100,minerals:{Tritanium:2000,Isogen:120,Zydrine:60}},
   // The workbook/app uses "Mordinium"; the live EVE type is "Mordunium".
   Mordinium:{portionSize:100,minerals:{Pyerite:97}},
+  // Standard Ytirium: 100 units refine to 240 Isogen; 0.6 m³ per unit.
+  Ytirium:{portionSize:100,minerals:{Isogen:240}},
 };
 const ORE_TYPE_NAME={Mordinium:'Mordunium'};
 const REFINING_MINERALS=[...new Set(Object.values(ORE_REPROCESSING).flatMap(x=>Object.keys(x.minerals)))];
@@ -118,6 +120,8 @@ const ORES = source.ores.map((o, rankIndex) => ({
   siteM3: Number(o.siteM3),
   systems: [...o.systems],
 }));
+const TREND_ONLY_ORES = ['Ytirium'];
+const MARKET_ORE_NAMES = [...new Set([...ORES.map(o=>o.name),...TREND_ONLY_ORES])];
 const SYSTEM_DEFS = ORES.flatMap((o) => o.systems.map((system, order) => ({
   system, ore: o.name, rank: o.rank, order, jbvPerM3: o.jbvPerM3, siteJBV: o.siteJBV, siteM3: o.siteM3,
 })));
@@ -335,8 +339,8 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.3.57',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state and fleet-level mining totals only. Character location is read only when importing a Probe Scanner copy and is not stored or shared.'},
-    source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[]},
+    app:{name:'JLR Miner Tracker',version:'2.3.58',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state and fleet-level mining totals only. Character location is read only when importing a Probe Scanner copy and is not stored or shared.'},
+    source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[]},
     fields:state.fields,
     market:{lastUpdatedAt:state.market.lastUpdatedAt,lastError:state.market.lastError,privateLastError:state.market.privateLastError||null,refreshing:marketRefreshInProgress,valuation:'MAX REFINE',maxRefineYield:MAX_REFINE_YIELD,jita:'Jita IV - Moon 4 - Caldari Navy Assembly Plant',local:CN_SYSTEM_NAME,titanBridgeRangeLy:TITAN_BRIDGE_RANGE_LY,history:marketHistoryPublic(),privateAccess:Boolean(state.market.refreshTokenEnc),marketCharacterName:state.market.characterName||null,structureName:state.market.structureName||null},
     esi:{configured:Boolean(EVE_CLIENT_ID),linkedCharacters:Object.keys(state.characters).length,lastSyncAt:state.esi.lastSyncAt,lastError:state.esi.lastError,syncing:syncInProgress||manualSyncCount>0,actual:{today:todayActual,week:weekActual}},
@@ -815,10 +819,10 @@ function marketHistoryPublic() {
 async function refreshMarketPrices(force=false) {
   if(marketRefreshInProgress)return;
   const last=Date.parse(state.market?.lastUpdatedAt||'');
-  const valuationCurrent=ORES.every(o=>state.market?.prices?.[o.name]?.valuation==='max-refine-minerals')
+  const valuationCurrent=MARKET_ORE_NAMES.every(name=>state.market?.prices?.[name]?.valuation==='max-refine-minerals')
     &&Object.keys(ICE_REPROCESSING).every(name=>state.market?.icePrices?.[name]?.valuation==='max-refine-ice'&&state.market?.icePrices?.[name]?.trackingBasis==='jita-refine-ex-heavy-water');
   const today=dateUTC();
-  const historyCurrent=ORES.every(o=>(state.market?.history?.ore?.[o.name]||[]).some(x=>x.date===today))
+  const historyCurrent=MARKET_ORE_NAMES.every(name=>(state.market?.history?.ore?.[name]||[]).some(x=>x.date===today))
     &&Object.keys(ICE_REPROCESSING).every(name=>(state.market?.history?.ice?.[name]||[]).some(x=>x.date===today));
   const jitaBuyBasisCurrent=state.market?.jitaBuyBasis==='reachable-from-jita-4-4';
   const t3DistancesCurrent=SYSTEM_DEFS.every(d=>typeof state.market?.t3Distances?.[d.system]==='number'&&Number.isFinite(state.market.t3Distances[d.system]));
@@ -828,7 +832,7 @@ async function refreshMarketPrices(force=false) {
   state.market.privateLastError=null;
   broadcast();
   try{
-    const names=[...ORES.map(o=>ORE_TYPE_NAME[o.name]||o.name),...REFINING_MINERALS,...Object.keys(ICE_REPROCESSING),...ICE_PRODUCTS,...ICE_FIELD_SYSTEMS.map(x=>x[0]),...SYSTEM_DEFS.map(x=>x.system),CN_SYSTEM_NAME];
+    const names=[...MARKET_ORE_NAMES.map(name=>ORE_TYPE_NAME[name]||name),...REFINING_MINERALS,...Object.keys(ICE_REPROCESSING),...ICE_PRODUCTS,...ICE_FIELD_SYSTEMS.map(x=>x[0]),...SYSTEM_DEFS.map(x=>x.system),CN_SYSTEM_NAME];
     const ids=await resolveUniverseIds(names);
     const cnSystemId=ids.get(CN_SYSTEM_NAME);
     if(!cnSystemId)throw new Error(`${CN_SYSTEM_NAME} system ID could not be resolved`);
@@ -885,24 +889,24 @@ async function refreshMarketPrices(force=false) {
     }
 
     const next={...state.market.prices};
-    for(const ore of ORES){
-      const typeId=ids.get(ORE_TYPE_NAME[ore.name]||ore.name);
-      if(!typeId){console.warn('Ore type not resolved',ore.name);continue}
+    for(const oreName of MARKET_ORE_NAMES){
+      const typeId=ids.get(ORE_TYPE_NAME[oreName]||oreName);
+      if(!typeId){console.warn('Ore type not resolved',oreName);continue}
       await ensureType([typeId]);
       const volume=Number(state.esi.typeCache[String(typeId)]?.volume||0);
-      if(!(volume>0)){console.warn('Ore type has no volume',ore.name,typeId);continue}
+      if(!(volume>0)){console.warn('Ore type has no volume',oreName,typeId);continue}
 
-      const jitaValue=refinedOreValue(ore.name,volume,mineralPrices.jita);
-      const cnValue=refinedOreValue(ore.name,volume,mineralPrices.cn);
-      if(!jitaValue){console.warn('Incomplete Jita mineral prices for',ore.name);continue}
+      const jitaValue=refinedOreValue(oreName,volume,mineralPrices.jita);
+      const cnValue=refinedOreValue(oreName,volume,mineralPrices.cn);
+      if(!jitaValue){console.warn('Incomplete Jita mineral prices for',oreName);continue}
 
-      next[ore.name]={
+      next[oreName]={
         typeId,
         volume,
         updatedAt:now(),
         valuation:'max-refine-minerals',
         maxRefineYield:MAX_REFINE_YIELD,
-        recipe:ORE_REPROCESSING[ore.name],
+        recipe:ORE_REPROCESSING[oreName],
         jita:{
           source:'refined-minerals',
           buyPerM3:jitaValue.perM3,
@@ -986,10 +990,10 @@ async function refreshMarketPrices(force=false) {
     state.market.history.ore ||= {};
     state.market.history.ice ||= {};
     const snapshotDate=dateUTC();
-    for(const ore of ORES){
-      const row=next[ore.name];
+    for(const oreName of MARKET_ORE_NAMES){
+      const row=next[oreName];
       if(!row)continue;
-      pushMarketHistory(state.market.history.ore,ore.name,{
+      pushMarketHistory(state.market.history.ore,oreName,{
         date:snapshotDate,
         jita:row.jita?.refinedBuyPerM3??row.jita?.buyPerM3,
         cn:row.cn?.refinedBuyPerM3??row.cn?.buyPerM3,
@@ -1527,7 +1531,7 @@ async function serveStatic(req,res,pathname) {
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.57',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.58',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){const u=readSession(req);return json(res,200,{authenticated:Boolean(u),user:u?myProfile(u):null})}
   const user=requireUser(req,res);if(!user)return;
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
