@@ -1,6 +1,6 @@
 :root{--bg:#09090e;--panel:#101018;--card:#15151f;--line:#303041;--text:#f2f2f7;--muted:#9c9cae;--green:#00c83c;--green2:#087b24;--yellow:#ffd21b;--yellow2:#aa7900;--red:#ef2731;--red2:#950008;--purple:#9d34ed;--purple2:#470099;--blue:#2784ff;--blue2:#0748c8;--cherry:#e23869;--cherry2:#90143a}*{box-sizing:border-box}html,body{margin:0;background:radial-gradient(circle at 30% 0,#171122 0,#0b0b11 38%,#08080d 100%);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif;min-height:100%}button,input,select{font:inherit}button{cursor:pointer}.hidden{display:none!important}.muted{color:var(--muted)}.tiny{font-size:9px}.eyebrow,.brand-kicker{font-size:8px;letter-spacing:.14em;text-transform:uppercase;font-weight:900;color:var(--muted)}
 .login-shell{min-height:100vh;display:grid;place-items:center;padding:24px}.login-card{width:min(520px,100%);border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,#171720,#0f0f16);box-shadow:0 24px 80px #0009;padding:24px}.login-card h1{margin:6px 0 4px;font-size:30px;letter-spacing:-.03em}.login-copy{margin:0 0 16px;color:#c1c1cf;line-height:1.45}.privacy-card{border:1px solid #28304d;background:#101523;border-radius:10px;padding:11px;margin:14px 0}.privacy-card strong,.privacy-card span{display:block}.privacy-card span{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.4}.eve-login{display:flex;align-items:center;justify-content:center;min-height:54px;border:1px solid #777;border-radius:10px;background:linear-gradient(180deg,#f8f8f8,#b8b8b8);overflow:hidden;text-decoration:none;color:#171717;font-weight:950;box-shadow:inset 0 2px #fff,0 4px 18px #0008}.eve-login img{max-width:270px;width:100%;height:auto;display:block}.eve-login span{display:none}.login-foot{font-size:10px;color:var(--muted);line-height:1.45;margin-top:13px}.setup-warning{margin-top:12px;border:1px solid #744a1f;background:#23180e;border-radius:9px;padding:10px;color:#ffd8a8;font-size:11px;line-height:1.4}.setup-warning code{word-break:break-all;color:#fff}
-.app{max-width:1600px;margin:0 auto;padding:8px}.topbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}.brand-line{display:flex;align-items:center;gap:7px}.brand-mark{display:grid;place-items:center;width:34px;height:24px;border-radius:6px;background:linear-gradient(180deg,#d268ff,#5f0ca5);font-size:10px;font-weight:1000}.brand-line h1{font-size:19px;margin:0}.status-pill{border:1px solid var(--line);border-radius:999px;padding:3px 8px;font-size:8px;font-weight:950;background:#15151f}.top-actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:5px}.user-chip{display:flex;align-items:center;gap:5px;border:1px solid var(--line);background:#12121a;border-radius:999px;padding:2px 7px 2px 2px;font-size:9px;font-weight:900}.user-chip img{width:26px;height:26px;border-radius:50%;object-fit:cover;background:#222}
+.app{width:100%;max-width:none;margin:0;padding:clamp(8px,.65vw,16px)}.topbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}.brand-line{display:flex;align-items:center;gap:7px}.brand-mark{display:grid;place-items:center;width:34px;height:24px;border-radius:6px;background:linear-gradient(180deg,#d268ff,#5f0ca5);font-size:10px;font-weight:1000}.brand-line h1{font-size:19px;margin:0}.status-pill{border:1px solid var(--line);border-radius:999px;padding:3px 8px;font-size:8px;font-weight:950;background:#15151f}.top-actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:5px}.user-chip{display:flex;align-items:center;gap:5px;border:1px solid var(--line);background:#12121a;border-radius:999px;padding:2px 7px 2px 2px;font-size:9px;font-weight:900}.user-chip img{width:26px;height:26px;border-radius:50%;object-fit:cover;background:#222}
 .orb{position:relative;overflow:hidden;min-height:32px;border:1px solid #ffffff80;border-radius:999px;padding:5px 11px;font-size:9px;font-weight:950;box-shadow:inset 0 2px #ffffff7a,inset 0 -5px 9px #0005,0 2px 5px #0007;text-shadow:0 1px 2px #0008;color:#fff;transition:transform .1s,filter .1s}.orb:before{content:"";position:absolute;left:9%;right:9%;top:7%;height:30%;border-radius:999px;background:linear-gradient(180deg,#fff9,#fff0);pointer-events:none}.orb:hover{filter:brightness(1.11);transform:translateY(-1px)}.orb.active{outline:2px solid #dc8cff;outline-offset:1px}.green{background:linear-gradient(180deg,#33e962,var(--green) 52%,var(--green2))}.yellow{background:linear-gradient(180deg,#ffe97a,var(--yellow) 52%,var(--yellow2));color:#251a00;text-shadow:0 1px 1px #fff7}.red{background:linear-gradient(180deg,#ff6870,var(--red) 50%,var(--red2))}.purple{background:linear-gradient(180deg,#ce68ff,var(--purple) 48%,var(--purple2))}.blue{background:linear-gradient(180deg,#70b4ff,var(--blue) 48%,var(--blue2))}.cherry{background:linear-gradient(180deg,#ff77a2,var(--cherry) 52%,var(--cherry2))}.silver{background:linear-gradient(180deg,#fff,#bfc0c5 54%,#6d6e76);color:#17171a;text-shadow:0 1px 1px #fff8}.dark{background:linear-gradient(180deg,#666,#2d2d34 50%,#111)}
 .glass{border:1px solid var(--line);border-radius:9px;background:linear-gradient(180deg,#14141e,#101018);overflow:hidden}.app-tabs{display:flex;gap:4px;align-items:center;margin:0 0 6px;padding:4px;border:1px solid var(--line);border-radius:9px;background:linear-gradient(180deg,#12131a,#0d0e14);position:sticky;top:4px;z-index:25}.app-tab{min-height:30px;border:1px solid #30323d;border-radius:7px;background:#101119;color:#8f94a0;padding:5px 14px;font:inherit;font-size:8px;font-weight:1000;letter-spacing:.08em;cursor:pointer;transition:filter .1s,border-color .1s,background .1s,color .1s}.app-tab:hover{filter:brightness(1.15)}.app-tab.active{border-color:#9f4dff;background:linear-gradient(180deg,#4d236a,#2b173d);color:#fff;box-shadow:inset 0 1px #ffffff20,0 0 0 1px #8e41d733}.tab-host{display:block}.tab-panel{display:none}.tab-panel.active{display:block}.tab-panel>*{margin-bottom:6px}.tab-panel>.setup-drawer{display:block;width:100%}.tab-advanced{display:none!important}.app.expanded .tab-advanced{display:grid!important}.tab-panel[data-tab="toons"] .esi-panel{margin-bottom:6px}
 .kpis{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;margin-bottom:6px}.kpi{border:1px solid var(--line);border-radius:8px;background:var(--card);padding:6px 7px;min-width:0}.kpi span{display:block;font-size:7px;letter-spacing:.11em;color:var(--muted);font-weight:900}.kpi strong{display:block;margin-top:2px;font-size:16px;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}.kpi small{display:block;margin-top:2px;font-size:7px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.market-kpi{background:linear-gradient(180deg,#171523,#111019);border-color:#403551}.api-kpi{background:linear-gradient(180deg,#151925,#11131b)}
@@ -91,9 +91,8 @@
 .expanded-area:empty,.expanded-grid:empty{display:none!important}
 
 
-/* Mode-aware dashboard sizing: keep cards useful instead of stretching across ultrawide screens. */
-.app.compact{max-width:1120px}
-.app.expanded{max-width:1600px}
+/* Mode-aware dashboard sizing: use the available browser width at high resolutions. */
+.app.compact,.app.expanded{width:100%;max-width:none}
 .app-tabs{width:max-content;max-width:100%;margin-left:auto;margin-right:auto}
 .tab-host{width:100%}
 .tab-panel.active{width:100%;margin:0 auto}
@@ -103,7 +102,7 @@
   .app.compact .kpis{grid-template-columns:repeat(12,minmax(0,1fr));max-width:none;margin-left:0;margin-right:0}
   .app.compact .kpi:nth-child(-n+4){grid-column:span 3}
   .app.compact .kpi:nth-child(n+5){grid-column:span 4}
-  .app.expanded .kpis{grid-template-columns:repeat(7,minmax(145px,190px));max-width:1360px;margin-left:auto;margin-right:auto}
+  .app.expanded .kpis{grid-template-columns:repeat(7,minmax(145px,1fr));width:100%;max-width:none;margin-left:0;margin-right:0}
 
   .app.compact .app-tabs{margin-left:0;margin-right:0}
   .app.compact .tab-panel{max-width:none}
@@ -113,7 +112,7 @@
   .app.compact .market-line-svg{min-height:235px}
   .app.compact .fleet-performance{min-height:0}
 
-  .app.expanded .tab-panel{max-width:1500px}
+  .app.expanded .tab-panel{width:100%;max-width:none}
   .app.expanded .tab-panel[data-tab="fields"].active{
     display:grid;
     grid-template-columns:minmax(360px,440px) minmax(700px,1fr);
@@ -145,9 +144,9 @@
   .app.expanded .tab-panel[data-tab="fleet"]>.actual-panel{grid-area:actual;margin:0}
   .app.expanded .mining-visual-grid{grid-template-columns:1fr 1fr}
 
-  .app.expanded .tab-panel[data-tab="ice"]>.ice-mining-panel{max-width:1450px;margin-left:auto;margin-right:auto}
+  .app.expanded .tab-panel[data-tab="ice"]>.ice-mining-panel{width:100%;max-width:none;margin-left:0;margin-right:0}
   .app.expanded .ice-layout{grid-template-columns:1fr 1fr}
-  .app.expanded .tab-panel[data-tab="toons"]>.esi-panel{max-width:1050px;margin-left:auto;margin-right:auto}
+  .app.expanded .tab-panel[data-tab="toons"]>.esi-panel{width:100%;max-width:none;margin-left:0;margin-right:0}
 
   .node-grid{grid-template-columns:repeat(auto-fill,minmax(118px,140px));justify-content:start}
   .app.compact .node-grid{grid-template-columns:repeat(auto-fit,minmax(145px,1fr))}
@@ -236,3 +235,21 @@
 .scan-paste-card textarea:focus{border-color:#5d9eff;box-shadow:0 0 0 2px #2784ff2b}
 @media(max-width:760px){.scan-import-row{grid-template-columns:1fr auto}.scan-import-row span{grid-column:1/-1}}
 @media(max-width:430px){.scan-import-row{grid-template-columns:1fr}.scan-import-row .orb{width:100%}}
+
+
+/* Ultrawide displays: keep the dashboard edge-to-edge without making controls
+   excessively sparse. Content still follows the existing responsive grids. */
+@media(min-width:1800px){
+  .app{padding-left:clamp(14px,1vw,28px);padding-right:clamp(14px,1vw,28px)}
+  .app.expanded .tab-panel[data-tab="fields"].active{
+    grid-template-columns:minmax(420px,520px) minmax(0,1fr);
+  }
+  .app.expanded .tab-panel[data-tab="fleet"].active{
+    grid-template-columns:minmax(420px,540px) minmax(0,1fr);
+  }
+  .app.compact .hit-order{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .app.expanded .hit-order{grid-template-columns:repeat(5,minmax(0,1fr))}
+}
+@media(min-width:2400px){
+  .app.expanded .hit-order{grid-template-columns:repeat(6,minmax(0,1fr))}
+}
