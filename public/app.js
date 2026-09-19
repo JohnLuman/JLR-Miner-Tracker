@@ -10,6 +10,9 @@
   let audioUnlocked = false;
   let audioResumePending = false;
   let soundEnabled = localStorage.getItem('jlrSoundEnabled') !== 'false';
+  const THEME_IDS = new Set(['void','citadel','forge']);
+  let activeTheme = THEME_IDS.has(localStorage.getItem('jlrTheme')) ? localStorage.getItem('jlrTheme') : 'void';
+  document.documentElement.dataset.theme=activeTheme;
   let toastTimer = null;
   let eventSource = null;
   let scanCharacterId = localStorage.getItem('jlrScanCharacter') || '';
@@ -37,6 +40,15 @@
   let iceTrackType=localStorage.getItem('jlrIceType')||'Blue Ice IV-Grade';
   let oreTrendType=localStorage.getItem('jlrOreTrend')||'Kylixium';
   const statusText = {ready:'GREEN • MINEABLE',picked:'YELLOW • PICKED',cleared:'RED • RESPAWN'};
+
+  function applyTheme(theme){
+    const next=THEME_IDS.has(theme)?theme:'void';
+    activeTheme=next;
+    document.documentElement.dataset.theme=next;
+    localStorage.setItem('jlrTheme',next);
+    const select=$('themeSelect');
+    if(select&&select.value!==next)select.value=next;
+  }
 
   function fmt(v, kind='num') {
     v = Number(v || 0);
@@ -1319,6 +1331,8 @@
   $('addToon').addEventListener('click',addToon);$('addToonTop').addEventListener('click',addToon);
   $('logout').addEventListener('click',async()=>{try{await api('/auth/logout',{method:'POST',body:'{}'})}catch{}location.href='/' });
   $('compactMode').addEventListener('click',()=>applyMode('compact'));$('expandedMode').addEventListener('click',()=>applyMode('expanded'));
+  $('themeSelect').value=activeTheme;
+  $('themeSelect').addEventListener('change',()=>applyTheme($('themeSelect').value));
   $('systemSelect').addEventListener('change',()=>chooseSystem($('systemSelect').value));
   $('scanCharacter').addEventListener('change',()=>{scanCharacterId=$('scanCharacter').value;localStorage.setItem('jlrScanCharacter',scanCharacterId);renderScanCharacters()});
   document.querySelectorAll('.filter').forEach(b=>b.addEventListener('click',()=>{filter=b.dataset.filter;document.querySelectorAll('.filter').forEach(x=>x.classList.toggle('active',x===b));renderBoards()}));
