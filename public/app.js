@@ -11,6 +11,8 @@
   let audioResumePending = false;
   let toastTimer = null;
   let eventSource = null;
+  let scanCharacterId = localStorage.getItem('jlrScanCharacter') || '';
+  let scanBusy = false;
 
   const DEFAULT_FLEET = { members:{}, uptime:100, payout:95 };
   function loadFleet() {
@@ -73,6 +75,12 @@
   }
   function esc(s){return String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
   function toast(msg){$('toast').textContent=msg;$('toast').classList.remove('hidden');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.add('hidden'),3000)}
+  function setScanStatus(message,tone=''){
+    const el=$('scanStatus');
+    if(!el)return;
+    el.textContent=message;
+    el.className=tone;
+  }
 
   function compactNumber(v){
     const n=Number(v);
@@ -1140,6 +1148,23 @@
     for(const id of ['markGreen','markYellow','markRed'])$(id).disabled=timerActive;
   }
   function renderNotes(){const f=field(selectedSystem),notes=f?.notes||[];$('fieldNotes').innerHTML=notes.length?notes.slice().reverse().map(n=>`<div class="field-note"><span>${esc(n.text)}</span><time>${esc(ago(n.createdAt))}</time></div>`).join(''):'<span class="field-notes-empty">No notes for this system yet.</span>'}
+  function renderScanCharacters(){
+    const select=$('scanCharacter'),button=$('pasteScan');
+    if(!select||!button||!me)return;
+    const chars=me.characters||[];
+    if(!chars.some(c=>String(c.characterId)===String(scanCharacterId))){
+      scanCharacterId=String(chars.find(c=>String(c.characterId)===String(me.primaryCharacterId))?.characterId||chars[0]?.characterId||'');
+    }
+    select.innerHTML=chars.length
+      ?chars.map(c=>`<option value="${esc(c.characterId)}">${esc(c.name)}${c.locationAccess?'':' — UPDATE ACCESS'}</option>`).join('')
+      :'<option value="">No linked toons</option>';
+    select.value=scanCharacterId;
+    select.disabled=!chars.length||scanBusy;
+    const selected=chars.find(c=>String(c.characterId)===String(scanCharacterId));
+    button.disabled=!selected||scanBusy;
+    button.textContent=scanBusy?'CHECKING…':selected&&!selected.locationAccess?'UPDATE ACCESS':'📋 PASTE SCAN';
+    if(selected&&!selected.locationAccess)setScanStatus('One-time EVE location access is required.','warning');
+  }
   function renderCharacters(){
     if(!me)return;
     $('characterList').innerHTML='';
@@ -1153,7 +1178,7 @@
       const miningFits=(c.fittings||[]).length;
       const abyssal=Number(c.abyssalStripCount||0);
       const scopeState=c.needsReauth
-        ?' • access update required for skills/fits/assets'
+        ?' • access update required for skills/fits/assets/location'
         :` • ${savedFits} saved fits • ${miningFits} mining fits${abyssal?` • ${abyssal} Abyssal strips`:''}`;
       const syncState=c.lastError?`⚠ sync error: ${esc(c.lastError)}`:`EVE data synced ${ago(c.lastSyncAt)}`;
       const marketButton=c.marketEligible
@@ -1236,7 +1261,7 @@
 
     localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));
   }
-  function renderAll(){if(!state)return;renderFleet();renderTop();renderSelect();renderBoards();renderHits();renderMiningVisuals();renderIceMining();renderRanking();renderTimers();renderSelected();renderNotes();renderCharacters();renderCalculator();}
+  function renderAll(){if(!state)return;renderFleet();renderTop();renderSelect();renderBoards();renderHits();renderMiningVisuals();renderIceMining();renderRanking();renderTimers();renderSelected();renderNotes();renderScanCharacters();renderCharacters();renderCalculator();}
 
   async function refreshMe(){const p=await api('/api/me');me=p.user;if(me){$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait}return p.authenticated}
   async function loadState(){state=await api('/api/state');renderAll()}
@@ -1260,14 +1285,82 @@
   $('logout').addEventListener('click',async()=>{try{await api('/auth/logout',{method:'POST',body:'{}'})}catch{}location.href='/' });
   $('compactMode').addEventListener('click',()=>applyMode('compact'));$('expandedMode').addEventListener('click',()=>applyMode('expanded'));
   $('systemSelect').addEventListener('change',()=>chooseSystem($('systemSelect').value));
+  $('scanCharacter').addEventListener('change',()=>{scanCharacterId=$('scanCharacter').value;localStorage.setItem('jlrScanCharacter',scanCharacterId);renderScanCharacters()});
   document.querySelectorAll('.filter').forEach(b=>b.addEventListener('click',()=>{filter=b.dataset.filter;document.querySelectorAll('.filter').forEach(x=>x.classList.toggle('active',x===b));renderBoards()}));
 
   function applyFieldUpdate(system,updatedField){state.fields[system]=updatedField;renderAll()}
+  function openScanPaste(){
+    $('scanPasteText').value='';
+    $('scanPastePanel').classList.remove('hidden');
+    setTimeout(()=>$('scanPasteText').focus(),0);
+  }
+  function closeScanPaste(){$('scanPastePanel').classList.add('hidden')}
+  async function analyzeProbeScan(text){
+    if(scanBusy)return;
+    const selected=(me?.characters||[]).find(c=>String(c.characterId)===String(scanCharacterId));
+    if(!selected){toast('Choose a linked mining toon first.');return}
+    if(!selected.locationAccess){location.href='/auth/eve/start?intent=link';return}
+    scanBusy=true;renderScanCharacters();setScanStatus(`Checking ${selected.name} location…`);
+    try{
+      const preview=await api('/api/scans/preview',{method:'POST',body:JSON.stringify({characterId:selected.characterId,text})});
+      if(!preview.tracked){
+        setScanStatus(`${preview.characterName} is in ${preview.system}, which is not on the T3 board.`,'warning');
+        toast(`No tracked T3 field for ${preview.system}.`);
+        return;
+      }
+      chooseSystem(preview.system);
+      const expected=preview.scan?.expectedNames?.[0]||`${preview.definition.ore} deposit`;
+      if(preview.scan?.detected){
+        const activeTimer=preview.field?.status==='cleared'&&Date.parse(preview.field.timerEndsAt)>Date.now();
+        if(activeTimer){
+          setScanStatus(`${preview.system}: ${preview.definition.ore} detected; active timer was left unchanged.`,'warning');
+          toast('Deposit detected, but the locked respawn timer is still active.');
+          return;
+        }
+        const result=await api(`/api/fields/${encodeURIComponent(preview.system)}`,{method:'PUT',body:JSON.stringify({status:'ready'})});
+        applyFieldUpdate(preview.system,result.field);
+        setScanStatus(`${preview.system}: ${preview.definition.ore} detected — marked GREEN.`,'success');
+        $('fieldMessage').textContent=`${preview.system} scan found ${preview.definition.ore}; field marked GREEN and mineable.`;
+        sfx('systemSelect');
+        return;
+      }
+      pending={system:preview.system,source:'scan',ore:preview.definition.ore,scannerRows:preview.scan?.scannerRowCount||0};
+      $('confirmTitle').textContent=`NO ${preview.definition.ore.toUpperCase()} DEPOSIT DETECTED`;
+      $('confirmText').textContent=`${preview.characterName} is in ${preview.system}. The copied scan contained ${preview.scan?.scannerRowCount||0} scanner rows but no ${expected}. Only continue if the complete, unfiltered Probe Scanner list was copied.`;
+      $('confirmYes').textContent='CONFIRM CLEAR + START 10H';
+      $('confirmPanel').classList.remove('hidden');
+      setScanStatus(`${preview.system}: deposit not detected — waiting for confirmation.`,'warning');
+    }catch(e){
+      setScanStatus(e.message,'error');
+      toast(e.message);
+    }finally{
+      scanBusy=false;renderScanCharacters();
+    }
+  }
+  $('pasteScan').addEventListener('click',async()=>{
+    const selected=(me?.characters||[]).find(c=>String(c.characterId)===String(scanCharacterId));
+    if(selected&&!selected.locationAccess){location.href='/auth/eve/start?intent=link';return}
+    try{
+      if(!navigator.clipboard?.readText)throw new Error('Clipboard access unavailable');
+      const text=await navigator.clipboard.readText();
+      if(!text.trim())throw new Error('Clipboard is empty');
+      await analyzeProbeScan(text);
+    }catch{openScanPaste()}
+  });
+  $('scanPasteCancel').addEventListener('click',closeScanPaste);
+  $('scanPasteCheck').addEventListener('click',async()=>{
+    const text=$('scanPasteText').value;
+    if(!text.trim()){toast('Paste the Probe Scanner rows first.');return}
+    closeScanPaste();
+    await analyzeProbeScan(text);
+  });
   async function setField(status,forceSystem=null){
     const system=forceSystem||$('systemSelect').value;
     if(status==='cleared'){
       pending={system};
+      $('confirmTitle').textContent='ARE YOU SURE YOU WANT TO START TIMER?';
       $('confirmText').textContent=`${system} will be marked RED and start a fixed 10-hour respawn countdown. Status changes are locked until that timer expires.`;
+      $('confirmYes').textContent='YES — START 10 HOURS';
       $('confirmPanel').classList.remove('hidden');
       return;
     }
@@ -1284,8 +1377,8 @@
   $('addNote').addEventListener('click',addNote);$('fieldNote').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addNote()}});
   async function cherry(){const system=selectedSystem||$('systemSelect').value;try{await api(`/api/fields/${encodeURIComponent(system)}/cherry`,{method:'POST',body:'{}'});$('fieldMessage').textContent=`${system} reported 🍒 CHERRY PICKED. It will clear only when the 10-hour respawn ends.`;sfx('timer')}catch(e){toast(e.message)}}
   $('reportCherry').addEventListener('click',cherry);
-  $('confirmNo').addEventListener('click',()=>{pending=null;$('confirmPanel').classList.add('hidden')});
-  $('confirmYes').addEventListener('click',async()=>{if(!pending)return;const p=pending;pending=null;$('confirmPanel').classList.add('hidden');try{const result=await api(`/api/fields/${encodeURIComponent(p.system)}`,{method:'PUT',body:JSON.stringify({status:'cleared',confirm:true})});applyFieldUpdate(p.system,result.field);sfx('timer');$('fieldMessage').textContent=`${p.system} RED — 10-hour timer started.`}catch(e){toast(e.message)}});
+  $('confirmNo').addEventListener('click',()=>{if(pending?.source==='scan')setScanStatus(`${pending.system}: no changes made.`);pending=null;$('confirmPanel').classList.add('hidden')});
+  $('confirmYes').addEventListener('click',async()=>{if(!pending)return;const p=pending;pending=null;$('confirmPanel').classList.add('hidden');try{const result=await api(`/api/fields/${encodeURIComponent(p.system)}`,{method:'PUT',body:JSON.stringify({status:'cleared',confirm:true})});applyFieldUpdate(p.system,result.field);sfx('timer');$('fieldMessage').textContent=`${p.system} RED — 10-hour timer started.`;if(p.source==='scan')setScanStatus(`${p.system}: ${p.ore} absent — marked RED for 10 hours.`,'success')}catch(e){toast(e.message);if(p.source==='scan')setScanStatus(e.message,'error')}});
   $('syncNow').addEventListener('click',async()=>{
     const button=$('syncNow');
     const before=state?.esi?.lastSyncAt||null;

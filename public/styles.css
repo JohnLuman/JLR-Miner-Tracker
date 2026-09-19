@@ -224,3 +224,15 @@
 .sound-menu-option.active,.sound-menu-option:hover{background:#275eaf;color:#fff}
 .sound-menu-option[aria-selected="true"]{font-weight:900}
 .sound-menu-option:disabled{color:#888697;cursor:default}
+
+.scan-import-row{display:grid;grid-template-columns:minmax(150px,.8fr) auto minmax(170px,1.2fr);gap:5px;align-items:center}
+.scan-import-row select{min-width:0;height:31px;border:1px solid #30415d;border-radius:7px;background:#0d1119;color:var(--text);padding:4px 24px 4px 7px;font-size:9px}
+.scan-import-row .orb{min-height:31px;padding:4px 10px;font-size:8px;white-space:nowrap}
+.scan-import-row span{min-width:0;color:var(--muted);font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.scan-import-row span.success{color:#83f6ab}
+.scan-import-row span.warning{color:#ffd978}
+.scan-import-row span.error{color:#ff9fa5}
+.scan-paste-card textarea{width:100%;min-height:150px;margin-top:10px;resize:vertical;border:1px solid var(--line);border-radius:8px;background:#090a11;color:var(--text);padding:9px;font:10px/1.4 Consolas,monospace;outline:none}
+.scan-paste-card textarea:focus{border-color:#5d9eff;box-shadow:0 0 0 2px #2784ff2b}
+@media(max-width:760px){.scan-import-row{grid-template-columns:1fr auto}.scan-import-row span{grid-column:1/-1}}
+@media(max-width:430px){.scan-import-row{grid-template-columns:1fr}.scan-import-row .orb{width:100%}}

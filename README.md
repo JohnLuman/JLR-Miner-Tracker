@@ -45,14 +45,25 @@ JLR requests these ESI scopes:
 - `esi-industry.read_character_mining.v1` — fleet mining Actuals
 - `esi-skills.read_skills.v1` — the linked character's mining and command skill levels
 - `esi-fittings.read_fittings.v1` — the linked character's saved mining fittings
+- `esi-assets.read_assets.v1` — Abyssal mining-module details used by saved fits
+- `esi-location.read_location.v1` — current solar system when that toon imports a Probe Scanner copy
 
-It does **not** request a character-location scope. Skills and saved fittings are shown only to the JLR account that linked that character.
+Character location is requested only by the Probe Scanner import action. The current location is returned to that signed-in user for matching the scan to a tracked system; it is not persisted or broadcast to the fleet. Skills and saved fittings are shown only to the JLR account that linked that character.
 
 Characters authorized before v2.2 need to use **Authorize** once so EVE can grant the two new read-only scopes.
 
 During an ESI sync, the server temporarily reads the mining ledger's system and ore IDs so it can calculate m³ and apply the supplied T3 workbook value. The persisted mining history is then reduced to **fleet totals by date**. It does not persist which pilot mined in which system.
 
 Actuals on the dashboard come from EVE mining-ledger API data. Projected values come from the user's local fleet calculator.
+
+### Probe Scanner import
+
+1. Select all rows in EVE's Probe Scanner and copy them.
+2. Choose the linked toon in JLR and press **Paste Scan**.
+3. JLR reads that toon's current solar system through ESI and looks for the expected T3 deposit in the copied rows.
+4. A detected deposit marks the tracked field green. A missing deposit always requires confirmation before JLR marks it red and starts the fixed 10-hour timer.
+
+Clipboard access requires a user click. If the browser blocks direct clipboard reading, JLR opens a paste box instead. JLR does not control the EVE client, scrape its cache, or store copied scanner rows.
 
 ### ESI refresh scheduling
 
@@ -180,7 +191,7 @@ The default payout display is 95% JBV, but each browser can change its own proje
 - OAuth `state` is validated.
 - JWT signatures, issuer, expiration, audience, client ID, and requested ESI scopes are checked before protected ESI data is used.
 - POST/PUT/DELETE API requests are same-origin checked.
-- Character-location permission is never requested.
+- Character location is read only during a user-requested Probe Scanner import and is not stored or shared.
 - Linked toon names are visible only to the account that linked them.
 
 
@@ -191,6 +202,10 @@ Static  now lives outside , so a production volume can safely mount at  without 
 
 ## v2.2 skills, fittings, and boosts
 
-v2.2 adds read-only ESI skill and saved-fitting sync plus a mining-output calculator driven by the original workbook's Yield Calc formulas and lookup tables. Existing linked characters keep working for mining Actuals, but the UI marks them **Authorize** until they grant the new skills/fittings scopes. No character-location scope was added.
+v2.2 adds read-only ESI skill and saved-fitting sync plus a mining-output calculator driven by the original workbook's Yield Calc formulas and lookup tables. Existing linked characters keep working for mining Actuals, but the UI marks them **Authorize** until they grant the new skills/fittings scopes.
 
 The uploaded workbook also reduced the T3 field list from the older 20-system set to the current 15-system set; the bundled source data now matches that workbook list.
+
+## v2.3.45 Probe Scanner import
+
+Linked toons can grant read-only location access for one-click Probe Scanner imports. Existing toons must use **Update Access** once before their first import.

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0a0a10">
   <title>JLR Miner Tracker</title>
-  <link rel="stylesheet" href="/styles.css?v=2.3.48">
+  <link rel="stylesheet" href="/styles.css?v=2.3.49">
 </head>
 <body>
   <main id="loginView" class="login-shell hidden">
@@ -13,7 +13,7 @@
       <div class="brand-kicker">JLR INDUSTRIAL NETWORK // FOUNTAIN</div>
       <h1>JLR MINER TRACKER</h1>
       <p class="login-copy">Shared T3/ice field board, fixed 10-hour T3 respawn timers, saved-fit mining projections, EVE mining-ledger rates, and Jita/C-N refine values.</p>
-      <div class="privacy-card"><strong>Tracks fields, not pilots.</strong><span>No EVE location permission is requested. JLR stores fleet-level mining totals and shared asteroid-field status.</span></div>
+      <div class="privacy-card"><strong>Tracks fields, not pilots.</strong><span>Location is checked only when you import a Probe Scanner copy. It is not stored or shared with the fleet.</span></div>
       <a id="eveLogin" class="eve-login" href="/auth/eve/start?intent=login" aria-label="Log in with EVE Online">
         <img src="https://web.ccpgamescdn.com/eveonlineassets/developers/eve-sso-login-white-large.png" alt="Log in with EVE Online">
         <span>LOG IN WITH EVE ONLINE</span>
@@ -75,6 +75,11 @@
           <div class="field-control-top">
             <select id="systemSelect" aria-label="Select T3 system"></select>
             <div id="selectedDetail" class="field-selected-detail"></div>
+          </div>
+          <div class="scan-import-row">
+            <select id="scanCharacter" aria-label="Toon used to detect the current solar system"></select>
+            <button id="pasteScan" class="orb blue" type="button" title="Copy all Probe Scanner rows in EVE, then click here">📋 PASTE SCAN</button>
+            <span id="scanStatus">Copy all Probe Scanner rows in EVE, then paste.</span>
           </div>
           <div class="field-control-actions">
             <button id="markGreen" class="orb green compact-field-action" type="button" title="Mark this field available to mine">GREEN • MINEABLE</button>
@@ -207,7 +212,7 @@
           <div class="section-title"><div><strong>CONNECTED TOONS & DATA SYNC</strong></div><span id="esiStatus" class="status-pill">—</span></div>
           <div class="esi-actions"><button id="addToon" class="orb purple" type="button">+ ADD TOON</button><button id="syncNow" class="orb blue" type="button">SYNC EVE DATA</button><span id="lastSync" class="tiny muted">No successful sync yet</span></div>
           <div id="characterList" class="character-list"></div>
-          <div class="privacy-box"><strong>Privacy:</strong><p>No character-location access is requested.</p></div>
+          <div class="privacy-box"><strong>Privacy:</strong><p>Character location is read only when that toon imports a Probe Scanner copy. Locations are not stored or shared.</p></div>
         </section>
 
         <section class="glass actual-panel">
@@ -225,11 +230,14 @@
     </section>
 
     <section id="confirmPanel" class="confirm-panel hidden" role="dialog" aria-modal="true">
-      <div class="confirm-card"><div class="eyebrow">CONFIRMATION REQUIRED</div><h2>ARE YOU SURE YOU WANT TO START TIMER?</h2><p id="confirmText"></p><div class="confirm-actions"><button id="confirmYes" class="orb red" type="button">YES — START 10 HOURS</button><button id="confirmNo" class="orb silver" type="button">CANCEL</button></div></div>
+      <div class="confirm-card"><div class="eyebrow">CONFIRMATION REQUIRED</div><h2 id="confirmTitle">ARE YOU SURE YOU WANT TO START TIMER?</h2><p id="confirmText"></p><div class="confirm-actions"><button id="confirmYes" class="orb red" type="button">YES — START 10 HOURS</button><button id="confirmNo" class="orb silver" type="button">CANCEL</button></div></div>
+    </section>
+    <section id="scanPastePanel" class="confirm-panel hidden" role="dialog" aria-modal="true" aria-labelledby="scanPasteTitle">
+      <div class="confirm-card scan-paste-card"><div class="eyebrow">PROBE SCANNER IMPORT</div><h2 id="scanPasteTitle">PASTE SCANNER ROWS</h2><p>Your browser could not read the clipboard automatically. Copy all rows from EVE’s Probe Scanner and paste them below.</p><textarea id="scanPasteText" rows="8" spellcheck="false" placeholder="Paste Probe Scanner rows here"></textarea><div class="confirm-actions"><button id="scanPasteCheck" class="orb blue" type="button">CHECK SCAN</button><button id="scanPasteCancel" class="orb silver" type="button">CANCEL</button></div></div>
     </section>
     <div id="toast" class="toast hidden" role="status"></div>
   </main>
   <script src="/yield-math.js?v=2.3.43" defer></script>
-  <script src="/app.js?v=2.3.45" defer></script>
+  <script src="/app.js?v=2.3.49" defer></script>
 </body>
 </html>

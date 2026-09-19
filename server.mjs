@@ -4,6 +4,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { parseProbeScan } from './lib/probe-scan.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -26,10 +27,11 @@ const MINING_SCOPE = 'esi-industry.read_character_mining.v1';
 const SKILLS_SCOPE = 'esi-skills.read_skills.v1';
 const FITTINGS_SCOPE = 'esi-fittings.read_fittings.v1';
 const ASSETS_SCOPE = 'esi-assets.read_assets.v1';
+const LOCATION_SCOPE = 'esi-location.read_location.v1';
 const MARKET_STRUCTURE_SCOPE = 'esi-markets.structure_markets.v1';
 const SEARCH_STRUCTURES_SCOPE = 'esi-search.search_structures.v1';
 const READ_STRUCTURES_SCOPE = 'esi-universe.read_structures.v1';
-const ESI_SCOPES = [MINING_SCOPE, SKILLS_SCOPE, FITTINGS_SCOPE, ASSETS_SCOPE];
+const ESI_SCOPES = [MINING_SCOPE, SKILLS_SCOPE, FITTINGS_SCOPE, ASSETS_SCOPE, LOCATION_SCOPE];
 const MARKET_SCOPES = [MARKET_STRUCTURE_SCOPE, SEARCH_STRUCTURES_SCOPE, READ_STRUCTURES_SCOPE];
 const MARKET_CHARACTER_NAME = String(process.env.MARKET_CHARACTER_NAME || 'John Leman Raholan').trim();
 const MARKET_STRUCTURE_ID_ENV = String(process.env.MARKET_STRUCTURE_ID || '').trim();
@@ -131,6 +133,7 @@ let state = await loadState();
 const tokenKey = await loadTokenKey();
 const sessionSecret = crypto.createHash('sha256').update(process.env.SESSION_SECRET || tokenKey).digest();
 const characterSyncPromises = new Map();
+const characterAccessPromises = new Map();
 const userSyncPromises = new Map();
 const ledgerRowsByCharacter = new Map();
 
@@ -330,7 +333,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.3.44',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state and fleet-level mining totals only. No character-location scope and no per-character mining systems are stored.'},
+    app:{name:'JLR Miner Tracker',version:'2.3.45',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state and fleet-level mining totals only. Character location is read only when importing a Probe Scanner copy and is not stored or shared.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[]},
     fields:state.fields,
     market:{lastUpdatedAt:state.market.lastUpdatedAt,lastError:state.market.lastError,privateLastError:state.market.privateLastError||null,refreshing:marketRefreshInProgress,valuation:'MAX REFINE',maxRefineYield:MAX_REFINE_YIELD,jita:'Jita IV - Moon 4 - Caldari Navy Assembly Plant',local:CN_SYSTEM_NAME,titanBridgeRangeLy:TITAN_BRIDGE_RANGE_LY,history:marketHistoryPublic(),privateAccess:Boolean(state.market.refreshTokenEnc),marketCharacterName:state.market.characterName||null,structureName:state.market.structureName||null},
@@ -1224,18 +1227,55 @@ function timestampStale(value,maxAgeMs){
   return !Number.isFinite(parsed)||Date.now()-parsed>=maxAgeMs;
 }
 
+async function characterAccess(ch){
+  const key=String(ch.characterId);
+  if(characterAccessPromises.has(key))return characterAccessPromises.get(key);
+  const pending=(async()=>{
+    const tokens=await refreshToken(decrypt(ch.refreshTokenEnc));
+    const identity=await verifyJwt(tokens.access_token,true);
+    if(String(identity.characterId)!==key)throw new Error('Refresh token changed character');
+    if(tokens.refresh_token)ch.refreshTokenEnc=encrypt(tokens.refresh_token);
+    ch.scopes=identity.scopes;
+    return{access:tokens.access_token,identity};
+  })().finally(()=>characterAccessPromises.delete(key));
+  characterAccessPromises.set(key,pending);
+  return pending;
+}
+
+async function probeScanPreview(ch,text){
+  const {access,identity}=await characterAccess(ch);
+  if(!identity.scopes.includes(LOCATION_SCOPE)){
+    const error=new Error('Update this toon’s EVE access before importing scans.');
+    error.code='LOCATION_SCOPE_REQUIRED';
+    throw error;
+  }
+  const {data}=await esiGet(`https://esi.evetech.net/latest/characters/${ch.characterId}/location/?datasource=tranquility`,access);
+  const systemId=String(data.solar_system_id||'');
+  if(!systemId)throw new Error('EVE did not return a current solar system for this toon.');
+  await ensureSystem([systemId]);
+  const system=state.esi.systemCache[systemId]?.name||`System ${systemId}`;
+  const definition=SYSTEM_MAP.get(system)||null;
+  const scan=definition?parseProbeScan(text,definition.ore):null;
+  return{
+    characterId:String(ch.characterId),
+    characterName:ch.name,
+    systemId,
+    system,
+    tracked:Boolean(definition),
+    definition:definition?{system:definition.system,ore:definition.ore,rank:definition.rank}:null,
+    scan,
+    field:definition?state.fields[system]:null,
+  };
+}
+
 async function syncCharacterOnce(ch,{forceMetadata=false}={}){
   try{
-    const tokens=await refreshToken(decrypt(ch.refreshTokenEnc));
-    const id=await verifyJwt(tokens.access_token,true);
-    if(String(id.characterId)!==String(ch.characterId))throw new Error('Refresh token changed character');
-    if(tokens.refresh_token)ch.refreshTokenEnc=encrypt(tokens.refresh_token);
-    ch.scopes=id.scopes;
+    const {access,identity:id}=await characterAccess(ch);
 
-    const rows=await miningLedger(ch.characterId,tokens.access_token);
+    const rows=await miningLedger(ch.characterId,access);
     let metadataRefreshed=false;
     if(id.scopes.includes(SKILLS_SCOPE)&&(forceMetadata||timestampStale(ch.skillsUpdatedAt,ESI_METADATA_REFRESH_MS))){
-      const skills=await characterSkills(ch.characterId,tokens.access_token);
+      const skills=await characterSkills(ch.characterId,access);
       ch.skills=skillSnapshot(skills);ch.skillsUpdatedAt=now();metadataRefreshed=true;
     }
 
@@ -1243,13 +1283,13 @@ async function syncCharacterOnce(ch,{forceMetadata=false}={}){
     if(fitBundleStale){
       let abyssalModules=[];
       if(id.scopes.includes(ASSETS_SCOPE)){
-        const assets=await characterAssets(ch.characterId,tokens.access_token);
+        const assets=await characterAssets(ch.characterId,access);
         abyssalModules=await abyssalStripSnapshot(assets);
         ch.abyssalStripCount=abyssalModules.length;
         ch.assetsUpdatedAt=now();
       }
       if(id.scopes.includes(FITTINGS_SCOPE)){
-        const fits=await characterFittings(ch.characterId,tokens.access_token);
+        const fits=await characterFittings(ch.characterId,access);
         ch.savedFittingsCount=Array.isArray(fits)?fits.length:0;
         ch.fittings=await miningFittingSnapshot(fits,abyssalModules);
         ch.fittingsUpdatedAt=now();
@@ -1379,7 +1419,8 @@ function myProfile(user) {
         lastError:c.lastError,
         portrait:`https://images.evetech.net/characters/${c.characterId}/portrait?size=64`,
         scopes,
-        needsReauth:!scopes.includes(SKILLS_SCOPE)||!scopes.includes(FITTINGS_SCOPE)||!scopes.includes(ASSETS_SCOPE),
+        locationAccess:scopes.includes(LOCATION_SCOPE),
+        needsReauth:!scopes.includes(SKILLS_SCOPE)||!scopes.includes(FITTINGS_SCOPE)||!scopes.includes(ASSETS_SCOPE)||!scopes.includes(LOCATION_SCOPE),
         marketEligible:c.name===MARKET_CHARACTER_NAME,
         marketAuthorized:c.name===MARKET_CHARACTER_NAME&&String(state.market.characterId||'')===String(c.characterId)&&Boolean(state.market.refreshTokenEnc),
         skills:c.skills||{},
@@ -1417,12 +1458,31 @@ async function serveStatic(req,res,pathname) {
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.44',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.45',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){const u=readSession(req);return json(res,200,{authenticated:Boolean(u),user:u?myProfile(u):null})}
   const user=requireUser(req,res);if(!user)return;
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
   if(req.method==='GET'&&url.pathname==='/api/events'){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});res.write(`event: state\ndata: ${JSON.stringify(publicState())}\n\n`);sseClients.add(res);req.on('close',()=>sseClients.delete(res));return}
   if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
+  if(req.method==='POST'&&url.pathname==='/api/scans/preview'){
+    const body=await readBody(req,150_000);
+    const characterId=String(body.characterId||user.primaryCharacterId||'');
+    if(!user.characterIds.map(String).includes(characterId))return json(res,404,{error:'CHARACTER_NOT_LINKED',message:'Choose a linked mining toon.'});
+    const ch=state.characters[characterId];
+    if(!ch)return json(res,404,{error:'CHARACTER_NOT_LINKED',message:'Choose a linked mining toon.'});
+    const scanText=String(body.text||'').trim();
+    if(!scanText)return json(res,400,{error:'EMPTY_SCAN',message:'Copy the Probe Scanner rows in EVE, then try again.'});
+    if(!(Array.isArray(ch.scopes)&&ch.scopes.includes(LOCATION_SCOPE)))return json(res,409,{error:'LOCATION_SCOPE_REQUIRED',message:'Update this toon’s EVE access before importing scans.'});
+    try{
+      const preview=await probeScanPreview(ch,scanText);
+      await save();
+      if(preview.tracked&&!preview.scan.valid)return json(res,400,{error:'INVALID_SCAN',message:'This does not look like copied Probe Scanner rows. Copy the complete scanner list and try again.',preview});
+      return json(res,200,{ok:true,...preview});
+    }catch(err){
+      if(err.code==='LOCATION_SCOPE_REQUIRED')return json(res,409,{error:err.code,message:err.message});
+      throw err;
+    }
+  }
   const fm=url.pathname.match(/^\/api\/fields\/([^/]+)$/);
   if(fm&&req.method==='PUT'){const system=decodeURIComponent(fm[1]);const f=state.fields[system];if(!f)return json(res,404,{error:'UNKNOWN_SYSTEM'});const body=await readBody(req);const status=String(body.status||'');if(!['ready','picked','cleared'].includes(status))return json(res,400,{error:'BAD_STATUS'});if(f.status==='cleared'&&f.timerEndsAt&&Date.parse(f.timerEndsAt)>Date.now())return json(res,409,{error:'TIMER_ACTIVE',message:'The 10-hour timer is already running and cannot be restarted or changed.'});if(status==='cleared'&&body.confirm!==true)return json(res,409,{error:'CONFIRM_REQUIRED'});f.status=status;f.updatedAt=now();f.timerEndsAt=status==='cleared'?new Date(Date.now()+TEN_HOURS).toISOString():null;await save();broadcast();return json(res,200,{ok:true,field:f})}
   const nm=url.pathname.match(/^\/api\/fields\/([^/]+)\/notes$/);
