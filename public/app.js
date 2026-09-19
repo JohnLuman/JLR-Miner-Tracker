@@ -835,7 +835,7 @@
     const systemSelect=$('systemSelect');
     if(document.activeElement===systemSelect)return;
     const old=selectedSystem||systemSelect.value; systemSelect.innerHTML='';
-    for(const ore of state.source.ores){const g=document.createElement('optgroup');g.label=`#${ore.rank} ${ore.name.toUpperCase()}`;for(const d of definitions().filter(x=>x.rank===ore.rank)){const f=field(d.system),o=document.createElement('option');o.value=d.system;o.textContent=`${d.system} — ${f.status==='cleared'?`RED • RESPAWN ${timer(f.timerEndsAt)}`:statusText[f.status]}${f.cherryPicked?' 🍒 CHERRY':''}`;g.appendChild(o)}systemSelect.appendChild(g)}
+    for(const ore of state.source.ores){const g=document.createElement('optgroup');g.label=`#${ore.rank} ${ore.name.toUpperCase()}`;for(const d of definitions().filter(x=>x.rank===ore.rank)){const f=field(d.system),o=document.createElement('option');o.value=d.system;const esi=f.status==='picked'&&f.autoReopenedAt?' • ESI VERIFIED':'';o.textContent=`${d.system} — ${f.status==='cleared'?`RED • RESPAWN ${timer(f.timerEndsAt)}`:statusText[f.status]}${esi}${f.cherryPicked?' 🍒 CHERRY':''}`;g.appendChild(o)}systemSelect.appendChild(g)}
     selectedSystem=definitions().some(x=>x.system===old)?old:(definitions()[0]?.system||'');
     systemSelect.value=selectedSystem;
   }
@@ -847,11 +847,11 @@
     b.dataset.status=f.status;
     b.dataset.system=d.system;
     if(d.system===selectedSystem)b.classList.add('selected');
-    const line=f.status==='cleared'?`RESPAWN ${timer(f.timerEndsAt)}`:f.status==='picked'?'PICKED':'MINEABLE';
+    const line=f.status==='cleared'?`RESPAWN ${timer(f.timerEndsAt)}`:f.status==='picked'?(f.autoReopenedAt?'PICKED • ESI':'PICKED'):'MINEABLE';
     const distance=d.distanceLy==null?NaN:Number(d.distanceLy);
     const distanceText=Number.isFinite(distance)?` • ${distance.toFixed(2)} LY`:'';
     b.innerHTML=`${f.cherryPicked?'<span class="cherry-pin">🍒</span>':''}<span class="sys-name">${esc(d.system)}</span><span class="sys-ore">#${d.rank} ${esc(d.ore)}</span>${includeTimer?`<span class="sys-state">${line}${distanceText}</span>`:''}`;
-    b.title=`${d.system} • ${d.ore} • ${statusText[f.status]}${Number.isFinite(distance)?` • ${distance.toFixed(2)} LY from C-N4OD`:''}${f.cherryPicked?' • Cherry Picked':''}${f.notes?.length?` • ${f.notes.length} notes`:''}`;
+    b.title=`${d.system} • ${d.ore} • ${statusText[f.status]}${f.autoReopenedAt?` • ESI mining detected ${ago(f.autoReopenedAt)}`:''}${Number.isFinite(distance)?` • ${distance.toFixed(2)} LY from C-N4OD`:''}${f.cherryPicked?' • Cherry Picked':''}${f.notes?.length?` • ${f.notes.length} notes`:''}`;
     b.addEventListener('click',()=>chooseSystem(d.system));
     return b;
   }
@@ -916,7 +916,7 @@
 
       const distance=x.d.distanceLy==null?NaN:Number(x.d.distanceLy);
       const payout=projectedISK(state.source.ores[x.d.rank-1]);
-      const stateLabel=x.f.cherryPicked?'CHERRY PICKED':x.f.status==='picked'?'PICKED':'MINEABLE';
+      const stateLabel=x.f.cherryPicked?'CHERRY PICKED':x.f.status==='picked'?(x.f.autoReopenedAt?'PICKED • ESI VERIFIED':'PICKED'):'MINEABLE';
       const priorityLabel=i===0?'MINE FIRST':i===1?'NEXT':'PRIORITY';
 
       b.innerHTML=`
@@ -1178,7 +1178,7 @@
     if(!state||!selectedSystem)return;
     const d=def(selectedSystem),f=field(selectedSystem);if(!d||!f)return;
     const status=f.status==='cleared'?`RED • RESPAWN ${timer(f.timerEndsAt)}`:statusText[f.status];
-    $('selectedDetail').innerHTML=`<strong>#${d.rank} ${esc(d.ore)}</strong><span>${esc(status)}${f.cherryPicked?' • 🍒 CHERRY':''} • ${fmt(projectedISK(state.source.ores[d.rank-1]))} payout/hr</span>`;
+    $('selectedDetail').innerHTML=`<strong>#${d.rank} ${esc(d.ore)}</strong><span>${esc(status)}${f.autoReopenedAt?` • ESI VERIFIED ${esc(ago(f.autoReopenedAt))}`:''}${f.cherryPicked?' • 🍒 CHERRY':''} • ${fmt(projectedISK(state.source.ores[d.rank-1]))} payout/hr</span>`;
     const timerActive=f.status==='cleared'&&Date.parse(f.timerEndsAt)>Date.now();
     for(const id of ['markGreen','markYellow','markRed'])$(id).disabled=timerActive;
   }
