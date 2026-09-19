@@ -1716,6 +1716,21 @@
   document.querySelectorAll('.filter').forEach(b=>b.addEventListener('click',()=>{filter=b.dataset.filter;document.querySelectorAll('.filter').forEach(x=>x.classList.toggle('active',x===b));renderBoards()}));
 
   function applyFieldUpdate(system,updatedField){state.fields[system]=updatedField;renderAll()}
+  function applyPreviewBoardScan(preview){
+    const scan=preview?.boardScan;
+    if(!state||!preview?.system||!scan?.recorded)return;
+    state.scans ||= {};
+    state.scans[preview.system]={
+      ...(state.scans[preview.system]||{}),
+      lastScanAt:scan.lastScanAt,
+      due:false,
+      nextUpdateAt:scan.nextUpdateAt||null,
+      scannerRowCount:Number(scan.scannerRowCount)||0,
+      kinds:Array.isArray(scan.kinds)?scan.kinds:[],
+      ice:scan.ice||null,
+    };
+    renderBoards();
+  }
   function openScanPaste(){
     $('scanPasteText').value='';
     $('scanPastePanel').classList.remove('hidden');
@@ -1730,6 +1745,7 @@
     scanBusy=true;renderScanCharacters();setScanStatus(`Checking ${selected.name} location…`);
     try{
       const preview=await api('/api/scans/preview',{method:'POST',body:JSON.stringify({characterId:selected.characterId,text})});
+      applyPreviewBoardScan(preview);
       if(preview.a0?.tracked){
         if(preview.a0.scan?.detected){
           setScanStatus(`${preview.system}: A0 rare asteroid site detected — board updated for 12 hours.`,'success');
