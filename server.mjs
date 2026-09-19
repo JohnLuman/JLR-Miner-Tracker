@@ -175,7 +175,7 @@ function freshState() {
       typeCache: {}, systemCache: {}, dailyFleet: [], ledgerActivity: {}, ledgerFieldSnapshots: {}, lastSyncAt: null, lastError: null,
     },
     market: {
-      prices: {}, minerals: {}, icePrices: {}, iceProducts: {}, iceFields: [], t3Distances: {}, history: { ore:{}, ice:{} }, lastUpdatedAt: null, lastError: null,
+      prices: {}, minerals: {}, icePrices: {}, iceProducts: {}, iceFields: [], a0Fields: [], a0ScannedAt: null, t3Distances: {}, history: { ore:{}, ice:{} }, lastUpdatedAt: null, lastError: null,
       characterId: null, characterName: null, refreshTokenEnc: null, scopes: [], authorizedAt: null,
       structureId: null, structureName: null, privateLastError: null,
     },
@@ -203,6 +203,8 @@ async function loadState() {
     parsed.market.icePrices ||= {};
     parsed.market.iceProducts ||= {};
     parsed.market.iceFields ||= [];
+    parsed.market.a0Fields ||= [];
+    parsed.market.a0ScannedAt ||= null;
     parsed.market.t3Distances ||= {};
     parsed.market.history ||= {ore:{},ice:{}};
     parsed.market.history.ore ||= {};
@@ -339,8 +341,8 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.3.58',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state and fleet-level mining totals only. Character location is read only when importing a Probe Scanner copy and is not stored or shared.'},
-    source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[]},
+    app:{name:'JLR Miner Tracker',version:'2.3.59',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state and fleet-level mining totals only. Character location is read only when importing a Probe Scanner copy and is not stored or shared.'},
+    source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],a0Fields:state.market.a0Fields||[],a0ScannedAt:state.market.a0ScannedAt||null},
     fields:state.fields,
     market:{lastUpdatedAt:state.market.lastUpdatedAt,lastError:state.market.lastError,privateLastError:state.market.privateLastError||null,refreshing:marketRefreshInProgress,valuation:'MAX REFINE',maxRefineYield:MAX_REFINE_YIELD,jita:'Jita IV - Moon 4 - Caldari Navy Assembly Plant',local:CN_SYSTEM_NAME,titanBridgeRangeLy:TITAN_BRIDGE_RANGE_LY,history:marketHistoryPublic(),privateAccess:Boolean(state.market.refreshTokenEnc),marketCharacterName:state.market.characterName||null,structureName:state.market.structureName||null},
     esi:{configured:Boolean(EVE_CLIENT_ID),linkedCharacters:Object.keys(state.characters).length,lastSyncAt:state.esi.lastSyncAt,lastError:state.esi.lastError,syncing:syncInProgress||manualSyncCount>0,actual:{today:todayActual,week:weekActual}},
@@ -742,6 +744,56 @@ function lyDistance(a,b) {
   const distance=Math.sqrt(dx*dx+dy*dy+dz*dz)/LIGHT_YEAR_METERS;
   return Number.isFinite(distance)?distance:null;
 }
+
+async function refreshA0Fields(originSystemId) {
+  const region=(await esiGet(`https://esi.evetech.net/latest/universe/regions/${FOUNTAIN_REGION_ID}/?datasource=tranquility`)).data;
+  const constellationIds=Array.isArray(region.constellations)?region.constellations:[];
+  const systemIds=[];
+  for(let i=0;i<constellationIds.length;i+=8){
+    const batch=await Promise.all(constellationIds.slice(i,i+8).map(async id=>{
+      try{return (await esiGet(`https://esi.evetech.net/latest/universe/constellations/${id}/?datasource=tranquility`)).data.systems||[]}
+      catch(err){console.warn('A0 constellation lookup failed',id,String(err.message||err));return[]}
+    }));
+    for(const ids of batch)systemIds.push(...ids);
+  }
+
+  const origin=(await esiGet(`https://esi.evetech.net/latest/universe/systems/${originSystemId}/?datasource=tranquility`)).data;
+  const nearby=[];
+  for(let i=0;i<systemIds.length;i+=12){
+    const batch=await Promise.all(systemIds.slice(i,i+12).map(async id=>{
+      try{
+        const data=(await esiGet(`https://esi.evetech.net/latest/universe/systems/${id}/?datasource=tranquility`)).data;
+        const distance=lyDistance(origin.position,data.position);
+        return Number.isFinite(distance)&&distance<=TITAN_BRIDGE_RANGE_LY+1e-9?{id:Number(id),data,distance}:null;
+      }catch(err){console.warn('A0 system lookup failed',id,String(err.message||err));return null}
+    }));
+    nearby.push(...batch.filter(Boolean));
+  }
+
+  const out=[];
+  for(let i=0;i<nearby.length;i+=10){
+    const batch=await Promise.all(nearby.slice(i,i+10).map(async entry=>{
+      const starId=Number(entry.data.star_id);
+      if(!starId)return null;
+      try{
+        const star=(await esiGet(`https://esi.evetech.net/latest/universe/stars/${starId}/?datasource=tranquility`)).data;
+        const spectralClass=String(star.spectral_class||'').trim();
+        if(!/^A0(?:\s|$)/i.test(spectralClass))return null;
+        return {
+          system:String(entry.data.name||`System ${entry.id}`),
+          systemId:entry.id,
+          distanceLy:entry.distance,
+          security:Number(entry.data.security_status),
+          starId,
+          spectralClass,
+          eligibility:'Nullsec Blue A0 Rare Asteroids',
+        };
+      }catch(err){console.warn('A0 star lookup failed',starId,String(err.message||err));return null}
+    }));
+    out.push(...batch.filter(Boolean));
+  }
+  return out.sort((a,b)=>a.distanceLy-b.distanceLy||a.system.localeCompare(b.system));
+}
 async function refreshIceFields(ids) {
   const originId=ids.get(CN_SYSTEM_NAME);
   if(!originId)return [];
@@ -826,7 +878,9 @@ async function refreshMarketPrices(force=false) {
     &&Object.keys(ICE_REPROCESSING).every(name=>(state.market?.history?.ice?.[name]||[]).some(x=>x.date===today));
   const jitaBuyBasisCurrent=state.market?.jitaBuyBasis==='reachable-from-jita-4-4';
   const t3DistancesCurrent=SYSTEM_DEFS.every(d=>typeof state.market?.t3Distances?.[d.system]==='number'&&Number.isFinite(state.market.t3Distances[d.system]));
-  if(!force&&valuationCurrent&&historyCurrent&&jitaBuyBasisCurrent&&t3DistancesCurrent&&Number.isFinite(last)&&Date.now()-last<MARKET_REFRESH_MS)return;
+  const a0ScanAt=Date.parse(state.market?.a0ScannedAt||'');
+  const a0Current=Array.isArray(state.market?.a0Fields)&&Number.isFinite(a0ScanAt)&&Date.now()-a0ScanAt<MARKET_REFRESH_MS;
+  if(!force&&valuationCurrent&&historyCurrent&&jitaBuyBasisCurrent&&t3DistancesCurrent&&a0Current&&Number.isFinite(last)&&Date.now()-last<MARKET_REFRESH_MS)return;
   marketRefreshInProgress=true;
   state.market.lastError=null;
   state.market.privateLastError=null;
@@ -836,9 +890,10 @@ async function refreshMarketPrices(force=false) {
     const ids=await resolveUniverseIds(names);
     const cnSystemId=ids.get(CN_SYSTEM_NAME);
     if(!cnSystemId)throw new Error(`${CN_SYSTEM_NAME} system ID could not be resolved`);
-    const [iceFields,t3Distances]=await Promise.all([
+    const [iceFields,t3Distances,a0Fields]=await Promise.all([
       refreshIceFields(ids),
       refreshT3Distances(ids),
+      refreshA0Fields(cnSystemId).catch(err=>{console.warn('A0 range scan failed',String(err.message||err));return null}),
     ]);
 
     const mineralTypeIds=REFINING_MINERALS.map(name=>Number(ids.get(name))).filter(Number.isFinite);
@@ -984,6 +1039,7 @@ async function refreshMarketPrices(force=false) {
     state.market.icePrices=icePrices;
     state.market.iceProducts=iceProductPrices.detail;
     state.market.iceFields=iceFields;
+    if(Array.isArray(a0Fields)){state.market.a0Fields=a0Fields;state.market.a0ScannedAt=now()}
     state.market.t3Distances=t3Distances;
     state.market.jitaBuyBasis='reachable-from-jita-4-4';
     state.market.history ||= {ore:{},ice:{}};
@@ -1531,7 +1587,7 @@ async function serveStatic(req,res,pathname) {
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.58',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.59',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){const u=readSession(req);return json(res,200,{authenticated:Boolean(u),user:u?myProfile(u):null})}
   const user=requireUser(req,res);if(!user)return;
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());

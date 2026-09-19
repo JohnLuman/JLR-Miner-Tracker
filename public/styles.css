@@ -366,3 +366,11 @@ html[data-theme] .api-kpi{background:linear-gradient(180deg,color-mix(in srgb,#2
   .target-ore-control{width:100%;justify-content:space-between}
   .target-ore-control select{min-width:0;max-width:none;flex:1}
 }
+
+
+/* A0 rare-ore candidate systems found from Fountain star spectral classes. */
+.system-node[data-status="a0"],.a0-system-node{background:linear-gradient(180deg,#172a50,#111a35);border-color:#6f9dff;box-shadow:inset 0 -2px 0 #7ca7ff,0 0 0 1px #5d83ff26}
+.a0-system-node .sys-ore{color:#b9cbff}
+.a0-system-node .sys-state{color:#e2e9ff}
+.orb.a0-filter{border-color:#9fb8ff;background:linear-gradient(180deg,#c0d0ff,#718fff 58%,#425cc4);color:#0b1434;box-shadow:inset 0 2px #ffffff8f}
+.orb.a0-filter.active{outline:2px solid #cbd7ff;outline-offset:1px}

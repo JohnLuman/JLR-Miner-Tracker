@@ -757,6 +757,7 @@
     const entries=[];
     for(const d of definitions())entries.push({kind:'t3',key:boardKey('t3',d.system),system:d.system,d,f:field(d.system)});
     for(const row of Array.isArray(state?.source?.iceFields)?state.source.iceFields:[])entries.push({kind:'ice',key:boardKey('ice',row.system),system:row.system,row});
+    for(const row of Array.isArray(state?.source?.a0Fields)?state.source.a0Fields:[])entries.push({kind:'a0',key:boardKey('a0',row.system),system:row.system,row});
     return entries;
   }
   function orderedBoardEntries(){
@@ -783,7 +784,7 @@
       arrange.textContent=boardArrangeMode?'✓ ARRANGING':'↕ ARRANGE';
     }
     if(size)size.textContent=`BOX SIZE • ${boardPrefs.size==='small'?'S':boardPrefs.size==='large'?'L':'M'}`;
-    if(hint)hint.textContent=boardArrangeMode?'Drag any T3 or ICE box to reorder • favorites stay pinned first':'☆ favorite any T3 or ICE system to pin it to the front';
+    if(hint)hint.textContent=boardArrangeMode?'Drag any T3, ICE or A0 box to reorder • favorites stay pinned first':'☆ favorite any T3, ICE or A0 system to pin it to the front';
   }
   function toggleBoardFavorite(kind,system){
     const key=boardKey(kind,system),favorites=favoriteBoardKeys();
@@ -1036,6 +1037,33 @@
     return card;
   }
 
+  function a0BoardNode(row){
+    const card=document.createElement('div');
+    const key=boardKey('a0',row.system);
+    const favorite=isBoardFavorite('a0',row.system);
+    card.className='system-node a0-system-node';
+    card.dataset.status='a0';
+    card.dataset.system=row.system;
+    card.dataset.boardKey=key;
+    card.classList.toggle('favorite',favorite);
+    card.classList.toggle('arrange-mode',boardArrangeMode);
+    card.draggable=boardArrangeMode;
+    card.setAttribute('role','group');
+    const distance=Number(row.distanceLy);
+    const spectral=String(row.spectralClass||'A0');
+    card.innerHTML='<button class="favorite-toggle" type="button" aria-pressed="'+favorite+'" title="'+(favorite?'Remove from favorites':'Favorite this system')+'">'+(favorite?'★':'☆')+'</button>'+
+      (boardArrangeMode?'<span class="drag-grip" aria-hidden="true">⠿</span>':'')+
+      '<span class="sys-name">'+esc(row.system)+'</span>'+
+      '<span class="sys-ore">BLUE '+esc(spectral)+' STAR</span>'+
+      '<span class="sys-state">A0 RARE ORE ELIGIBLE'+(Number.isFinite(distance)?' • '+distance.toFixed(2)+' LY':'')+'</span>';
+    card.title=row.system+' • '+spectral+' Blue star'+(favorite?' • Favorite':'')+(Number.isFinite(distance)?' • '+distance.toFixed(2)+' LY from C-N4OD':'')+' • eligible for Nullsec Blue A0 Rare Asteroids; active site presence is not exposed by ESI';
+    card.querySelector('.favorite-toggle').addEventListener('click',e=>{
+      e.preventDefault();e.stopPropagation();toggleBoardFavorite('a0',row.system);sfx('select');
+    });
+    attachBoardDrag(card,key);
+    return card;
+  }
+
   function renderBoards(){
     if(!state)return;
     const board=$('fieldBoard');
@@ -1043,6 +1071,7 @@
     board.innerHTML='';
     let counts={ready:0,picked:0,cleared:0,cherry:0};
     const iceFields=Array.isArray(state.source?.iceFields)?state.source.iceFields:[];
+    const a0Fields=Array.isArray(state.source?.a0Fields)?state.source.a0Fields:[];
 
     for(const d of definitions()){
       const f=field(d.system);
@@ -1053,13 +1082,16 @@
     for(const entry of orderedBoardEntries()){
       if(entry.kind==='t3'){
         if(filter==='all'||filter===entry.f.status||(filter==='cherry'&&entry.f.cherryPicked))board.appendChild(node(entry.d,entry.f,true));
-      }else if(filter==='all'||filter==='ice'){
+      }else if(entry.kind==='ice'&&(filter==='all'||filter==='ice')){
         board.appendChild(iceBoardNode(entry.row));
+      }else if(entry.kind==='a0'&&filter==='a0'){
+        board.appendChild(a0BoardNode(entry.row));
       }
     }
 
-    $('statusCounts').textContent=`${counts.ready} mineable • ${counts.picked} picked • ${counts.cleared} respawning • ${counts.cherry} cherry • ${iceFields.length} ice systems`;
-    $('systemCountLabel').textContent=`${definitions().length} T3 • ${iceFields.length} ICE`;
+    $('statusCounts').textContent=`${counts.ready} mineable • ${counts.picked} picked • ${counts.cleared} respawning • ${counts.cherry} cherry • ${iceFields.length} ice • ${a0Fields.length} A0`;
+    $('systemCountLabel').textContent=`${definitions().length} T3 • ${iceFields.length} ICE • ${a0Fields.length} A0`;
+    if(filter==='a0'&&!a0Fields.length)board.innerHTML='<div class="target-empty"><strong>No A0 systems found within 6 LY.</strong><span>The server scans Fountain star spectral classes through ESI. Active rare-asteroid anomalies themselves are not exposed remotely.</span></div>';
   }
   function renderHits(){
     if(!state)return;
