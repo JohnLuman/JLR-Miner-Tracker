@@ -1637,10 +1637,12 @@
       chooseSystem(preview.system);
       const expected=preview.scan?.expectedNames?.[0]||`${preview.definition.ore} deposit`;
       if(preview.scan?.detected){
-        const activeTimer=preview.field?.status==='cleared'&&Date.parse(preview.field.timerEndsAt)>Date.now();
-        if(activeTimer){
-          setScanStatus(`${preview.system}: ${preview.definition.ore} detected; active timer was left unchanged.`,'warning');
-          toast('Deposit detected, but the locked respawn timer is still active.');
+        if(preview.correction?.applied){
+          applyFieldUpdate(preview.system,preview.field);
+          setScanStatus(`${preview.system}: ${preview.definition.ore} detected on repost — false RED corrected to GREEN.`,'success');
+          $('fieldMessage').textContent=`${preview.system} scan found ${preview.definition.ore}; the previous clear report was corrected and the respawn timer was cancelled.`;
+          toast(`${preview.system}: repost corrected the previous clear report.`);
+          sfx('systemSelect');
           return;
         }
         const result=await api(`/api/fields/${encodeURIComponent(preview.system)}`,{method:'PUT',body:JSON.stringify({status:'ready'})});
