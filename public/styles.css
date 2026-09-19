@@ -463,3 +463,50 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .mer-error strong,.mer-error span{display:block}.mer-error span{margin-top:4px;color:var(--muted);font-size:8px}
 @media(max-width:1000px){.mer-kpi-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.mer-two-col{grid-template-columns:1fr}.mer-combat-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:620px){.mer-hero{align-items:flex-start;flex-direction:column}.mer-badges{justify-content:flex-start}.mer-kpi-grid,.mer-combat-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.mer-mining-row{grid-template-columns:1fr 1fr}.mer-mining-row>div:last-child{grid-column:1/-1;text-align:left}.mer-moon-strip{grid-template-columns:1fr}}
+
+
+/* Hover help for Probe Scanner imports. */
+.scan-help-wrap{position:relative;display:inline-flex;min-width:0}
+.scan-help-wrap>#pasteScan{width:100%}
+.scan-help-tooltip{
+  position:absolute;
+  z-index:60;
+  left:50%;
+  bottom:calc(100% + 9px);
+  transform:translate(-50%,6px);
+  width:min(330px,70vw);
+  padding:9px 10px;
+  border:1px solid color-mix(in srgb,var(--theme-accent,#2784ff) 55%,var(--line));
+  border-radius:9px;
+  background:linear-gradient(180deg,var(--theme-panel-hi,#151927),var(--theme-panel-lo,#0d1119));
+  color:var(--text);
+  box-shadow:0 10px 28px #000b,0 0 0 1px color-mix(in srgb,var(--theme-accent,#2784ff) 15%,transparent);
+  opacity:0;
+  visibility:hidden;
+  pointer-events:none;
+  transition:opacity .12s ease,transform .12s ease,visibility .12s;
+  white-space:normal!important;
+  overflow:visible!important;
+  text-overflow:clip!important;
+}
+.scan-help-tooltip::after{
+  content:"";
+  position:absolute;
+  left:50%;
+  top:100%;
+  transform:translateX(-50%);
+  border:7px solid transparent;
+  border-top-color:color-mix(in srgb,var(--theme-accent,#2784ff) 55%,var(--line));
+}
+.scan-help-wrap:hover .scan-help-tooltip,
+.scan-help-wrap:focus-within .scan-help-tooltip{opacity:1;visibility:visible;transform:translate(-50%,0)}
+.scan-help-tooltip>strong{display:block;margin-bottom:6px;color:var(--theme-accent-hi,#8bb7ff);font-size:8px;letter-spacing:.09em}
+.scan-help-tooltip>span{display:block;margin:4px 0;color:var(--text);font-size:8px;line-height:1.4}
+.scan-help-tooltip>span b{display:inline-grid;place-items:center;width:15px;height:15px;margin-right:5px;border-radius:50%;background:color-mix(in srgb,var(--theme-accent,#2784ff) 30%,var(--theme-soft,#111119));color:#fff;font-size:7px}
+.scan-help-tooltip>small{display:block;margin-top:7px;padding-top:6px;border-top:1px solid var(--line);color:#ffd27a;font-size:7px;line-height:1.4}
+@media(max-width:760px){
+  .scan-help-wrap{width:100%}
+  .scan-help-tooltip{left:0;transform:translate(0,6px);width:min(320px,88vw)}
+  .scan-help-wrap:hover .scan-help-tooltip,.scan-help-wrap:focus-within .scan-help-tooltip{transform:translate(0,0)}
+  .scan-help-tooltip::after{left:28px}
+}

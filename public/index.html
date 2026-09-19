@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0a0a10">
   <title>JLR Miner Tracker</title>
-  <link rel="stylesheet" href="/styles.css?v=2.3.69">
+  <link rel="stylesheet" href="/styles.css?v=2.3.70">
 </head>
 <body>
   <main id="loginView" class="login-shell hidden">
@@ -87,7 +87,16 @@
           </div>
           <div class="scan-import-row">
             <select id="scanCharacter" aria-label="Toon used to detect the current solar system"></select>
-            <button id="pasteScan" class="orb blue" type="button" title="Copy all Probe Scanner rows in EVE, then click here">📋 PASTE SCAN</button>
+            <span class="scan-help-wrap">
+              <button id="pasteScan" class="orb blue" type="button" aria-describedby="pasteScanHelp">📋 PASTE SCAN</button>
+              <span id="pasteScanHelp" class="scan-help-tooltip" role="tooltip">
+                <strong>HOW TO REPORT A SYSTEM</strong>
+                <span><b>1</b> In EVE, open the Probe Scanner while you are in the system you want to report.</span>
+                <span><b>2</b> Select/copy the complete, unfiltered scanner list — include every anomaly/site shown.</span>
+                <span><b>3</b> Click PASTE SCAN. The app checks your current system, updates T3/ICE/A0 results, and records the scan time.</span>
+                <small>Important: make sure the copied list is from your current system. If you paste the wrong one, reposting the correct scan can fix the board.</small>
+              </span>
+            </span>
             <span id="scanStatus">Copy all Probe Scanner rows in EVE, then paste.</span>
           </div>
           <div class="field-control-actions">
