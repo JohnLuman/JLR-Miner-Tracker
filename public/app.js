@@ -1299,7 +1299,7 @@
         await new Promise(resolve=>setTimeout(resolve,1000));
         const next=await api('/api/state');
         state=next;
-        const finished=!next.esi?.syncing&&next.esi?.lastSyncAt&&next.esi.lastSyncAt!==before;
+        const finished=next.esi?.lastSyncAt&&next.esi.lastSyncAt!==before;
         if(finished){completed=true;break}
       }
       await refreshMe();

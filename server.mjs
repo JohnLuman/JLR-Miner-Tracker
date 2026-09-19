@@ -55,9 +55,17 @@ const ABYSSAL_STRIP_TYPES = new Map([
   [90498,'Abyssal Deep Core Strip Miner'],
 ]);
 const dogmaAttributeCache = new Map();
+const dogmaAttributePromises = new Map();
+const typeLookupPromises = new Map();
+const systemLookupPromises = new Map();
 const TEN_HOURS = 10 * 60 * 60 * 1000;
 const SESSION_TTL = 30 * 24 * 60 * 60 * 1000;
 const MARKET_REFRESH_MS = 24 * 60 * 60 * 1000;
+const ESI_AUTO_REFRESH_MS = 15 * 60 * 1000;
+const ESI_AUTO_SPREAD_MS = 12 * 60 * 1000;
+const ESI_METADATA_REFRESH_MS = 6 * 60 * 60 * 1000;
+const ESI_MAX_CHARACTER_CONCURRENCY = 24;
+const ESI_MAX_RETRIES = 4;
 // Perfect null-sec refine: T2 rigged Tatara + max skills + RX-804 implant.
 const MAX_REFINE_YIELD = 0.90628105568;
 const ORE_REPROCESSING = {
@@ -117,10 +125,14 @@ const sseClients = new Set();
 let ssoMetadata = null;
 let ssoMetadataAt = 0;
 let syncInProgress = false;
+let manualSyncCount = 0;
 let marketRefreshInProgress = false;
 let state = await loadState();
 const tokenKey = await loadTokenKey();
 const sessionSecret = crypto.createHash('sha256').update(process.env.SESSION_SECRET || tokenKey).digest();
+const characterSyncPromises = new Map();
+const userSyncPromises = new Map();
+const ledgerRowsByCharacter = new Map();
 
 function loadEnv(file) {
   if (!fs.existsSync(file)) return;
@@ -136,6 +148,7 @@ function loadEnv(file) {
 function num(v, fallback) { const n = Number(v); return Number.isFinite(n) ? n : fallback; }
 function clamp(v, min, max, fallback) { const n = Number(v); return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback; }
 function now() { return new Date().toISOString(); }
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, Math.max(0, Number(ms) || 0))); }
 function dateUTC(d = new Date()) { return d.toISOString().slice(0, 10); }
 function mondayUTC(d = new Date()) { const x = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())); const dow = x.getUTCDay(); x.setUTCDate(x.getUTCDate() - (dow === 0 ? 6 : dow - 1)); return dateUTC(x); }
 function b64url(v) { return Buffer.from(v).toString('base64url'); }
@@ -317,11 +330,11 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.3.43',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state and fleet-level mining totals only. No character-location scope and no per-character mining systems are stored.'},
+    app:{name:'JLR Miner Tracker',version:'2.3.44',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state and fleet-level mining totals only. No character-location scope and no per-character mining systems are stored.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[]},
     fields:state.fields,
     market:{lastUpdatedAt:state.market.lastUpdatedAt,lastError:state.market.lastError,privateLastError:state.market.privateLastError||null,refreshing:marketRefreshInProgress,valuation:'MAX REFINE',maxRefineYield:MAX_REFINE_YIELD,jita:'Jita IV - Moon 4 - Caldari Navy Assembly Plant',local:CN_SYSTEM_NAME,titanBridgeRangeLy:TITAN_BRIDGE_RANGE_LY,history:marketHistoryPublic(),privateAccess:Boolean(state.market.refreshTokenEnc),marketCharacterName:state.market.characterName||null,structureName:state.market.structureName||null},
-    esi:{configured:Boolean(EVE_CLIENT_ID),linkedCharacters:Object.keys(state.characters).length,lastSyncAt:state.esi.lastSyncAt,lastError:state.esi.lastError,syncing:syncInProgress,actual:{today:todayActual,week:weekActual}},
+    esi:{configured:Boolean(EVE_CLIENT_ID),linkedCharacters:Object.keys(state.characters).length,lastSyncAt:state.esi.lastSyncAt,lastError:state.esi.lastError,syncing:syncInProgress||manualSyncCount>0,actual:{today:todayActual,week:weekActual}},
     serverNow:now(),
   };
 }
@@ -464,20 +477,48 @@ async function handleCallback(req,res,url) {
       assetsUpdatedAt:old?.assetsUpdatedAt||null,
     };
     if(!user.characterIds.includes(charId))user.characterIds.push(charId); user.lastLoginAt=now(); if(!user.primaryCharacterId)user.primaryCharacterId=charId;
-    await save(); setSessionCookie(res,user.id,req); setTimeout(()=>syncAll().catch(console.error),250); return redirect(res,pending.intent==='link'?'/?linked=1':'/?login=1');
+    await save();setSessionCookie(res,user.id,req);setTimeout(()=>syncUserCharacters(user,[charId]).catch(console.error),250);return redirect(res,pending.intent==='link'?'/?linked=1':'/?login=1');
   }catch(err){console.error('SSO callback',err);return redirect(res,`/?error=${encodeURIComponent(String(err.message||err).slice(0,120))}`)}
 }
 
+async function esiRequest(url,options={}) {
+  for(let attempt=0;attempt<=ESI_MAX_RETRIES;attempt++){
+    let r;
+    try{
+      r=await fetch(url,options);
+    }catch(err){
+      if(attempt>=ESI_MAX_RETRIES)throw err;
+      await sleep(Math.min(8_000,500*(2**attempt))+Math.floor(Math.random()*250));
+      continue;
+    }
+    if(r.status===429){
+      const retrySeconds=clamp(r.headers.get('retry-after'),1,15*60,5);
+      if(attempt>=ESI_MAX_RETRIES)throw new Error(`ESI 429: rate limited; retry after ${retrySeconds}s`);
+      await sleep(retrySeconds*1000+Math.floor(Math.random()*250));
+      continue;
+    }
+    if([502,503,504].includes(r.status)&&attempt<ESI_MAX_RETRIES){
+      await sleep(Math.min(8_000,500*(2**attempt))+Math.floor(Math.random()*250));
+      continue;
+    }
+    if(!r.ok){
+      const group=r.headers.get('x-ratelimit-group');
+      const remaining=r.headers.get('x-ratelimit-remaining');
+      const suffix=group?` [${group}${remaining!==null?`, ${remaining} tokens remaining`:''}]`:'';
+      throw new Error(`ESI ${r.status}${suffix}: ${(await r.text().catch(()=>'' )).slice(0,160)}`);
+    }
+    return{data:await r.json(),headers:r.headers};
+  }
+  throw new Error('ESI request failed after retries');
+}
 async function esiGet(url,access=null) {
   const headers={'Accept':'application/json','User-Agent':ESI_USER_AGENT,'X-Compatibility-Date':ESI_COMPAT_DATE}; if(access)headers.Authorization=`Bearer ${access}`;
-  const r=await fetch(url,{headers}); if(!r.ok)throw new Error(`ESI ${r.status}: ${(await r.text().catch(()=>'' )).slice(0,160)}`); return{data:await r.json(),headers:r.headers};
+  return esiRequest(url,{headers});
 }
 async function esiPost(url,body,access=null) {
   const headers={'Accept':'application/json','Content-Type':'application/json','User-Agent':ESI_USER_AGENT,'X-Compatibility-Date':ESI_COMPAT_DATE};
   if(access)headers.Authorization=`Bearer ${access}`;
-  const r=await fetch(url,{method:'POST',headers,body:JSON.stringify(body)});
-  if(!r.ok)throw new Error(`ESI ${r.status}: ${(await r.text().catch(()=>'' )).slice(0,160)}`);
-  return{data:await r.json(),headers:r.headers};
+  return esiRequest(url,{method:'POST',headers,body:JSON.stringify(body)});
 }
 async function resolveUniverseIds(names) {
   const {data}=await esiPost('https://esi.evetech.net/latest/universe/ids/?datasource=tranquility',names);
@@ -986,14 +1027,19 @@ async function characterAssets(characterId,access) {
 async function dogmaAttributeName(attributeId) {
   const key=String(attributeId);
   if(dogmaAttributeCache.has(key))return dogmaAttributeCache.get(key);
-  try{
-    const {data}=await esiGet(`https://esi.evetech.net/latest/dogma/attributes/${attributeId}/?datasource=tranquility`);
-    const name=String(data.name||data.display_name||`attribute_${attributeId}`);
-    dogmaAttributeCache.set(key,name);
-    return name;
-  }catch{
-    const name=`attribute_${attributeId}`;dogmaAttributeCache.set(key,name);return name;
-  }
+  if(dogmaAttributePromises.has(key))return dogmaAttributePromises.get(key);
+  const pending=(async()=>{
+    try{
+      const {data}=await esiGet(`https://esi.evetech.net/latest/dogma/attributes/${attributeId}/?datasource=tranquility`);
+      const name=String(data.name||data.display_name||`attribute_${attributeId}`);
+      dogmaAttributeCache.set(key,name);
+      return name;
+    }catch{
+      const name=`attribute_${attributeId}`;dogmaAttributeCache.set(key,name);return name;
+    }finally{dogmaAttributePromises.delete(key)}
+  })();
+  dogmaAttributePromises.set(key,pending);
+  return pending;
 }
 async function dynamicDogmaItem(typeId,itemId) {
   return (await esiGet(`https://esi.evetech.net/latest/dogma/dynamic/items/${typeId}/${itemId}/?datasource=tranquility`)).data;
@@ -1095,8 +1141,32 @@ async function miningFittingSnapshot(fittings=[],abyssalModules=[]) {
     };
   });
 }
-async function ensureType(ids) { for(const id of [...new Set(ids.map(String))]) if(!state.esi.typeCache[id]){const {data}=await esiGet(`https://esi.evetech.net/latest/universe/types/${id}/?datasource=tranquility`);state.esi.typeCache[id]={name:data.name||`Type ${id}`,volume:Number(data.volume||0)}} }
-async function ensureSystem(ids) { for(const id of [...new Set(ids.map(String))]) if(!state.esi.systemCache[id]){const {data}=await esiGet(`https://esi.evetech.net/latest/universe/systems/${id}/?datasource=tranquility`);state.esi.systemCache[id]={name:data.name||`System ${id}`}} }
+async function ensureType(ids) {
+  for(const id of [...new Set(ids.map(String))]){
+    if(state.esi.typeCache[id])continue;
+    let pending=typeLookupPromises.get(id);
+    if(!pending){
+      pending=esiGet(`https://esi.evetech.net/latest/universe/types/${id}/?datasource=tranquility`)
+        .then(({data})=>{state.esi.typeCache[id]={name:data.name||`Type ${id}`,volume:Number(data.volume||0)}})
+        .finally(()=>typeLookupPromises.delete(id));
+      typeLookupPromises.set(id,pending);
+    }
+    await pending;
+  }
+}
+async function ensureSystem(ids) {
+  for(const id of [...new Set(ids.map(String))]){
+    if(state.esi.systemCache[id])continue;
+    let pending=systemLookupPromises.get(id);
+    if(!pending){
+      pending=esiGet(`https://esi.evetech.net/latest/universe/systems/${id}/?datasource=tranquility`)
+        .then(({data})=>{state.esi.systemCache[id]={name:data.name||`System ${id}`}})
+        .finally(()=>systemLookupPromises.delete(id));
+      systemLookupPromises.set(id,pending);
+    }
+    await pending;
+  }
+}
 function updateLedgerActivity(characterId,totalM3,sampleAt=now()) {
   const key=String(characterId);
   const day=dateUTC(new Date(sampleAt));
@@ -1127,9 +1197,9 @@ function updateLedgerActivity(characterId,totalM3,sampleAt=now()) {
   const rawDelta=total-lastTotal;
   const delta=rawDelta>0?rawDelta:0;
   const elapsed=Math.max(0,(Date.parse(sampleAt)-Date.parse(prev.lastSampleAt||sampleAt))/1000);
-  // Normal ESI polling is every ~10 minutes. Cap a stale gap so downtime is not
+  // Normal ESI polling is every ~15 minutes. Cap a stale gap so downtime is not
   // mistaken for hours of continuous mining.
-  const activeInterval=delta>0&&elapsed>0?Math.min(elapsed,20*60):0;
+  const activeInterval=delta>0&&elapsed>0?Math.min(elapsed,30*60):0;
 
   prev.lastTotalM3=total;
   prev.lastSampleAt=sampleAt;
@@ -1149,55 +1219,148 @@ function updateLedgerActivity(characterId,totalM3,sampleAt=now()) {
   return prev;
 }
 
-async function syncAll() {
-  if(syncInProgress||!EVE_CLIENT_ID)return; const entries=Object.values(state.characters); if(!entries.length)return; syncInProgress=true;state.esi.lastError=null;broadcast();
+function timestampStale(value,maxAgeMs){
+  const parsed=Date.parse(value||'');
+  return !Number.isFinite(parsed)||Date.now()-parsed>=maxAgeMs;
+}
+
+async function syncCharacterOnce(ch,{forceMetadata=false}={}){
   try{
-    const ledgers=[];
-    for(const ch of entries){
-      try{
-        const tokens=await refreshToken(decrypt(ch.refreshTokenEnc));
-        const id=await verifyJwt(tokens.access_token,true);
-        if(String(id.characterId)!==String(ch.characterId))throw new Error('Refresh token changed character');
-        if(tokens.refresh_token)ch.refreshTokenEnc=encrypt(tokens.refresh_token);
-        ch.scopes=id.scopes;
-        const rows=await miningLedger(ch.characterId,tokens.access_token);
-        if(id.scopes.includes(SKILLS_SCOPE)){
-          const skills=await characterSkills(ch.characterId,tokens.access_token);
-          ch.skills=skillSnapshot(skills); ch.skillsUpdatedAt=now();
-        }
-        let abyssalModules=[];
-        if(id.scopes.includes(ASSETS_SCOPE)){
-          const assets=await characterAssets(ch.characterId,tokens.access_token);
-          abyssalModules=await abyssalStripSnapshot(assets);
-          ch.abyssalStripCount=abyssalModules.length;
-          ch.assetsUpdatedAt=now();
-        }
-        if(id.scopes.includes(FITTINGS_SCOPE)){
-          const fits=await characterFittings(ch.characterId,tokens.access_token);
-          ch.savedFittingsCount=Array.isArray(fits)?fits.length:0;
-          ch.fittings=await miningFittingSnapshot(fits,abyssalModules);
-          ch.fittingsUpdatedAt=now();
-        }
-        ch.lastSyncAt=now();ch.lastError=null;ledgers.push({characterId:String(ch.characterId),rows});
-      }catch(err){ch.lastError=String(err.message||err);ledgers.push({characterId:String(ch.characterId),rows:[]})}
-    }
-    const rows=ledgers.flatMap(x=>x.rows); await ensureType(rows.map(r=>r.type_id)); await ensureSystem(rows.map(r=>r.solar_system_id));
-    const sampleAt=now();
-    const today=dateUTC(new Date(sampleAt));
-    for(const ledger of ledgers){
-      let totalM3=0;
-      for(const row of ledger.rows){
-        if(String(row.date)!==today)continue;
-        const type=state.esi.typeCache[String(row.type_id)]||{volume:0};
-        totalM3+=Number(row.quantity||0)*Number(type.volume||0);
-      }
-      updateLedgerActivity(ledger.characterId,totalM3,sampleAt);
+    const tokens=await refreshToken(decrypt(ch.refreshTokenEnc));
+    const id=await verifyJwt(tokens.access_token,true);
+    if(String(id.characterId)!==String(ch.characterId))throw new Error('Refresh token changed character');
+    if(tokens.refresh_token)ch.refreshTokenEnc=encrypt(tokens.refresh_token);
+    ch.scopes=id.scopes;
+
+    const rows=await miningLedger(ch.characterId,tokens.access_token);
+    let metadataRefreshed=false;
+    if(id.scopes.includes(SKILLS_SCOPE)&&(forceMetadata||timestampStale(ch.skillsUpdatedAt,ESI_METADATA_REFRESH_MS))){
+      const skills=await characterSkills(ch.characterId,tokens.access_token);
+      ch.skills=skillSnapshot(skills);ch.skillsUpdatedAt=now();metadataRefreshed=true;
     }
 
+    const fitBundleStale=forceMetadata||timestampStale(ch.assetsUpdatedAt,ESI_METADATA_REFRESH_MS)||timestampStale(ch.fittingsUpdatedAt,ESI_METADATA_REFRESH_MS);
+    if(fitBundleStale){
+      let abyssalModules=[];
+      if(id.scopes.includes(ASSETS_SCOPE)){
+        const assets=await characterAssets(ch.characterId,tokens.access_token);
+        abyssalModules=await abyssalStripSnapshot(assets);
+        ch.abyssalStripCount=abyssalModules.length;
+        ch.assetsUpdatedAt=now();
+      }
+      if(id.scopes.includes(FITTINGS_SCOPE)){
+        const fits=await characterFittings(ch.characterId,tokens.access_token);
+        ch.savedFittingsCount=Array.isArray(fits)?fits.length:0;
+        ch.fittings=await miningFittingSnapshot(fits,abyssalModules);
+        ch.fittingsUpdatedAt=now();
+      }
+      metadataRefreshed=true;
+    }
+    ch.lastSyncAt=now();ch.lastError=null;
+    return{characterId:String(ch.characterId),rows,ok:true,metadataRefreshed};
+  }catch(err){
+    ch.lastError=String(err.message||err);
+    return{characterId:String(ch.characterId),rows:[],ok:false,error:ch.lastError,metadataRefreshed:false};
+  }
+}
+
+async function syncCharacter(ch,options={}){
+  const key=String(ch.characterId);
+  const existing=characterSyncPromises.get(key);
+  if(existing){
+    const result=await existing;
+    if(options.forceMetadata&&!result.metadataRefreshed)return syncCharacter(ch,options);
+    return result;
+  }
+  const pending=syncCharacterOnce(ch,options).finally(()=>characterSyncPromises.delete(key));
+  characterSyncPromises.set(key,pending);
+  return pending;
+}
+
+async function syncCharacters(entries,{forceMetadata=false,startGapMs=100,concurrency=8}={}){
+  const results=[];
+  const active=new Set();
+  for(let index=0;index<entries.length;index++){
+    while(active.size>=concurrency)await Promise.race(active);
+    const pending=syncCharacter(entries[index],{forceMetadata})
+      .then(result=>results.push(result));
+    active.add(pending);
+    pending.then(()=>active.delete(pending),()=>active.delete(pending));
+    if(index<entries.length-1&&startGapMs>0)await sleep(startGapMs);
+  }
+  await Promise.all(active);
+  return results;
+}
+
+async function applyLedgerResults(results,{fullCycle=false}={}){
+  const successful=results.filter(result=>result.ok);
+  const freshRows=successful.flatMap(result=>result.rows);
+  await ensureType(freshRows.map(row=>row.type_id));
+  await ensureSystem(freshRows.map(row=>row.solar_system_id));
+
+  const sampleAt=now();
+  const today=dateUTC(new Date(sampleAt));
+  for(const ledger of successful){
+    ledgerRowsByCharacter.set(String(ledger.characterId),ledger.rows);
+    let totalM3=0;
+    for(const row of ledger.rows){
+      if(String(row.date)!==today)continue;
+      const type=state.esi.typeCache[String(row.type_id)]||{volume:0};
+      totalM3+=Number(row.quantity||0)*Number(type.volume||0);
+    }
+    updateLedgerActivity(ledger.characterId,totalM3,sampleAt);
+  }
+
+  const connectedIds=new Set(Object.keys(state.characters));
+  for(const id of ledgerRowsByCharacter.keys())if(!connectedIds.has(id))ledgerRowsByCharacter.delete(id);
+  const cacheComplete=[...connectedIds].every(id=>ledgerRowsByCharacter.has(id));
+  if(fullCycle||cacheComplete){
     const daily=new Map();
-    for(const row of rows){const type=state.esi.typeCache[String(row.type_id)]||{volume:0};const sys=state.esi.systemCache[String(row.solar_system_id)]||{name:''};const m3=Number(row.quantity||0)*Number(type.volume||0);let jbv=0;const def=SYSTEM_MAP.get(sys.name);if(def)jbv=m3*effectiveJbvPerM3(def.ore);const key=String(row.date);const x=daily.get(key)||{date:key,m3:0,jbv:0};x.m3+=m3;x.jbv+=jbv;daily.set(key,x)}
-    state.esi.dailyFleet=[...daily.values()].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,90);state.esi.lastSyncAt=now();await save();
-  }catch(err){state.esi.lastError=String(err.message||err);await save()}finally{syncInProgress=false;broadcast()}
+    for(const rows of ledgerRowsByCharacter.values())for(const row of rows){
+      const type=state.esi.typeCache[String(row.type_id)]||{volume:0};
+      const sys=state.esi.systemCache[String(row.solar_system_id)]||{name:''};
+      const m3=Number(row.quantity||0)*Number(type.volume||0);
+      let jbv=0;const def=SYSTEM_MAP.get(sys.name);if(def)jbv=m3*effectiveJbvPerM3(def.ore);
+      const key=String(row.date);const value=daily.get(key)||{date:key,m3:0,jbv:0};
+      value.m3+=m3;value.jbv+=jbv;daily.set(key,value);
+    }
+    state.esi.dailyFleet=[...daily.values()].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,90);
+  }
+  if(successful.length)state.esi.lastSyncAt=sampleAt;
+  const failed=results.length-successful.length;
+  state.esi.lastError=failed?`${failed} of ${results.length} character refreshes failed.`:null;
+}
+
+async function syncAll(){
+  if(syncInProgress||!EVE_CLIENT_ID)return;
+  const entries=Object.values(state.characters);if(!entries.length)return;
+  syncInProgress=true;state.esi.lastError=null;broadcast();
+  try{
+    const startGapMs=clamp(Math.floor(ESI_AUTO_SPREAD_MS/entries.length),100,1000,350);
+    const results=await syncCharacters(entries,{forceMetadata:false,startGapMs,concurrency:ESI_MAX_CHARACTER_CONCURRENCY});
+    await applyLedgerResults(results,{fullCycle:true});
+    await save();
+  }catch(err){state.esi.lastError=String(err.message||err);await save()}
+  finally{syncInProgress=false;broadcast()}
+}
+
+function syncUserCharacters(user,characterIds=user.characterIds){
+  if(!EVE_CLIENT_ID)return Promise.resolve();
+  const key=String(user.id);
+  if(userSyncPromises.has(key))return userSyncPromises.get(key);
+  const pending=(async()=>{
+    const allowed=new Set(user.characterIds.map(String));
+    const entries=characterIds.map(String).filter(id=>allowed.has(id)).map(id=>state.characters[id]).filter(Boolean);if(!entries.length)return;
+    manualSyncCount++;broadcast();
+    try{
+      const results=await syncCharacters(entries,{forceMetadata:true,startGapMs:100,concurrency:8});
+      await applyLedgerResults(results);
+      await save();
+    }catch(err){state.esi.lastError=String(err.message||err);await save()}
+    finally{manualSyncCount=Math.max(0,manualSyncCount-1);broadcast()}
+  })().finally(()=>userSyncPromises.delete(key));
+  userSyncPromises.set(key,pending);
+  return pending;
 }
 
 function myProfile(user) {
@@ -1254,7 +1417,7 @@ async function serveStatic(req,res,pathname) {
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.43',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.44',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){const u=readSession(req);return json(res,200,{authenticated:Boolean(u),user:u?myProfile(u):null})}
   const user=requireUser(req,res);if(!user)return;
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
@@ -1266,7 +1429,7 @@ async function routeApi(req,res,url) {
   if(nm&&req.method==='POST'){const system=decodeURIComponent(nm[1]);const f=state.fields[system];if(!f)return json(res,404,{error:'UNKNOWN_SYSTEM'});const body=await readBody(req);const note=String(body.text||'').trim();if(!note||note.length>240)return json(res,400,{error:'BAD_NOTE',message:'Enter a note of 1 to 240 characters.'});f.notes.push({id:randomId(8),text:note,createdAt:now()});await save();broadcast();return json(res,201,{ok:true,field:f})}
   const cm=url.pathname.match(/^\/api\/fields\/([^/]+)\/cherry$/);
   if(cm&&req.method==='POST'){const system=decodeURIComponent(cm[1]);const f=state.fields[system];if(!f)return json(res,404,{error:'UNKNOWN_SYSTEM'});f.cherryPicked=true;f.updatedAt=now();await save();broadcast();return json(res,200,{ok:true,field:f})}
-  if(req.method==='POST'&&url.pathname==='/api/esi/sync'){syncAll().catch(console.error);return json(res,202,{ok:true})}
+  if(req.method==='POST'&&url.pathname==='/api/esi/sync'){syncUserCharacters(user).catch(console.error);return json(res,202,{ok:true,queuedCharacters:user.characterIds.length})}
   if(req.method==='DELETE'&&url.pathname.startsWith('/api/me/characters/')){const id=url.pathname.split('/').pop();if(!user.characterIds.includes(id))return json(res,404,{error:'NOT_LINKED'});if(user.characterIds.length<=1)return json(res,409,{error:'LAST_LOGIN_TOON',message:'Add another toon before disconnecting your last EVE login character.'});delete state.characters[id];user.characterIds=user.characterIds.filter(x=>x!==id);if(String(state.market.characterId||'')===String(id)){state.market.characterId=null;state.market.characterName=null;state.market.refreshTokenEnc=null;state.market.scopes=[];state.market.authorizedAt=null;state.market.structureId=null;state.market.structureName=null;}if(user.primaryCharacterId===id){user.primaryCharacterId=user.characterIds[0];const next=state.characters[user.primaryCharacterId];if(next)user.displayName=next.name;}await save();broadcast();return json(res,200,{ok:true,user:myProfile(user)})}
   return json(res,404,{error:'NOT_FOUND'});
 }
@@ -1282,8 +1445,13 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
 server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.2 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setInterval(()=>resetExpired(true),15_000).unref();
-setInterval(()=>syncAll().catch(console.error),10*60_000).unref();
-setTimeout(()=>syncAll().catch(console.error),5_000).unref();
+async function runAutomaticSyncLoop(){
+  const startedAt=Date.now();
+  await syncAll().catch(console.error);
+  const elapsed=Date.now()-startedAt;
+  setTimeout(runAutomaticSyncLoop,Math.max(30_000,ESI_AUTO_REFRESH_MS-elapsed)).unref();
+}
+setTimeout(runAutomaticSyncLoop,5_000).unref();
 setInterval(()=>refreshMarketPrices().catch(console.error),60*60_000).unref();
 setTimeout(()=>refreshMarketPrices().catch(console.error),2_000).unref();
 setInterval(()=>refreshFieldDistances().catch(console.error),24*60*60_000).unref();

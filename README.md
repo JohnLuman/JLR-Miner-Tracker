@@ -54,6 +54,18 @@ During an ESI sync, the server temporarily reads the mining ledger's system and 
 
 Actuals on the dashboard come from EVE mining-ledger API data. Projected values come from the user's local fleet calculator.
 
+### ESI refresh scheduling
+
+- Mining ledgers refresh on a rolling 15-minute cycle.
+- Character refresh starts are staggered across most of that window instead of being sent as one burst.
+- Skills, fittings, and assets refresh at most every six hours during automatic syncs because they change far less often than the mining ledger.
+- **Sync EVE Data** refreshes only the signed-in user's linked toons and forces their skills, fittings, and assets to update.
+- Duplicate refreshes for the same user or character share the in-progress request instead of consuming ESI calls twice.
+- ESI `429` responses honor `Retry-After`; temporary gateway failures use bounded exponential backoff.
+- Shared type, system, and Dogma lookups are cached and concurrent duplicate lookups are collapsed.
+
+ESI's authenticated rate-limit buckets are assigned per application-and-character pair. The scheduler still keeps total server traffic smooth so a large linked fleet does not create a synchronized burst.
+
 ### Skill / fitting / boost calculator
 
 The v2.2 expanded view adds a calculator that mirrors the supplied workbook's **Yield Calc** sheet:
