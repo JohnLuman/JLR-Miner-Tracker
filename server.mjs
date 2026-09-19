@@ -165,9 +165,10 @@ function freshState() {
     characters: {},
     fields: Object.fromEntries(SYSTEM_DEFS.map((d) => [d.system, {
       status: 'ready', cherryPicked: false, timerEndsAt: null, notes: [], updatedAt: null,
+      autoReopenedAt: null, autoReopenReason: null, autoReopenM3: null,
     }])),
     esi: {
-      typeCache: {}, systemCache: {}, dailyFleet: [], ledgerActivity: {}, lastSyncAt: null, lastError: null,
+      typeCache: {}, systemCache: {}, dailyFleet: [], ledgerActivity: {}, ledgerFieldSnapshots: {}, lastSyncAt: null, lastError: null,
     },
     market: {
       prices: {}, minerals: {}, icePrices: {}, iceProducts: {}, iceFields: [], t3Distances: {}, history: { ore:{}, ice:{} }, lastUpdatedAt: null, lastError: null,
@@ -191,7 +192,7 @@ async function loadState() {
       delete field.note;
     }
     parsed.esi = { ...base.esi, ...(parsed.esi || {}) };
-    parsed.esi.typeCache ||= {}; parsed.esi.systemCache ||= {}; parsed.esi.dailyFleet ||= []; parsed.esi.ledgerActivity ||= {};
+    parsed.esi.typeCache ||= {}; parsed.esi.systemCache ||= {}; parsed.esi.dailyFleet ||= []; parsed.esi.ledgerActivity ||= {}; parsed.esi.ledgerFieldSnapshots ||= {};
     parsed.market = { ...base.market, ...(parsed.market || {}) };
     parsed.market.prices ||= {};
     parsed.market.minerals ||= {};
@@ -290,7 +291,8 @@ function resetExpired(broadcastIt=true) {
   let changed=false; const t=Date.now();
   for (const [system,f] of Object.entries(state.fields)) {
     if (f.status==='cleared' && f.timerEndsAt && Date.parse(f.timerEndsAt)<=t) {
-      f.status='ready'; f.cherryPicked=false; f.timerEndsAt=null; f.notes=[]; f.updatedAt=now(); changed=true;
+      f.status='ready'; f.cherryPicked=false; f.timerEndsAt=null; f.notes=[]; f.updatedAt=now();
+      f.autoReopenedAt=null; f.autoReopenReason=null; f.autoReopenM3=null; changed=true;
     }
   }
   if (changed) { save(); if (broadcastIt) broadcast(); }
@@ -333,7 +335,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.3.45',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state and fleet-level mining totals only. Character location is read only when importing a Probe Scanner copy and is not stored or shared.'},
+    app:{name:'JLR Miner Tracker',version:'2.3.53',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state and fleet-level mining totals only. Character location is read only when importing a Probe Scanner copy and is not stored or shared.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[]},
     fields:state.fields,
     market:{lastUpdatedAt:state.market.lastUpdatedAt,lastError:state.market.lastError,privateLastError:state.market.privateLastError||null,refreshing:marketRefreshInProgress,valuation:'MAX REFINE',maxRefineYield:MAX_REFINE_YIELD,jita:'Jita IV - Moon 4 - Caldari Navy Assembly Plant',local:CN_SYSTEM_NAME,titanBridgeRangeLy:TITAN_BRIDGE_RANGE_LY,history:marketHistoryPublic(),privateAccess:Boolean(state.market.refreshTokenEnc),marketCharacterName:state.market.characterName||null,structureName:state.market.structureName||null},
@@ -1226,6 +1228,67 @@ function updateLedgerActivity(characterId,totalM3,sampleAt=now()) {
   return prev;
 }
 
+function trackedOreMatches(definitionOre,typeName){
+  const expected=String(ORE_TYPE_NAME[definitionOre]||definitionOre||'').trim().toLowerCase();
+  const actual=String(typeName||'').trim().toLowerCase();
+  return Boolean(expected&&actual&&(actual===expected||actual.includes(expected)));
+}
+
+function trackedFieldLedgerTotals(rows,day){
+  const totals={};
+  for(const row of rows||[]){
+    if(String(row.date)!==day)continue;
+    const system=state.esi.systemCache[String(row.solar_system_id)]?.name||'';
+    const definition=SYSTEM_MAP.get(system);
+    if(!definition)continue;
+    const type=state.esi.typeCache[String(row.type_id)]||{};
+    if(!trackedOreMatches(definition.ore,type.name))continue;
+    const m3=Math.max(0,Number(row.quantity||0)*Number(type.volume||0));
+    if(m3>0)totals[system]=(Number(totals[system])||0)+m3;
+  }
+  return totals;
+}
+
+function updateFieldLedgerActivity(characterId,rows,sampleAt=now()){
+  state.esi.ledgerFieldSnapshots ||= {};
+  const key=String(characterId);
+  const day=dateUTC(new Date(sampleAt));
+  const totals=trackedFieldLedgerTotals(rows,day);
+  const prev=state.esi.ledgerFieldSnapshots[key];
+  if(!prev||prev.date!==day||!prev.totals||typeof prev.totals!=='object'){
+    state.esi.ledgerFieldSnapshots[key]={date:day,lastSampleAt:sampleAt,totals};
+    return [];
+  }
+
+  const previousSampleAt=prev.lastSampleAt;
+  const previousSampleMs=Date.parse(previousSampleAt||'');
+  const reopened=[];
+  for(const [system,total] of Object.entries(totals)){
+    const previous=Math.max(0,Number(prev.totals?.[system])||0);
+    const delta=Math.max(0,Number(total||0)-previous);
+    if(delta<=0)continue;
+    const field=state.fields[system];
+    if(!field||field.status!=='cleared')continue;
+
+    // The ledger is daily/cumulative, not timestamped per mining cycle. Only
+    // override RED when it was already RED at the previous sample, proving this
+    // increase happened after the timer was started rather than before it.
+    const clearedAt=Date.parse(field.updatedAt||'');
+    if(!Number.isFinite(clearedAt)||!Number.isFinite(previousSampleMs)||clearedAt>previousSampleMs)continue;
+
+    field.status='picked';
+    field.timerEndsAt=null;
+    field.updatedAt=sampleAt;
+    field.autoReopenedAt=sampleAt;
+    field.autoReopenReason='esi-ledger-mining';
+    field.autoReopenM3=delta;
+    reopened.push(system);
+  }
+
+  state.esi.ledgerFieldSnapshots[key]={date:day,lastSampleAt:sampleAt,totals};
+  return reopened;
+}
+
 function timestampStale(value,maxAgeMs){
   const parsed=Date.parse(value||'');
   return !Number.isFinite(parsed)||Date.now()-parsed>=maxAgeMs;
@@ -1353,6 +1416,8 @@ async function applyLedgerResults(results,{fullCycle=false}={}){
       totalM3+=Number(row.quantity||0)*Number(type.volume||0);
     }
     updateLedgerActivity(ledger.characterId,totalM3,sampleAt);
+    const reopened=updateFieldLedgerActivity(ledger.characterId,ledger.rows,sampleAt);
+    if(reopened.length)console.log('ESI mining reopened RED fields as YELLOW:',reopened.join(', '));
   }
 
   const connectedIds=new Set(Object.keys(state.characters));
@@ -1462,7 +1527,7 @@ async function serveStatic(req,res,pathname) {
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.45',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.53',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){const u=readSession(req);return json(res,200,{authenticated:Boolean(u),user:u?myProfile(u):null})}
   const user=requireUser(req,res);if(!user)return;
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
@@ -1488,13 +1553,13 @@ async function routeApi(req,res,url) {
     }
   }
   const fm=url.pathname.match(/^\/api\/fields\/([^/]+)$/);
-  if(fm&&req.method==='PUT'){const system=decodeURIComponent(fm[1]);const f=state.fields[system];if(!f)return json(res,404,{error:'UNKNOWN_SYSTEM'});const body=await readBody(req);const status=String(body.status||'');if(!['ready','picked','cleared'].includes(status))return json(res,400,{error:'BAD_STATUS'});if(f.status==='cleared'&&f.timerEndsAt&&Date.parse(f.timerEndsAt)>Date.now())return json(res,409,{error:'TIMER_ACTIVE',message:'The 10-hour timer is already running and cannot be restarted or changed.'});if(status==='cleared'&&body.confirm!==true)return json(res,409,{error:'CONFIRM_REQUIRED'});f.status=status;f.updatedAt=now();f.timerEndsAt=status==='cleared'?new Date(Date.now()+TEN_HOURS).toISOString():null;await save();broadcast();return json(res,200,{ok:true,field:f})}
+  if(fm&&req.method==='PUT'){const system=decodeURIComponent(fm[1]);const f=state.fields[system];if(!f)return json(res,404,{error:'UNKNOWN_SYSTEM'});const body=await readBody(req);const status=String(body.status||'');if(!['ready','picked','cleared'].includes(status))return json(res,400,{error:'BAD_STATUS'});if(f.status==='cleared'&&f.timerEndsAt&&Date.parse(f.timerEndsAt)>Date.now())return json(res,409,{error:'TIMER_ACTIVE',message:'The 10-hour timer is already running and cannot be restarted or changed.'});if(status==='cleared'&&body.confirm!==true)return json(res,409,{error:'CONFIRM_REQUIRED'});f.status=status;f.updatedAt=now();f.timerEndsAt=status==='cleared'?new Date(Date.now()+TEN_HOURS).toISOString():null;f.autoReopenedAt=null;f.autoReopenReason=null;f.autoReopenM3=null;await save();broadcast();return json(res,200,{ok:true,field:f})}
   const nm=url.pathname.match(/^\/api\/fields\/([^/]+)\/notes$/);
   if(nm&&req.method==='POST'){const system=decodeURIComponent(nm[1]);const f=state.fields[system];if(!f)return json(res,404,{error:'UNKNOWN_SYSTEM'});const body=await readBody(req);const note=String(body.text||'').trim();if(!note||note.length>240)return json(res,400,{error:'BAD_NOTE',message:'Enter a note of 1 to 240 characters.'});f.notes.push({id:randomId(8),text:note,createdAt:now()});await save();broadcast();return json(res,201,{ok:true,field:f})}
   const cm=url.pathname.match(/^\/api\/fields\/([^/]+)\/cherry$/);
   if(cm&&req.method==='POST'){const system=decodeURIComponent(cm[1]);const f=state.fields[system];if(!f)return json(res,404,{error:'UNKNOWN_SYSTEM'});f.cherryPicked=true;f.updatedAt=now();await save();broadcast();return json(res,200,{ok:true,field:f})}
   if(req.method==='POST'&&url.pathname==='/api/esi/sync'){syncUserCharacters(user).catch(console.error);return json(res,202,{ok:true,queuedCharacters:user.characterIds.length})}
-  if(req.method==='DELETE'&&url.pathname.startsWith('/api/me/characters/')){const id=url.pathname.split('/').pop();if(!user.characterIds.includes(id))return json(res,404,{error:'NOT_LINKED'});if(user.characterIds.length<=1)return json(res,409,{error:'LAST_LOGIN_TOON',message:'Add another toon before disconnecting your last EVE login character.'});delete state.characters[id];user.characterIds=user.characterIds.filter(x=>x!==id);if(String(state.market.characterId||'')===String(id)){state.market.characterId=null;state.market.characterName=null;state.market.refreshTokenEnc=null;state.market.scopes=[];state.market.authorizedAt=null;state.market.structureId=null;state.market.structureName=null;}if(user.primaryCharacterId===id){user.primaryCharacterId=user.characterIds[0];const next=state.characters[user.primaryCharacterId];if(next)user.displayName=next.name;}await save();broadcast();return json(res,200,{ok:true,user:myProfile(user)})}
+  if(req.method==='DELETE'&&url.pathname.startsWith('/api/me/characters/')){const id=url.pathname.split('/').pop();if(!user.characterIds.includes(id))return json(res,404,{error:'NOT_LINKED'});if(user.characterIds.length<=1)return json(res,409,{error:'LAST_LOGIN_TOON',message:'Add another toon before disconnecting your last EVE login character.'});delete state.characters[id];if(state.esi.ledgerFieldSnapshots)delete state.esi.ledgerFieldSnapshots[id];user.characterIds=user.characterIds.filter(x=>x!==id);if(String(state.market.characterId||'')===String(id)){state.market.characterId=null;state.market.characterName=null;state.market.refreshTokenEnc=null;state.market.scopes=[];state.market.authorizedAt=null;state.market.structureId=null;state.market.structureName=null;}if(user.primaryCharacterId===id){user.primaryCharacterId=user.characterIds[0];const next=state.characters[user.primaryCharacterId];if(next)user.displayName=next.name;}await save();broadcast();return json(res,200,{ok:true,user:myProfile(user)})}
   return json(res,404,{error:'NOT_FOUND'});
 }
 
