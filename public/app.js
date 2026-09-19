@@ -17,6 +17,8 @@
   let eventSource = null;
   let scanCharacterId = localStorage.getItem('jlrScanCharacter') || '';
   let scanBusy = false;
+  let merIntel = null;
+  let merIntelError = '';
 
   const DEFAULT_FLEET = { members:{}, uptime:100, payout:95 };
   function loadFleet() {
@@ -530,7 +532,7 @@
   function showApp(){$('loginView').classList.add('hidden');$('app').classList.remove('hidden');}
   let activeTab=localStorage.getItem('jlrTab')||'fields';
   function applyTab(tab){
-    const valid=['fields','fleet','ice','toons'];
+    const valid=['fields','fleet','ice','mer','toons'];
     activeTab=valid.includes(tab)?tab:'fields';
     localStorage.setItem('jlrTab',activeTab);
     document.querySelectorAll('.app-tab').forEach(button=>button.classList.toggle('active',button.dataset.tab===activeTab));
@@ -551,6 +553,8 @@
     const fields=makePanel('fields');
     const fleet=makePanel('fleet');
     const ice=makePanel('ice');
+    const mer=makePanel('mer');
+    mer.id='merIntelPanel';
     const toons=makePanel('toons');
 
     const quick=document.querySelector('.quick-update');
@@ -584,6 +588,124 @@
     document.querySelectorAll('.app-tab').forEach(button=>button.addEventListener('click',()=>applyTab(button.dataset.tab)));
     applyTab(activeTab);
   }
+
+  function merPct(value){return `${(Number(value||0)*100).toFixed(1)}%`}
+  function merRank(row){return row&&row.rank?`#${row.rank} / ${row.of}`:'—'}
+  function renderMerIntel(){
+    const host=$('merIntelPanel');
+    if(!host)return;
+    if(merIntelError){
+      host.innerHTML=`<section class="glass mer-error"><strong>MER INTEL UNAVAILABLE</strong><span>${esc(merIntelError)}</span></section>`;
+      return;
+    }
+    if(!merIntel){
+      host.innerHTML='<section class="glass mer-loading">Loading Fountain + INIT MER data…</section>';
+      return;
+    }
+    const m=merIntel;
+    const econ=m.fountain?.economic||{};
+    const mining=Object.values(m.fountain?.mining||{});
+    const init=m.init?.fountain||{};
+    const global=m.init?.global||{};
+    const hotspots=(m.init?.fountainHotspots||[]).slice(0,8);
+    const econCards=[
+      econ.mined_value,econ.produced_value,econ.trade_value,econ.npc_bounties,econ.destroyed_value,econ.loyalty_points
+    ].filter(Boolean).map(row=>`
+      <article class="mer-kpi">
+        <span>${esc(row.label)}</span>
+        <strong>${fmt(row.value)}</strong>
+        <small>${merRank(row)} among MER regions / locations</small>
+      </article>`).join('');
+    const miningRows=mining.map(row=>`
+      <div class="mer-mining-row">
+        <div><span>${esc(row.label)} mined</span><strong>${fmt(row.minedM3,'m3')} m³</strong></div>
+        <div><span>Regional rank</span><strong>${merRank(row)}</strong></div>
+        <div><span>Waste</span><strong>${merPct(row.wasteRate)}</strong></div>
+      </div>`).join('');
+    const hotspotRows=hotspots.map((row,index)=>`
+      <tr>
+        <td><strong>${index+1}</strong></td>
+        <td><strong>${esc(row.system)}</strong></td>
+        <td>${fmt(row.initKillRecords)}</td>
+        <td>${fmt(row.initLossRecords)}</td>
+        <td>${fmt(row.ccpDestroyed)} ISK</td>
+      </tr>`).join('');
+    host.innerHTML=`
+      <div class="mer-shell">
+        <section class="glass mer-hero">
+          <div>
+            <span class="mer-eyebrow">MONTHLY ECONOMIC REPORT • ${esc(m.reportLabel||m.period)}</span>
+            <h2>FOUNTAIN + INIT INTEL</h2>
+            <p>Only the MER data that directly describes Fountain or identifies The Initiative. in the kill dump.</p>
+          </div>
+          <div class="mer-badges">
+            <span>FOUNTAIN</span>
+            <span>INIT. • ${esc(String(m.alliance?.allianceId||''))}</span>
+          </div>
+        </section>
+
+        <section class="glass mer-section">
+          <div class="mer-section-head"><strong>FOUNTAIN ECONOMY</strong><span>regional August totals</span></div>
+          <div class="mer-kpi-grid">${econCards}</div>
+        </section>
+
+        <div class="mer-two-col">
+          <section class="glass mer-section">
+            <div class="mer-section-head"><strong>FOUNTAIN MINING</strong><span>volume + waste + regional rank</span></div>
+            <div class="mer-mining-list">${miningRows}</div>
+            <div class="mer-moon-strip">
+              <div><span>METENOX MOON MATERIALS</span><strong>${fmt(m.fountain?.moonMaterials?.metenoxMining)}</strong><small>MER quantity</small></div>
+              <div><span>REFINERY MOON MATERIALS</span><strong>${fmt(m.fountain?.moonMaterials?.refineryMining)}</strong><small>MER quantity</small></div>
+            </div>
+          </section>
+
+          <section class="glass mer-section">
+            <div class="mer-section-head"><strong>INIT COMBAT • FOUNTAIN</strong><span>MER kill-dump slice</span></div>
+            <div class="mer-combat-grid">
+              <article><span>KILL RECORDS</span><strong>${fmt(init.killRecords)}</strong><small>${merPct(init.shareOfInitKillRecords)} of INIT kill records</small></article>
+              <article><span>LOSS RECORDS</span><strong>${fmt(init.lossRecords)}</strong><small>${merPct(init.shareOfInitLossRecords)} of INIT loss records</small></article>
+              <article><span>CCP VALUE DESTROYED</span><strong>${fmt(init.ccpDestroyed)}</strong><small>Fountain</small></article>
+              <article><span>CCP VALUE LOST</span><strong>${fmt(init.ccpLost)}</strong><small>Fountain</small></article>
+              <article><span>VALUE EFFICIENCY</span><strong>${merPct(init.ccpEfficiency)}</strong><small>destroyed / (destroyed + lost)</small></article>
+              <article><span>FOUNTAIN PRESENCE</span><strong>${merPct(init.shareOfFountainKillRecordsAsKiller)}</strong><small>of Fountain records list INIT as killer</small></article>
+            </div>
+            <div class="mer-global-line">
+              <span>INIT ALL-NEW-EDEN AUGUST</span>
+              <strong>${fmt(global.killRecords)} kill records • ${fmt(global.lossRecords)} losses • ${fmt(global.ccpDestroyed)} destroyed • ${fmt(global.ccpLost)} lost</strong>
+            </div>
+          </section>
+        </div>
+
+        <section class="glass mer-section">
+          <div class="mer-section-head"><strong>INIT • FOUNTAIN HOTSPOTS</strong><span>systems with the most INIT-involved MER records</span></div>
+          <div class="mer-table-wrap">
+            <table class="mer-table">
+              <thead><tr><th>#</th><th>SYSTEM</th><th>INIT KILL REC.</th><th>INIT LOSS REC.</th><th>CCP VALUE DESTROYED</th></tr></thead>
+              <tbody>${hotspotRows}</tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="mer-scope-note">
+          <strong>WHAT THIS TAB MEANS</strong>
+          <span>Fountain economy/mining totals are regional and are not attributed to INIT by the MER. INIT-specific numbers here come from alliance ID ${esc(String(m.alliance?.allianceId||''))} in the MER kill dump. A kill row contains one killer alliance, not every participant.</span>
+          <small>Source: ${esc(m.source||'EVE Online Monthly Economic Report')}</small>
+        </section>
+      </div>`;
+  }
+  async function loadMerIntel(){
+    merIntelError='';
+    try{
+      const response=await fetch('/mer-fountain-init.json',{cache:'no-cache'});
+      if(!response.ok)throw new Error(`MER data request failed (${response.status})`);
+      merIntel=await response.json();
+    }catch(error){
+      merIntel=null;
+      merIntelError=String(error?.message||error||'MER data could not be loaded.');
+    }
+    renderMerIntel();
+  }
+
   function updateUiScale(){
     const app=$('app');
     if(!app||app.classList.contains('hidden'))return;
@@ -1555,7 +1677,7 @@
 
     localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));
   }
-  function renderAll(){if(!state)return;renderFleet();renderTop();renderSelect();renderBoards();renderHits();renderMiningVisuals();renderIceMining();renderRanking();renderTimers();renderSelected();renderNotes();renderScanCharacters();renderCharacters();renderCalculator();}
+  function renderAll(){if(!state)return;renderFleet();renderTop();renderSelect();renderBoards();renderHits();renderMiningVisuals();renderIceMining();renderRanking();renderTimers();renderSelected();renderNotes();renderScanCharacters();renderCharacters();renderCalculator();renderMerIntel();}
 
   async function refreshMe(){const p=await api('/api/me');me=p.user;if(me){$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait}return p.authenticated}
   async function loadState(){state=await api('/api/state');renderAll()}
@@ -1788,7 +1910,7 @@
       if(!config.ssoConfigured){$('setupWarning').classList.remove('hidden');$('setupWarning').textContent='Login is not configured yet.';}
       const auth=await fetch('/api/me',{credentials:'same-origin'}).then(r=>r.json());
       if(!auth.authenticated){showLogin();return}
-      me=auth.user;initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');await loadState();connectSse();
+      me=auth.user;initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');await loadMerIntel();await loadState();connectSse();
       const params=new URLSearchParams(location.search);if(params.get('linked'))toast('Mining toon connected.');if(params.get('login'))toast('Logged in.');if(params.get('market')==='authorized')toast('John market access authorized.');if(params.get('error'))toast(decodeURIComponent(params.get('error')));if(params.toString())history.replaceState({},'',location.pathname);
     }catch(e){console.error(e);showLogin();$('setupWarning').classList.remove('hidden');$('setupWarning').textContent=`JLR could not load: ${e.message}`}
   }
