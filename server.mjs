@@ -524,7 +524,11 @@ async function esiPost(url,body,access=null) {
   return esiRequest(url,{method:'POST',headers,body:JSON.stringify(body)});
 }
 async function resolveUniverseIds(names) {
-  const {data}=await esiPost('https://esi.evetech.net/latest/universe/ids/?datasource=tranquility',names);
+  const uniqueNames=[...new Set((Array.isArray(names)?names:[])
+    .map(name=>String(name||'').trim())
+    .filter(Boolean))];
+  if(!uniqueNames.length)return new Map();
+  const {data}=await esiPost('https://esi.evetech.net/latest/universe/ids/?datasource=tranquility',uniqueNames);
   const out=new Map();
   for(const group of Object.values(data||{})){
     if(!Array.isArray(group))continue;
