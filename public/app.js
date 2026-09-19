@@ -9,6 +9,7 @@
   let audio = null;
   let audioUnlocked = false;
   let audioResumePending = false;
+  let soundEnabled = localStorage.getItem('jlrSoundEnabled') !== 'false';
   let toastTimer = null;
   let eventSource = null;
   let scanCharacterId = localStorage.getItem('jlrScanCharacter') || '';
@@ -211,10 +212,10 @@
   function updateSoundStatus(){
     const button=$('soundStatus');
     if(!button)return;
-    const running=audio?.state==='running';
-    button.textContent=running?'SOUND ON':'ENABLE SOUND';
-    button.classList.toggle('active',running);
-    button.title=running?'Sounds are on. Click to test them.':'If sound is blocked, click to enable it.';
+    button.textContent=soundEnabled?'SOUND ON':'SOUND OFF';
+    button.classList.toggle('active',soundEnabled);
+    button.setAttribute('aria-pressed',String(soundEnabled));
+    button.title=soundEnabled?'Sounds are on. Click to turn them off.':'Sounds are off. Click to turn them on.';
   }
   function unlockAudio(){
     if(audioUnlocked&&audio)return audio;
@@ -237,6 +238,7 @@
     });
   }
   function sfx(kind='click'){
+    if(!soundEnabled)return false;
     unlockAudio();
     if(!audio)return false;
     // Attempt to resume without queuing a sound: a blocked resume may not
@@ -283,14 +285,18 @@
     return true;
   }
   let systemHoverKey='';
-  // Try on load so a site/app with audio permission can play the first hover.
-  unlockAudio();
-  tryResumeAudio();
+  // Try on load when sound is enabled so a site/app with audio permission can
+  // play the first hover. The user's mute preference persists in this browser.
+  if(soundEnabled){
+    unlockAudio();
+    tryResumeAudio();
+  }
   updateSoundStatus();
 
   // Browsers can block WebAudio until a real user gesture. Prime on pointer/key
   // down before opening a menu, and show the current state in the header.
   async function primeAudioFromGesture(e){
+    if(!soundEnabled)return false;
     unlockAudio();
     if(audio?.state==='suspended'){
       try{await audio.resume()}catch{}
@@ -339,7 +345,20 @@
     if(e.target.closest('.system-node')){sfx('systemSelect');return}
     if(e.target.closest('button,summary,.app-tab'))sfx('click');
   });
-  $('soundStatus').addEventListener('click',()=>sfx('select'));
+  $('soundStatus').addEventListener('click',async()=>{
+    soundEnabled=!soundEnabled;
+    localStorage.setItem('jlrSoundEnabled',String(soundEnabled));
+    if(soundEnabled){
+      unlockAudio();
+      if(audio?.state==='suspended'){
+        try{await audio.resume()}catch{}
+      }
+      updateSoundStatus();
+      sfx('select');
+    }else{
+      updateSoundStatus();
+    }
+  });
 
   // Listen to both input and change because native select behavior differs by
   // browser/OS. De-dupe the pair so one selection produces one commit tone.
