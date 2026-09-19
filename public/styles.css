@@ -383,3 +383,15 @@ html[data-theme] .api-kpi{background:linear-gradient(180deg,color-mix(in srgb,#2
 .a0-system-node[data-a0-state="needs-update"] .sys-state{color:#ffd889}
 .a0-system-node[data-a0-state="active"] .sys-state{color:#f0a8f4}
 .a0-system-node[data-a0-state="clear"] .sys-state{color:#c9a2cc}
+
+
+/* A0 card identity override: keep the whole tile purple even when a global theme styles .system-node. */
+html[data-theme] .field-board .system-node.a0-system-node[data-a0-state]{
+  background:linear-gradient(180deg,#4a1852 0%,#35123c 58%,#24102b 100%);
+  border-color:#df73e6;
+  box-shadow:inset 0 -3px 0 #d65fde,0 0 0 1px #d96bdf35,0 2px 7px #0007;
+}
+html[data-theme] .field-board .system-node.a0-system-node[data-a0-state] .sys-name{color:#fff}
+html[data-theme] .field-board .system-node.a0-system-node[data-a0-state] .sys-ore{color:#ead8ec}
+html[data-theme] .field-board .system-node.a0-system-node[data-a0-state] .sys-state{color:#f8f0fa}
+html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-update"] .sys-state{color:#ffd889}
