@@ -39,6 +39,7 @@
   delete calcSettings.crystal;
   let iceTrackType=localStorage.getItem('jlrIceType')||'Blue Ice IV-Grade';
   let oreTrendType=localStorage.getItem('jlrOreTrend')||'Kylixium';
+  let targetOre=localStorage.getItem('jlrTargetOre')||'auto';
   const BOARD_SIZES=['small','medium','large'];
   function normalizeBoardKey(value){
     const key=String(value||'');
@@ -1062,14 +1063,32 @@
   }
   function renderHits(){
     if(!state)return;
-    const arr=definitions()
+    const ores=state.source?.ores||[];
+    const oreNames=ores.map(ore=>ore.name);
+    if(targetOre!=='auto'&&!oreNames.includes(targetOre))targetOre='auto';
+
+    const oreSelect=$('targetOreSelect');
+    if(oreSelect&&document.activeElement!==oreSelect){
+      oreSelect.innerHTML='<option value="auto">AUTO • BEST VALUE</option>'+ores.map(ore=>'<option value="'+esc(ore.name)+'">#'+ore.rank+' • '+esc(ore.name.toUpperCase())+'</option>').join('');
+      oreSelect.value=targetOre;
+    }
+
+    const all=definitions()
       .map(d=>({d,f:field(d.system)}))
+      .filter(x=>targetOre==='auto'||x.d.ore===targetOre);
+    const arr=all
       .filter(x=>x.f.status!=='cleared')
       .sort((a,b)=>Number(a.f.cherryPicked)-Number(b.f.cherryPicked)||a.d.rank-b.d.rank||a.d.order-b.d.order)
-      .slice(0,8);
+      .slice(0,12);
 
     const host=$('hitOrder');
     host.innerHTML='';
+
+    const summary=$('targetSummary');
+    if(summary){
+      if(targetOre==='auto')summary.textContent='highest-value mineable fields first • 🍒 cherry-picked fields go last';
+      else summary.textContent=`${arr.length} available ${targetOre} system${arr.length===1?'':'s'} • click a card to select it on the field board`;
+    }
 
     for(const [i,x] of arr.entries()){
       const b=document.createElement('button');
@@ -1107,7 +1126,13 @@
     }
 
     if(!arr.length){
-      host.innerHTML='<div class="target-empty">No mineable T3 fields right now. Cleared fields will return after their respawn timers finish.</div>';
+      const respawning=all.filter(x=>x.f.status==='cleared').sort((a,b)=>Date.parse(a.f.timerEndsAt||0)-Date.parse(b.f.timerEndsAt||0));
+      if(targetOre!=='auto'&&respawning.length){
+        const next=respawning[0];
+        host.innerHTML=`<div class="target-empty"><strong>No ${esc(targetOre)} systems are mineable right now.</strong><span>${respawning.length} system${respawning.length===1?' is':'s are'} respawning. Next: ${esc(next.d.system)} in ${esc(timer(next.f.timerEndsAt))}.</span></div>`;
+      }else{
+        host.innerHTML='<div class="target-empty"><strong>No mineable T3 fields right now.</strong><span>Cleared fields will return after their respawn timers finish.</span></div>';
+      }
     }
   }
   function renderMiningVisuals(){
@@ -1483,6 +1508,11 @@
   $('compactMode').addEventListener('click',()=>applyMode('compact'));$('expandedMode').addEventListener('click',()=>applyMode('expanded'));
   $('themeSelect').value=activeTheme;
   $('themeSelect').addEventListener('change',()=>applyTheme($('themeSelect').value));
+  $('targetOreSelect').addEventListener('change',()=>{
+    targetOre=$('targetOreSelect').value||'auto';
+    localStorage.setItem('jlrTargetOre',targetOre);
+    renderHits();
+  });
   $('boardArrange').addEventListener('click',toggleBoardArrange);
   $('boardSize').addEventListener('click',cycleBoardSize);
   $('boardReset').addEventListener('click',resetBoardOrder);

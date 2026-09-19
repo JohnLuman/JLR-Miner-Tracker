@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0a0a10">
   <title>JLR Miner Tracker</title>
-  <link rel="stylesheet" href="/styles.css?v=2.3.56">
+  <link rel="stylesheet" href="/styles.css?v=2.3.57">
 </head>
 <body>
   <main id="loginView" class="login-shell hidden">
@@ -142,7 +142,15 @@
     </section>
 
     <section class="glass hit-panel">
-      <div class="section-title compact-title"><strong>NEXT T3 TARGETS</strong><span class="muted">highest-value mineable fields first • 🍒 cherry-picked fields go last</span></div>
+      <div class="section-title compact-title target-title">
+        <div class="target-title-copy"><strong>NEXT T3 TARGETS</strong><span id="targetSummary" class="muted">highest-value mineable fields first • 🍒 cherry-picked fields go last</span></div>
+        <label class="target-ore-control">
+          <span>TARGET ORE</span>
+          <select id="targetOreSelect" aria-label="Choose T3 ore to target">
+            <option value="auto">AUTO • BEST VALUE</option>
+          </select>
+        </label>
+      </div>
       <div id="hitOrder" class="hit-order"></div>
     </section>
 
@@ -254,6 +262,6 @@
     <div id="toast" class="toast hidden" role="status"></div>
   </main>
   <script src="/yield-math.js?v=2.3.43" defer></script>
-  <script src="/app.js?v=2.3.56" defer></script>
+  <script src="/app.js?v=2.3.57" defer></script>
 </body>
 </html>

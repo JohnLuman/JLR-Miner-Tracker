@@ -348,3 +348,21 @@ html[data-theme] .api-kpi{background:linear-gradient(180deg,color-mix(in srgb,#2
   .board-customize{align-items:flex-start;flex-direction:column}
   .board-customize>span{text-align:left;white-space:normal}
 }
+
+
+/* Next T3 Targets ore selector */
+.target-title{align-items:center;gap:10px}
+.target-title-copy{display:flex;align-items:baseline;gap:8px;min-width:0;flex-wrap:wrap}
+.target-title-copy>span{font-size:8px;line-height:1.25}
+.target-ore-control{display:flex;align-items:center;gap:6px;flex:none;border:1px solid color-mix(in srgb,var(--theme-accent,#9d34ed) 28%,var(--line));border-radius:7px;background:var(--theme-soft,#111119);padding:3px 5px 3px 8px;color:var(--muted)}
+.target-ore-control>span{font-size:7px;font-weight:1000;letter-spacing:.08em;white-space:nowrap}
+.target-ore-control select{height:27px;min-width:155px;max-width:220px;border:1px solid color-mix(in srgb,var(--theme-accent,#9d34ed) 42%,var(--line));border-radius:6px;background:var(--theme-input,#0d0d14);color:var(--text);padding:3px 24px 3px 8px;font-size:8px;font-weight:950;letter-spacing:.03em;outline:none}
+.target-ore-control select:focus{border-color:var(--theme-accent-line,#9f4dff);box-shadow:0 0 0 2px color-mix(in srgb,var(--theme-accent,#9d34ed) 25%,transparent)}
+.target-empty strong,.target-empty span{display:block}
+.target-empty span{margin-top:4px;font-size:8px;color:var(--muted)}
+@media(max-width:760px){
+  .target-title{align-items:stretch;flex-direction:column}
+  .target-title-copy{align-items:flex-start;flex-direction:column;gap:2px}
+  .target-ore-control{width:100%;justify-content:space-between}
+  .target-ore-control select{min-width:0;max-width:none;flex:1}
+}
