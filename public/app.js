@@ -39,6 +39,21 @@
   delete calcSettings.crystal;
   let iceTrackType=localStorage.getItem('jlrIceType')||'Blue Ice IV-Grade';
   let oreTrendType=localStorage.getItem('jlrOreTrend')||'Kylixium';
+  const BOARD_SIZES=['small','medium','large'];
+  function loadBoardPrefs(){
+    try{
+      const raw=JSON.parse(localStorage.getItem('jlrFieldBoard')||'{}');
+      return {
+        order:Array.isArray(raw.order)?raw.order.map(String):[],
+        favorites:Array.isArray(raw.favorites)?raw.favorites.map(String):[],
+        size:BOARD_SIZES.includes(raw.size)?raw.size:'medium',
+      };
+    }catch{return{order:[],favorites:[],size:'medium'}}
+  }
+  let boardPrefs=loadBoardPrefs();
+  let boardArrangeMode=false;
+  let boardDragSystem='';
+  let boardSuppressClickUntil=0;
   const statusText = {ready:'GREEN • MINEABLE',picked:'YELLOW • PICKED',cleared:'RED • RESPAWN'};
 
   function applyTheme(theme){
@@ -729,6 +744,71 @@
   }
 
   function definitions(){return [...(state?.source?.systems||[])].sort((a,b)=>a.rank-b.rank||a.order-b.order||a.system.localeCompare(b.system))}
+  function saveBoardPrefs(){localStorage.setItem('jlrFieldBoard',JSON.stringify(boardPrefs))}
+  function favoriteSystems(){return new Set(boardPrefs.favorites)}
+  function boardDefinitions(){
+    const defs=definitions(),favorites=favoriteSystems();
+    const original=new Map(defs.map((d,i)=>[d.system,i]));
+    const custom=new Map(boardPrefs.order.map((system,i)=>[system,i]));
+    return defs.sort((a,b)=>{
+      const af=favorites.has(a.system),bf=favorites.has(b.system);
+      if(af!==bf)return af?-1:1;
+      const ai=custom.has(a.system)?custom.get(a.system):100000+(original.get(a.system)||0);
+      const bi=custom.has(b.system)?custom.get(b.system):100000+(original.get(b.system)||0);
+      return ai-bi;
+    });
+  }
+  function syncBoardControls(){
+    const board=$('fieldBoard'),arrange=$('boardArrange'),size=$('boardSize'),hint=$('boardArrangeHint');
+    if(board){
+      for(const value of BOARD_SIZES)board.classList.toggle(`board-size-${value}`,boardPrefs.size===value);
+      board.classList.toggle('arranging',boardArrangeMode);
+    }
+    if(arrange){
+      arrange.classList.toggle('active',boardArrangeMode);
+      arrange.setAttribute('aria-pressed',String(boardArrangeMode));
+      arrange.textContent=boardArrangeMode?'✓ ARRANGING':'↕ ARRANGE';
+    }
+    if(size)size.textContent=`BOX SIZE • ${boardPrefs.size==='small'?'S':boardPrefs.size==='large'?'L':'M'}`;
+    if(hint)hint.textContent=boardArrangeMode?'Drag boxes to reorder • favorites stay pinned first':'☆ favorite a system to pin it to the front';
+  }
+  function toggleBoardFavorite(system){
+    const favorites=favoriteSystems();
+    if(favorites.has(system))favorites.delete(system);else favorites.add(system);
+    boardPrefs.favorites=[...favorites];
+    saveBoardPrefs();
+    renderBoards();
+  }
+  function moveBoardSystem(source,target){
+    if(!source||!target||source===target)return;
+    const favorites=favoriteSystems();
+    if(favorites.has(source)!==favorites.has(target))return;
+    const ids=boardDefinitions().map(d=>d.system);
+    const from=ids.indexOf(source),to=ids.indexOf(target);
+    if(from<0||to<0)return;
+    ids.splice(to,0,ids.splice(from,1)[0]);
+    boardPrefs.order=ids;
+    saveBoardPrefs();
+    renderBoards();
+  }
+  function cycleBoardSize(){
+    const index=BOARD_SIZES.indexOf(boardPrefs.size);
+    boardPrefs.size=BOARD_SIZES[(index+1)%BOARD_SIZES.length];
+    saveBoardPrefs();syncBoardControls();
+  }
+  function resetBoardOrder(){
+    boardPrefs.order=[];
+    saveBoardPrefs();renderBoards();
+    toast('Field board order reset. Favorites were kept.');
+  }
+  function toggleBoardArrange(){
+    boardArrangeMode=!boardArrangeMode;
+    if(boardArrangeMode){
+      filter='all';
+      document.querySelectorAll('.filter').forEach(button=>button.classList.toggle('active',button.dataset.filter==='all'));
+    }
+    renderBoards();
+  }
   function field(system){return state?.fields?.[system]||null}
   function def(system){return definitions().find(x=>x.system===system)||null}
 
@@ -853,20 +933,62 @@
   }
   function chooseSystem(system){selectedSystem=system;$('systemSelect').value=system;$('fieldNote').value='';renderSelect();renderBoards();renderSelected();renderNotes()}
   function node(d,f,includeTimer=true){
-    const b=document.createElement('button');
-    b.type='button';
+    const b=document.createElement('div');
+    const favorite=favoriteSystems().has(d.system);
     b.className='system-node';
     b.dataset.status=f.status;
     b.dataset.system=d.system;
+    b.setAttribute('role','button');
+    b.setAttribute('tabindex','0');
+    b.setAttribute('aria-label',`${d.system}, ${d.ore}, ${statusText[f.status]}`);
+    b.classList.toggle('favorite',favorite);
+    b.classList.toggle('arrange-mode',boardArrangeMode);
+    b.draggable=boardArrangeMode;
     if(d.system===selectedSystem)b.classList.add('selected');
     const line=f.status==='cleared'?`RESPAWN ${timer(f.timerEndsAt)}`:f.status==='picked'?(f.autoReopenedAt?'PICKED • ESI':'PICKED'):'MINEABLE';
     const distance=d.distanceLy==null?NaN:Number(d.distanceLy);
     const distanceText=Number.isFinite(distance)?` • ${distance.toFixed(2)} LY`:'';
-    b.innerHTML=`${f.cherryPicked?'<span class="cherry-pin">🍒</span>':''}<span class="sys-name">${esc(d.system)}</span><span class="sys-ore">#${d.rank} ${esc(d.ore)}</span>${includeTimer?`<span class="sys-state">${line}${distanceText}</span>`:''}`;
-    b.title=`${d.system} • ${d.ore} • ${statusText[f.status]}${f.autoReopenedAt?` • ESI mining detected ${ago(f.autoReopenedAt)}`:''}${Number.isFinite(distance)?` • ${distance.toFixed(2)} LY from C-N4OD`:''}${f.cherryPicked?' • Cherry Picked':''}${f.notes?.length?` • ${f.notes.length} notes`:''}`;
-    b.addEventListener('click',()=>chooseSystem(d.system));
+    b.innerHTML=`${f.cherryPicked?'<span class="cherry-pin">🍒</span>':''}<button class="favorite-toggle" type="button" aria-pressed="${favorite}" title="${favorite?'Remove from favorites':'Favorite this system'}">${favorite?'★':'☆'}</button>${boardArrangeMode?'<span class="drag-grip" aria-hidden="true">⠿</span>':''}<span class="sys-name">${esc(d.system)}</span><span class="sys-ore">#${d.rank} ${esc(d.ore)}</span>${includeTimer?`<span class="sys-state">${line}${distanceText}</span>`:''}`;
+    b.title=`${d.system} • ${d.ore} • ${statusText[f.status]}${favorite?' • Favorite':''}${f.autoReopenedAt?` • ESI mining detected ${ago(f.autoReopenedAt)}`:''}${Number.isFinite(distance)?` • ${distance.toFixed(2)} LY from C-N4OD`:''}${f.cherryPicked?' • Cherry Picked':''}${f.notes?.length?` • ${f.notes.length} notes`:''}`;
+
+    b.querySelector('.favorite-toggle').addEventListener('click',e=>{
+      e.preventDefault();e.stopPropagation();toggleBoardFavorite(d.system);sfx('select');
+    });
+    b.addEventListener('click',e=>{
+      if(e.target.closest('.favorite-toggle'))return;
+      if(Date.now()<boardSuppressClickUntil)return;
+      chooseSystem(d.system);
+    });
+    b.addEventListener('keydown',e=>{
+      if(e.target!==b)return;
+      if(e.key==='Enter'||e.key===' '){e.preventDefault();chooseSystem(d.system)}
+    });
+    b.addEventListener('dragstart',e=>{
+      if(!boardArrangeMode){e.preventDefault();return}
+      boardDragSystem=d.system;
+      b.classList.add('dragging');
+      if(e.dataTransfer){e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',d.system)}
+    });
+    b.addEventListener('dragover',e=>{
+      if(!boardArrangeMode||!boardDragSystem||boardDragSystem===d.system)return;
+      if(favoriteSystems().has(boardDragSystem)!==favoriteSystems().has(d.system))return;
+      e.preventDefault();
+      b.classList.add('drag-over');
+      if(e.dataTransfer)e.dataTransfer.dropEffect='move';
+    });
+    b.addEventListener('dragleave',()=>b.classList.remove('drag-over'));
+    b.addEventListener('drop',e=>{
+      e.preventDefault();b.classList.remove('drag-over');
+      moveBoardSystem(boardDragSystem,d.system);
+    });
+    b.addEventListener('dragend',()=>{
+      boardDragSystem='';
+      boardSuppressClickUntil=Date.now()+180;
+      document.querySelectorAll('.system-node.dragging,.system-node.drag-over').forEach(node=>node.classList.remove('dragging','drag-over'));
+    });
     return b;
   }
+
   function iceBoardNode(row){
     const card=document.createElement('div');
     card.className='system-node ice-system-node';
@@ -884,19 +1006,20 @@
   function renderBoards(){
     if(!state)return;
     const board=$('fieldBoard');
+    syncBoardControls();
     board.innerHTML='';
     let counts={ready:0,picked:0,cleared:0,cherry:0};
     const iceFields=Array.isArray(state.source?.iceFields)?state.source.iceFields:[];
 
     if(filter!=='ice'){
-      for(const d of definitions()){
+      for(const d of boardDefinitions()){
         const f=field(d.system);
         counts[f.status]++;
         if(f.cherryPicked)counts.cherry++;
         if(filter==='all'||filter===f.status||(filter==='cherry'&&f.cherryPicked))board.appendChild(node(d,f,true));
       }
     }else{
-      for(const d of definitions()){
+      for(const d of boardDefinitions()){
         const f=field(d.system);
         counts[f.status]++;
         if(f.cherryPicked)counts.cherry++;
@@ -1333,6 +1456,10 @@
   $('compactMode').addEventListener('click',()=>applyMode('compact'));$('expandedMode').addEventListener('click',()=>applyMode('expanded'));
   $('themeSelect').value=activeTheme;
   $('themeSelect').addEventListener('change',()=>applyTheme($('themeSelect').value));
+  $('boardArrange').addEventListener('click',toggleBoardArrange);
+  $('boardSize').addEventListener('click',cycleBoardSize);
+  $('boardReset').addEventListener('click',resetBoardOrder);
+  syncBoardControls();
   $('systemSelect').addEventListener('change',()=>chooseSystem($('systemSelect').value));
   $('scanCharacter').addEventListener('change',()=>{scanCharacterId=$('scanCharacter').value;localStorage.setItem('jlrScanCharacter',scanCharacterId);renderScanCharacters()});
   document.querySelectorAll('.filter').forEach(b=>b.addEventListener('click',()=>{filter=b.dataset.filter;document.querySelectorAll('.filter').forEach(x=>x.classList.toggle('active',x===b));renderBoards()}));

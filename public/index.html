@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0a0a10">
   <title>JLR Miner Tracker</title>
-  <link rel="stylesheet" href="/styles.css?v=2.3.54">
+  <link rel="stylesheet" href="/styles.css?v=2.3.55">
 </head>
 <body>
   <main id="loginView" class="login-shell hidden">
@@ -130,7 +130,15 @@
       <div class="section-title"><div><strong>FIELD BOARD</strong><span id="systemCountLabel" class="muted count-label"></span><span id="statusCounts" class="muted count-label">—</span></div><div class="filters">
         <button class="orb silver filter active" data-filter="all" type="button">ALL</button><button class="orb green filter" data-filter="ready" type="button">MINEABLE</button><button class="orb yellow filter" data-filter="picked" type="button">PICKED</button><button class="orb red filter" data-filter="cleared" type="button">RESPAWN</button><button class="orb cherry filter" data-filter="cherry" type="button">🍒 CHERRY</button><button class="orb ice-filter filter" data-filter="ice" type="button">ICE</button>
       </div></div>
-      <div id="fieldBoard" class="node-grid field-board"></div>
+      <div class="board-customize">
+        <div class="board-customize-actions">
+          <button id="boardArrange" class="board-tool" type="button" aria-pressed="false" title="Drag field boxes to arrange them">↕ ARRANGE</button>
+          <button id="boardSize" class="board-tool" type="button" title="Change the field box size">BOX SIZE • M</button>
+          <button id="boardReset" class="board-tool subtle" type="button" title="Reset your custom field order">RESET ORDER</button>
+        </div>
+        <span id="boardArrangeHint">☆ favorite a system to pin it to the front</span>
+      </div>
+      <div id="fieldBoard" class="node-grid field-board board-size-medium"></div>
     </section>
 
     <section class="glass hit-panel">
@@ -246,6 +254,6 @@
     <div id="toast" class="toast hidden" role="status"></div>
   </main>
   <script src="/yield-math.js?v=2.3.43" defer></script>
-  <script src="/app.js?v=2.3.54" defer></script>
+  <script src="/app.js?v=2.3.55" defer></script>
 </body>
 </html>
