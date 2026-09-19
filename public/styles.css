@@ -395,3 +395,15 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state] .sys-na
 html[data-theme] .field-board .system-node.a0-system-node[data-a0-state] .sys-ore{color:#ead8ec}
 html[data-theme] .field-board .system-node.a0-system-node[data-a0-state] .sys-state{color:#f8f0fa}
 html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-update"] .sys-state{color:#ffd889}
+
+
+/* Shared Probe Scanner freshness line shown on every Field Board card. */
+.field-board .system-node{min-height:54px}
+.system-node .sys-scan{display:block;margin-top:2px;font-size:6px;font-weight:900;letter-spacing:.035em;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.system-node .sys-scan.stale{color:#e9aa4c}
+@media(min-width:761px){
+  .field-board.board-size-small .system-node{min-height:48px}
+  .field-board.board-size-medium .system-node{min-height:56px}
+  .field-board.board-size-large .system-node{min-height:68px}
+  .field-board.board-size-large .sys-scan{font-size:7px}
+}

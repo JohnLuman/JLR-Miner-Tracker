@@ -825,6 +825,19 @@
   }
   function field(system){return state?.fields?.[system]||null}
   function def(system){return definitions().find(x=>x.system===system)||null}
+  function boardScanLine(system){
+    const row=state?.scans?.[system]||null;
+    const at=row?.lastScanAt||null;
+    const ms=Date.parse(at||'');
+    if(!Number.isFinite(ms))return{text:'SCAN • NEVER',stale:true,title:'No Probe Scanner update recorded yet'};
+    const stale=row?.due||Date.now()-ms>=12*60*60*1000;
+    const age=ago(at).toUpperCase();
+    return{
+      text:stale?`SCAN • ${age} • UPDATE`:`SCAN • ${age}`,
+      stale,
+      title:stale?`Last Probe Scanner update ${ago(at)}; update requested after 12 hours`:`Last Probe Scanner update ${ago(at)}`,
+    };
+  }
 
   function renderTop(){
     if(!state)return;
@@ -964,8 +977,9 @@
     const line=f.status==='cleared'?`RESPAWN ${timer(f.timerEndsAt)}`:f.status==='picked'?(f.autoReopenedAt?'PICKED • ESI':'PICKED'):'MINEABLE';
     const distance=d.distanceLy==null?NaN:Number(d.distanceLy);
     const distanceText=Number.isFinite(distance)?` • ${distance.toFixed(2)} LY`:'';
-    b.innerHTML=`${f.cherryPicked?'<span class="cherry-pin">🍒</span>':''}<button class="favorite-toggle" type="button" aria-pressed="${favorite}" title="${favorite?'Remove from favorites':'Favorite this system'}">${favorite?'★':'☆'}</button>${boardArrangeMode?'<span class="drag-grip" aria-hidden="true">⠿</span>':''}<span class="sys-name">${esc(d.system)}</span><span class="sys-ore">#${d.rank} ${esc(d.ore)}</span>${includeTimer?`<span class="sys-state">${line}${distanceText}</span>`:''}`;
-    b.title=`${d.system} • ${d.ore} • ${statusText[f.status]}${favorite?' • Favorite':''}${f.autoReopenedAt?` • ESI mining detected ${ago(f.autoReopenedAt)}`:''}${Number.isFinite(distance)?` • ${distance.toFixed(2)} LY from C-N4OD`:''}${f.cherryPicked?' • Cherry Picked':''}${f.notes?.length?` • ${f.notes.length} notes`:''}`;
+    const scanLine=boardScanLine(d.system);
+    b.innerHTML=`${f.cherryPicked?'<span class="cherry-pin">🍒</span>':''}<button class="favorite-toggle" type="button" aria-pressed="${favorite}" title="${favorite?'Remove from favorites':'Favorite this system'}">${favorite?'★':'☆'}</button>${boardArrangeMode?'<span class="drag-grip" aria-hidden="true">⠿</span>':''}<span class="sys-name">${esc(d.system)}</span><span class="sys-ore">#${d.rank} ${esc(d.ore)}</span>${includeTimer?`<span class="sys-state">${line}${distanceText}</span>`:''}<span class="sys-scan${scanLine.stale?' stale':''}">${esc(scanLine.text)}</span>`;
+    b.title=`${d.system} • ${d.ore} • ${statusText[f.status]}${favorite?' • Favorite':''}${f.autoReopenedAt?` • ESI mining detected ${ago(f.autoReopenedAt)}`:''}${Number.isFinite(distance)?` • ${distance.toFixed(2)} LY from C-N4OD`:''} • ${scanLine.title}${f.cherryPicked?' • Cherry Picked':''}${f.notes?.length?` • ${f.notes.length} notes`:''}`;
 
     b.querySelector('.favorite-toggle').addEventListener('click',e=>{
       e.preventDefault();e.stopPropagation();toggleBoardFavorite('t3',d.system);sfx('select');
@@ -1024,12 +1038,14 @@
     card.setAttribute('role','group');
     const fields=Math.max(1,Number(row.iceBelts)||1);
     const distance=Number(row.distanceLy);
+    const scanLine=boardScanLine(row.system);
     card.innerHTML='<button class="favorite-toggle" type="button" aria-pressed="'+favorite+'" title="'+(favorite?'Remove from favorites':'Favorite this system')+'">'+(favorite?'★':'☆')+'</button>'+
       (boardArrangeMode?'<span class="drag-grip" aria-hidden="true">⠿</span>':'')+
       '<span class="sys-name">'+esc(row.system)+'</span>'+
       '<span class="sys-ore">'+fields+' ICE FIELD'+(fields===1?'':'S')+'</span>'+
-      '<span class="sys-state">IN TITAN RANGE'+(Number.isFinite(distance)?' • '+distance.toFixed(2)+' LY':'')+'</span>';
-    card.title=row.system+' • '+fields+' ice field'+(fields===1?'':'s')+(favorite?' • Favorite':'')+(Number.isFinite(distance)?' • '+distance.toFixed(2)+' LY from C-N4OD':'')+' • within configured Titan bridge range';
+      '<span class="sys-state">IN TITAN RANGE'+(Number.isFinite(distance)?' • '+distance.toFixed(2)+' LY':'')+'</span>'+
+      '<span class="sys-scan'+(scanLine.stale?' stale':'')+'">'+esc(scanLine.text)+'</span>';
+    card.title=row.system+' • '+fields+' ice field'+(fields===1?'':'s')+(favorite?' • Favorite':'')+(Number.isFinite(distance)?' • '+distance.toFixed(2)+' LY from C-N4OD':'')+' • '+scanLine.title+' • within configured Titan bridge range';
     card.querySelector('.favorite-toggle').addEventListener('click',e=>{
       e.preventDefault();e.stopPropagation();toggleBoardFavorite('ice',row.system);sfx('select');
     });
@@ -1056,16 +1072,14 @@
     card.setAttribute('role','group');
     const distance=Number(row.distanceLy);
     const spectral=String(row.spectralClass||'A0');
-    const stateLine=due
-      ?'NEEDS UPDATE • PASTE SCAN'
-      :scan.detected
-        ?`A0 SITE ACTIVE • ${ago(scan.lastCheckedAt).toUpperCase()}`
-        :`NO A0 SITE • CHECKED ${ago(scan.lastCheckedAt).toUpperCase()}`;
+    const stateLine=due?'NEEDS UPDATE • PASTE SCAN':scan.detected?'A0 SITE ACTIVE':'NO A0 SITE';
+    const scanLine=boardScanLine(row.system);
     card.innerHTML='<button class="favorite-toggle" type="button" aria-pressed="'+favorite+'" title="'+(favorite?'Remove from favorites':'Favorite this system')+'">'+(favorite?'★':'☆')+'</button>'+
       (boardArrangeMode?'<span class="drag-grip" aria-hidden="true">⠿</span>':'')+
       '<span class="sys-name">'+esc(row.system)+'</span>'+
       '<span class="sys-ore">BLUE '+esc(spectral)+' STAR'+(Number.isFinite(distance)?' • '+distance.toFixed(2)+' LY':'')+'</span>'+
-      '<span class="sys-state">'+esc(stateLine)+'</span>';
+      '<span class="sys-state">'+esc(stateLine)+'</span>'+
+      '<span class="sys-scan'+(scanLine.stale?' stale':'')+'">'+esc(scanLine.text)+'</span>';
     card.title=row.system+' • '+spectral+' Blue star'+(favorite?' • Favorite':'')+(Number.isFinite(distance)?' • '+distance.toFixed(2)+' LY from C-N4OD':'')+(due?' • Needs Probe Scanner update':scan.detected?' • A0 rare asteroid site detected':' • Checked; no active A0 site detected')+' • refresh due every 12 hours';
     card.querySelector('.favorite-toggle').addEventListener('click',e=>{
       e.preventDefault();e.stopPropagation();toggleBoardFavorite('a0',row.system);sfx('select');
@@ -1595,8 +1609,13 @@
       }
       if(!preview.tracked){
         if(preview.a0?.tracked)return;
-        setScanStatus(`${preview.characterName} is in ${preview.system}, which is not on the tracked T3/A0 board.`,'warning');
-        toast(`No tracked T3 or A0 field for ${preview.system}.`);
+        if(preview.boardScan?.recorded){
+          setScanStatus(`${preview.system}: board scan time updated. Next update requested in 12 hours.`,'success');
+          toast(`${preview.system} scan timestamp updated.`);
+          return;
+        }
+        setScanStatus(`${preview.characterName} is in ${preview.system}, which is not on the tracked T3/ICE/A0 board.`,'warning');
+        toast(`No tracked T3, ICE, or A0 field for ${preview.system}.`);
         return;
       }
       chooseSystem(preview.system);

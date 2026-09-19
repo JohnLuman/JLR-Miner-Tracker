@@ -168,6 +168,7 @@ function freshState() {
     createdAt: now(),
     users: {},
     characters: {},
+    scans: {},
     fields: Object.fromEntries(SYSTEM_DEFS.map((d) => [d.system, {
       status: 'ready', cherryPicked: false, timerEndsAt: null, notes: [], updatedAt: null,
       autoReopenedAt: null, autoReopenReason: null, autoReopenM3: null,
@@ -189,6 +190,7 @@ async function loadState() {
     parsed.version = 2;
     parsed.users ||= {};
     parsed.characters ||= {};
+    parsed.scans ||= {};
     parsed.fields ||= {};
     for (const d of SYSTEM_DEFS) {
       const field = parsed.fields[d.system] = { ...base.fields[d.system], ...(parsed.fields[d.system] || {}) };
@@ -334,6 +336,28 @@ function effectiveSystems(ores=effectiveOres()) {
     };
   });
 }
+function scanActivityPublic() {
+  const out={};
+  const at=Date.now();
+  const add=(system,row)=>{
+    const lastScanAt=row?.lastScanAt||row?.lastCheckedAt||null;
+    if(!lastScanAt)return;
+    const ms=Date.parse(lastScanAt);
+    out[system]={
+      lastScanAt,
+      due:!Number.isFinite(ms)||at-ms>=A0_REPORT_TTL,
+      nextUpdateAt:Number.isFinite(ms)?new Date(ms+A0_REPORT_TTL).toISOString():null,
+      scannerRowCount:Number(row?.scannerRowCount)||0,
+      kinds:Array.isArray(row?.kinds)?row.kinds:[],
+    };
+  };
+  for(const [system,row] of Object.entries(state.scans||{}))add(system,row);
+  for(const [system,row] of Object.entries(state.market?.a0Reports||{})){
+    if(!out[system])add(system,row);
+  }
+  return out;
+}
+
 function a0PublicFields() {
   const rows=new Map((state.market?.a0Fields||[]).map(row=>[row.system,{...row}]));
   for(const [system,report] of Object.entries(state.market?.a0Reports||{})){
@@ -383,9 +407,10 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.3.64',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state and fleet-level mining totals only. Character location is read only when importing a Probe Scanner copy and is not stored or shared.'},
+    app:{name:'JLR Miner Tracker',version:'2.3.65',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
+    scans:scanActivityPublic(),
     market:{lastUpdatedAt:state.market.lastUpdatedAt,lastError:state.market.lastError,privateLastError:state.market.privateLastError||null,refreshing:marketRefreshInProgress,valuation:'MAX REFINE',maxRefineYield:MAX_REFINE_YIELD,jita:'Jita IV - Moon 4 - Caldari Navy Assembly Plant',local:CN_SYSTEM_NAME,titanBridgeRangeLy:TITAN_BRIDGE_RANGE_LY,history:marketHistoryPublic(),privateAccess:Boolean(state.market.refreshTokenEnc),marketCharacterName:state.market.characterName||null,structureName:state.market.structureName||null},
     esi:{configured:Boolean(EVE_CLIENT_ID),linkedCharacters:Object.keys(state.characters).length,lastSyncAt:state.esi.lastSyncAt,lastError:state.esi.lastError,syncing:syncInProgress||manualSyncCount>0,actual:{today:todayActual,week:weekActual}},
     serverNow:now(),
@@ -1449,6 +1474,7 @@ async function recordA0ProbeScan({characterName,systemId,system,text}){
   const scan=parseA0Scan(text);
   const candidate=await a0CandidateForScan(systemId,system,scan.detected);
   if(!candidate)return {tracked:false,inRange:false,scan};
+  if(!scan.valid)return {tracked:true,inRange:true,candidate,scan,status:'invalid'};
 
   state.market.a0Reports ||= {};
   const checkedAt=now();
@@ -1476,6 +1502,30 @@ async function recordA0ProbeScan({characterName,systemId,system,text}){
   };
 }
 
+function recordBoardScan({system,text,a0}){
+  const parsed=parseA0Scan(text);
+  const kinds=[];
+  if(SYSTEM_MAP.has(system))kinds.push('t3');
+  if((state.market?.iceFields||[]).some(row=>row.system===system))kinds.push('ice');
+  if((state.market?.a0Fields||[]).some(row=>row.system===system)||a0?.tracked)kinds.push('a0');
+  if(!parsed.valid||!kinds.length)return {recorded:false,valid:parsed.valid,boardTracked:Boolean(kinds.length),kinds};
+  state.scans ||= {};
+  const lastScanAt=now();
+  state.scans[system]={
+    lastScanAt,
+    scannerRowCount:Number(parsed.scannerRowCount)||0,
+    kinds:[...new Set(kinds)],
+  };
+  return {
+    recorded:true,
+    valid:true,
+    boardTracked:true,
+    kinds:state.scans[system].kinds,
+    lastScanAt,
+    nextUpdateAt:new Date(Date.parse(lastScanAt)+A0_REPORT_TTL).toISOString(),
+  };
+}
+
 async function probeScanPreview(ch,text){
   const {access,identity}=await characterAccess(ch);
   if(!identity.scopes.includes(LOCATION_SCOPE)){
@@ -1491,6 +1541,7 @@ async function probeScanPreview(ch,text){
   const definition=SYSTEM_MAP.get(system)||null;
   const scan=definition?parseProbeScan(text,definition.ore):null;
   const a0=await recordA0ProbeScan({characterName:ch.name,systemId,system,text});
+  const boardScan=recordBoardScan({system,text,a0});
   return{
     characterId:String(ch.characterId),
     characterName:ch.name,
@@ -1501,6 +1552,7 @@ async function probeScanPreview(ch,text){
     scan,
     field:definition?state.fields[system]:null,
     a0,
+    boardScan,
   };
 }
 
@@ -1696,7 +1748,7 @@ async function serveStatic(req,res,pathname) {
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.64',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.65',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){const u=readSession(req);return json(res,200,{authenticated:Boolean(u),user:u?myProfile(u):null})}
   const user=requireUser(req,res);if(!user)return;
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
@@ -1713,10 +1765,10 @@ async function routeApi(req,res,url) {
     if(!(Array.isArray(ch.scopes)&&ch.scopes.includes(LOCATION_SCOPE)))return json(res,409,{error:'LOCATION_SCOPE_REQUIRED',message:'Update this toon’s EVE access before importing scans.'});
     try{
       const preview=await probeScanPreview(ch,scanText);
-      const valid=Boolean(preview.scan?.valid||preview.a0?.scan?.valid);
-      if((preview.tracked||preview.a0?.tracked)&&!valid)return json(res,400,{error:'INVALID_SCAN',message:'This does not look like copied Probe Scanner rows. Copy the complete scanner list and try again.',preview});
+      const valid=Boolean(preview.scan?.valid||preview.a0?.scan?.valid||preview.boardScan?.valid);
+      if((preview.tracked||preview.a0?.tracked||preview.boardScan?.boardTracked)&&!valid)return json(res,400,{error:'INVALID_SCAN',message:'This does not look like copied Probe Scanner rows. Copy the complete scanner list and try again.',preview});
       await save();
-      if(preview.a0?.tracked)broadcast();
+      if(preview.a0?.tracked||preview.boardScan?.recorded)broadcast();
       return json(res,200,{ok:true,...preview});
     }catch(err){
       if(err.code==='LOCATION_SCOPE_REQUIRED')return json(res,409,{error:err.code,message:err.message});
