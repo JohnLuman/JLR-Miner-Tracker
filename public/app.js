@@ -552,12 +552,28 @@
     document.querySelectorAll('.app-tab').forEach(button=>button.addEventListener('click',()=>applyTab(button.dataset.tab)));
     applyTab(activeTab);
   }
+  function updateUiScale(){
+    const app=$('app');
+    if(!app||app.classList.contains('hidden'))return;
+    const viewport=Math.max(320,document.documentElement.clientWidth||window.innerWidth||320);
+    if(viewport<1700){
+      app.style.zoom='1';
+      return;
+    }
+    const expanded=app.classList.contains('expanded');
+    const designWidth=expanded?1600:1120;
+    const maxScale=expanded?1.6:1.55;
+    const targetWidth=viewport*.90;
+    const scale=Math.max(1,Math.min(maxScale,targetWidth/designWidth));
+    app.style.zoom=String(Math.round(scale*1000)/1000);
+  }
   function applyMode(mode){
     $('app').classList.toggle('compact',mode==='compact');
     $('app').classList.toggle('expanded',mode==='expanded');
     $('compactMode').classList.toggle('active',mode==='compact');
     $('expandedMode').classList.toggle('active',mode==='expanded');
     localStorage.setItem('jlrMode',mode);
+    requestAnimationFrame(updateUiScale);
   }
 
   function fleetStats(){
@@ -1472,6 +1488,7 @@
     saveFleet();
   }
   ['uptime','payout'].forEach(id=>$(id).addEventListener('input',readFleet));
+  window.addEventListener('resize',updateUiScale,{passive:true});
   async function boot(){
     try{
       const config=await fetch('/api/config').then(r=>r.json());
