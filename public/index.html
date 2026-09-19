@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0a0a10">
   <title>JLR Miner Tracker</title>
-  <link rel="stylesheet" href="/styles.css?v=2.3.52">
+  <link rel="stylesheet" href="/styles.css?v=2.3.54">
 </head>
 <body>
   <main id="loginView" class="login-shell hidden">
@@ -32,6 +32,14 @@
       <div class="top-actions">
         <button id="compactMode" class="orb purple active" type="button" title="Condensed operations view with smaller cards and fewer detail panels">COMPACT</button>
         <button id="expandedMode" class="orb silver" type="button" title="Full command view with larger layouts and additional T3 economics and timer panels">EXPANDED</button>
+        <label class="theme-control" title="Choose the dashboard color theme">
+          <span>THEME</span>
+          <select id="themeSelect" aria-label="App theme">
+            <option value="void">VOID</option>
+            <option value="citadel">CITADEL</option>
+            <option value="forge">FORGE</option>
+          </select>
+        </label>
         <button id="soundStatus" class="sound-status" type="button" aria-live="polite" aria-pressed="true" title="Sounds are on. Click to turn them off.">SOUND ON</button>
         <div class="user-chip"><img id="userPortrait" alt=""><span id="userName">—</span></div>
         <button id="addToonTop" class="orb blue" type="button">+ ADD TOON</button>
@@ -238,6 +246,6 @@
     <div id="toast" class="toast hidden" role="status"></div>
   </main>
   <script src="/yield-math.js?v=2.3.43" defer></script>
-  <script src="/app.js?v=2.3.53" defer></script>
+  <script src="/app.js?v=2.3.54" defer></script>
 </body>
 </html>
