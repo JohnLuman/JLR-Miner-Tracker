@@ -40,19 +40,23 @@
   let iceTrackType=localStorage.getItem('jlrIceType')||'Blue Ice IV-Grade';
   let oreTrendType=localStorage.getItem('jlrOreTrend')||'Kylixium';
   const BOARD_SIZES=['small','medium','large'];
+  function normalizeBoardKey(value){
+    const key=String(value||'');
+    return key.includes(':')?key:`t3:${key}`;
+  }
   function loadBoardPrefs(){
     try{
       const raw=JSON.parse(localStorage.getItem('jlrFieldBoard')||'{}');
       return {
-        order:Array.isArray(raw.order)?raw.order.map(String):[],
-        favorites:Array.isArray(raw.favorites)?raw.favorites.map(String):[],
+        order:Array.isArray(raw.order)?raw.order.map(normalizeBoardKey):[],
+        favorites:Array.isArray(raw.favorites)?raw.favorites.map(normalizeBoardKey):[],
         size:BOARD_SIZES.includes(raw.size)?raw.size:'medium',
       };
     }catch{return{order:[],favorites:[],size:'medium'}}
   }
   let boardPrefs=loadBoardPrefs();
   let boardArrangeMode=false;
-  let boardDragSystem='';
+  let boardDragKey='';
   let boardSuppressClickUntil=0;
   const statusText = {ready:'GREEN • MINEABLE',picked:'YELLOW • PICKED',cleared:'RED • RESPAWN'};
 
@@ -744,17 +748,25 @@
   }
 
   function definitions(){return [...(state?.source?.systems||[])].sort((a,b)=>a.rank-b.rank||a.order-b.order||a.system.localeCompare(b.system))}
+  function boardKey(kind,system){return `${kind}:${system}`}
   function saveBoardPrefs(){localStorage.setItem('jlrFieldBoard',JSON.stringify(boardPrefs))}
-  function favoriteSystems(){return new Set(boardPrefs.favorites)}
-  function boardDefinitions(){
-    const defs=definitions(),favorites=favoriteSystems();
-    const original=new Map(defs.map((d,i)=>[d.system,i]));
-    const custom=new Map(boardPrefs.order.map((system,i)=>[system,i]));
-    return defs.sort((a,b)=>{
-      const af=favorites.has(a.system),bf=favorites.has(b.system);
+  function favoriteBoardKeys(){return new Set(boardPrefs.favorites)}
+  function isBoardFavorite(kind,system){return favoriteBoardKeys().has(boardKey(kind,system))}
+  function boardEntries(){
+    const entries=[];
+    for(const d of definitions())entries.push({kind:'t3',key:boardKey('t3',d.system),system:d.system,d,f:field(d.system)});
+    for(const row of Array.isArray(state?.source?.iceFields)?state.source.iceFields:[])entries.push({kind:'ice',key:boardKey('ice',row.system),system:row.system,row});
+    return entries;
+  }
+  function orderedBoardEntries(){
+    const entries=boardEntries(),favorites=favoriteBoardKeys();
+    const original=new Map(entries.map((entry,index)=>[entry.key,index]));
+    const custom=new Map(boardPrefs.order.map((key,index)=>[normalizeBoardKey(key),index]));
+    return entries.sort((a,b)=>{
+      const af=favorites.has(a.key),bf=favorites.has(b.key);
       if(af!==bf)return af?-1:1;
-      const ai=custom.has(a.system)?custom.get(a.system):100000+(original.get(a.system)||0);
-      const bi=custom.has(b.system)?custom.get(b.system):100000+(original.get(b.system)||0);
+      const ai=custom.has(a.key)?custom.get(a.key):100000+(original.get(a.key)||0);
+      const bi=custom.has(b.key)?custom.get(b.key):100000+(original.get(b.key)||0);
       return ai-bi;
     });
   }
@@ -770,21 +782,21 @@
       arrange.textContent=boardArrangeMode?'✓ ARRANGING':'↕ ARRANGE';
     }
     if(size)size.textContent=`BOX SIZE • ${boardPrefs.size==='small'?'S':boardPrefs.size==='large'?'L':'M'}`;
-    if(hint)hint.textContent=boardArrangeMode?'Drag boxes to reorder • favorites stay pinned first':'☆ favorite a system to pin it to the front';
+    if(hint)hint.textContent=boardArrangeMode?'Drag any T3 or ICE box to reorder • favorites stay pinned first':'☆ favorite any T3 or ICE system to pin it to the front';
   }
-  function toggleBoardFavorite(system){
-    const favorites=favoriteSystems();
-    if(favorites.has(system))favorites.delete(system);else favorites.add(system);
+  function toggleBoardFavorite(kind,system){
+    const key=boardKey(kind,system),favorites=favoriteBoardKeys();
+    if(favorites.has(key))favorites.delete(key);else favorites.add(key);
     boardPrefs.favorites=[...favorites];
     saveBoardPrefs();
     renderBoards();
   }
-  function moveBoardSystem(source,target){
-    if(!source||!target||source===target)return;
-    const favorites=favoriteSystems();
-    if(favorites.has(source)!==favorites.has(target))return;
-    const ids=boardDefinitions().map(d=>d.system);
-    const from=ids.indexOf(source),to=ids.indexOf(target);
+  function moveBoardItem(sourceKey,targetKey){
+    if(!sourceKey||!targetKey||sourceKey===targetKey)return;
+    const favorites=favoriteBoardKeys();
+    if(favorites.has(sourceKey)!==favorites.has(targetKey))return;
+    const ids=orderedBoardEntries().map(entry=>entry.key);
+    const from=ids.indexOf(sourceKey),to=ids.indexOf(targetKey);
     if(from<0||to<0)return;
     ids.splice(to,0,ids.splice(from,1)[0]);
     boardPrefs.order=ids;
@@ -934,10 +946,12 @@
   function chooseSystem(system){selectedSystem=system;$('systemSelect').value=system;$('fieldNote').value='';renderSelect();renderBoards();renderSelected();renderNotes()}
   function node(d,f,includeTimer=true){
     const b=document.createElement('div');
-    const favorite=favoriteSystems().has(d.system);
+    const key=boardKey('t3',d.system);
+    const favorite=isBoardFavorite('t3',d.system);
     b.className='system-node';
     b.dataset.status=f.status;
     b.dataset.system=d.system;
+    b.dataset.boardKey=key;
     b.setAttribute('role','button');
     b.setAttribute('tabindex','0');
     b.setAttribute('aria-label',`${d.system}, ${d.ore}, ${statusText[f.status]}`);
@@ -952,7 +966,7 @@
     b.title=`${d.system} • ${d.ore} • ${statusText[f.status]}${favorite?' • Favorite':''}${f.autoReopenedAt?` • ESI mining detected ${ago(f.autoReopenedAt)}`:''}${Number.isFinite(distance)?` • ${distance.toFixed(2)} LY from C-N4OD`:''}${f.cherryPicked?' • Cherry Picked':''}${f.notes?.length?` • ${f.notes.length} notes`:''}`;
 
     b.querySelector('.favorite-toggle').addEventListener('click',e=>{
-      e.preventDefault();e.stopPropagation();toggleBoardFavorite(d.system);sfx('select');
+      e.preventDefault();e.stopPropagation();toggleBoardFavorite('t3',d.system);sfx('select');
     });
     b.addEventListener('click',e=>{
       if(e.target.closest('.favorite-toggle'))return;
@@ -963,43 +977,61 @@
       if(e.target!==b)return;
       if(e.key==='Enter'||e.key===' '){e.preventDefault();chooseSystem(d.system)}
     });
-    b.addEventListener('dragstart',e=>{
+    attachBoardDrag(b,key);
+    return b;
+  }
+
+  function attachBoardDrag(card,key){
+    card.addEventListener('dragstart',e=>{
       if(!boardArrangeMode){e.preventDefault();return}
-      boardDragSystem=d.system;
-      b.classList.add('dragging');
-      if(e.dataTransfer){e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',d.system)}
+      boardDragKey=key;
+      card.classList.add('dragging');
+      if(e.dataTransfer){e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',key)}
     });
-    b.addEventListener('dragover',e=>{
-      if(!boardArrangeMode||!boardDragSystem||boardDragSystem===d.system)return;
-      if(favoriteSystems().has(boardDragSystem)!==favoriteSystems().has(d.system))return;
+    card.addEventListener('dragover',e=>{
+      if(!boardArrangeMode||!boardDragKey||boardDragKey===key)return;
+      const favorites=favoriteBoardKeys();
+      if(favorites.has(boardDragKey)!==favorites.has(key))return;
       e.preventDefault();
-      b.classList.add('drag-over');
+      card.classList.add('drag-over');
       if(e.dataTransfer)e.dataTransfer.dropEffect='move';
     });
-    b.addEventListener('dragleave',()=>b.classList.remove('drag-over'));
-    b.addEventListener('drop',e=>{
-      e.preventDefault();b.classList.remove('drag-over');
-      moveBoardSystem(boardDragSystem,d.system);
+    card.addEventListener('dragleave',()=>card.classList.remove('drag-over'));
+    card.addEventListener('drop',e=>{
+      e.preventDefault();card.classList.remove('drag-over');
+      moveBoardItem(boardDragKey,key);
     });
-    b.addEventListener('dragend',()=>{
-      boardDragSystem='';
+    card.addEventListener('dragend',()=>{
+      boardDragKey='';
       boardSuppressClickUntil=Date.now()+180;
       document.querySelectorAll('.system-node.dragging,.system-node.drag-over').forEach(node=>node.classList.remove('dragging','drag-over'));
     });
-    return b;
   }
 
   function iceBoardNode(row){
     const card=document.createElement('div');
+    const key=boardKey('ice',row.system);
+    const favorite=isBoardFavorite('ice',row.system);
     card.className='system-node ice-system-node';
     card.dataset.status='ice';
     card.dataset.system=row.system;
+    card.dataset.boardKey=key;
+    card.classList.toggle('favorite',favorite);
+    card.classList.toggle('arrange-mode',boardArrangeMode);
+    card.draggable=boardArrangeMode;
+    card.setAttribute('role','group');
     const fields=Math.max(1,Number(row.iceBelts)||1);
     const distance=Number(row.distanceLy);
-    card.innerHTML='<span class="sys-name">'+esc(row.system)+'</span>'+
+    card.innerHTML='<button class="favorite-toggle" type="button" aria-pressed="'+favorite+'" title="'+(favorite?'Remove from favorites':'Favorite this system')+'">'+(favorite?'★':'☆')+'</button>'+
+      (boardArrangeMode?'<span class="drag-grip" aria-hidden="true">⠿</span>':'')+
+      '<span class="sys-name">'+esc(row.system)+'</span>'+
       '<span class="sys-ore">'+fields+' ICE FIELD'+(fields===1?'':'S')+'</span>'+
       '<span class="sys-state">IN TITAN RANGE'+(Number.isFinite(distance)?' • '+distance.toFixed(2)+' LY':'')+'</span>';
-    card.title=row.system+' • '+fields+' ice field'+(fields===1?'':'s')+(Number.isFinite(distance)?' • '+distance.toFixed(2)+' LY from C-N4OD':'')+' • within configured Titan bridge range';
+    card.title=row.system+' • '+fields+' ice field'+(fields===1?'':'s')+(favorite?' • Favorite':'')+(Number.isFinite(distance)?' • '+distance.toFixed(2)+' LY from C-N4OD':'')+' • within configured Titan bridge range';
+    card.querySelector('.favorite-toggle').addEventListener('click',e=>{
+      e.preventDefault();e.stopPropagation();toggleBoardFavorite('ice',row.system);sfx('select');
+    });
+    attachBoardDrag(card,key);
     return card;
   }
 
@@ -1011,23 +1043,18 @@
     let counts={ready:0,picked:0,cleared:0,cherry:0};
     const iceFields=Array.isArray(state.source?.iceFields)?state.source.iceFields:[];
 
-    if(filter!=='ice'){
-      for(const d of boardDefinitions()){
-        const f=field(d.system);
-        counts[f.status]++;
-        if(f.cherryPicked)counts.cherry++;
-        if(filter==='all'||filter===f.status||(filter==='cherry'&&f.cherryPicked))board.appendChild(node(d,f,true));
-      }
-    }else{
-      for(const d of boardDefinitions()){
-        const f=field(d.system);
-        counts[f.status]++;
-        if(f.cherryPicked)counts.cherry++;
-      }
+    for(const d of definitions()){
+      const f=field(d.system);
+      counts[f.status]++;
+      if(f.cherryPicked)counts.cherry++;
     }
 
-    if(filter==='all'||filter==='ice'){
-      for(const row of iceFields)board.appendChild(iceBoardNode(row));
+    for(const entry of orderedBoardEntries()){
+      if(entry.kind==='t3'){
+        if(filter==='all'||filter===entry.f.status||(filter==='cherry'&&entry.f.cherryPicked))board.appendChild(node(entry.d,entry.f,true));
+      }else if(filter==='all'||filter==='ice'){
+        board.appendChild(iceBoardNode(entry.row));
+      }
     }
 
     $('statusCounts').textContent=`${counts.ready} mineable • ${counts.picked} picked • ${counts.cleared} respawning • ${counts.cherry} cherry • ${iceFields.length} ice systems`;
