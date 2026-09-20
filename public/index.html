@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700&family=Rajdhani:wght@600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=2.4.9">
+  <link rel="stylesheet" href="/styles.css?v=2.5.0">
 </head>
 <body>
   <main id="loginView" class="login-shell hidden">
@@ -62,7 +62,7 @@
 
     <nav class="app-tabs" aria-label="Dashboard sections">
       <button class="app-tab active" data-tab="fields" type="button">FIELDS</button>
-      <button class="app-tab" data-tab="fleet" type="button">FLEET</button>
+      <button class="app-tab" data-tab="fleet" type="button">FLEET PERFORMANCE</button>
       <button class="app-tab" data-tab="ice" type="button">ICE</button>
       <button class="app-tab" data-tab="pvp" type="button">INIT PVP</button>
       <button class="app-tab" data-tab="threat" type="button">THREAT SCAN</button>
@@ -174,8 +174,49 @@
       <div id="hitOrder" class="hit-order"></div>
     </section>
 
+    <section class="glass fleet-command-panel">
+      <div class="section-title fleet-command-title">
+        <div><span class="eyebrow">ESI LIVE OPERATIONS</span><strong>FLEET PERFORMANCE</strong></div>
+        <div class="fleet-history-controls" aria-label="Fleet performance history controls">
+          <div class="fleet-control-group" aria-label="History range">
+            <button class="fleet-range active" data-days="7" type="button">7D</button>
+            <button class="fleet-range" data-days="30" type="button">30D</button>
+            <button class="fleet-range" data-days="90" type="button">90D</button>
+          </div>
+          <div class="fleet-control-group" aria-label="History metric">
+            <button class="fleet-metric active" data-metric="m3" type="button">M³</button>
+            <button class="fleet-metric" data-metric="value" type="button">PAYOUT</button>
+          </div>
+          <span id="fleetLiveStatus" class="status-pill">● WAITING FOR ESI</span>
+        </div>
+      </div>
+      <div class="fleet-command-kpis">
+        <article><span>ACTIVE LEDGER RATE</span><strong id="fleetLiveRate">—</strong><small id="fleetLiveRateSub">waiting for a mining interval</small></article>
+        <article><span>ACTIVE TOONS</span><strong id="fleetActiveToons">—</strong><small id="fleetActiveToonsSub">detected in latest sample</small></article>
+        <article><span>TODAY MINED</span><strong id="fleetTodayM3">—</strong><small>all linked mining ledgers</small></article>
+        <article><span>TODAY PAYOUT</span><strong id="fleetTodayPayout">—</strong><small id="fleetTodayPayoutSub">tracked T3 value × payout</small></article>
+        <article><span id="fleetRangeTotalLabel">7D MINED</span><strong id="fleetRangeTotal">—</strong><small id="fleetRangeTotalSub">selected history range</small></article>
+        <article><span>BEST DAY</span><strong id="fleetBestDay">—</strong><small id="fleetBestDaySub">no production history yet</small></article>
+      </div>
+      <div class="fleet-command-grid">
+        <article class="fleet-command-card fleet-live-card">
+          <div class="visual-card-head"><strong>LIVE ACTIVITY RATE</strong><small>15-minute ESI samples • updates automatically</small></div>
+          <div id="fleetActivityChart" class="fleet-activity-chart"></div>
+        </article>
+        <article class="fleet-command-card fleet-history-card">
+          <div class="visual-card-head"><strong id="fleetHistoryTitle">DAILY MINING VOLUME</strong><small id="fleetHistorySubtitle">last 7 days • hover for daily totals</small></div>
+          <div id="fleetHistoryChart" class="fleet-history-chart"></div>
+        </article>
+        <article class="fleet-command-card fleet-ore-card">
+          <div class="visual-card-head"><strong>ORE MIX</strong><small id="fleetOreMixSubtitle">last 7 days • mined m³ by ore</small></div>
+          <div id="fleetOreMix" class="fleet-ore-mix"></div>
+        </article>
+      </div>
+      <div class="fleet-collection-note"><strong>AUTOMATIC DATA COLLECTION</strong><span>Live samples are retained for 7 days. Daily mining and ore-mix history retain up to 90 days and refill from linked EVE mining ledgers after sync.</span></div>
+    </section>
+
     <section class="glass mining-visuals-panel">
-      <div class="section-title"><div><strong>ORE MARKET & FLEET PERFORMANCE</strong></div><span class="muted tiny">market history • fit projection • ledger actuals</span></div>
+      <div class="section-title"><div><strong>ORE VALUE & FIT ANALYTICS</strong></div><span class="muted tiny">Jita/C-N history • fit projection • ledger actuals</span></div>
       <div class="mining-visual-grid">
         <article class="mining-visual-card">
           <div class="visual-card-head trend-head">
@@ -282,6 +323,6 @@
     <div id="toast" class="toast hidden" role="status"></div>
   </main>
   <script src="/yield-math.js?v=2.3.74" defer></script>
-  <script src="/app.js?v=2.4.9" defer></script>
+  <script src="/app.js?v=2.5.0" defer></script>
 </body>
 </html>

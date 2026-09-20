@@ -64,6 +64,9 @@
   delete calcSettings.crystal;
   let iceTrackType=localStorage.getItem('jlrIceType')||'Blue Ice IV-Grade';
   let oreTrendType=localStorage.getItem('jlrOreTrend')||'Kylixium';
+  const savedFleetHistoryDays=Number(localStorage.getItem('jlrFleetHistoryDays'));
+  let fleetHistoryDays=[7,30,90].includes(savedFleetHistoryDays)?savedFleetHistoryDays:7;
+  let fleetHistoryMetric=localStorage.getItem('jlrFleetHistoryMetric')==='value'?'value':'m3';
   let targetOre=localStorage.getItem('jlrTargetOre')||'auto';
   const BOARD_SIZES=['small','medium','large'];
   function normalizeBoardKey(value){
@@ -611,9 +614,10 @@
     if(advanced.children.length)fields.appendChild(advanced);
 
     const setup=document.querySelector('.setup-drawer');
+    const command=document.querySelector('.fleet-command-panel');
     const visuals=document.querySelector('.mining-visuals-panel');
     const actual=document.querySelector('.actual-panel');
-    [setup,visuals,actual].filter(Boolean).forEach(el=>fleet.appendChild(el));
+    [setup,command,visuals,actual].filter(Boolean).forEach(el=>fleet.appendChild(el));
 
     const icePanel=document.querySelector('.ice-mining-panel');
     if(icePanel)ice.appendChild(icePanel);
@@ -1991,6 +1995,126 @@
       }
     }
   }
+  function fleetHistoryRows(days=fleetHistoryDays){
+    const source=Array.isArray(state?.esi?.performance?.daily)?state.esi.performance.daily:[];
+    const byDate=new Map(source.map(row=>[String(row.date||''),row]));
+    const today=new Date();
+    today.setUTCHours(0,0,0,0);
+    const rows=[];
+    for(let offset=days-1;offset>=0;offset--){
+      const date=new Date(today.getTime()-offset*86400000).toISOString().slice(0,10);
+      const row=byDate.get(date)||{};
+      rows.push({date,m3:Number(row.m3||0),jbv:Number(row.jbv||0),ores:row.ores&&typeof row.ores==='object'?row.ores:{}});
+    }
+    return rows;
+  }
+  function renderFleetActivityChart(el,samples,target){
+    if(!el)return;
+    const rows=(samples||[]).filter(row=>Number.isFinite(Date.parse(row?.at||''))).slice(-48);
+    if(!rows.length){
+      el.innerHTML='<div class="visual-empty">Live activity history will begin after the next ESI ledger sync.</div>';
+      return;
+    }
+    const W=760,H=250,L=58,R=18,T=22,B=34,pw=W-L-R,ph=H-T-B;
+    const values=rows.map(row=>Math.max(0,Number(row.actualM3PerHour)||0));
+    const max=Math.max(1,Number(target)||0,...values)*1.12;
+    const x=i=>rows.length<=1?L+pw/2:L+i/(rows.length-1)*pw;
+    const y=v=>T+(1-Math.min(max,Math.max(0,Number(v)||0))/max)*ph;
+    let grid='';
+    for(let i=0;i<=4;i++){
+      const yy=T+i/4*ph,value=max*(1-i/4);
+      grid+=`<line x1="${L}" y1="${yy.toFixed(1)}" x2="${W-R}" y2="${yy.toFixed(1)}" class="fleet-chart-grid"/><text x="${L-7}" y="${(yy+3).toFixed(1)}" text-anchor="end" class="fleet-chart-axis">${esc(compactNumber(value))}</text>`;
+    }
+    const points=rows.map((row,i)=>`${x(i).toFixed(1)} ${y(values[i]).toFixed(1)}`);
+    const line='M '+points.join(' L ');
+    const area=line+` L ${x(rows.length-1).toFixed(1)} ${T+ph} L ${x(0).toFixed(1)} ${T+ph} Z`;
+    const dots=rows.map((row,i)=>{
+      const when=new Date(row.at).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+      const title=`${when} • ${fmt(values[i],'m3')} m³/hr • ${Number(row.activeToons||0)} active of ${Number(row.sampledToons||0)} sampled`;
+      return `<circle cx="${x(i).toFixed(1)}" cy="${y(values[i]).toFixed(1)}" r="3.2" class="fleet-activity-dot"><title>${esc(title)}</title></circle>`;
+    }).join('');
+    const targetLine=Number(target)>0?`<line x1="${L}" y1="${y(target).toFixed(1)}" x2="${W-R}" y2="${y(target).toFixed(1)}" class="fleet-target-line"/><text x="${W-R}" y="${(y(target)-5).toFixed(1)}" text-anchor="end" class="fleet-target-label">TARGET ${esc(compactNumber(target))} M³/HR</text>`:'';
+    const labelIndexes=[0,Math.floor((rows.length-1)/2),rows.length-1];
+    const labels=[...new Set(labelIndexes)].map(i=>`<text x="${x(i).toFixed(1)}" y="${H-10}" text-anchor="middle" class="fleet-chart-axis">${esc(new Date(rows[i].at).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}))}</text>`).join('');
+    el.innerHTML=`<svg class="fleet-chart-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Live fleet mining rate from recent ESI ledger samples">${grid}<path d="${area}" class="fleet-activity-area"/><path d="${line}" class="fleet-activity-line"/>${targetLine}${dots}${labels}<text x="${W-R}" y="${T-7}" text-anchor="end" class="fleet-chart-unit">M³/HR</text></svg>`;
+  }
+  function renderFleetDailyChart(el,rows,metric){
+    if(!el)return;
+    const payout=Number(fleetSettings.payout||95)/100;
+    const values=rows.map(row=>metric==='value'?Math.max(0,Number(row.jbv)||0)*payout:Math.max(0,Number(row.m3)||0));
+    if(!values.some(value=>value>0)){
+      el.innerHTML='<div class="visual-empty">Daily history will fill from linked EVE mining ledgers.</div>';
+      return;
+    }
+    const W=760,H=250,L=58,R=16,T=22,B=34,pw=W-L-R,ph=H-T-B,max=Math.max(1,...values)*1.1;
+    const slot=pw/Math.max(1,rows.length),bar=Math.max(2,Math.min(28,slot*.68));
+    const y=value=>T+(1-value/max)*ph;
+    let grid='';
+    for(let i=0;i<=4;i++){
+      const yy=T+i/4*ph,value=max*(1-i/4);
+      grid+=`<line x1="${L}" y1="${yy.toFixed(1)}" x2="${W-R}" y2="${yy.toFixed(1)}" class="fleet-chart-grid"/><text x="${L-7}" y="${(yy+3).toFixed(1)}" text-anchor="end" class="fleet-chart-axis">${esc(compactNumber(value))}</text>`;
+    }
+    const bars=rows.map((row,i)=>{
+      const value=values[i],height=Math.max(value>0?1:0,(value/max)*ph),xx=L+i*slot+(slot-bar)/2,yy=T+ph-height;
+      const label=metric==='value'?`${fmt(value)} ISK payout`:`${fmt(value,'m3')} m³`;
+      return `<rect x="${xx.toFixed(1)}" y="${yy.toFixed(1)}" width="${bar.toFixed(1)}" height="${height.toFixed(1)}" rx="2" class="fleet-history-bar"><title>${esc(chartDateLabel(row.date)+' • '+label)}</title></rect>`;
+    }).join('');
+    const labelCount=Math.min(6,rows.length),indexes=new Set();
+    if(rows.length===1)indexes.add(0);else for(let i=0;i<labelCount;i++)indexes.add(Math.round(i*(rows.length-1)/(labelCount-1)));
+    const labels=[...indexes].map(i=>`<text x="${(L+i*slot+slot/2).toFixed(1)}" y="${H-10}" text-anchor="middle" class="fleet-chart-axis">${esc(chartDateLabel(rows[i].date))}</text>`).join('');
+    el.innerHTML=`<svg class="fleet-chart-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Daily fleet ${metric==='value'?'payout':'mining volume'} history">${grid}${bars}${labels}<text x="${W-R}" y="${T-7}" text-anchor="end" class="fleet-chart-unit">${metric==='value'?'ISK PAYOUT':'M³ MINED'}</text></svg>`;
+  }
+  function renderFleetOreMix(el,rows){
+    if(!el)return;
+    const totals=new Map();
+    for(const row of rows)for(const [name,value] of Object.entries(row.ores||{}))totals.set(name,Number(totals.get(name)||0)+Math.max(0,Number(value)||0));
+    const sorted=[...totals].filter(([,value])=>value>0).sort((a,b)=>b[1]-a[1]);
+    if(!sorted.length){
+      el.innerHTML='<div class="visual-empty">Ore mix will appear after synced ledger rows include ore types.</div>';
+      return;
+    }
+    const grand=sorted.reduce((sum,[,value])=>sum+value,0),top=sorted.slice(0,8);
+    const other=sorted.slice(8).reduce((sum,[,value])=>sum+value,0);
+    if(other>0)top.push(['Other ores',other]);
+    el.innerHTML=top.map(([name,value],index)=>{
+      const share=grand>0?value/grand*100:0;
+      return `<div class="ore-mix-row"><div><strong>${esc(name)}</strong><small>${fmt(value,'m3')} m³ • ${share.toFixed(1)}%</small></div><div class="ore-mix-track"><span style="width:${share.toFixed(2)}%;--ore-index:${index}"></span></div></div>`;
+    }).join('');
+  }
+  function renderFleetPerformance(){
+    if(!state||!$('fleetActivityChart'))return;
+    const daily=fleetHistoryRows(fleetHistoryDays),samples=state.esi?.performance?.samples||[];
+    const latest=samples.at(-1)||null,payout=Number(fleetSettings.payout||95)/100;
+    const rangeM3=daily.reduce((sum,row)=>sum+Number(row.m3||0),0);
+    const rangeValue=daily.reduce((sum,row)=>sum+Number(row.jbv||0),0)*payout;
+    const best=daily.reduce((top,row)=>Number(row.m3||0)>Number(top?.m3||0)?row:top,null);
+    const fleet=fleetStats(),target=Number(fleet.total||0);
+    const liveRate=Number(latest?.actualM3PerHour||0);
+    const sampleAge=latest?Date.now()-Date.parse(latest.at||''):Infinity;
+
+    document.querySelectorAll('.fleet-range').forEach(button=>button.classList.toggle('active',Number(button.dataset.days)===fleetHistoryDays));
+    document.querySelectorAll('.fleet-metric').forEach(button=>button.classList.toggle('active',button.dataset.metric===fleetHistoryMetric));
+    $('fleetLiveStatus').textContent=state.esi?.syncing?'● SYNCING ESI':latest?(sampleAge<=45*60*1000?`● LIVE • ${ago(latest.at).toUpperCase()}`:`● LAST SAMPLE • ${ago(latest.at).toUpperCase()}`):'● WAITING FOR ESI';
+    $('fleetLiveStatus').classList.toggle('stale',Boolean(latest&&sampleAge>45*60*1000));
+    $('fleetLiveRate').textContent=latest?`${fmt(liveRate,'m3')} m³/hr`:'—';
+    $('fleetLiveRateSub').textContent=latest?(liveRate>0?'latest detected mining interval':'no increase in latest interval'):'waiting for a mining interval';
+    $('fleetActiveToons').textContent=latest?`${Number(latest.activeToons||0)} / ${Number(latest.sampledToons||0)}`:'—';
+    $('fleetActiveToonsSub').textContent=latest?'active / sampled in latest sync':'detected in latest sample';
+    $('fleetTodayM3').textContent=`${fmt(state.esi?.actual?.today?.m3||0,'m3')} m³`;
+    $('fleetTodayPayout').textContent=`${fmt(actualValue(state.esi?.actual?.today?.jbv||0))} ISK`;
+    $('fleetTodayPayoutSub').textContent=`tracked T3 value × ${(payout*100).toFixed(1)}% payout`;
+    $('fleetRangeTotalLabel').textContent=`${fleetHistoryDays}D MINED`;
+    $('fleetRangeTotal').textContent=`${fmt(rangeM3,'m3')} m³`;
+    $('fleetRangeTotalSub').textContent=`${fmt(rangeValue)} ISK tracked payout`;
+    $('fleetBestDay').textContent=best&&Number(best.m3)>0?`${fmt(best.m3,'m3')} m³`:'—';
+    $('fleetBestDaySub').textContent=best&&Number(best.m3)>0?chartDateLabel(best.date):'no production history yet';
+    $('fleetHistoryTitle').textContent=fleetHistoryMetric==='value'?'DAILY TRACKED PAYOUT':'DAILY MINING VOLUME';
+    $('fleetHistorySubtitle').textContent=`last ${fleetHistoryDays} days • hover for daily totals`;
+    $('fleetOreMixSubtitle').textContent=`last ${fleetHistoryDays} days • mined m³ by ore`;
+    renderFleetActivityChart($('fleetActivityChart'),samples,target);
+    renderFleetDailyChart($('fleetHistoryChart'),daily,fleetHistoryMetric);
+    renderFleetOreMix($('fleetOreMix'),daily);
+  }
   function renderMiningVisuals(){
     if(!state||!$('oreValueChart')||!$('fleetOutputChart'))return;
 
@@ -2341,7 +2465,7 @@
 
     localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));
   }
-  function renderAll(){if(!state)return;renderFleet();renderTop();renderSelect();renderBoards();renderHits();renderMiningVisuals();renderIceMining();renderRanking();renderTimers();renderSelected();renderNotes();renderScanCharacters();renderCharacters();renderCalculator();renderMerIntel();}
+  function renderAll(){if(!state)return;renderFleet();renderTop();renderSelect();renderBoards();renderHits();renderFleetPerformance();renderMiningVisuals();renderIceMining();renderRanking();renderTimers();renderSelected();renderNotes();renderScanCharacters();renderCharacters();renderCalculator();renderMerIntel();}
 
   async function refreshMe(){const p=await api('/api/me');me=p.user;if(me){$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait}return p.authenticated}
   async function loadState(){state=await api('/api/state');renderAll()}
@@ -2554,6 +2678,19 @@
     localStorage.setItem('jlrOreTrend',oreTrendType);
     renderMiningVisuals();
   });
+  document.querySelectorAll('.fleet-range').forEach(button=>button.addEventListener('click',()=>{
+    const days=Number(button.dataset.days);
+    if(![7,30,90].includes(days))return;
+    fleetHistoryDays=days;
+    localStorage.setItem('jlrFleetHistoryDays',String(days));
+    renderFleetPerformance();
+  }));
+  document.querySelectorAll('.fleet-metric').forEach(button=>button.addEventListener('click',()=>{
+    const metric=button.dataset.metric==='value'?'value':'m3';
+    fleetHistoryMetric=metric;
+    localStorage.setItem('jlrFleetHistoryMetric',metric);
+    renderFleetPerformance();
+  }));
 
   $('iceTypeSelect').addEventListener('change',()=>{
     iceTrackType=$('iceTypeSelect').value||'Blue Ice IV-Grade';
