@@ -4036,17 +4036,42 @@ async function routeApi(req,res,url) {
     try{
       const cacheKey=crypto.createHash('sha256').update(`${user.id}|${ignoreOwn?'1':'0'}|${ignorePositive?'1':'0'}|${fountainThreatCache.updatedAt||0}|${scanText}`).digest('hex');
       const cached=threatScanCache.get(cacheKey);
-      if(cached&&Date.now()-cached.at<2*60*1000)return json(res,200,{...cached.data,cached:true});
-      const data=await buildThreatIntel(scanText,{
+      if(cached&&Date.now()-cached.at<2*60*1000)return json(res,200,{...cached.data,cached:true,refreshing:false});
+
+      const running=threatScanJobs.get(cacheKey);
+      if(running)return json(res,200,{...running.partial,refreshing:true});
+
+      const scanOptions={
         ignoreOwnIds:ignoreOwn?user.characterIds:[],
         positiveStandingsPromise:ignorePositive?positiveStandingContactsForUser(user):Promise.resolve(null),
-      });
-      threatScanCache.set(cacheKey,{at:Date.now(),data});
-      if(threatScanCache.size>40){
-        const oldest=[...threatScanCache.entries()].sort((a,b)=>a[1].at-b[1].at).slice(0,10);
-        for(const [key] of oldest)threatScanCache.delete(key);
+      };
+      const partial=await buildThreatIntel(scanText,{...scanOptions,fast:true});
+      if(!partial.refreshing){
+        const complete={...partial,refreshing:false};
+        threatScanCache.set(cacheKey,{at:Date.now(),data:complete});
+        return json(res,200,complete);
       }
-      return json(res,200,data);
+
+      const job={partial:{...partial,refreshing:true},promise:null};
+      const promise=buildThreatIntel(scanText,{...scanOptions,fast:false})
+        .then(data=>{
+          const complete={...data,refreshing:false};
+          threatScanCache.set(cacheKey,{at:Date.now(),data:complete});
+          if(threatScanCache.size>40){
+            const oldest=[...threatScanCache.entries()].sort((a,b)=>a[1].at-b[1].at).slice(0,10);
+            for(const [key] of oldest)threatScanCache.delete(key);
+          }
+          return complete;
+        })
+        .catch(err=>{
+          console.warn('Background threat enrichment failed',String(err.message||err));
+          throw err;
+        })
+        .finally(()=>{if(threatScanJobs.get(cacheKey)===job)threatScanJobs.delete(cacheKey)});
+      job.promise=promise;
+      threatScanJobs.set(cacheKey,job);
+      promise.catch(()=>{});
+      return json(res,200,job.partial);
     }catch(err){
       if(err?.code==='CONTACT_SCOPE_REQUIRED')return json(res,409,{error:err.code,message:String(err.message||err)});
       console.warn('Threat scan failed',String(err.message||err));
