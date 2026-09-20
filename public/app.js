@@ -37,6 +37,7 @@
   let threatScanError='';
   let threatScanPoll=null;
   let threatScanPollCount=0;
+  let threatScanRequestSeq=0;
   let threatScanText='';
   let threatIgnorePositive=localStorage.getItem('jlrThreatIgnorePositive')!=='false';
   let threatIgnoreOwn=localStorage.getItem('jlrThreatIgnoreOwn')!=='false';
@@ -1594,8 +1595,10 @@
       renderThreatScan();
     }
   }
-  async function runThreatScan(text,backgroundPoll=false){
+  async function runThreatScan(text,backgroundPoll=false,requestSeq=null){
     const value=String(text||'').trim();
+    if(!backgroundPoll)requestSeq=++threatScanRequestSeq;
+    if(requestSeq!==threatScanRequestSeq)return;
     threatScanText=String(text||'');
     if(value.length<2){
       threatScanError='Paste at least one pilot name or D-scan row.';
@@ -1613,11 +1616,13 @@
     let shouldPoll=false;
     try{
       const contactsAvailable=Boolean(me?.characters?.some(character=>character.contactsAccess));
-      threatScanData=await api('/api/threat-scan',{method:'POST',body:JSON.stringify({
+      const result=await api('/api/threat-scan',{method:'POST',body:JSON.stringify({
         text:value,
         ignoreOwn:threatIgnoreOwn,
         ignorePositive:threatIgnorePositive&&contactsAvailable,
       })});
+      if(requestSeq!==threatScanRequestSeq)return;
+      threatScanData=result;
       shouldPoll=Boolean(threatScanData?.refreshing);
     }catch(error){
       if(!backgroundPoll)threatScanError=String(error?.message||error||'Threat scan failed.');
@@ -1626,7 +1631,7 @@
       renderThreatScan();
       if(shouldPoll&&threatScanPollCount<20){
         threatScanPollCount++;
-        threatScanPoll=setTimeout(()=>runThreatScan(value,true),1500);
+        threatScanPoll=setTimeout(()=>runThreatScan(value,true,requestSeq),1500);
       }
     }
   }
