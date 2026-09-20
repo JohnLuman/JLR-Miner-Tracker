@@ -202,8 +202,8 @@
     display:grid;
     grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);
     grid-template-areas:
-      "sidebar sidebar"
       "board board"
+      "sidebar sidebar"
       "hits hits";
     gap:8px;
     align-items:stretch;
@@ -1426,3 +1426,16 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .theme-menu .sound-menu-option[data-theme-value="angel"]::before{background:linear-gradient(135deg,#ffd46c,#67420b)}
 .theme-menu .sound-menu-option[data-theme-value="edencom"]::before{background:linear-gradient(135deg,#72b9ff,#0b397d)}
 .theme-menu .sound-menu-option[data-theme-value="aurora"]::before{background:linear-gradient(135deg,#ff83f2,#68146f)}
+
+
+/* v2.9.2 Field Board priority on narrower views */
+@media(max-width:1100px){
+  .tab-panel[data-tab="fields"].active{
+    display:flex!important;
+    flex-direction:column;
+  }
+  .tab-panel[data-tab="fields"]>.board-panel{order:1}
+  .tab-panel[data-tab="fields"]>.field-sidebar{order:2}
+  .tab-panel[data-tab="fields"]>.hit-panel{order:3}
+  .tab-panel[data-tab="fields"]>.tab-advanced{order:4}
+}
