@@ -3147,7 +3147,16 @@ async function buildThreatIntel(scanText,{ignoreOwnIds=[],positiveStandings=null
         const age=cached?.updatedAt?Date.now()-pvpDbTimestamp(cached.updatedAt):Infinity;
         const stale=age>=THREAT_CHARACTER_CACHE_MS;
         if(stale){staleIntel++;pendingIntel++}
-        return{...cached,cacheHit:true,stale};
+        const affiliation=affiliations.get(id)||{};
+        const currentCharacter={
+          ...(cached.character||{}),
+          id,
+          name:String(cached.character?.name||row?.name||id),
+          corporation_id:Number(affiliation.corporation_id)||Number(cached.character?.corporation_id)||null,
+          alliance_id:Number(affiliation.alliance_id)||Number(cached.character?.alliance_id)||null,
+          faction_id:Number(affiliation.faction_id)||Number(cached.character?.faction_id)||null,
+        };
+        return{...cached,character:currentCharacter,cacheHit:true,stale};
       }
       pendingIntel++;
       const affiliation=affiliations.get(id)||{};
