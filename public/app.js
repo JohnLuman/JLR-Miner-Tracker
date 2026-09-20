@@ -85,7 +85,7 @@
   }
   let doctrineShoppingList=loadDoctrineShoppingList();
   let doctrineShoppingMode=localStorage.getItem('jlrDoctrineShoppingMode')==='shortfall'?'shortfall':'full';
-  let doctrineShoppingOpen=localStorage.getItem('jlrDoctrineShoppingOpen')!=='false';
+  let doctrineShoppingOpen=localStorage.getItem('jlrDoctrineShoppingOpen')==='true';
   let oreTrendType=localStorage.getItem('jlrOreTrend')||'Kylixium';
   const savedFleetHistoryDays=Number(localStorage.getItem('jlrFleetHistoryDays'));
   let fleetHistoryDays=[7,30,90].includes(savedFleetHistoryDays)?savedFleetHistoryDays:7;
