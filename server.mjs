@@ -88,6 +88,10 @@ const ZKILL_WINDOW_SECONDS = 7 * 24 * 60 * 60;
 const ZKILL_CACHE_MS = 15 * 60 * 1000;
 const ZKILL_MAX_PAGES = 100;
 const ZKILL_PAGE_GAP_MS = 1100;
+const ZKILL_ARCHIVE_RETENTION_MS = 8 * 24 * 60 * 60 * 1000;
+const ZKILL_ARCHIVE_SLICE_MS = 6 * 60 * 60 * 1000;
+const ZKILL_ARCHIVE_OVERLAP_MS = 60 * 60 * 1000;
+const ZKILL_ARCHIVE_REFRESH_MS = 15 * 60 * 1000;
 const ZKILL_LIFETIME_DAMAGE_CACHE_MS = 24 * 60 * 60 * 1000;
 const ZKILL_LIFETIME_PAGE_GAP_MS = 700;
 const THREAT_CHARACTER_CACHE_MS = 6 * 60 * 60 * 1000;
@@ -172,6 +176,7 @@ const userSyncPromises = new Map();
 const ledgerRowsByCharacter = new Map();
 const universeNameCache = new Map();
 let zkillInitLeaderboardCache = { updatedAt:0, data:null, promise:null };
+let zkillInitArchiveRefreshPromise = null;
 const zkillCorpLeaderboardCache = new Map();
 const zkillCorpStatsCache = new Map();
 const zkillLifetimeDamageJobs = new Map();
@@ -221,13 +226,15 @@ function b64url(v) { return Buffer.from(v).toString('base64url'); }
 function randomId(bytes = 24) { return crypto.randomBytes(bytes).toString('base64url'); }
 
 function freshPvpDb(){
-  return {version:2,init7d:null,corp7d:{},corpWeekly:{},lifetime:{},threat:{characters:{},fountain7d:null}};
+  return {version:3,init7d:null,initKillmails:{},initArchive:{coverageStart:null,coverageEnd:null,updatedAt:null,pagesFetched:0},corp7d:{},corpWeekly:{},lifetime:{},threat:{characters:{},fountain7d:null}};
 }
 async function loadPvpDb(){
   try{
     const parsed=JSON.parse(await fsp.readFile(PVP_DB_FILE,'utf8'));
     const base=freshPvpDb();
-    parsed.version=2;
+    parsed.version=3;
+    parsed.initKillmails ||= {};
+    parsed.initArchive ||= {coverageStart:null,coverageEnd:null,updatedAt:null,pagesFetched:0};
     parsed.corp7d ||= {};
     parsed.corpWeekly ||= {};
     parsed.lifetime ||= {};
@@ -240,7 +247,7 @@ async function loadPvpDb(){
   }
 }
 function savePvpDb(){
-  const snapshot=JSON.stringify(pvpDb,null,2);
+  const snapshot=JSON.stringify(pvpDb);
   pvpDbWritePromise=pvpDbWritePromise.catch(()=>{}).then(async()=>{
     const tmp=`${PVP_DB_FILE}.tmp`;
     await fsp.writeFile(tmp,snapshot,'utf8');
@@ -519,7 +526,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.5.5',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.6.0',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -2187,56 +2194,145 @@ function rankPvpRows(rows){
   rows.forEach((row,index)=>row.rank=index+1);
   return rows;
 }
+function zkillTimeToken(value){
+  return new Date(value).toISOString().replace(/[-:T]/g,'').slice(0,12);
+}
+function compactInitKillmail(km){
+  const killId=Number(km?.killmail_id);
+  const timeMs=Date.parse(String(km?.killmail_time||''));
+  if(!killId||!Number.isFinite(timeMs))return null;
+  const attackers=[];
+  for(const attacker of Array.isArray(km?.attackers)?km.attackers:[]){
+    if(Number(attacker?.alliance_id)!==INIT_ALLIANCE_ID)continue;
+    const characterId=Number(attacker?.character_id);
+    if(!characterId)continue;
+    attackers.push([
+      characterId,
+      Number(attacker?.corporation_id)||0,
+      attacker?.final_blow?1:0,
+      Number(attacker?.damage_done)||0,
+    ]);
+  }
+  if(!attackers.length)return null;
+  return [new Date(timeMs).toISOString(),Number(km?.zkb?.totalValue)||0,attackers];
+}
+function pruneInitKillmailArchive(referenceMs=Date.now()){
+  const cutoff=referenceMs-ZKILL_ARCHIVE_RETENTION_MS;
+  for(const [killId,row] of Object.entries(pvpDb.initKillmails||{})){
+    if(Date.parse(String(row?.[0]||''))<cutoff)delete pvpDb.initKillmails[killId];
+  }
+}
+async function fetchInitKillmailSlice(startMs,endMs){
+  let pagesFetched=0,previousPageSignature='';
+  for(let page=1;page<=ZKILL_MAX_PAGES;page++){
+    const url=`https://zkillboard.com/api/kills/allianceID/${INIT_ALLIANCE_ID}/startTime/${zkillTimeToken(startMs)}/endTime/${zkillTimeToken(endMs)}/page/${page}/`;
+    const rows=await zkillJson(url);
+    if(!Array.isArray(rows))throw new Error(`zKillboard archive page ${page} was not a killmail list.`);
+    const signature=rows.slice(0,5).map(row=>String(row?.killmail_id||'')).join(',');
+    if(page>1&&rows.length&&signature&&signature===previousPageSignature)throw new Error(`zKillboard archive pagination repeated page ${page-1}.`);
+    if(signature)previousPageSignature=signature;
+    pagesFetched++;
+    for(const km of rows){
+      const compact=compactInitKillmail(km);
+      if(compact)pvpDb.initKillmails[String(km.killmail_id)]=compact;
+    }
+    if(rows.length<200)return pagesFetched;
+    if(page===ZKILL_MAX_PAGES){
+      if(endMs-startMs<=15*60*1000)throw new Error('A 15-minute zKillboard archive slice exceeded the page cap.');
+      const middle=startMs+Math.floor((endMs-startMs)/2);
+      return pagesFetched+await fetchInitKillmailSlice(startMs,middle)+await fetchInitKillmailSlice(middle,endMs);
+    }
+    await sleep(ZKILL_PAGE_GAP_MS);
+  }
+  return pagesFetched;
+}
+async function refreshInitKillmailArchive(force=false){
+  if(zkillInitArchiveRefreshPromise)return zkillInitArchiveRefreshPromise;
+  const archive=pvpDb.initArchive||{};
+  const age=Date.now()-pvpDbTimestamp(archive.updatedAt);
+  if(!force&&Object.keys(pvpDb.initKillmails||{}).length&&age<ZKILL_ARCHIVE_REFRESH_MS)return archive;
+  const pending=(async()=>{
+    const endMs=Date.now()+60_000;
+    const cutoff=endMs-ZKILL_WINDOW_SECONDS*1000;
+    const coverageStart=pvpDbTimestamp(archive.coverageStart);
+    const lastEnd=pvpDbTimestamp(archive.coverageEnd);
+    const needsBackfill=!Object.keys(pvpDb.initKillmails||{}).length||!coverageStart||coverageStart>cutoff+15*60*1000;
+    let cursor=needsBackfill?cutoff:Math.max(cutoff,(lastEnd||Date.now())-ZKILL_ARCHIVE_OVERLAP_MS);
+    let pagesFetched=0;
+    while(cursor<endMs){
+      const sliceEnd=Math.min(endMs,cursor+ZKILL_ARCHIVE_SLICE_MS);
+      pagesFetched+=await fetchInitKillmailSlice(cursor,sliceEnd);
+      cursor=sliceEnd;
+      if(cursor<endMs)await sleep(ZKILL_PAGE_GAP_MS);
+    }
+    pruneInitKillmailArchive(endMs);
+    pvpDb.initArchive={
+      coverageStart:new Date(needsBackfill?cutoff:Math.min(coverageStart||cutoff,cutoff)).toISOString(),
+      coverageEnd:new Date(endMs).toISOString(),
+      updatedAt:now(),
+      pagesFetched,
+      killmailsStored:Object.keys(pvpDb.initKillmails||{}).length,
+    };
+    await savePvpDb();
+    return pvpDb.initArchive;
+  })().finally(()=>{if(zkillInitArchiveRefreshPromise===pending)zkillInitArchiveRefreshPromise=null});
+  zkillInitArchiveRefreshPromise=pending;
+  return pending;
+}
+function buildInitLeaderboardFromArchive(){
+  const characters=new Map(),corporations=new Map(),seenKillIds=new Set();
+  const cutoff=Date.now()-ZKILL_WINDOW_SECONDS*1000;
+  for(const [rawKillId,record] of Object.entries(pvpDb.initKillmails||{})){
+    const killId=Number(rawKillId),timeMs=Date.parse(String(record?.[0]||''));
+    if(!killId||!Number.isFinite(timeMs)||timeMs<cutoff)continue;
+    seenKillIds.add(killId);
+    const value=Number(record?.[1])||0,corpSeen=new Set();
+    for(const attacker of Array.isArray(record?.[2])?record[2]:[]){
+      const characterId=Number(attacker?.[0]),corpId=Number(attacker?.[1]);
+      const finalBlow=Boolean(attacker?.[2]),damage=Number(attacker?.[3])||0;
+      if(characterId)addPvpMetric(characters,characterId,corpId,killId,value,finalBlow,damage);
+      if(!corpId)continue;
+      if(!corporations.has(corpId))corporations.set(corpId,{id:corpId,killmails:0,finalBlows:0,damageDone:0,iskOnKillmails:0,_kills:new Set()});
+      const corp=corporations.get(corpId);
+      if(!corpSeen.has(corpId)){
+        corpSeen.add(corpId);
+        if(!corp._kills.has(killId)){corp._kills.add(killId);corp.killmails++;corp.iskOnKillmails+=value}
+      }
+      if(finalBlow)corp.finalBlows++;
+      corp.damageDone+=damage;
+    }
+  }
+  const rankedCharacters=rankPvpRows([...characters.values()]);
+  const rankedCorporations=rankPvpRows([...corporations.values()]);
+  for(const row of [...rankedCharacters,...rankedCorporations])delete row._kills;
+  const coverageStart=pvpDbTimestamp(pvpDb.initArchive?.coverageStart);
+  const sourceComplete=Boolean(coverageStart&&coverageStart<=cutoff+15*60*1000);
+  return{
+    generatedAt:now(),
+    pagesFetched:Number(pvpDb.initArchive?.pagesFetched)||0,
+    truncated:!sourceComplete,
+    killmailsProcessed:seenKillIds.size,
+    characters:rankedCharacters,
+    corporations:rankedCorporations,
+    sourceComplete,
+    localArchive:true,
+    archiveUpdatedAt:pvpDb.initArchive?.updatedAt||null,
+    archiveCoverageStart:pvpDb.initArchive?.coverageStart||null,
+    archiveCoverageEnd:pvpDb.initArchive?.coverageEnd||null,
+    killmailsStored:Number(pvpDb.initArchive?.killmailsStored)||Object.keys(pvpDb.initKillmails||{}).length,
+  };
+}
 async function buildInitZkillLeaderboard(force=false){
   const nowMs=Date.now();
   if(!force&&zkillInitLeaderboardCache.data&&nowMs-zkillInitLeaderboardCache.updatedAt<ZKILL_CACHE_MS)return zkillInitLeaderboardCache.data;
   if(zkillInitLeaderboardCache.promise)return zkillInitLeaderboardCache.promise;
   const pending=(async()=>{
-    const characters=new Map(),corporations=new Map(),seenKillIds=new Set();
-    let pagesFetched=0,truncated=false;
-    let previousPageSignature='';
-    for(let page=1;page<=ZKILL_MAX_PAGES;page++){
-      const url=`https://zkillboard.com/api/kills/allianceID/${INIT_ALLIANCE_ID}/pastSeconds/${ZKILL_WINDOW_SECONDS}/page/${page}/`;
-      const rows=await zkillJson(url);
-      if(!Array.isArray(rows))throw new Error(`zKillboard page ${page} was not a killmail list; refusing to publish a partial leaderboard.`);
-      const list=rows;
-      const signature=list.slice(0,5).map(row=>String(row?.killmail_id||'')).join(',');
-      if(page>1&&list.length&&signature&&signature===previousPageSignature){
-        throw new Error(`zKillboard pagination repeated page ${page-1}; refusing to publish incomplete rankings.`);
-      }
-      if(signature)previousPageSignature=signature;
-      pagesFetched=page;
-      for(const km of list){
-        const killId=Number(km?.killmail_id);
-        if(!killId||seenKillIds.has(killId))continue;
-        seenKillIds.add(killId);
-        const value=Number(km?.zkb?.totalValue)||0;
-        const corpSeen=new Set();
-        for(const attacker of Array.isArray(km?.attackers)?km.attackers:[]){
-          if(Number(attacker?.alliance_id)!==INIT_ALLIANCE_ID)continue;
-          const charId=Number(attacker?.character_id);
-          const corpId=Number(attacker?.corporation_id);
-          if(charId)addPvpMetric(characters,charId,corpId,killId,value,Boolean(attacker?.final_blow),Number(attacker?.damage_done)||0);
-          if(corpId){
-            if(!corporations.has(corpId))corporations.set(corpId,{id:corpId,killmails:0,finalBlows:0,damageDone:0,iskOnKillmails:0,_kills:new Set()});
-            const corp=corporations.get(corpId);
-            if(!corpSeen.has(corpId)){
-              corpSeen.add(corpId);
-              if(!corp._kills.has(killId)){corp._kills.add(killId);corp.killmails++;corp.iskOnKillmails+=value}
-            }
-            if(attacker?.final_blow)corp.finalBlows++;
-            corp.damageDone+=Number(attacker?.damage_done)||0;
-          }
-        }
-      }
-      if(list.length<200)break;
-      if(page===ZKILL_MAX_PAGES){truncated=true;break}
-      await sleep(ZKILL_PAGE_GAP_MS);
+    try{await refreshInitKillmailArchive(force)}
+    catch(err){
+      if(!Object.keys(pvpDb.initKillmails||{}).length)throw err;
+      console.warn('INIT local killmail archive refresh failed; using stored rows',String(err.message||err));
     }
-    const rankedCharacters=rankPvpRows([...characters.values()]);
-    const rankedCorporations=rankPvpRows([...corporations.values()]);
-    for(const row of [...rankedCharacters,...rankedCorporations])delete row._kills;
-    const data={generatedAt:now(),pagesFetched,truncated,killmailsProcessed:seenKillIds.size,characters:rankedCharacters,corporations:rankedCorporations,sourceComplete:!truncated};
+    const data=buildInitLeaderboardFromArchive();
     zkillInitLeaderboardCache={updatedAt:Date.now(),data,promise:null};
     pvpDb.init7d={updatedAt:now(),data};
     await savePvpDb();
@@ -3215,6 +3311,11 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
     pagesFetched:base.pagesFetched,
     truncated:base.truncated,
     killmailsProcessed:base.killmailsProcessed,
+    localArchive:Boolean(base.localArchive),
+    archiveUpdatedAt:base.archiveUpdatedAt||null,
+    archiveCoverageStart:base.archiveCoverageStart||null,
+    archiveCoverageEnd:base.archiveCoverageEnd||null,
+    killmailsStored:Number(base.killmailsStored)||0,
     activeCharacters:allianceCharacters.length,
     activeCorporations:correctedCorporations.length,
     myCorpVerified:Boolean(corpDirect),
@@ -3242,7 +3343,7 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
   };
 }
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.5.5',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.6.0',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -3364,7 +3465,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.5.5 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.6.0 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setInterval(()=>resetExpired(true),15_000).unref();
 async function runAutomaticSyncLoop(){
   const startedAt=Date.now();
@@ -3375,6 +3476,11 @@ async function runAutomaticSyncLoop(){
 setTimeout(runAutomaticSyncLoop,5_000).unref();
 setInterval(()=>refreshFountainThreatActivity(false).catch(console.error),FOUNTAIN_THREAT_CACHE_MS).unref();
 setTimeout(()=>refreshFountainThreatActivity(false).catch(console.error),2_500).unref();
+setInterval(()=>buildInitZkillLeaderboard(false).catch(console.error),ZKILL_ARCHIVE_REFRESH_MS).unref();
+setTimeout(()=>{
+  zkillInitLeaderboardCache.updatedAt=0;
+  buildInitZkillLeaderboard(false).catch(console.error);
+},7_500).unref();
 setInterval(()=>refreshMarketPrices().catch(console.error),60*60_000).unref();
 setTimeout(()=>refreshMarketPrices().catch(console.error),2_000).unref();
 setInterval(()=>refreshFieldDistances().catch(console.error),24*60*60_000).unref();

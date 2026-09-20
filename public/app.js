@@ -750,9 +750,11 @@
             <small>ranked from zKillboard attacker records</small>
           </article>
           <article class="glass pvp-summary-card">
-            <span>KILLMAILS PROCESSED</span>
+            <span>${d.localArchive?'LOCAL KILLMAIL DATABASE':'KILLMAILS PROCESSED'}</span>
             <strong>${fmt(d.killmailsProcessed||0)}</strong>
-            <small>${d.truncated?'API page cap reached • rankings may be partial':`${fmt(d.pagesFetched||0)} API pages • validated crawl`}</small>
+            <small>${d.localArchive
+              ?`${fmt(d.killmailsStored||d.killmailsProcessed||0)} stored • ${d.truncated?'initial backfill still building':'complete rolling 7-day coverage'}`
+              :d.truncated?'API page cap reached • rankings may be partial':`${fmt(d.pagesFetched||0)} API pages • validated crawl`}</small>
           </article>
         </section>
 
@@ -810,8 +812,8 @@
 
         <section class="pvp-footnote">
           <strong>RANKING METHOD</strong>
-          <span>Corporation rows use zKillboard's own Weekly 7d ships destroyed, points, ISK destroyed, and global 7-day rank, then are re-ranked against active INIT corporations. KILLMAILS / FINALS, ISK ON KILLS, and MOST DAMAGE • 7D use the rolling INIT-wide 7-day data. LIFETIME DAMAGE is a separate current-corp ranking built incrementally into the app's local PvP database, so completed historical months are reused instead of downloaded again.</span>
-          <small>Updated ${d.generatedAt?ago(d.generatedAt):'recently'} • ${d.stale?'showing last good cache after refresh error • ':''}shared server cache • source: zKillboard public API</small>
+          <span>Corporation rows use zKillboard's own Weekly 7d stats. Pilot rankings are rebuilt from JLR's local rolling killmail database, ordered by killmails, final blows, damage, then ISK. LIFETIME DAMAGE uses the separate historical local database.</span>
+          <small>Updated ${d.generatedAt?ago(d.generatedAt):'recently'} • ${d.stale?'showing last good cache after refresh error • ':''}${d.localArchive?'local archive refreshes every 15 minutes':'shared server cache'} • source: zKillboard public API</small>
         </section>
       </div>`;
     $('pvpRefresh')?.addEventListener('click',()=>loadPvpIntel(true));
