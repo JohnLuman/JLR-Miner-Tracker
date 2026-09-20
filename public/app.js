@@ -15,6 +15,7 @@
   document.documentElement.dataset.theme=activeTheme;
   let toastTimer = null;
   let eventSource = null;
+  let fleetPerformanceRefreshPromise = null;
   let scanCharacterId = localStorage.getItem('jlrScanCharacter') || '';
   let scanBusy = false;
   let merIntel = null;
@@ -622,6 +623,7 @@
     document.querySelectorAll('.tab-panel').forEach(panel=>panel.classList.toggle('active',panel.dataset.tab===activeTab));
     if(activeTab!=='pvp'&&pvpIntelPoll){clearTimeout(pvpIntelPoll);pvpIntelPoll=null}
     if(activeTab==='doctrine'&&!doctrineMarket&&!doctrineMarketLoading)loadDoctrineMarket();
+    if(activeTab==='performance')refreshFleetPerformanceData(false);
     if(activeTab==='pvp'&&!pvpIntel&&!pvpIntelLoading)loadPvpIntel();
     if(activeTab==='threat')renderThreatScan();
   }
@@ -3259,16 +3261,46 @@
 
   async function refreshMe(){const p=await api('/api/me');me=p.user;if(me){$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;syncDoctrineTabAccess()}return p.authenticated}
   async function loadState(){state=await api('/api/state');renderAll()}
+  async function refreshFleetPerformanceData(showStatus=false){
+    if(fleetPerformanceRefreshPromise)return fleetPerformanceRefreshPromise;
+    const pending=(async()=>{
+      const [nextState]=await Promise.all([
+        api('/api/state'),
+        refreshMe(),
+      ]);
+      state=nextState;
+      renderAll();
+      renderDataStatus();
+      if(showStatus&&activeTab==='performance')toast('Fleet Performance updated.');
+      return state;
+    })().catch(error=>{
+      console.warn('Fleet Performance auto-refresh failed',error);
+      return null;
+    }).finally(()=>{
+      if(fleetPerformanceRefreshPromise===pending)fleetPerformanceRefreshPromise=null;
+    });
+    fleetPerformanceRefreshPromise=pending;
+    return pending;
+  }
   function connectSse(){
     if(eventSource)eventSource.close();
     eventSource=new EventSource('/api/events');
     eventSource.addEventListener('state',e=>{
       const previousSync=state?.esi?.lastSyncAt||null;
-      state=JSON.parse(e.data);
-      renderAll();
-      renderDataStatus();
-      if(state?.esi?.lastSyncAt&&state.esi.lastSyncAt!==previousSync){
-        refreshMe().then(()=>renderAll()).catch(()=>{});
+      const nextState=JSON.parse(e.data);
+      const syncChanged=Boolean(nextState?.esi?.lastSyncAt&&nextState.esi.lastSyncAt!==previousSync);
+      state=nextState;
+      if(syncChanged){
+        refreshMe().then(()=>{
+          renderAll();
+          renderDataStatus();
+        }).catch(()=>{
+          renderAll();
+          renderDataStatus();
+        });
+      }else{
+        renderAll();
+        renderDataStatus();
       }
     });
     eventSource.onerror=()=>{$('liveBadge').textContent='⚠ DATA CONNECTION LOST';$('liveBadge').title='Live dashboard updates disconnected; the page is attempting to reconnect.'};
@@ -3565,5 +3597,8 @@
     }catch(e){console.error(e);showLogin();$('setupWarning').classList.remove('hidden');$('setupWarning').textContent=`JLR could not load: ${e.message}`}
   }
   setInterval(()=>{if(state){renderBoards();renderTimers();renderSelect();renderSelected();renderDataStatus();}},1000);
+  // SSE updates Fleet Performance as soon as the automatic ESI cycle finishes.
+  // This 15-minute safety refresh also keeps long-open/suspended tabs current.
+  setInterval(()=>{if(me)refreshFleetPerformanceData(false)},15*60*1000);
   boot();
 })();
