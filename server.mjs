@@ -219,6 +219,7 @@ let zkillInitArchiveRefreshPromise = null;
 const zkillCorpLeaderboardCache = new Map();
 const zkillCorpStatsCache = new Map();
 let zkillCorpStatsBatchPromise = null;
+let zkillCorpStatsPublished = {updatedAt:0,data:new Map()};
 const zkillLifetimeDamageJobs = new Map();
 const zkillLifetimeDamageProgress = new Map();
 const pvpCorpMetaCache = new Map();
@@ -246,6 +247,10 @@ for(const [corpId,entry] of Object.entries(pvpDb.corp7d||{})){
 for(const [corpId,entry] of Object.entries(pvpDb.corpWeekly||{})){
   if(entry?.data)zkillCorpStatsCache.set(Number(corpId),{updatedAt:pvpDbTimestamp(entry.updatedAt),data:entry.data,promise:null});
 }
+zkillCorpStatsPublished={
+  updatedAt:Date.now(),
+  data:new Map([...zkillCorpStatsCache.entries()].filter(([,cache])=>cache?.data).map(([id,cache])=>[id,cache.data])),
+};
 let esiCharacterSyncActive = 0;
 const esiCharacterSyncWaiters = [];
 let esiBackoffUntil = 0;
@@ -2856,25 +2861,35 @@ async function zkillCorporationWeeklyStatsMany(corporationIds,force=false){
   return out;
 }
 
-function cachedCorporationWeeklyStatsMany(corporationIds){
+function publishedCorporationWeeklyStatsMany(corporationIds){
   const ids=[...new Set((corporationIds||[]).map(Number).filter(Number.isFinite))];
   const data=new Map(),staleIds=[];
   const nowMs=Date.now();
   for(const id of ids){
+    const published=zkillCorpStatsPublished.data.get(id);
+    if(published)data.set(id,published);
     const cache=zkillCorpStatsCache.get(id);
-    if(cache?.data)data.set(id,cache.data);
     if(!cache?.data||nowMs-Number(cache.updatedAt||0)>=ZKILL_CACHE_MS)staleIds.push(id);
   }
-  return{data,staleIds};
+  return{data,staleIds,publishedAt:zkillCorpStatsPublished.updatedAt};
 }
 function refreshCorporationWeeklyStatsInBackground(corporationIds,force=false){
   const ids=[...new Set((corporationIds||[]).map(Number).filter(Number.isFinite))];
   if(!ids.length)return null;
   if(zkillCorpStatsBatchPromise)return zkillCorpStatsBatchPromise;
   const pending=zkillCorporationWeeklyStatsMany(ids,force)
+    .then(()=>{
+      const next=new Map(zkillCorpStatsPublished.data);
+      for(const id of ids){
+        const cache=zkillCorpStatsCache.get(id);
+        if(cache?.data)next.set(id,cache.data);
+      }
+      zkillCorpStatsPublished={updatedAt:Date.now(),data:next};
+      return next;
+    })
     .catch(err=>{
       console.warn('Background corporation weekly stats refresh failed',String(err.message||err));
-      return new Map();
+      return zkillCorpStatsPublished.data;
     })
     .finally(()=>{if(zkillCorpStatsBatchPromise===pending)zkillCorpStatsBatchPromise=null});
   zkillCorpStatsBatchPromise=pending;
@@ -3755,26 +3770,14 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
   );
   damageRanked.forEach((row,index)=>row.rankDamage=index+1);
 
-  // The direct corp crawl can correct displayed member totals, but the rank
-  // fields are copied from the INIT-wide population so the number shown in
-  // YOUR CORP MEMBERS VS INIT matches the full INIT PILOT LEADERBOARD.
+  // YOUR CORP uses the exact same canonical INIT-wide 7-day rows as the shared
+  // pilot leaderboard. The direct corp crawl is verification-only and must not
+  // alter viewer-visible metrics or rankings.
   const ownMemberMap=new Map(
     allianceCharacters
       .filter(row=>Number(row.corporationId)===corporationId)
       .map(row=>[Number(row.id),{...row}])
   );
-  for(const direct of corpDirect?.characters||[]){
-    const id=Number(direct.id);
-    const global=allianceById.get(id);
-    ownMemberMap.set(id,{
-      ...direct,
-      corporationId,
-      rankActivity:global?.rankActivity||null,
-      rankIsk:global?.rankIsk||null,
-      rankDamage:global?.rankDamage||null,
-      initRankMatched:Boolean(global),
-    });
-  }
   for(const linked of linkedCorpCharacters){
     const id=Number(linked.characterId);
     if(ownMemberMap.has(id))continue;
@@ -3833,12 +3836,9 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
   });
 
   const corporationMap=new Map(base.corporations.map(row=>[Number(row.id),{...row}]));
-  if(corpDirect?.corporation){
-    corporationMap.set(corporationId,{...corpDirect.corporation});
-  }
 
   const weeklyIds=[...corporationMap.keys()];
-  const weeklySnapshot=cachedCorporationWeeklyStatsMany(weeklyIds);
+  const weeklySnapshot=publishedCorporationWeeklyStatsMany(weeklyIds);
   const corpWeeklyStats=weeklySnapshot.data;
   const weeklyRefreshIds=force?weeklyIds:weeklySnapshot.staleIds;
   const corpWeeklyRefreshing=weeklyRefreshIds.length>0;
@@ -3908,7 +3908,8 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
     allianceId:INIT_ALLIANCE_ID,
     allianceName:'The Initiative.',
     windowSeconds:ZKILL_WINDOW_SECONDS,
-    generatedAt:corpDirect?.generatedAt||base.generatedAt,
+    generatedAt:base.generatedAt,
+    sharedCorpStatsPublishedAt:weeklySnapshot.publishedAt?new Date(weeklySnapshot.publishedAt).toISOString():null,
     pagesFetched:base.pagesFetched,
     truncated:base.truncated,
     killmailsProcessed:base.killmailsProcessed,
@@ -3957,7 +3958,7 @@ async function warmInitPvpCaches(){
   if(!base&&Object.keys(pvpDb.initKillmails||{}).length)base=buildInitLeaderboardFromArchive();
   if(!base)return;
   const ids=(base.corporations||[]).map(row=>Number(row.id)).filter(id=>id>0);
-  const {staleIds}=cachedCorporationWeeklyStatsMany(ids);
+  const {staleIds}=publishedCorporationWeeklyStatsMany(ids);
   if(staleIds.length)refreshCorporationWeeklyStatsInBackground(staleIds,false);
 }
 
