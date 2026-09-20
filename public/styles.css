@@ -1428,14 +1428,31 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .theme-menu .sound-menu-option[data-theme-value="aurora"]::before{background:linear-gradient(135deg,#ff83f2,#68146f)}
 
 
-/* v2.9.2 Field Board priority on narrower views */
+/* v2.9.3 Field Board priority + full-width field utilities on narrower views */
 @media(max-width:1100px){
   .tab-panel[data-tab="fields"].active{
     display:flex!important;
     flex-direction:column;
   }
-  .tab-panel[data-tab="fields"]>.board-panel{order:1}
-  .tab-panel[data-tab="fields"]>.field-sidebar{order:2}
-  .tab-panel[data-tab="fields"]>.hit-panel{order:3}
-  .tab-panel[data-tab="fields"]>.tab-advanced{order:4}
+  .tab-panel[data-tab="fields"]>.board-panel{order:1;width:100%!important;max-width:none!important}
+  .tab-panel[data-tab="fields"]>.field-sidebar{
+    order:2;
+    width:100%!important;
+    max-width:none!important;
+    grid-template-columns:minmax(340px,.9fr) minmax(0,1.1fr)!important;
+    align-items:start;
+  }
+  .tab-panel[data-tab="fields"]>.field-sidebar>.quick-update,
+  .tab-panel[data-tab="fields"]>.field-sidebar>.timers-panel{
+    width:100%!important;
+    max-width:none!important;
+    min-width:0;
+  }
+  .tab-panel[data-tab="fields"]>.hit-panel{order:3;width:100%!important;max-width:none!important}
+  .tab-panel[data-tab="fields"]>.tab-advanced{order:4;width:100%!important;max-width:none!important}
+}
+@media(max-width:760px){
+  .tab-panel[data-tab="fields"]>.field-sidebar{
+    grid-template-columns:1fr!important;
+  }
 }
