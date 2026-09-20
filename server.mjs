@@ -127,18 +127,35 @@ const ICE_REPROCESSING = {
 };
 const ICE_PRODUCTS=[...new Set(Object.values(ICE_REPROCESSING).flatMap(x=>Object.keys(x.products)))];
 const ICE_TRACK_PAYOUT = {'Blue Ice IV-Grade':0.95,'Glare Crust':0.75,'Dark Glitter':0.75,Gelidus:0.75,Krystallos:0.75};
-const FOUNTAIN_GAS = {
-  name:'Celadon Cytoserocin',
-  compressedName:'Compressed Celadon Cytoserocin',
-  volume:10,
-  compressedVolume:1,
+const GAS_TYPES = {
+  'Celadon Cytoserocin':{compressedName:'Compressed Celadon Cytoserocin',volume:10,compressedVolume:1},
+  'Malachite Cytoserocin':{compressedName:'Compressed Malachite Cytoserocin',volume:10,compressedVolume:1},
+  'Malachite Mykoserocin':{compressedName:'Compressed Malachite Mykoserocin',volume:10,compressedVolume:1},
+  'Lime Mykoserocin':{compressedName:'Compressed Lime Mykoserocin',volume:10,compressedVolume:1},
 };
-const FOUNTAIN_GAS_SITES = [
-  {name:'Flowing Nebula',region:'Fountain',units:2000,clouds:1,guarded:false,hazard:'1,000 Thermal cloud damage'},
-  {name:'Peacock Nebula',region:'Fountain / Pegasus',units:6000,clouds:2,guarded:false,hazard:'1,000 EM + 1,000 Thermal cloud damage'},
-  {name:'Thick Nebula',region:'Fountain / Pegasus',units:1000,clouds:1,guarded:true,hazard:'NPC guarded'},
-  {name:'Diamond Nebula',region:'Fountain / Pegasus',units:6000,clouds:2,guarded:true,hazard:'Multiple NPC waves'},
-];
+const GAS_REGIONS = {
+  Fountain:{
+    defaultGas:'Celadon Cytoserocin',
+    gases:['Celadon Cytoserocin'],
+    sites:[
+      {name:'Flowing Nebula',gas:'Celadon Cytoserocin',region:'Fountain',security:'Null-sec',units:2000,clouds:1,guarded:false,hazard:'1,000 Thermal cloud damage'},
+      {name:'Peacock Nebula',gas:'Celadon Cytoserocin',region:'Fountain / Pegasus',security:'Null-sec',units:6000,clouds:2,guarded:false,hazard:'1,000 EM + 1,000 Thermal cloud damage'},
+      {name:'Thick Nebula',gas:'Celadon Cytoserocin',region:'Fountain / Pegasus',security:'Null-sec',units:1000,clouds:1,guarded:true,hazard:'NPC guarded'},
+      {name:'Diamond Nebula',gas:'Celadon Cytoserocin',region:'Fountain / Pegasus',security:'Null-sec',units:6000,clouds:2,guarded:true,hazard:'Multiple NPC waves'},
+    ],
+  },
+  Aridia:{
+    defaultGas:'Malachite Cytoserocin',
+    gases:['Malachite Cytoserocin','Malachite Mykoserocin','Lime Mykoserocin'],
+    sites:[
+      {name:'Crimson Nebula',gas:'Malachite Cytoserocin',region:'Aridia',security:'Low-sec',units:1000,clouds:2,guarded:false,hazard:'No defenders • no cloud damage'},
+      {name:'Blackeye Nebula',gas:'Malachite Mykoserocin',region:'Aridia',security:'High / Low-sec',units:6000,clouds:3,guarded:false,hazard:'No defenders • no cloud damage'},
+      {name:'Wild Nebula',gas:'Malachite Mykoserocin',region:'Aridia',security:'High / Low-sec',units:2000,clouds:2,guarded:false,hazard:'No defenders • no cloud damage'},
+      {name:'Helix Nebula',gas:'Lime Mykoserocin',region:'Aridia',security:'High / Low-sec',units:6000,clouds:3,guarded:false,hazard:'No defenders • no cloud damage'},
+      {name:'Sister Nebula',gas:'Lime Mykoserocin',region:'Aridia',security:'High / Low-sec',units:2000,clouds:2,guarded:false,hazard:'No defenders • no cloud damage'},
+    ],
+  },
+};
 const TITAN_BRIDGE_RANGE_LY = 6;
 const LIGHT_YEAR_METERS = 9.4607304725808e15;
 // DOTLAN Fountain systems currently marked with one or more ice belts.
@@ -539,8 +556,8 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.7.0',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
-    source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{...FOUNTAIN_GAS,sites:FOUNTAIN_GAS_SITES,market:state.market.gasPrices?.[FOUNTAIN_GAS.name]||null},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
+    app:{name:'JLR Miner Tracker',version:'2.7.1',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
     market:{lastUpdatedAt:state.market.lastUpdatedAt,lastError:state.market.lastError,privateLastError:state.market.privateLastError||null,refreshing:marketRefreshInProgress,valuation:'MAX REFINE',maxRefineYield:MAX_REFINE_YIELD,jita:'Jita IV - Moon 4 - Caldari Navy Assembly Plant',local:CN_SYSTEM_NAME,titanBridgeRangeLy:TITAN_BRIDGE_RANGE_LY,history:marketHistoryPublic(),privateAccess:Boolean(state.market.refreshTokenEnc),marketCharacterName:state.market.characterName||null,structureName:state.market.structureName||null},
@@ -1097,7 +1114,7 @@ async function refreshMarketPrices(force=false) {
   const last=Date.parse(state.market?.lastUpdatedAt||'');
   const valuationCurrent=MARKET_ORE_NAMES.every(name=>state.market?.prices?.[name]?.valuation==='max-refine-minerals')
     &&Object.keys(ICE_REPROCESSING).every(name=>state.market?.icePrices?.[name]?.valuation==='max-refine-ice'&&state.market?.icePrices?.[name]?.trackingBasis==='jita-refine-ex-heavy-water')
-    &&state.market?.gasPrices?.[FOUNTAIN_GAS.name]?.valuation==='raw-gas-market';
+    &&Object.keys(GAS_TYPES).every(name=>state.market?.gasPrices?.[name]?.valuation==='raw-gas-market');
   const today=dateUTC();
   const historyCurrent=MARKET_ORE_NAMES.every(name=>(state.market?.history?.ore?.[name]||[]).some(x=>x.date===today))
     &&Object.keys(ICE_REPROCESSING).every(name=>(state.market?.history?.ice?.[name]||[]).some(x=>x.date===today));
@@ -1111,7 +1128,8 @@ async function refreshMarketPrices(force=false) {
   state.market.privateLastError=null;
   broadcast();
   try{
-    const names=[...MARKET_ORE_NAMES.map(name=>ORE_TYPE_NAME[name]||name),...REFINING_MINERALS,...Object.keys(ICE_REPROCESSING),...ICE_PRODUCTS,FOUNTAIN_GAS.name,FOUNTAIN_GAS.compressedName,...ICE_FIELD_SYSTEMS.map(x=>x[0]),...SYSTEM_DEFS.map(x=>x.system),CN_SYSTEM_NAME];
+    const gasMarketNames=Object.entries(GAS_TYPES).flatMap(([name,row])=>[name,row.compressedName]);
+    const names=[...MARKET_ORE_NAMES.map(name=>ORE_TYPE_NAME[name]||name),...REFINING_MINERALS,...Object.keys(ICE_REPROCESSING),...ICE_PRODUCTS,...gasMarketNames,...ICE_FIELD_SYSTEMS.map(x=>x[0]),...SYSTEM_DEFS.map(x=>x.system),CN_SYSTEM_NAME];
     const ids=await resolveUniverseIds(names);
     const cnSystemId=ids.get(CN_SYSTEM_NAME);
     if(!cnSystemId)throw new Error(`${CN_SYSTEM_NAME} system ID could not be resolved`);
@@ -1124,7 +1142,7 @@ async function refreshMarketPrices(force=false) {
     const mineralTypeIds=REFINING_MINERALS.map(name=>Number(ids.get(name))).filter(Number.isFinite);
     const iceProductTypeIds=ICE_PRODUCTS.map(name=>Number(ids.get(name))).filter(Number.isFinite);
     const rawIceTypeIds=Object.keys(ICE_REPROCESSING).map(name=>Number(ids.get(name))).filter(Number.isFinite);
-    const gasTypeIds=[FOUNTAIN_GAS.name,FOUNTAIN_GAS.compressedName].map(name=>Number(ids.get(name))).filter(Number.isFinite);
+    const gasTypeIds=Object.entries(GAS_TYPES).flatMap(([name,row])=>[Number(ids.get(name)),Number(ids.get(row.compressedName))]).filter(Number.isFinite);
     let privateMarket=null;
     if(state.market.refreshTokenEnc){
       try{
@@ -1261,9 +1279,10 @@ async function refreshMarketPrices(force=false) {
     }
 
     const gasPrices={...state.market.gasPrices};
-    const gasRawTypeId=ids.get(FOUNTAIN_GAS.name);
-    const gasCompressedTypeId=ids.get(FOUNTAIN_GAS.compressedName);
-    if(gasRawTypeId){
+    for(const [gasName,gasSpec] of Object.entries(GAS_TYPES)){
+      const gasRawTypeId=ids.get(gasName);
+      const gasCompressedTypeId=ids.get(gasSpec.compressedName);
+      if(!gasRawTypeId){console.warn('Gas type not resolved',gasName);continue}
       const rawOrders=await marketOrders(JITA_REGION_ID,gasRawTypeId);
       const rawJita=await bestPricesReachableAt(rawOrders,JITA_SYSTEM_ID,JITA_44_STATION_ID);
       const rawCn=privateMarket?bestOrderPrices(privateMarket.orders.filter(o=>Number(o.type_id)===Number(gasRawTypeId))):{buy:null,sell:null};
@@ -1273,11 +1292,11 @@ async function refreshMarketPrices(force=false) {
         compressedJita=await bestPricesReachableAt(compressedOrders,JITA_SYSTEM_ID,JITA_44_STATION_ID);
         if(privateMarket)compressedCn=bestOrderPrices(privateMarket.orders.filter(o=>Number(o.type_id)===Number(gasCompressedTypeId)));
       }
-      gasPrices[FOUNTAIN_GAS.name]={
+      gasPrices[gasName]={
         typeId:Number(gasRawTypeId)||null,
         compressedTypeId:Number(gasCompressedTypeId)||null,
-        volume:FOUNTAIN_GAS.volume,
-        compressedVolume:FOUNTAIN_GAS.compressedVolume,
+        volume:Number(gasSpec.volume)||10,
+        compressedVolume:Number(gasSpec.compressedVolume)||1,
         updatedAt:now(),
         valuation:'raw-gas-market',
         raw:{
@@ -1285,7 +1304,7 @@ async function refreshMarketPrices(force=false) {
           cn:{...rawCn,source:privateMarket?'john-private-structure':'unavailable'},
         },
         compressed:{
-          name:FOUNTAIN_GAS.compressedName,
+          name:gasSpec.compressedName,
           jita:compressedJita,
           cn:{...compressedCn,source:privateMarket?'john-private-structure':'unavailable'},
         },
@@ -3470,7 +3489,7 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
   };
 }
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.7.0',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.7.1',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -3592,7 +3611,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.7.0 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.7.1 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setInterval(()=>resetExpired(true),15_000).unref();
 async function runAutomaticSyncLoop(){
   const startedAt=Date.now();
