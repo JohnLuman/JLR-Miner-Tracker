@@ -54,8 +54,10 @@ const MINING_SKILLS = {
   22536: 'Mining Foreman',
   37615: 'Command Destroyers',
   16281: 'Ice Harvesting',
+  32918: 'Mining Frigate',
+  25544: 'Gas Cloud Harvesting',
 };
-const MINING_HULLS = new Set(['Hulk','Mackinaw','Skiff','Covetor','Retriever','Procurer','Porpoise','Orca','Rorqual','Outrider']);
+const MINING_HULLS = new Set(['Hulk','Mackinaw','Skiff','Covetor','Retriever','Procurer','Porpoise','Orca','Rorqual','Outrider','Venture','Prospect','Endurance','Venture Consortium Issue']);
 const ABYSSAL_STRIP_TYPES = new Map([
   [90467,'Abyssal Modulated Strip Miner'],
   [90487,'Abyssal Modulated Deep Core Strip Miner'],
@@ -125,6 +127,18 @@ const ICE_REPROCESSING = {
 };
 const ICE_PRODUCTS=[...new Set(Object.values(ICE_REPROCESSING).flatMap(x=>Object.keys(x.products)))];
 const ICE_TRACK_PAYOUT = {'Blue Ice IV-Grade':0.95,'Glare Crust':0.75,'Dark Glitter':0.75,Gelidus:0.75,Krystallos:0.75};
+const FOUNTAIN_GAS = {
+  name:'Celadon Cytoserocin',
+  compressedName:'Compressed Celadon Cytoserocin',
+  volume:10,
+  compressedVolume:1,
+};
+const FOUNTAIN_GAS_SITES = [
+  {name:'Flowing Nebula',region:'Fountain',units:2000,clouds:1,guarded:false,hazard:'1,000 Thermal cloud damage'},
+  {name:'Peacock Nebula',region:'Fountain / Pegasus',units:6000,clouds:2,guarded:false,hazard:'1,000 EM + 1,000 Thermal cloud damage'},
+  {name:'Thick Nebula',region:'Fountain / Pegasus',units:1000,clouds:1,guarded:true,hazard:'NPC guarded'},
+  {name:'Diamond Nebula',region:'Fountain / Pegasus',units:6000,clouds:2,guarded:true,hazard:'Multiple NPC waves'},
+];
 const TITAN_BRIDGE_RANGE_LY = 6;
 const LIGHT_YEAR_METERS = 9.4607304725808e15;
 // DOTLAN Fountain systems currently marked with one or more ice belts.
@@ -274,7 +288,7 @@ function freshState() {
       typeCache: {}, systemCache: {}, dailyFleet: [], performanceSamples: [], ledgerActivity: {}, ledgerFieldSnapshots: {}, lastSyncAt: null, lastError: null,
     },
     market: {
-      prices: {}, minerals: {}, icePrices: {}, iceProducts: {}, iceFields: [], a0Fields: [], a0Reports: {}, a0ScannedAt: null, t3Distances: {}, history: { ore:{}, ice:{} }, lastUpdatedAt: null, lastError: null,
+      prices: {}, minerals: {}, icePrices: {}, iceProducts: {}, gasPrices: {}, iceFields: [], a0Fields: [], a0Reports: {}, a0ScannedAt: null, t3Distances: {}, history: { ore:{}, ice:{} }, lastUpdatedAt: null, lastError: null,
       characterId: null, characterName: null, refreshTokenEnc: null, scopes: [], authorizedAt: null,
       structureId: null, structureName: null, privateLastError: null,
     },
@@ -306,6 +320,7 @@ async function loadState() {
     parsed.market.minerals ||= {};
     parsed.market.icePrices ||= {};
     parsed.market.iceProducts ||= {};
+    parsed.market.gasPrices ||= {};
     parsed.market.iceFields ||= [];
     parsed.market.a0Fields ||= [];
     parsed.market.a0Reports ||= {};
@@ -524,8 +539,8 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.6.1',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
-    source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
+    app:{name:'JLR Miner Tracker',version:'2.7.0',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{...FOUNTAIN_GAS,sites:FOUNTAIN_GAS_SITES,market:state.market.gasPrices?.[FOUNTAIN_GAS.name]||null},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
     market:{lastUpdatedAt:state.market.lastUpdatedAt,lastError:state.market.lastError,privateLastError:state.market.privateLastError||null,refreshing:marketRefreshInProgress,valuation:'MAX REFINE',maxRefineYield:MAX_REFINE_YIELD,jita:'Jita IV - Moon 4 - Caldari Navy Assembly Plant',local:CN_SYSTEM_NAME,titanBridgeRangeLy:TITAN_BRIDGE_RANGE_LY,history:marketHistoryPublic(),privateAccess:Boolean(state.market.refreshTokenEnc),marketCharacterName:state.market.characterName||null,structureName:state.market.structureName||null},
@@ -1081,7 +1096,8 @@ async function refreshMarketPrices(force=false) {
   if(marketRefreshInProgress)return;
   const last=Date.parse(state.market?.lastUpdatedAt||'');
   const valuationCurrent=MARKET_ORE_NAMES.every(name=>state.market?.prices?.[name]?.valuation==='max-refine-minerals')
-    &&Object.keys(ICE_REPROCESSING).every(name=>state.market?.icePrices?.[name]?.valuation==='max-refine-ice'&&state.market?.icePrices?.[name]?.trackingBasis==='jita-refine-ex-heavy-water');
+    &&Object.keys(ICE_REPROCESSING).every(name=>state.market?.icePrices?.[name]?.valuation==='max-refine-ice'&&state.market?.icePrices?.[name]?.trackingBasis==='jita-refine-ex-heavy-water')
+    &&state.market?.gasPrices?.[FOUNTAIN_GAS.name]?.valuation==='raw-gas-market';
   const today=dateUTC();
   const historyCurrent=MARKET_ORE_NAMES.every(name=>(state.market?.history?.ore?.[name]||[]).some(x=>x.date===today))
     &&Object.keys(ICE_REPROCESSING).every(name=>(state.market?.history?.ice?.[name]||[]).some(x=>x.date===today));
@@ -1095,7 +1111,7 @@ async function refreshMarketPrices(force=false) {
   state.market.privateLastError=null;
   broadcast();
   try{
-    const names=[...MARKET_ORE_NAMES.map(name=>ORE_TYPE_NAME[name]||name),...REFINING_MINERALS,...Object.keys(ICE_REPROCESSING),...ICE_PRODUCTS,...ICE_FIELD_SYSTEMS.map(x=>x[0]),...SYSTEM_DEFS.map(x=>x.system),CN_SYSTEM_NAME];
+    const names=[...MARKET_ORE_NAMES.map(name=>ORE_TYPE_NAME[name]||name),...REFINING_MINERALS,...Object.keys(ICE_REPROCESSING),...ICE_PRODUCTS,FOUNTAIN_GAS.name,FOUNTAIN_GAS.compressedName,...ICE_FIELD_SYSTEMS.map(x=>x[0]),...SYSTEM_DEFS.map(x=>x.system),CN_SYSTEM_NAME];
     const ids=await resolveUniverseIds(names);
     const cnSystemId=ids.get(CN_SYSTEM_NAME);
     if(!cnSystemId)throw new Error(`${CN_SYSTEM_NAME} system ID could not be resolved`);
@@ -1108,11 +1124,12 @@ async function refreshMarketPrices(force=false) {
     const mineralTypeIds=REFINING_MINERALS.map(name=>Number(ids.get(name))).filter(Number.isFinite);
     const iceProductTypeIds=ICE_PRODUCTS.map(name=>Number(ids.get(name))).filter(Number.isFinite);
     const rawIceTypeIds=Object.keys(ICE_REPROCESSING).map(name=>Number(ids.get(name))).filter(Number.isFinite);
+    const gasTypeIds=[FOUNTAIN_GAS.name,FOUNTAIN_GAS.compressedName].map(name=>Number(ids.get(name))).filter(Number.isFinite);
     let privateMarket=null;
     if(state.market.refreshTokenEnc){
       try{
         const access=await marketAccessToken();
-        privateMarket=await resolveMarketStructure(cnSystemId,access,[...mineralTypeIds,...iceProductTypeIds,...rawIceTypeIds]);
+        privateMarket=await resolveMarketStructure(cnSystemId,access,[...mineralTypeIds,...iceProductTypeIds,...rawIceTypeIds,...gasTypeIds]);
       }catch(err){
         state.market.privateLastError=String(err.message||err);
         console.warn('Private market refresh unavailable',state.market.privateLastError);
@@ -1243,10 +1260,43 @@ async function refreshMarketPrices(force=false) {
       };
     }
 
+    const gasPrices={...state.market.gasPrices};
+    const gasRawTypeId=ids.get(FOUNTAIN_GAS.name);
+    const gasCompressedTypeId=ids.get(FOUNTAIN_GAS.compressedName);
+    if(gasRawTypeId){
+      const rawOrders=await marketOrders(JITA_REGION_ID,gasRawTypeId);
+      const rawJita=await bestPricesReachableAt(rawOrders,JITA_SYSTEM_ID,JITA_44_STATION_ID);
+      const rawCn=privateMarket?bestOrderPrices(privateMarket.orders.filter(o=>Number(o.type_id)===Number(gasRawTypeId))):{buy:null,sell:null};
+      let compressedJita={buy:null,sell:null},compressedCn={buy:null,sell:null};
+      if(gasCompressedTypeId){
+        const compressedOrders=await marketOrders(JITA_REGION_ID,gasCompressedTypeId);
+        compressedJita=await bestPricesReachableAt(compressedOrders,JITA_SYSTEM_ID,JITA_44_STATION_ID);
+        if(privateMarket)compressedCn=bestOrderPrices(privateMarket.orders.filter(o=>Number(o.type_id)===Number(gasCompressedTypeId)));
+      }
+      gasPrices[FOUNTAIN_GAS.name]={
+        typeId:Number(gasRawTypeId)||null,
+        compressedTypeId:Number(gasCompressedTypeId)||null,
+        volume:FOUNTAIN_GAS.volume,
+        compressedVolume:FOUNTAIN_GAS.compressedVolume,
+        updatedAt:now(),
+        valuation:'raw-gas-market',
+        raw:{
+          jita:rawJita,
+          cn:{...rawCn,source:privateMarket?'john-private-structure':'unavailable'},
+        },
+        compressed:{
+          name:FOUNTAIN_GAS.compressedName,
+          jita:compressedJita,
+          cn:{...compressedCn,source:privateMarket?'john-private-structure':'unavailable'},
+        },
+      };
+    }
+
     state.market.prices=next;
     state.market.minerals=mineralPrices.detail;
     state.market.icePrices=icePrices;
     state.market.iceProducts=iceProductPrices.detail;
+    state.market.gasPrices=gasPrices;
     state.market.iceFields=iceFields;
     if(Array.isArray(a0Fields)){state.market.a0Fields=a0Fields;state.market.a0ScannedAt=now()}
     state.market.t3Distances=t3Distances;
@@ -3420,7 +3470,7 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
   };
 }
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.6.2',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.7.0',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -3542,7 +3592,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.6.2 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.7.0 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setInterval(()=>resetExpired(true),15_000).unref();
 async function runAutomaticSyncLoop(){
   const startedAt=Date.now();
