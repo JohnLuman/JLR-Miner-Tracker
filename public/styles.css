@@ -650,6 +650,88 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .pvp-member-controls-only #pvpRankLifetime{min-width:82px}
 .pvp-member-controls-only .pvp-toon-picker{min-width:82px;max-width:104px;flex-basis:104px}
 
+/* v2.4.8 PvP ranking controls — larger text and meaningful color coding. */
+.pvp-member-controls-only .pvp-member-rank-controls{
+  gap:6px;
+  align-items:center;
+}
+.pvp-member-controls-only .pvp-toon-picker{
+  min-width:132px;
+  max-width:150px;
+  flex:0 1 145px;
+}
+.pvp-member-controls-only .pvp-toon-trigger{
+  height:32px;
+  padding:0 11px;
+  border:1px solid #3b6677;
+  border-radius:8px;
+  background:linear-gradient(180deg,#17313c,#10252e);
+  color:#e6f8ff;
+  font-size:8.4px;
+  font-weight:850;
+  letter-spacing:.025em;
+  box-shadow:inset 0 1px rgba(255,255,255,.07),0 1px 4px rgba(0,0,0,.35);
+}
+.pvp-member-controls-only .pvp-toon-trigger b{
+  font-size:9px;
+  color:#8ed9f2;
+}
+.pvp-member-controls-only .pvp-member-rank-controls .orb{
+  height:32px;
+  min-width:108px;
+  padding:0 10px;
+  border-radius:8px;
+  font-size:7.8px;
+  font-weight:950;
+  letter-spacing:.035em;
+  line-height:1;
+  opacity:1;
+  text-shadow:0 1px 2px rgba(0,0,0,.65);
+  box-shadow:inset 0 1px rgba(255,255,255,.15),0 2px 5px rgba(0,0,0,.35);
+}
+.pvp-member-controls-only #pvpRankActivity{
+  background:linear-gradient(180deg,#257dd6,#18539a);
+  border-color:#5fb1ff;
+  color:#fff;
+}
+.pvp-member-controls-only #pvpRankIsk{
+  background:linear-gradient(180deg,#269f69,#166641);
+  border-color:#64d99b;
+  color:#f3fff8;
+}
+.pvp-member-controls-only #pvpRankDamage{
+  background:linear-gradient(180deg,#c86d2e,#8f3f1d);
+  border-color:#f1a266;
+  color:#fff8ef;
+  min-width:116px;
+}
+.pvp-member-controls-only #pvpRankLifetime{
+  background:linear-gradient(180deg,#7b52c7,#4c2e8d);
+  border-color:#b392f3;
+  color:#fbf7ff;
+  min-width:116px;
+}
+.pvp-member-controls-only .pvp-member-rank-controls .orb[aria-pressed="false"]{
+  filter:saturate(.72) brightness(.83);
+}
+.pvp-member-controls-only .pvp-member-rank-controls .orb[aria-pressed="false"]:hover,
+.pvp-member-controls-only .pvp-member-rank-controls .orb[aria-pressed="false"]:focus-visible{
+  filter:saturate(.95) brightness(1);
+}
+.pvp-member-controls-only .pvp-member-rank-controls .orb[aria-pressed="true"]{
+  filter:saturate(1.22) brightness(1.14);
+  outline:2px solid rgba(255,255,255,.9);
+  outline-offset:2px;
+  box-shadow:inset 0 1px rgba(255,255,255,.22),0 0 0 2px rgba(255,255,255,.08),0 0 13px rgba(74,156,255,.28);
+}
+.pvp-member-controls-only .pvp-toon-menu{
+  width:max(170px,100%);
+}
+.pvp-member-controls-only .pvp-toon-option{
+  min-height:32px;
+  font-size:8px;
+}
+
 
 /* JLR Threat Engine v2 */
 /* ARES enemy-intel type system.
