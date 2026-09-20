@@ -1352,3 +1352,22 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
   .doctrine-shop-row{grid-template-columns:minmax(0,1fr) 76px}
   .doctrine-shop-remove{grid-column:1/-1}
 }
+
+
+/* v2.8.9 compact Gas Fleet Output */
+.gas-fit-status{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:46px;border:1px solid #315149;border-radius:8px;background:#101918;padding:9px 11px}
+.gas-fit-status strong{font-size:11px;letter-spacing:.055em;color:#9bd8c5}
+.gas-fit-status small{font-size:9px;line-height:1.35;color:var(--muted);text-align:right}
+.gas-fit-status.empty{border-style:dashed}
+.gas-fit-hidden{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid #29443e;border-radius:7px;background:#0f1716;padding:6px 8px}
+.gas-fit-hidden strong{font-size:8px;letter-spacing:.06em;color:#86bdae}
+.gas-fit-hidden span{font-size:8px;color:var(--muted);text-align:right}
+.gas-fit-issue{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #6d3b42;border-radius:7px;background:#1b1114;padding:7px 9px}
+.gas-fit-issue>div{min-width:0}
+.gas-fit-issue strong{display:block;font-size:10px;color:#ffb1b7}
+.gas-fit-issue small{display:block;margin-top:2px;font-size:8px;color:var(--muted)}
+.gas-fit-issue>span{font-size:9px;color:#ff9aa2;text-align:right}
+@media(max-width:700px){
+  .gas-fit-status,.gas-fit-hidden,.gas-fit-issue{align-items:flex-start;flex-direction:column}
+  .gas-fit-status small,.gas-fit-hidden span,.gas-fit-issue>span{text-align:left}
+}
