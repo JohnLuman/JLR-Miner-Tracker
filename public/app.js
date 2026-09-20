@@ -25,6 +25,7 @@
   const savedPvpMemberRankMode=localStorage.getItem('jlrPvpMemberRankMode');
   let pvpMemberRankMode=['activity','isk','damage'].includes(savedPvpMemberRankMode)?savedPvpMemberRankMode:'activity';
   let pvpPinnedCharacterId=localStorage.getItem('jlrPvpPinnedCharacter')||'';
+  let pvpToonMenuOpen=false;
 
   const DEFAULT_FLEET = { members:{}, uptime:100, payout:95 };
   function loadFleet() {
@@ -717,7 +718,19 @@
                 <strong>YOUR CORP MEMBERS VS INIT</strong>
               </div>
               <div class="pvp-member-rank-controls" role="group" aria-label="Corp member ranking mode">
-                ${linkedPvpToons.length>1?`<select id="pvpPinnedToon" class="pvp-toon-picker" aria-label="ESI toon pinned to top">${linkedPvpToons.map(row=>`<option value="${esc(row.characterId)}" ${String(row.characterId)===String(pvpPinnedCharacterId)?'selected':''}>${esc(row.name)}</option>`).join('')}</select>`:''}
+                ${linkedPvpToons.length>1?(()=>{
+                  const selectedToon=linkedPvpToons.find(row=>String(row.characterId)===String(pvpPinnedCharacterId))||linkedPvpToons[0];
+                  return `<div class="pvp-toon-picker${pvpToonMenuOpen?' open':''}">
+                    <button id="pvpPinnedToonButton" class="pvp-toon-trigger" type="button" aria-haspopup="listbox" aria-expanded="${pvpToonMenuOpen}" title="Choose which linked ESI toon stays pinned to the top">
+                      <span>${esc(selectedToon?.name||'Select toon')}</span><b>▾</b>
+                    </button>
+                    ${pvpToonMenuOpen?`<div id="pvpPinnedToonMenu" class="pvp-toon-menu" role="listbox" aria-label="Choose linked ESI toon">
+                      ${linkedPvpToons.map(row=>`<button class="pvp-toon-option${String(row.characterId)===String(pvpPinnedCharacterId)?' selected':''}" type="button" role="option" aria-selected="${String(row.characterId)===String(pvpPinnedCharacterId)}" data-id="${esc(row.characterId)}">
+                        <span>${esc(row.name)}</span>${row.primary?'<small>PRIMARY</small>':''}
+                      </button>`).join('')}
+                    </div>`:''}
+                  </div>`;
+                })():''}
                 <button id="pvpRankActivity" class="orb ${pvpMemberRankMode==='activity'?'blue':''}" type="button" aria-pressed="${pvpMemberRankMode==='activity'}">KILLMAILS / FINALS</button>
                 <button id="pvpRankIsk" class="orb ${pvpMemberRankMode==='isk'?'blue':''}" type="button" aria-pressed="${pvpMemberRankMode==='isk'}">ISK ON KILLS</button>
                 <button id="pvpRankDamage" class="orb ${pvpMemberRankMode==='damage'?'blue':''}" type="button" aria-pressed="${pvpMemberRankMode==='damage'}">MOST DAMAGE</button>
@@ -749,11 +762,18 @@
         </section>
       </div>`;
     $('pvpRefresh')?.addEventListener('click',()=>loadPvpIntel(true));
-    $('pvpPinnedToon')?.addEventListener('change',event=>{
-      pvpPinnedCharacterId=String(event.currentTarget.value||'');
-      localStorage.setItem('jlrPvpPinnedCharacter',pvpPinnedCharacterId);
+    $('pvpPinnedToonButton')?.addEventListener('click',event=>{
+      event.stopPropagation();
+      pvpToonMenuOpen=!pvpToonMenuOpen;
       renderPvpIntel();
     });
+    document.querySelectorAll('.pvp-toon-option').forEach(button=>button.addEventListener('click',event=>{
+      event.stopPropagation();
+      pvpPinnedCharacterId=String(button.dataset.id||'');
+      localStorage.setItem('jlrPvpPinnedCharacter',pvpPinnedCharacterId);
+      pvpToonMenuOpen=false;
+      renderPvpIntel();
+    }));
     $('pvpRankActivity')?.addEventListener('click',()=>{
       pvpMemberRankMode='activity';
       localStorage.setItem('jlrPvpMemberRankMode',pvpMemberRankMode);
@@ -770,6 +790,19 @@
       renderPvpIntel();
     });
   }
+  document.addEventListener('click',event=>{
+    if(!pvpToonMenuOpen)return;
+    if(event.target?.closest?.('.pvp-toon-picker'))return;
+    pvpToonMenuOpen=false;
+    renderPvpIntel();
+  });
+  document.addEventListener('keydown',event=>{
+    if(event.key==='Escape'&&pvpToonMenuOpen){
+      pvpToonMenuOpen=false;
+      renderPvpIntel();
+    }
+  });
+
   async function loadPvpIntel(force=false){
     if(pvpIntelLoading)return;
     pvpIntelLoading=true;pvpIntelError='';renderPvpIntel();

@@ -534,7 +534,23 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .pvp-section-title span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pvp-member-rank-controls{display:flex;align-items:center;justify-content:flex-end;gap:4px;flex:1 1 auto;min-width:0;margin-left:auto}
 .pvp-member-rank-controls .orb{height:25px;min-width:91px;padding:0 7px;border-radius:999px;font-size:6.2px;line-height:1;white-space:nowrap}
-.pvp-toon-picker{height:25px;min-width:86px;max-width:118px;padding:0 20px 0 7px;border:1px solid var(--line);border-radius:999px;background:var(--theme-panel-lo,#101018);color:var(--text);font:inherit;font-size:6.5px;white-space:nowrap;text-overflow:ellipsis}
+.pvp-toon-picker{position:relative;min-width:92px;max-width:132px;flex:0 1 132px}
+.pvp-toon-trigger{display:flex;align-items:center;justify-content:space-between;gap:6px;width:100%;height:25px;padding:0 8px;border:1px solid var(--line);border-radius:999px;background:linear-gradient(180deg,color-mix(in srgb,var(--theme-panel-hi,#171722) 92%,white 8%),var(--theme-panel-lo,#101018));color:var(--text);font:inherit;font-size:6.5px;cursor:pointer;box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+.pvp-toon-trigger span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pvp-toon-trigger b{font-size:7px;color:var(--muted);transition:transform .14s ease}
+.pvp-toon-picker.open .pvp-toon-trigger{border-color:var(--theme-accent-line,#9f4dff);box-shadow:0 0 0 1px color-mix(in srgb,var(--theme-accent,#9d34ed) 32%,transparent),inset 0 1px 0 rgba(255,255,255,.06)}
+.pvp-toon-picker.open .pvp-toon-trigger b{transform:rotate(180deg);color:var(--theme-accent-hi,#ce68ff)}
+.pvp-toon-menu{position:absolute;z-index:40;right:0;top:calc(100% + 5px);width:max(145px,100%);max-height:210px;overflow-y:auto;padding:5px;border:1px solid var(--theme-accent-line,#9f4dff);border-radius:9px;background:color-mix(in srgb,var(--theme-panel-lo,#101018) 96%,black 4%);box-shadow:0 14px 32px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.025);scrollbar-width:thin;scrollbar-color:var(--theme-accent,#9d34ed) color-mix(in srgb,var(--theme-panel-lo,#101018) 90%,black 10%)}
+.pvp-toon-menu::-webkit-scrollbar{width:7px}
+.pvp-toon-menu::-webkit-scrollbar-track{background:color-mix(in srgb,var(--theme-panel-lo,#101018) 90%,black 10%);border-radius:999px}
+.pvp-toon-menu::-webkit-scrollbar-thumb{background:linear-gradient(180deg,var(--theme-accent-hi,#ce68ff),var(--theme-accent,#9d34ed));border:2px solid color-mix(in srgb,var(--theme-panel-lo,#101018) 90%,black 10%);border-radius:999px}
+.pvp-toon-menu::-webkit-scrollbar-thumb:hover{background:var(--theme-accent-hi,#ce68ff)}
+.pvp-toon-option{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-height:26px;padding:5px 7px;border:0;border-radius:6px;background:transparent;color:var(--text);font:inherit;font-size:6.7px;text-align:left;cursor:pointer}
+.pvp-toon-option span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pvp-toon-option small{color:var(--muted);font-size:5px;letter-spacing:.06em}
+.pvp-toon-option:hover,.pvp-toon-option:focus-visible{background:color-mix(in srgb,var(--theme-accent,#9d34ed) 16%,transparent);outline:none}
+.pvp-toon-option.selected{background:linear-gradient(90deg,color-mix(in srgb,var(--theme-accent,#9d34ed) 34%,transparent),color-mix(in srgb,var(--theme-accent,#9d34ed) 14%,transparent));color:#fff}
+.pvp-toon-option.selected small{color:var(--theme-accent-hi,#ce68ff)}
 .pvp-own-toon{box-shadow:inset 3px 0 0 var(--theme-accent-hi,#ce68ff)}
 .pvp-member-rank-controls .orb:not(.blue){opacity:.78}
 .pvp-member-rank-controls .orb:hover,.pvp-member-rank-controls .orb:focus-visible{opacity:1}
@@ -565,5 +581,6 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
   .pvp-member-rank-controls{width:100%;margin-left:0;justify-content:flex-start;flex-wrap:wrap}
   .pvp-member-rank-controls .orb{flex:1 1 88px;min-width:0}
   .pvp-toon-picker{flex:1 1 100%;max-width:none}
+  .pvp-toon-menu{left:0;right:auto;width:100%}
 }
 @media(max-width:620px){.pvp-hero{align-items:flex-start;flex-direction:column}.pvp-summary-grid{grid-template-columns:1fr 1fr}.pvp-table{font-size:7px}}
