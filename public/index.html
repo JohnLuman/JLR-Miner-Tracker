@@ -278,13 +278,16 @@
 
     <section class="glass gas-huffing-panel">
       <div class="section-title">
-        <div><span class="eyebrow">FOUNTAIN • CYTOSEROCIN</span><strong>GAS HUFFING</strong></div>
-        <span class="muted tiny">Fleet Setup + saved gas fits • Mining Foreman boosts included</span>
+        <div><span id="gasRegionEyebrow" class="eyebrow">FOUNTAIN • CYTOSEROCIN</span><strong>GAS HUFFING</strong></div>
+        <div class="ice-title-tools gas-title-tools">
+          <label for="gasRegionSelect">REGION</label><select id="gasRegionSelect" aria-label="Gas region"></select>
+          <label for="gasTypeSelect">GAS</label><select id="gasTypeSelect" aria-label="Gas type"></select>
+        </div>
       </div>
 
       <div class="ice-kpis gas-kpis">
-        <article class="ice-kpi"><span>CELADON JITA / UNIT</span><strong id="gasRawJita">—</strong><small id="gasRawJitaSub">raw Celadon Cytoserocin buy value</small></article>
-        <article class="ice-kpi"><span>COMPRESSED JITA / UNIT</span><strong id="gasCompressedJita">—</strong><small id="gasCompressedJitaSub">1 compressed unit = 1 raw unit</small></article>
+        <article class="ice-kpi"><span id="gasRawLabel">RAW GAS JITA / UNIT</span><strong id="gasRawJita">—</strong><small id="gasRawJitaSub">selected gas buy value</small></article>
+        <article class="ice-kpi"><span id="gasCompressedLabel">COMPRESSED JITA / UNIT</span><strong id="gasCompressedJita">—</strong><small id="gasCompressedJitaSub">1 compressed unit = 1 raw unit</small></article>
         <article class="ice-kpi"><span>SELECTED GAS FLEET</span><strong id="gasFleetM3">—</strong><small id="gasFleetM3Sub">calculated m³/hr from gas fits</small></article>
         <article class="ice-kpi"><span>RAW JITA VALUE / HR</span><strong id="gasFleetIsk">—</strong><small id="gasFleetIskSub">fleet output × raw Celadon buy</small></article>
       </div>
@@ -295,7 +298,7 @@
           <div id="gasFleetOutput" class="ice-fleet-output gas-fleet-output"></div>
         </article>
         <article class="ice-chart-card">
-          <div class="visual-card-head"><strong>KNOWN FOUNTAIN CELADON SITES</strong><small>site volume and danger at a glance</small></div>
+          <div class="visual-card-head"><strong id="gasSiteTitle">KNOWN FOUNTAIN GAS SITES</strong><small>site volume and danger at a glance</small></div>
           <div id="gasSiteTable" class="gas-site-table"></div>
         </article>
       </div>
@@ -308,7 +311,7 @@
         <article class="ice-chart-card gas-ops-card">
           <div class="visual-card-head"><strong>GAS OPERATIONS</strong><small>Fountain huffing reference</small></div>
           <div class="gas-ops-grid">
-            <div><span>LOCAL GAS</span><strong>Celadon Cytoserocin</strong><small>10 m³ per raw unit</small></div>
+            <div><span>SELECTED GAS</span><strong id="gasOpsType">Celadon Cytoserocin</strong><small id="gasOpsRegion">Fountain • 10 m³ per raw unit</small></div>
             <div><span>FIT SOURCE</span><strong>Fleet & Fits</strong><small>select a saved gas fit on each huffer</small></div>
             <div><span>BOOSTS</span><strong>Mining Foreman</strong><small>cycle and range bonuses use the selected booster</small></div>
             <div><span>VALUE BASIS</span><strong>Raw Jita Buy</strong><small>compressed and C-N prices shown separately when available</small></div>
