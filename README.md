@@ -47,6 +47,7 @@ JLR requests these ESI scopes:
 - `esi-fittings.read_fittings.v1` — the linked character's saved mining fittings
 - `esi-assets.read_assets.v1` — Abyssal mining-module details used by saved fits
 - `esi-location.read_location.v1` — current solar system when that toon imports a Probe Scanner copy
+- `esi-characters.read_contacts.v1` — optional positive-standings exclusion in THREAT SCAN
 
 Character location is requested only by the Probe Scanner import action. The current location is returned to that signed-in user for matching the scan to a tracked system; it is not persisted or broadcast to the fleet. Skills and saved fittings are shown only to the JLR account that linked that character.
 
@@ -64,6 +65,14 @@ Actuals on the dashboard come from EVE mining-ledger API data. Projected values 
 4. A detected deposit marks the tracked field green. A missing deposit always requires confirmation before JLR marks it red and starts the fixed 10-hour timer.
 
 Clipboard access requires a user click. If the browser blocks direct clipboard reading, JLR opens a paste box instead. JLR does not control the EVE client, scrape its cache, or store copied scanner rows.
+
+### Threat Scan
+
+THREAT SCAN accepts copied Local names and native D-scan rows. It resolves public identity data through ESI, uses cached public zKillboard stats for the JLR threat score, and separates D-scan ship composition from Local pilot names.
+
+- **Ignore your own linked characters** removes every toon linked to the signed-in JLR account.
+- **Ignore characters with positive standings** uses the first contacts-authorized linked toon, preferring the primary toon. Positive character, corporation, alliance, and faction standings are honored. The private contact list is cached in memory for 15 minutes and is not displayed or written to disk.
+- **Create Intel Link** explicitly publishes the pasted scan to `dscan.info`, receives its `/v/` share URL, and copies that URL for pasting into an intel channel.
 
 ### ESI refresh scheduling
 
@@ -109,6 +118,9 @@ Add these scopes:
 esi-industry.read_character_mining.v1
 esi-skills.read_skills.v1
 esi-fittings.read_fittings.v1
+esi-assets.read_assets.v1
+esi-location.read_location.v1
+esi-characters.read_contacts.v1
 ```
 
 Keep the EVE application Client Secret private. Do not put it in browser JavaScript or share it with users.

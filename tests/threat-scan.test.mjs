@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { parseThreatPaste, compactThreatStats, threatActivityLabels, jlrThreatScore } from '../lib/threat-scan.mjs';
+import { parseThreatPaste, compactThreatStats, threatActivityLabels, jlrThreatScore, threatIgnoreReason } from '../lib/threat-scan.mjs';
 
 const local = parseThreatPaste([
   'FC Zoetrope',
@@ -41,5 +41,20 @@ const tags = threatActivityLabels(stats, ['Sabre']);
 assert(tags.some(tag => tag.label === 'AWOX'));
 assert(tags.some(tag => tag.label === 'TACKLE'));
 assert(jlrThreatScore(stats, tags) > 0);
+
+const ignoreOptions={
+  ownIds:new Set([101]),
+  standingSets:{
+    character:new Set([102]),
+    corporation:new Set([201]),
+    alliance:new Set([301]),
+    faction:new Set(),
+  },
+};
+assert.equal(threatIgnoreReason({id:101,corporation_id:999},ignoreOptions),'own');
+assert.equal(threatIgnoreReason({id:102,corporation_id:999},ignoreOptions),'positive');
+assert.equal(threatIgnoreReason({id:103,corporation_id:201},ignoreOptions),'positive');
+assert.equal(threatIgnoreReason({id:104,alliance_id:301},ignoreOptions),'positive');
+assert.equal(threatIgnoreReason({id:105,corporation_id:999},ignoreOptions),null);
 
 console.log('Threat scanner regression passed');

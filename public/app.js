@@ -34,6 +34,11 @@
   let threatScanLoading=false;
   let threatScanError='';
   let threatScanText='';
+  let threatIgnorePositive=localStorage.getItem('jlrThreatIgnorePositive')!=='false';
+  let threatIgnoreOwn=localStorage.getItem('jlrThreatIgnoreOwn')!=='false';
+  let threatShareLoading=false;
+  let threatShareUrl='';
+  let threatShareError='';
 
   const DEFAULT_FLEET = { members:{}, uptime:100, payout:95 };
   function loadFleet() {
@@ -901,6 +906,7 @@
     const highDanger=chars.filter(ch=>Number(ch?.jlrThreat)>=70).length;
     const signalCount=chars.filter(ch=>(ch?.tags||[]).some(tag=>/CYNO|FC|BAIT|BLOPS|TITAN|SUPER/i.test(String(tag?.label||'')))).length;
     const dscanShips=Array.isArray(data?.ships)?data.ships:[];
+    const hasContactsAccess=Boolean(me?.characters?.some(character=>character.contactsAccess));
 
     const shipStrip=dscanShips.length?`
       <section class="glass threat-dscan-strip">
@@ -947,7 +953,8 @@
 
     const unresolved=Array.isArray(data?.unresolvedNames)?data.unresolvedNames:[];
     const unresolvedShips=Array.isArray(data?.unresolvedShipNames)?data.unresolvedShipNames:[];
-    const cacheText=data?`${fmt(data.cache?.hits||0)} local hits • ${fmt(data.cache?.refreshed||0)} refreshed${unresolved.length?' • '+fmt(unresolved.length)+' pilots unresolved':''}${unresolvedShips.length?' • '+fmt(unresolvedShips.length)+' ship types unresolved':''}${data.truncated?' • first '+fmt(chars.length)+' pilots shown':''}`:'';
+    const ignored=Number(data?.ignored?.total)||0;
+    const cacheText=data?`${fmt(data.cache?.hits||0)} local hits • ${fmt(data.cache?.refreshed||0)} refreshed${ignored?' • '+fmt(ignored)+' ignored':''}${unresolved.length?' • '+fmt(unresolved.length)+' pilots unresolved':''}${unresolvedShips.length?' • '+fmt(unresolvedShips.length)+' ship types unresolved':''}${data.truncated?' • first '+fmt(chars.length)+' pilots shown':''}`:'';
 
     host.innerHTML=`
       <div class="threat-shell">
@@ -959,15 +966,32 @@
           <div class="threat-actions">
             <button id="threatPasteScan" class="orb blue" type="button">📋 PASTE & SCAN</button>
             <button id="threatRunScan" class="orb silver" type="button">SCAN TEXT</button>
+            <button id="threatShareScan" class="orb purple" type="button" title="Publish this pasted scan to dscan.info and copy its share URL" ${threatShareLoading?'disabled':''}>${threatShareLoading?'CREATING…':threatShareUrl?'📋 COPY INTEL LINK':'🔗 CREATE INTEL LINK'}</button>
           </div>
         </section>
 
         <section class="glass threat-input-card">
           <textarea id="threatScanInput" spellcheck="false" placeholder="Paste Local names or copied D-scan rows here…">${esc(threatScanText)}</textarea>
           <div class="threat-input-foot">
-            <span>${threatScanLoading?'BUILDING THREAT INTEL…':threatScanError?esc(threatScanError):data?`JLR threat engine • ${cacheText}`:'Paste names or D-scan, then scan.'}</span>
+            <span>${threatScanLoading?'BUILDING THREAT INTEL…':threatScanError?esc(threatScanError):data?`JLR threat engine • ${cacheText}`:'Paste names or D-scan, then scan.'}${threatShareError?` • ${esc(threatShareError)}`:''}</span>
             ${data?.scannedAt?`<small>updated ${ago(data.scannedAt)}</small>`:''}
           </div>
+          ${threatShareUrl?`<div class="threat-share-ready"><span>INTEL LINK READY</span><a href="${esc(threatShareUrl)}" target="_blank" rel="noopener noreferrer">${esc(threatShareUrl)}</a></div>`:''}
+        </section>
+
+        <section class="glass threat-ignore-card">
+          <strong>IGNORED CHARACTERS</strong>
+          <label class="threat-check${hasContactsAccess?'':' disabled'}">
+            <input id="threatIgnorePositive" type="checkbox" ${threatIgnorePositive&&hasContactsAccess?'checked':''} ${hasContactsAccess?'':'disabled'}>
+            <span>Ignore characters with positive standings</span>
+          </label>
+          <label class="threat-check">
+            <input id="threatIgnoreOwn" type="checkbox" ${threatIgnoreOwn?'checked':''}>
+            <span>Ignore your own linked characters</span>
+          </label>
+          ${hasContactsAccess
+            ?`<small>Positive standings are read from ${esc(data?.standingsSource?.name||'an authorized linked toon')} and are never shown or stored.</small>`
+            :'<small>Positive-standings filtering needs EVE contacts access. <button id="threatUpdateAccess" type="button">UPDATE ACCESS</button></small>'}
         </section>
 
         ${data?`
@@ -992,20 +1016,42 @@
 
         <section class="threat-source-note">
           <strong>JLR THREAT ENGINE</strong>
-          <span>Identity, corporation, alliance, age and security come from public ESI. PvP behavior comes from zKillboard's public GET stats API and is cached in our local PvP database for 6 hours. We no longer use the Cloudflare-blocked ScanAlyzer POST endpoint.</span>
+          <span>Identity, corporation, alliance, age and security come from public ESI. PvP behavior comes from zKillboard's public GET stats API and is cached in our local PvP database for 6 hours. CREATE INTEL LINK publishes the pasted scan to dscan.info and copies its share URL.</span>
         </section>`:''}
       </div>`;
 
     const input=$('threatScanInput');
-    input?.addEventListener('input',()=>{threatScanText=input.value});
+    input?.addEventListener('input',()=>{
+      if(threatShareUrl&&input.value!==threatScanText)threatShareUrl='';
+      threatShareError='';
+      threatScanText=input.value;
+    });
     input?.addEventListener('keydown',event=>{
       if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){event.preventDefault();runThreatScan(input.value)}
     });
+    $('threatIgnorePositive')?.addEventListener('change',event=>{
+      threatIgnorePositive=Boolean(event.target.checked);
+      localStorage.setItem('jlrThreatIgnorePositive',String(threatIgnorePositive));
+      threatScanData=null;
+      threatScanError='Filters changed. Run the scan again.';
+      renderThreatScan();
+    });
+    $('threatIgnoreOwn')?.addEventListener('change',event=>{
+      threatIgnoreOwn=Boolean(event.target.checked);
+      localStorage.setItem('jlrThreatIgnoreOwn',String(threatIgnoreOwn));
+      threatScanData=null;
+      threatScanError='Filters changed. Run the scan again.';
+      renderThreatScan();
+    });
+    $('threatUpdateAccess')?.addEventListener('click',()=>{location.href='/auth/eve/start?intent=link'});
     $('threatRunScan')?.addEventListener('click',()=>runThreatScan(input?.value||''));
+    $('threatShareScan')?.addEventListener('click',()=>shareThreatScan(input?.value||''));
     $('threatPasteScan')?.addEventListener('click',async()=>{
       try{
         if(!navigator.clipboard?.readText)throw new Error('Clipboard access is unavailable in this browser. Paste into the box instead.');
         const text=await navigator.clipboard.readText();
+        if(text!==threatScanText)threatShareUrl='';
+        threatShareError='';
         threatScanText=text;
         await runThreatScan(text);
       }catch(error){
@@ -1014,6 +1060,43 @@
         setTimeout(()=>$('threatScanInput')?.focus(),0);
       }
     });
+  }
+  async function copyThreatShareUrl(){
+    if(!threatShareUrl)return false;
+    try{
+      await navigator.clipboard.writeText(threatShareUrl);
+      toast('Intel link copied. Paste it into your intel channel.');
+      return true;
+    }catch{
+      toast('Intel link is ready below. Select it to copy.');
+      return false;
+    }
+  }
+  async function shareThreatScan(text){
+    const value=String(text||'').trim();
+    threatScanText=String(text||'');
+    if(threatShareUrl){await copyThreatShareUrl();return}
+    if(value.length<2){
+      threatShareError='Paste a D-scan, Local list, or fleet scan first.';
+      renderThreatScan();
+      return;
+    }
+    if(threatShareLoading)return;
+    threatShareLoading=true;
+    threatShareError='';
+    renderThreatScan();
+    try{
+      const result=await api('/api/threat-share',{method:'POST',body:JSON.stringify({text:value})});
+      threatShareUrl=String(result?.url||'');
+      if(!threatShareUrl)throw new Error('dscan.info did not return a share link.');
+      renderThreatScan();
+      await copyThreatShareUrl();
+    }catch(error){
+      threatShareError=String(error?.message||error||'Could not create the intel link.');
+    }finally{
+      threatShareLoading=false;
+      renderThreatScan();
+    }
   }
   async function runThreatScan(text){
     const value=String(text||'').trim();
@@ -1028,7 +1111,12 @@
     threatScanError='';
     renderThreatScan();
     try{
-      threatScanData=await api('/api/threat-scan',{method:'POST',body:JSON.stringify({text:value})});
+      const contactsAvailable=Boolean(me?.characters?.some(character=>character.contactsAccess));
+      threatScanData=await api('/api/threat-scan',{method:'POST',body:JSON.stringify({
+        text:value,
+        ignoreOwn:threatIgnoreOwn,
+        ignorePositive:threatIgnorePositive&&contactsAvailable,
+      })});
     }catch(error){
       threatScanError=String(error?.message||error||'Threat scan failed.');
     }finally{
@@ -2043,7 +2131,7 @@
       const miningFits=(c.fittings||[]).length;
       const abyssal=Number(c.abyssalStripCount||0);
       const scopeState=c.needsReauth
-        ?' • access update required for skills/fits/assets/location'
+        ?' • access update required for skills/fits/assets/location/contacts'
         :` • ${savedFits} saved fits • ${miningFits} mining fits${abyssal?` • ${abyssal} Abyssal strips`:''}`;
       const syncState=c.lastError?`⚠ sync error: ${esc(c.lastError)}`:`EVE data synced ${ago(c.lastSyncAt)}`;
       const marketButton=c.marketEligible

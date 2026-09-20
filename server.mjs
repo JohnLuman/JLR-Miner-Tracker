@@ -5,7 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { parseProbeScan, parseA0Scan, parseIceScan } from './lib/probe-scan.mjs';
-import { parseThreatPaste, compactThreatStats, threatActivityLabels, jlrThreatScore } from './lib/threat-scan.mjs';
+import { parseThreatPaste, compactThreatStats, threatActivityLabels, jlrThreatScore, threatIgnoreReason } from './lib/threat-scan.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -30,10 +30,11 @@ const SKILLS_SCOPE = 'esi-skills.read_skills.v1';
 const FITTINGS_SCOPE = 'esi-fittings.read_fittings.v1';
 const ASSETS_SCOPE = 'esi-assets.read_assets.v1';
 const LOCATION_SCOPE = 'esi-location.read_location.v1';
+const CONTACTS_SCOPE = 'esi-characters.read_contacts.v1';
 const MARKET_STRUCTURE_SCOPE = 'esi-markets.structure_markets.v1';
 const SEARCH_STRUCTURES_SCOPE = 'esi-search.search_structures.v1';
 const READ_STRUCTURES_SCOPE = 'esi-universe.read_structures.v1';
-const ESI_SCOPES = [MINING_SCOPE, SKILLS_SCOPE, FITTINGS_SCOPE, ASSETS_SCOPE, LOCATION_SCOPE];
+const ESI_SCOPES = [MINING_SCOPE, SKILLS_SCOPE, FITTINGS_SCOPE, ASSETS_SCOPE, LOCATION_SCOPE, CONTACTS_SCOPE];
 const MARKET_SCOPES = [MARKET_STRUCTURE_SCOPE, SEARCH_STRUCTURES_SCOPE, READ_STRUCTURES_SCOPE];
 const MARKET_CHARACTER_NAME = String(process.env.MARKET_CHARACTER_NAME || 'John Leman Raholan').trim();
 const MARKET_STRUCTURE_ID_ENV = String(process.env.MARKET_STRUCTURE_ID || '').trim();
@@ -87,6 +88,7 @@ const ZKILL_PAGE_GAP_MS = 1100;
 const ZKILL_LIFETIME_DAMAGE_CACHE_MS = 24 * 60 * 60 * 1000;
 const ZKILL_LIFETIME_PAGE_GAP_MS = 700;
 const THREAT_CHARACTER_CACHE_MS = 6 * 60 * 60 * 1000;
+const THREAT_CONTACTS_CACHE_MS = 15 * 60 * 1000;
 const THREAT_MAX_CHARACTERS = 80;
 const THREAT_FETCH_CONCURRENCY = 4;
 // Perfect null-sec refine: T2 rigged Tatara + max skills + RX-804 implant.
@@ -172,6 +174,8 @@ const zkillLifetimeDamageProgress = new Map();
 const pvpCorpMetaCache = new Map();
 const corpAffiliationCache = new Map();
 const threatScanCache = new Map();
+const threatContactsCache = new Map();
+const threatShareCache = new Map();
 if(pvpDb.init7d?.data){
   zkillInitLeaderboardCache={updatedAt:pvpDbTimestamp(pvpDb.init7d.updatedAt),data:pvpDb.init7d.data,promise:null};
 }
@@ -500,7 +504,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.3.91',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.3.92',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -1902,7 +1906,8 @@ function myProfile(user) {
         portrait:`https://images.evetech.net/characters/${c.characterId}/portrait?size=64`,
         scopes,
         locationAccess:scopes.includes(LOCATION_SCOPE),
-        needsReauth:!scopes.includes(SKILLS_SCOPE)||!scopes.includes(FITTINGS_SCOPE)||!scopes.includes(ASSETS_SCOPE)||!scopes.includes(LOCATION_SCOPE),
+        contactsAccess:scopes.includes(CONTACTS_SCOPE),
+        needsReauth:!scopes.includes(SKILLS_SCOPE)||!scopes.includes(FITTINGS_SCOPE)||!scopes.includes(ASSETS_SCOPE)||!scopes.includes(LOCATION_SCOPE)||!scopes.includes(CONTACTS_SCOPE),
         marketEligible:c.name===MARKET_CHARACTER_NAME,
         marketAuthorized:c.name===MARKET_CHARACTER_NAME&&String(state.market.characterId||'')===String(c.characterId)&&Boolean(state.market.refreshTokenEnc),
         skills:c.skills||{},
@@ -2161,6 +2166,73 @@ async function resolveThreatShipNames(names){
   }
   return types;
 }
+async function positiveStandingContactsForUser(user){
+  const linked=(user?.characterIds||[]).map(id=>state.characters[String(id)]).filter(Boolean);
+  const source=linked.find(ch=>String(ch.characterId)===String(user?.primaryCharacterId)&&ch.scopes?.includes(CONTACTS_SCOPE))
+    ||linked.find(ch=>ch.scopes?.includes(CONTACTS_SCOPE));
+  if(!source){
+    const error=new Error('Update EVE access on a linked toon to enable the positive-standings filter.');
+    error.code='CONTACT_SCOPE_REQUIRED';
+    throw error;
+  }
+  const key=String(source.characterId);
+  const cached=threatContactsCache.get(key);
+  if(cached&&Date.now()-cached.at<THREAT_CONTACTS_CACHE_MS)return cached.data;
+  const {access,identity}=await characterAccess(source);
+  if(!identity.scopes.includes(CONTACTS_SCOPE)){
+    const error=new Error('This toon has not granted EVE contacts access. Update EVE access and try again.');
+    error.code='CONTACT_SCOPE_REQUIRED';
+    throw error;
+  }
+  const base=`https://esi.evetech.net/latest/characters/${source.characterId}/contacts/?datasource=tranquility`;
+  const first=await esiGet(`${base}&page=1`,access);
+  let rows=Array.isArray(first.data)?[...first.data]:[];
+  const pages=Math.max(1,Number(first.headers.get('x-pages')||1));
+  for(let page=2;page<=pages;page++){
+    const next=await esiGet(`${base}&page=${page}`,access);
+    if(Array.isArray(next.data))rows.push(...next.data);
+  }
+  const sets={character:new Set(),corporation:new Set(),alliance:new Set(),faction:new Set()};
+  for(const row of rows){
+    if(!(Number(row?.standing)>0))continue;
+    const type=String(row?.contact_type||'');
+    const id=Number(row?.contact_id);
+    if(id&&sets[type])sets[type].add(id);
+  }
+  const data={sourceCharacterId:key,sourceCharacterName:source.name,sets};
+  threatContactsCache.set(key,{at:Date.now(),data});
+  return data;
+}
+async function createDscanInfoShare(scanText){
+  const cacheKey=crypto.createHash('sha256').update(scanText).digest('hex');
+  const cached=threatShareCache.get(cacheKey);
+  if(cached&&Date.now()-cached.at<60*60*1000)return{url:cached.url,cached:true};
+  const body=new URLSearchParams({paste:scanText});
+  const response=await fetch(`https://dscan.info/?_=${Math.floor(Date.now()/1000)}`,{
+    method:'POST',
+    headers:{
+      'Accept':'text/plain,*/*;q=0.8',
+      'Content-Type':'application/x-www-form-urlencoded; charset=UTF-8',
+      'User-Agent':`${ESI_USER_AGENT} | dscan.info share link`,
+    },
+    body,
+    signal:AbortSignal.timeout(20_000),
+  });
+  const raw=(await response.text()).trim();
+  if(!response.ok)throw new Error(`dscan.info ${response.status}: ${raw.slice(0,160)}`);
+  const match=raw.match(/^OK;([A-Za-z0-9_-]+)$/);
+  if(!match){
+    const message=raw.match(/^ERROR;(.*)$/)?.[1]||'dscan.info returned an unexpected response.';
+    throw new Error(String(message).slice(0,200));
+  }
+  const url=`https://dscan.info/v/${match[1]}`;
+  threatShareCache.set(cacheKey,{at:Date.now(),url});
+  if(threatShareCache.size>40){
+    const oldest=[...threatShareCache.entries()].sort((a,b)=>a[1].at-b[1].at).slice(0,10);
+    for(const [key] of oldest)threatShareCache.delete(key);
+  }
+  return{url,cached:false};
+}
 async function threatMapLimit(items,limit,worker){
   const input=[...(items||[])];
   const output=new Array(input.length);
@@ -2200,6 +2272,7 @@ async function getThreatCharacterIntel(character){
       security_status:Number.isFinite(Number(profile?.security_status))?Number(profile.security_status):null,
       corporation_id:Number(profile?.corporation_id)||null,
       alliance_id:Number(profile?.alliance_id)||null,
+      faction_id:Number(profile?.faction_id)||null,
     },
     stats:compactThreatStats(rawStats||{}),
     statsError,
@@ -2209,7 +2282,7 @@ async function getThreatCharacterIntel(character){
   pvpDb.threat.characters[key]=entry;
   return{...entry,cacheHit:false};
 }
-async function buildThreatIntel(scanText){
+async function buildThreatIntel(scanText,{ignoreOwnIds=[],positiveStandings=null}={}){
   const parsed=parseThreatPaste(scanText);
   const [resolved,resolvedShipNames]=await Promise.all([
     resolveThreatCharacterNames(parsed.names),
@@ -2222,8 +2295,17 @@ async function buildThreatIntel(scanText){
     else unresolved.push(name);
   }
   const unique=[...new Map(ordered.map(row=>[Number(row.id),row])).values()];
-  const truncated=unique.length>THREAT_MAX_CHARACTERS;
-  const selected=unique.slice(0,THREAT_MAX_CHARACTERS);
+  const ownIds=new Set((ignoreOwnIds||[]).map(Number).filter(Number.isFinite));
+  const standingSets=positiveStandings?.sets||null;
+  let ignoredOwn=0,ignoredPositive=0;
+  const candidates=unique.filter(row=>{
+    const reason=threatIgnoreReason({id:row.id},{ownIds,standingSets});
+    if(reason==='own'){ignoredOwn++;return false}
+    if(reason==='positive'){ignoredPositive++;return false}
+    return true;
+  });
+  const truncated=candidates.length>THREAT_MAX_CHARACTERS;
+  const selected=candidates.slice(0,THREAT_MAX_CHARACTERS);
   let cacheHits=0,refreshed=0;
   const entries=await threatMapLimit(selected,THREAT_FETCH_CONCURRENCY,async row=>{
     try{
@@ -2234,7 +2316,7 @@ async function buildThreatIntel(scanText){
       console.warn('Threat character lookup failed',row?.id,String(err.message||err));
       return{
         updatedAt:now(),
-        character:{id:Number(row?.id)||0,name:String(row?.name||'Unknown'),birthday:null,security_status:null,corporation_id:null,alliance_id:null},
+        character:{id:Number(row?.id)||0,name:String(row?.name||'Unknown'),birthday:null,security_status:null,corporation_id:null,alliance_id:null,faction_id:null},
         stats:compactThreatStats({}),
         statsError:String(err.message||err),
         cacheHit:false,
@@ -2243,8 +2325,15 @@ async function buildThreatIntel(scanText){
   });
   if(refreshed)await savePvpDb();
 
+  const visibleEntries=entries.filter(entry=>{
+    const c=entry.character||{};
+    const reason=threatIgnoreReason(c,{standingSets});
+    if(reason==='positive')ignoredPositive++;
+    return reason!=='positive';
+  });
+
   const corpIds=[],allianceIds=[],typeIds=[],partnerIds=[];
-  for(const entry of entries){
+  for(const entry of visibleEntries){
     const c=entry.character||{},s=entry.stats||{};
     if(c.corporation_id)corpIds.push(c.corporation_id);
     if(c.alliance_id)allianceIds.push(c.alliance_id);
@@ -2262,7 +2351,7 @@ async function buildThreatIntel(scanText){
   for(const typeId of shipCounts.keys())typeIds.push(typeId);
   const names=await resolveUniverseNames([...corpIds,...allianceIds,...typeIds,...partnerIds]);
 
-  const chars=entries.map(entry=>{
+  const chars=visibleEntries.map(entry=>{
     const c=entry.character||{},s=entry.stats||{};
     const ships=(s.recentShips||[]).slice(0,6).map(ship=>({
       ...ship,
@@ -2316,6 +2405,8 @@ async function buildThreatIntel(scanText){
     rawLineCount:parsed.rawLineCount,
     truncated,
     candidateCount:unique.length,
+    ignored:{own:ignoredOwn,positive:ignoredPositive,total:ignoredOwn+ignoredPositive},
+    standingsSource:positiveStandings?{characterId:positiveStandings.sourceCharacterId,name:positiveStandings.sourceCharacterName}:null,
     unresolvedNames:unresolved.slice(0,30),
     unresolvedShipNames:unresolvedShipNames.slice(0,30),
     cache:{hits:cacheHits,refreshed},
@@ -2864,7 +2955,7 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
   };
 }
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.91',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.92',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){const u=readSession(req);return json(res,200,{authenticated:Boolean(u),user:u?myProfile(u):null})}
   const user=requireUser(req,res);if(!user)return;
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
@@ -2896,6 +2987,19 @@ async function routeApi(req,res,url) {
   }
   if(req.method==='GET'&&url.pathname==='/api/events'){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});res.write(`event: state\ndata: ${JSON.stringify(publicState())}\n\n`);sseClients.add(res);req.on('close',()=>sseClients.delete(res));return}
   if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
+  if(req.method==='POST'&&url.pathname==='/api/threat-share'){
+    let body;
+    try{body=await readBody(req,75_000)}
+    catch(err){return json(res,400,{error:'BAD_SCAN',message:String(err.message||err)})}
+    const scanText=String(body?.text||'').trim();
+    if(scanText.length<2)return json(res,400,{error:'EMPTY_SCAN',message:'Paste a D-scan, Local list, or fleet scan first.'});
+    if(scanText.length>50_000)return json(res,413,{error:'SCAN_TOO_LARGE',message:'The scan is too large to share. Keep it under 50,000 characters.'});
+    try{return json(res,200,await createDscanInfoShare(scanText))}
+    catch(err){
+      console.warn('dscan.info share failed',String(err.message||err));
+      return json(res,502,{error:'DSCAN_SHARE_FAILED',message:`Could not create the dscan.info link: ${String(err.message||err)}`});
+    }
+  }
   if(req.method==='POST'&&url.pathname==='/api/threat-scan'){
     let body;
     try{body=await readBody(req,75_000)}
@@ -2904,11 +3008,17 @@ async function routeApi(req,res,url) {
     if(scanText.length<2)return json(res,400,{error:'EMPTY_SCAN',message:'Paste character names, Local, or D-scan text first.'});
     if(scanText.length>50_000)return json(res,413,{error:'SCAN_TOO_LARGE',message:'Threat scan text is too large. Keep the paste under 50,000 characters.'});
 
-    const cacheKey=crypto.createHash('sha256').update(scanText).digest('hex');
-    const cached=threatScanCache.get(cacheKey);
-    if(cached&&Date.now()-cached.at<2*60*1000)return json(res,200,{...cached.data,cached:true});
+    const ignoreOwn=body?.ignoreOwn!==false;
+    const ignorePositive=body?.ignorePositive!==false;
     try{
-      const data=await buildThreatIntel(scanText);
+      const positiveStandings=ignorePositive?await positiveStandingContactsForUser(user):null;
+      const cacheKey=crypto.createHash('sha256').update(`${user.id}|${ignoreOwn?'1':'0'}|${ignorePositive?'1':'0'}|${scanText}`).digest('hex');
+      const cached=threatScanCache.get(cacheKey);
+      if(cached&&Date.now()-cached.at<2*60*1000)return json(res,200,{...cached.data,cached:true});
+      const data=await buildThreatIntel(scanText,{
+        ignoreOwnIds:ignoreOwn?user.characterIds:[],
+        positiveStandings,
+      });
       threatScanCache.set(cacheKey,{at:Date.now(),data});
       if(threatScanCache.size>40){
         const oldest=[...threatScanCache.entries()].sort((a,b)=>a[1].at-b[1].at).slice(0,10);
@@ -2916,6 +3026,7 @@ async function routeApi(req,res,url) {
       }
       return json(res,200,data);
     }catch(err){
+      if(err?.code==='CONTACT_SCOPE_REQUIRED')return json(res,409,{error:err.code,message:String(err.message||err)});
       console.warn('Threat scan failed',String(err.message||err));
       return json(res,502,{error:'THREAT_SCAN_FAILED',message:String(err.message||err)});
     }
@@ -2961,7 +3072,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.3.91 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.3.92 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setInterval(()=>resetExpired(true),15_000).unref();
 async function runAutomaticSyncLoop(){
   const startedAt=Date.now();
