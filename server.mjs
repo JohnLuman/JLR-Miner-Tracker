@@ -77,6 +77,11 @@ const ESI_MIN_CHARACTER_START_GAP_MS = 250;
 const ESI_MAX_CHARACTER_START_GAP_MS = 30_000;
 const ESI_MANUAL_CHARACTER_START_GAP_MS = 500;
 const ESI_MAX_RETRIES = 4;
+const INIT_ALLIANCE_ID = 1900696668;
+const ZKILL_WINDOW_SECONDS = 7 * 24 * 60 * 60;
+const ZKILL_CACHE_MS = 15 * 60 * 1000;
+const ZKILL_MAX_PAGES = 100;
+const ZKILL_PAGE_GAP_MS = 350;
 // Perfect null-sec refine: T2 rigged Tatara + max skills + RX-804 implant.
 const MAX_REFINE_YIELD = 0.90628105568;
 const ORE_REPROCESSING = {
@@ -149,6 +154,8 @@ const characterSyncPromises = new Map();
 const characterAccessPromises = new Map();
 const userSyncPromises = new Map();
 const ledgerRowsByCharacter = new Map();
+const universeNameCache = new Map();
+let zkillInitLeaderboardCache = { updatedAt:0, data:null, promise:null };
 let esiCharacterSyncActive = 0;
 const esiCharacterSyncWaiters = [];
 let esiBackoffUntil = 0;
@@ -434,7 +441,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.3.72',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.3.73',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -1873,11 +1880,186 @@ async function serveStatic(req,res,pathname) {
   try{const st=await fsp.stat(file);if(!st.isFile())return false;const ext=path.extname(file).toLowerCase();const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.png':'image/png','.svg':'image/svg+xml'};securityHeaders(res);res.writeHead(200,{'Content-Type':types[ext]||'application/octet-stream','Cache-Control':ext==='.html'?'no-cache':'public, max-age=60'});fs.createReadStream(file).pipe(res);return true}catch{return false}
 }
 
+async function resolveUniverseNames(ids){
+  const unique=[...new Set((ids||[]).map(Number).filter(Number.isFinite))];
+  const missing=unique.filter(id=>!universeNameCache.has(id));
+  for(let i=0;i<missing.length;i+=500){
+    const batch=missing.slice(i,i+500);
+    if(!batch.length)continue;
+    try{
+      const {data}=await esiPost('https://esi.evetech.net/latest/universe/names/?datasource=tranquility',batch);
+      for(const row of Array.isArray(data)?data:[])if(row?.id&&row?.name)universeNameCache.set(Number(row.id),String(row.name));
+    }catch(err){
+      console.warn('Universe names lookup failed',String(err.message||err));
+    }
+  }
+  return new Map(unique.map(id=>[id,universeNameCache.get(id)||String(id)]));
+}
+async function zkillJson(url){
+  for(let attempt=0;attempt<4;attempt++){
+    const response=await fetch(url,{
+      headers:{
+        'Accept':'application/json',
+        'Accept-Encoding':'gzip, deflate, br',
+        'User-Agent':`${ESI_USER_AGENT} | INIT leaderboard`,
+      },
+    });
+    if(response.ok)return response.json();
+    if(response.status===429||[502,503,504].includes(response.status)){
+      const retry=clamp(response.headers.get('retry-after'),1,120,3);
+      await sleep(retry*1000+Math.floor(Math.random()*350));
+      continue;
+    }
+    throw new Error(`zKillboard ${response.status}: ${(await response.text().catch(()=>'' )).slice(0,120)}`);
+  }
+  throw new Error('zKillboard request failed after retries');
+}
+function addPvpMetric(map,id,corpId,killId,value,finalBlow,damage){
+  if(!id)return;
+  let row=map.get(id);
+  if(!row){row={id:Number(id),corporationId:Number(corpId)||null,killmails:0,finalBlows:0,damageDone:0,iskOnKillmails:0,_kills:new Set()};map.set(id,row)}
+  if(!row._kills.has(killId)){
+    row._kills.add(killId);
+    row.killmails++;
+    row.iskOnKillmails+=Number(value)||0;
+  }
+  if(finalBlow)row.finalBlows++;
+  row.damageDone+=Number(damage)||0;
+}
+function rankPvpRows(rows){
+  rows.sort((a,b)=>b.killmails-a.killmails||b.finalBlows-a.finalBlows||b.damageDone-a.damageDone||b.iskOnKillmails-a.iskOnKillmails||a.id-b.id);
+  rows.forEach((row,index)=>row.rank=index+1);
+  return rows;
+}
+async function buildInitZkillLeaderboard(force=false){
+  const nowMs=Date.now();
+  if(!force&&zkillInitLeaderboardCache.data&&nowMs-zkillInitLeaderboardCache.updatedAt<ZKILL_CACHE_MS)return zkillInitLeaderboardCache.data;
+  if(zkillInitLeaderboardCache.promise)return zkillInitLeaderboardCache.promise;
+  const pending=(async()=>{
+    const characters=new Map(),corporations=new Map(),seenKillIds=new Set();
+    let pagesFetched=0,truncated=false;
+    for(let page=1;page<=ZKILL_MAX_PAGES;page++){
+      const url=`https://zkillboard.com/api/kills/allianceID/${INIT_ALLIANCE_ID}/pastSeconds/${ZKILL_WINDOW_SECONDS}/page/${page}/`;
+      const rows=await zkillJson(url);
+      const list=Array.isArray(rows)?rows:[];
+      pagesFetched=page;
+      for(const km of list){
+        const killId=Number(km?.killmail_id);
+        if(!killId||seenKillIds.has(killId))continue;
+        seenKillIds.add(killId);
+        const value=Number(km?.zkb?.totalValue)||0;
+        const corpSeen=new Set();
+        for(const attacker of Array.isArray(km?.attackers)?km.attackers:[]){
+          if(Number(attacker?.alliance_id)!==INIT_ALLIANCE_ID)continue;
+          const charId=Number(attacker?.character_id);
+          const corpId=Number(attacker?.corporation_id);
+          if(charId)addPvpMetric(characters,charId,corpId,killId,value,Boolean(attacker?.final_blow),Number(attacker?.damage_done)||0);
+          if(corpId){
+            if(!corporations.has(corpId))corporations.set(corpId,{id:corpId,killmails:0,finalBlows:0,damageDone:0,iskOnKillmails:0,_kills:new Set()});
+            const corp=corporations.get(corpId);
+            if(!corpSeen.has(corpId)){
+              corpSeen.add(corpId);
+              if(!corp._kills.has(killId)){corp._kills.add(killId);corp.killmails++;corp.iskOnKillmails+=value}
+            }
+            if(attacker?.final_blow)corp.finalBlows++;
+            corp.damageDone+=Number(attacker?.damage_done)||0;
+          }
+        }
+      }
+      if(list.length<200)break;
+      if(page===ZKILL_MAX_PAGES){truncated=true;break}
+      await sleep(ZKILL_PAGE_GAP_MS);
+    }
+    const rankedCharacters=rankPvpRows([...characters.values()]);
+    const rankedCorporations=rankPvpRows([...corporations.values()]);
+    for(const row of [...rankedCharacters,...rankedCorporations])delete row._kills;
+    const data={generatedAt:now(),pagesFetched,truncated,killmailsProcessed:seenKillIds.size,characters:rankedCharacters,corporations:rankedCorporations};
+    zkillInitLeaderboardCache={updatedAt:Date.now(),data,promise:null};
+    return data;
+  })().finally(()=>{if(zkillInitLeaderboardCache.promise===pending)zkillInitLeaderboardCache.promise=null});
+  zkillInitLeaderboardCache.promise=pending;
+  return pending;
+}
+async function pvpLeaderboardForUser(user,{force=false}={}){
+  const primaryId=Number(user?.primaryCharacterId);
+  if(!primaryId)throw new Error('No primary EVE character is linked.');
+  const character=(await esiGet(`https://esi.evetech.net/latest/characters/${primaryId}/?datasource=tranquility`)).data;
+  const corporationId=Number(character?.corporation_id);
+  if(!corporationId)throw new Error('Could not determine your corporation from EVE.');
+  const corporation=(await esiGet(`https://esi.evetech.net/latest/corporations/${corporationId}/?datasource=tranquility`)).data;
+  if(Number(corporation?.alliance_id)!==INIT_ALLIANCE_ID)throw new Error(`${corporation?.name||'Your corporation'} is not currently in INIT.`);
+
+  const base=await buildInitZkillLeaderboard(force);
+  const corpBase=base.corporations.find(row=>Number(row.id)===corporationId)||null;
+  const myMembersBase=base.characters.filter(row=>Number(row.corporationId)===corporationId);
+  const topCharacters=base.characters.slice(0,100);
+  const displayCharacterIds=[...new Set([...topCharacters,...myMembersBase].map(row=>row.id))];
+  const corpIds=base.corporations.map(row=>row.id);
+  const [charNames,corpNames]=await Promise.all([
+    resolveUniverseNames(displayCharacterIds),
+    resolveUniverseNames(corpIds),
+  ]);
+
+  const corpDisplay=base.corporations.slice(0,50);
+  if(corpBase&&!corpDisplay.some(row=>row.id===corpBase.id))corpDisplay.push(corpBase);
+  corpDisplay.sort((a,b)=>a.rank-b.rank);
+
+  const decorateChar=row=>({
+    rank:row.rank,
+    characterId:row.id,
+    corporationId:row.corporationId,
+    name:charNames.get(row.id)||String(row.id),
+    isMyCorp:Number(row.corporationId)===corporationId,
+    killmails:row.killmails,
+    finalBlows:row.finalBlows,
+    damageDone:row.damageDone,
+    iskOnKillmails:row.iskOnKillmails,
+  });
+  const decorateCorp=row=>({
+    rank:row.rank,
+    corporationId:row.id,
+    name:corpNames.get(row.id)||String(row.id),
+    isMyCorp:Number(row.id)===corporationId,
+    killmails:row.killmails,
+    finalBlows:row.finalBlows,
+    damageDone:row.damageDone,
+    iskOnKillmails:row.iskOnKillmails,
+  });
+
+  return{
+    allianceId:INIT_ALLIANCE_ID,
+    allianceName:'The Initiative.',
+    windowSeconds:ZKILL_WINDOW_SECONDS,
+    generatedAt:base.generatedAt,
+    pagesFetched:base.pagesFetched,
+    truncated:base.truncated,
+    killmailsProcessed:base.killmailsProcessed,
+    activeCharacters:base.characters.length,
+    activeCorporations:base.corporations.length,
+    myCorporation:{
+      corporationId,
+      name:String(corporation?.name||corpNames.get(corporationId)||corporationId),
+      rank:corpBase?.rank||null,
+      killmails:corpBase?.killmails||0,
+    },
+    corporations:corpDisplay.map(decorateCorp),
+    characters:topCharacters.map(decorateChar),
+    myCorpMembers:myMembersBase.map(decorateChar),
+  };
+}
+
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.72',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.73',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){const u=readSession(req);return json(res,200,{authenticated:Boolean(u),user:u?myProfile(u):null})}
   const user=requireUser(req,res);if(!user)return;
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
+  if(req.method==='GET'&&url.pathname==='/api/zkill/leaderboard'){
+    const wantsRefresh=url.searchParams.get('refresh')==='1';
+    const cacheAge=Date.now()-Number(zkillInitLeaderboardCache.updatedAt||0);
+    const force=wantsRefresh&&cacheAge>=10*60*1000;
+    try{return json(res,200,await pvpLeaderboardForUser(user,{force}))}
+    catch(err){return json(res,502,{error:'ZKILL_LEADERBOARD_FAILED',message:String(err.message||err)})}
+  }
   if(req.method==='GET'&&url.pathname==='/api/events'){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});res.write(`event: state\ndata: ${JSON.stringify(publicState())}\n\n`);sseClients.add(res);req.on('close',()=>sseClients.delete(res));return}
   if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
   if(req.method==='POST'&&url.pathname==='/api/scans/preview'){

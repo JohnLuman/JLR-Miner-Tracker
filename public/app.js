@@ -19,6 +19,9 @@
   let scanBusy = false;
   let merIntel = null;
   let merIntelError = '';
+  let pvpIntel = null;
+  let pvpIntelError = '';
+  let pvpIntelLoading = false;
 
   const DEFAULT_FLEET = { members:{}, uptime:100, payout:95 };
   function loadFleet() {
@@ -532,11 +535,12 @@
   function showApp(){$('loginView').classList.add('hidden');$('app').classList.remove('hidden');}
   let activeTab=localStorage.getItem('jlrTab')||'fields';
   function applyTab(tab){
-    const valid=['fields','fleet','ice','mer','toons'];
+    const valid=['fields','fleet','ice','pvp','mer','toons'];
     activeTab=valid.includes(tab)?tab:'fields';
     localStorage.setItem('jlrTab',activeTab);
     document.querySelectorAll('.app-tab').forEach(button=>button.classList.toggle('active',button.dataset.tab===activeTab));
     document.querySelectorAll('.tab-panel').forEach(panel=>panel.classList.toggle('active',panel.dataset.tab===activeTab));
+    if(activeTab==='pvp'&&!pvpIntel&&!pvpIntelLoading)loadPvpIntel();
   }
   function initTabs(){
     const host=$('tabHost');
@@ -553,6 +557,8 @@
     const fields=makePanel('fields');
     const fleet=makePanel('fleet');
     const ice=makePanel('ice');
+    const pvp=makePanel('pvp');
+    pvp.id='pvpIntelPanel';
     const mer=makePanel('mer');
     mer.id='merIntelPanel';
     const toons=makePanel('toons');
@@ -587,6 +593,141 @@
 
     document.querySelectorAll('.app-tab').forEach(button=>button.addEventListener('click',()=>applyTab(button.dataset.tab)));
     applyTab(activeTab);
+  }
+
+  function pvpRankBadge(rank,isMine=false){
+    const n=Number(rank)||0;
+    return `<span class="pvp-rank${isMine?' mine':''}">#${n||'—'}</span>`;
+  }
+  function renderPvpIntel(){
+    const host=$('pvpIntelPanel');
+    if(!host)return;
+    if(pvpIntelLoading&&!pvpIntel){
+      host.innerHTML='<section class="glass pvp-loading"><strong>BUILDING INIT 7-DAY LEADERBOARD…</strong><span>Reading cached zKillboard data or refreshing the shared alliance cache.</span></section>';
+      return;
+    }
+    if(pvpIntelError){
+      host.innerHTML=`<section class="glass pvp-error"><strong>INIT PVP LEADERBOARD UNAVAILABLE</strong><span>${esc(pvpIntelError)}</span><button id="pvpRetry" class="orb blue" type="button">TRY AGAIN</button></section>`;
+      $('pvpRetry')?.addEventListener('click',()=>loadPvpIntel(true));
+      return;
+    }
+    if(!pvpIntel){
+      host.innerHTML='<section class="glass pvp-loading">Open this tab to load INIT PvP rankings.</section>';
+      return;
+    }
+    const d=pvpIntel;
+    const corpRows=(d.corporations||[]).map(row=>`
+      <tr class="${row.isMyCorp?'mine':''}">
+        <td>${pvpRankBadge(row.rank,row.isMyCorp)}</td>
+        <td><strong>${esc(row.name||('Corp '+row.corporationId))}</strong>${row.isMyCorp?'<small>YOUR CORP</small>':''}</td>
+        <td>${fmt(row.killmails)}</td>
+        <td>${fmt(row.finalBlows)}</td>
+        <td>${fmt(row.damageDone)}</td>
+        <td>${fmt(row.iskOnKillmails)} ISK</td>
+      </tr>`).join('');
+    const myMembers=(d.myCorpMembers||[]).map(row=>`
+      <tr class="mine">
+        <td>${pvpRankBadge(row.rank,true)}</td>
+        <td><strong>${esc(row.name||('Character '+row.characterId))}</strong></td>
+        <td>${fmt(row.killmails)}</td>
+        <td>${fmt(row.finalBlows)}</td>
+        <td>${fmt(row.damageDone)}</td>
+        <td>${fmt(row.iskOnKillmails)} ISK</td>
+      </tr>`).join('');
+    const allianceRows=(d.characters||[]).map(row=>`
+      <tr class="${row.isMyCorp?'mine':''}">
+        <td>${pvpRankBadge(row.rank,row.isMyCorp)}</td>
+        <td><strong>${esc(row.name||('Character '+row.characterId))}</strong>${row.isMyCorp?'<small>YOUR CORP</small>':''}</td>
+        <td>${fmt(row.killmails)}</td>
+        <td>${fmt(row.finalBlows)}</td>
+        <td>${fmt(row.damageDone)}</td>
+        <td>${fmt(row.iskOnKillmails)} ISK</td>
+      </tr>`).join('');
+    const myRank=d.myCorporation?.rank||null;
+    host.innerHTML=`
+      <div class="pvp-shell">
+        <section class="glass pvp-hero">
+          <div>
+            <span class="pvp-eyebrow">ZKILLBOARD • ROLLING 7 DAYS</span>
+            <h2>INIT PVP LEADERBOARDS</h2>
+            <p>Ranks active INIT corporations and pilots by killmail participation. Final blows and damage break ties.</p>
+          </div>
+          <button id="pvpRefresh" class="orb blue" type="button">REFRESH</button>
+        </section>
+
+        <section class="pvp-summary-grid">
+          <article class="glass pvp-summary-card">
+            <span>YOUR CORP</span>
+            <strong>${esc(d.myCorporation?.name||'Unknown')}</strong>
+            <small>${myRank?`#${myRank} of ${d.activeCorporations} active INIT corps`:'No kills recorded in this window'}</small>
+          </article>
+          <article class="glass pvp-summary-card">
+            <span>YOUR ACTIVE PILOTS</span>
+            <strong>${fmt(d.myCorpMembers?.length||0)}</strong>
+            <small>corp members appearing on INIT killmails</small>
+          </article>
+          <article class="glass pvp-summary-card">
+            <span>INIT ACTIVE PILOTS</span>
+            <strong>${fmt(d.activeCharacters||0)}</strong>
+            <small>ranked from zKillboard attacker records</small>
+          </article>
+          <article class="glass pvp-summary-card">
+            <span>KILLMAILS PROCESSED</span>
+            <strong>${fmt(d.killmailsProcessed||0)}</strong>
+            <small>${d.truncated?'API page cap reached • rankings may be partial':'complete for fetched 7-day window'}</small>
+          </article>
+        </section>
+
+        <div class="pvp-two-col">
+          <section class="glass pvp-section">
+            <div class="pvp-section-head"><strong>INIT CORPORATIONS</strong><span>your corp is highlighted</span></div>
+            <div class="pvp-table-wrap">
+              <table class="pvp-table">
+                <thead><tr><th>RANK</th><th>CORPORATION</th><th>KILLMAILS</th><th>FINAL</th><th>DAMAGE</th><th>ISK ON KILLS</th></tr></thead>
+                <tbody>${corpRows||'<tr><td colspan="6">No corp activity found.</td></tr>'}</tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="glass pvp-section">
+            <div class="pvp-section-head"><strong>YOUR CORP MEMBERS VS INIT</strong><span>their actual INIT-wide placement</span></div>
+            <div class="pvp-table-wrap">
+              <table class="pvp-table">
+                <thead><tr><th>RANK</th><th>PILOT</th><th>KILLMAILS</th><th>FINAL</th><th>DAMAGE</th><th>ISK ON KILLS</th></tr></thead>
+                <tbody>${myMembers||'<tr><td colspan="6">No active corp pilots found in this 7-day window.</td></tr>'}</tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <section class="glass pvp-section">
+          <div class="pvp-section-head"><strong>INIT PILOT LEADERBOARD</strong><span>top 100 active pilots • your corp stays highlighted</span></div>
+          <div class="pvp-table-wrap">
+            <table class="pvp-table">
+              <thead><tr><th>RANK</th><th>PILOT</th><th>KILLMAILS</th><th>FINAL</th><th>DAMAGE</th><th>ISK ON KILLS</th></tr></thead>
+              <tbody>${allianceRows||'<tr><td colspan="6">No pilot activity found.</td></tr>'}</tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="pvp-footnote">
+          <strong>RANKING METHOD</strong>
+          <span>Primary rank = distinct INIT killmails participated in. Ties use final blows, then damage done. “ISK on kills” is the total zKillboard value of killmails the pilot/corp appeared on; it is not personal loot or damage value.</span>
+          <small>Updated ${d.generatedAt?ago(d.generatedAt):'recently'} • shared server cache • source: zKillboard public API</small>
+        </section>
+      </div>`;
+    $('pvpRefresh')?.addEventListener('click',()=>loadPvpIntel(true));
+  }
+  async function loadPvpIntel(force=false){
+    if(pvpIntelLoading)return;
+    pvpIntelLoading=true;pvpIntelError='';renderPvpIntel();
+    try{
+      pvpIntel=await api(`/api/zkill/leaderboard${force?'?refresh=1':''}`);
+    }catch(error){
+      pvpIntelError=String(error?.message||error||'PvP rankings could not be loaded.');
+    }finally{
+      pvpIntelLoading=false;renderPvpIntel();
+    }
   }
 
   function merPct(value){return `${(Number(value||0)*100).toFixed(1)}%`}
