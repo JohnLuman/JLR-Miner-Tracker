@@ -462,7 +462,7 @@
   // Native <select> popups are drawn by the browser/OS, so moving over their
   // options does not produce page events. Use an app-owned popup for the fit
   // and booster selectors while retaining their existing change handlers.
-  const audibleSelects='#calcBoosterCharacter,#calcBoosterFitting,.fleet-fit-select';
+  const audibleSelects='#calcBoosterCharacter,#calcBoosterFitting,.fleet-fit-select,#doctrineClass,#doctrineCategory';
   let soundMenu=null, soundMenuSerial=0;
   function closeSoundMenu(refocus=false){
     if(!soundMenu)return;
