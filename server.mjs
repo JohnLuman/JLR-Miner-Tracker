@@ -3871,8 +3871,6 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
   ]);
 
   const corpDisplay=correctedCorporations.slice(0,50);
-  if(corpBase&&!corpDisplay.some(row=>row.id===corpBase.id))corpDisplay.push(corpBase);
-  corpDisplay.sort((a,b)=>a.rank-b.rank);
 
   const decorateChar=row=>({
     rank:Number(row.rankActivity)||null,
