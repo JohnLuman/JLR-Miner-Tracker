@@ -3274,6 +3274,45 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
     });
   }
 
+  // BEST OVERALL is a corp-only 7-day ranking. Each category contributes
+  // equally after normalizing against the strongest corp member in that metric,
+  // so raw damage/ISK scale cannot overwhelm participation or final blows.
+  const overallCandidates=[...ownMemberMap.values()].filter(row=>
+    Number(row.killmails)>0||
+    Number(row.finalBlows)>0||
+    Number(row.damageDone)>0||
+    Number(row.iskOnKillmails)>0
+  );
+  const overallMax={
+    killmails:Math.max(0,...overallCandidates.map(row=>Number(row.killmails)||0)),
+    finalBlows:Math.max(0,...overallCandidates.map(row=>Number(row.finalBlows)||0)),
+    damageDone:Math.max(0,...overallCandidates.map(row=>Number(row.damageDone)||0)),
+    iskOnKillmails:Math.max(0,...overallCandidates.map(row=>Number(row.iskOnKillmails)||0)),
+  };
+  const normalizedOverall=(value,max)=>max>0?(Number(value)||0)/max:0;
+  const overallRanked=overallCandidates.map(row=>({
+    ...row,
+    overallScore:25*(
+      normalizedOverall(row.killmails,overallMax.killmails)+
+      normalizedOverall(row.finalBlows,overallMax.finalBlows)+
+      normalizedOverall(row.damageDone,overallMax.damageDone)+
+      normalizedOverall(row.iskOnKillmails,overallMax.iskOnKillmails)
+    ),
+  })).sort((a,b)=>
+    b.overallScore-a.overallScore||
+    b.finalBlows-a.finalBlows||
+    b.killmails-a.killmails||
+    b.damageDone-a.damageDone||
+    b.iskOnKillmails-a.iskOnKillmails||
+    a.id-b.id
+  );
+  overallRanked.forEach((row,index)=>{
+    const member=ownMemberMap.get(Number(row.id));
+    if(!member)return;
+    member.rankOverall=index+1;
+    member.overallScore=Number(row.overallScore.toFixed(2));
+  });
+
   const corporationMap=new Map(base.corporations.map(row=>[Number(row.id),{...row}]));
   if(corpDirect?.corporation){
     corporationMap.set(corporationId,{...corpDirect.corporation});
@@ -3316,6 +3355,8 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
     rankActivity:Number(row.rankActivity)||null,
     rankIsk:Number(row.rankIsk)||null,
     rankDamage:Number(row.rankDamage)||null,
+    rankOverall:Number(row.rankOverall)||null,
+    overallScore:Number.isFinite(Number(row.overallScore))?Number(row.overallScore):null,
     characterId:row.id,
     corporationId:row.corporationId,
     name:charNames.get(row.id)||String(row.id),
@@ -3379,7 +3420,7 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
   };
 }
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.6.1',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.6.2',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -3501,7 +3542,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.6.1 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.6.2 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setInterval(()=>resetExpired(true),15_000).unref();
 async function runAutomaticSyncLoop(){
   const startedAt=Date.now();
