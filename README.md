@@ -47,7 +47,9 @@ JLR requests these ESI scopes:
 - `esi-fittings.read_fittings.v1` — the linked character's saved mining fittings
 - `esi-assets.read_assets.v1` — Abyssal mining-module details used by saved fits
 - `esi-location.read_location.v1` — current solar system when that toon imports a Probe Scanner copy
-- `esi-characters.read_contacts.v1` — optional positive-standings exclusion in THREAT SCAN
+- `esi-characters.read_contacts.v1` — personal standings used by THREAT SCAN
+- `esi-corporations.read_contacts.v1` — corporation standings used by THREAT SCAN
+- `esi-alliances.read_contacts.v1` — alliance standings used by THREAT SCAN
 
 Character location is requested only by the Probe Scanner import action. The current location is returned to that signed-in user for matching the scan to a tracked system; it is not persisted or broadcast to the fleet. Skills and saved fittings are shown only to the JLR account that linked that character.
 
@@ -73,7 +75,7 @@ THREAT SCAN accepts copied Local names and native D-scan rows. It resolves publi
 D-scan ship names are never treated as Local pilots, including copies with the Distance column hidden. This prevents pilot-named friendly ships from creating false threat rows.
 
 - **Ignore your own linked characters** removes every toon linked to the signed-in JLR account.
-- **Ignore characters with positive standings** uses the first contacts-authorized linked toon, preferring the primary toon. Positive character, corporation, alliance, and faction standings are honored. The private contact list is cached in memory for 15 minutes and is not displayed or written to disk.
+- **Ignore characters with positive standings** uses the first fully contacts-authorized linked toon, preferring the primary toon. It combines personal, corporation, and alliance contacts, honoring positive character, corporation, alliance, and faction standings. Private contact lists are cached in memory for 15 minutes and are not displayed or written to disk.
 - The authorized toon's own corporation and alliance are always treated as friendly when this filter is enabled, even when they are not duplicated in personal contacts.
 - **Create Intel Link** explicitly publishes the pasted scan to `dscan.info`, receives its `/v/` share URL, and copies that URL for pasting into an intel channel.
 

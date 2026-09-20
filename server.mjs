@@ -31,10 +31,13 @@ const FITTINGS_SCOPE = 'esi-fittings.read_fittings.v1';
 const ASSETS_SCOPE = 'esi-assets.read_assets.v1';
 const LOCATION_SCOPE = 'esi-location.read_location.v1';
 const CONTACTS_SCOPE = 'esi-characters.read_contacts.v1';
+const CORPORATION_CONTACTS_SCOPE = 'esi-corporations.read_contacts.v1';
+const ALLIANCE_CONTACTS_SCOPE = 'esi-alliances.read_contacts.v1';
 const MARKET_STRUCTURE_SCOPE = 'esi-markets.structure_markets.v1';
 const SEARCH_STRUCTURES_SCOPE = 'esi-search.search_structures.v1';
 const READ_STRUCTURES_SCOPE = 'esi-universe.read_structures.v1';
-const ESI_SCOPES = [MINING_SCOPE, SKILLS_SCOPE, FITTINGS_SCOPE, ASSETS_SCOPE, LOCATION_SCOPE, CONTACTS_SCOPE];
+const THREAT_CONTACT_SCOPES = [CONTACTS_SCOPE, CORPORATION_CONTACTS_SCOPE, ALLIANCE_CONTACTS_SCOPE];
+const ESI_SCOPES = [MINING_SCOPE, SKILLS_SCOPE, FITTINGS_SCOPE, ASSETS_SCOPE, LOCATION_SCOPE, ...THREAT_CONTACT_SCOPES];
 const MARKET_SCOPES = [MARKET_STRUCTURE_SCOPE, SEARCH_STRUCTURES_SCOPE, READ_STRUCTURES_SCOPE];
 const MARKET_CHARACTER_NAME = String(process.env.MARKET_CHARACTER_NAME || 'John Leman Raholan').trim();
 const MARKET_STRUCTURE_ID_ENV = String(process.env.MARKET_STRUCTURE_ID || '').trim();
@@ -175,6 +178,7 @@ const pvpCorpMetaCache = new Map();
 const corpAffiliationCache = new Map();
 const threatScanCache = new Map();
 const threatContactsCache = new Map();
+const threatContactsPromises = new Map();
 const threatShareCache = new Map();
 if(pvpDb.init7d?.data){
   zkillInitLeaderboardCache={updatedAt:pvpDbTimestamp(pvpDb.init7d.updatedAt),data:pvpDb.init7d.data,promise:null};
@@ -504,7 +508,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.3.95',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.3.96',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -652,7 +656,13 @@ async function handleCallback(req,res,url) {
       assetsUpdatedAt:old?.assetsUpdatedAt||null,
     };
     if(!user.characterIds.includes(charId))user.characterIds.push(charId); user.lastLoginAt=now(); if(!user.primaryCharacterId)user.primaryCharacterId=charId;
-    await save();setSessionCookie(res,user.id,req);setTimeout(()=>syncUserCharacters(user,[charId]).catch(console.error),250);return redirect(res,pending.intent==='link'?'/?linked=1':'/?login=1');
+    threatContactsCache.delete(charId);
+    await save();setSessionCookie(res,user.id,req);
+    setTimeout(()=>syncUserCharacters(user,[charId]).catch(console.error),250);
+    if(THREAT_CONTACT_SCOPES.every(scope=>identity.scopes.includes(scope))){
+      setTimeout(()=>positiveStandingContactsForUser(user).catch(err=>console.warn('Threat contacts warmup failed',String(err.message||err))),350);
+    }
+    return redirect(res,pending.intent==='link'?'/?linked=1':'/?login=1');
   }catch(err){console.error('SSO callback',err);return redirect(res,`/?error=${encodeURIComponent(String(err.message||err).slice(0,120))}`)}
 }
 
@@ -1537,6 +1547,11 @@ function timestampStale(value,maxAgeMs){
   return !Number.isFinite(parsed)||Date.now()-parsed>=maxAgeMs;
 }
 
+function hasThreatContactAccess(scopes){
+  const granted=Array.isArray(scopes)?scopes:[];
+  return THREAT_CONTACT_SCOPES.every(scope=>granted.includes(scope));
+}
+
 async function characterAccess(ch){
   const key=String(ch.characterId);
   if(characterAccessPromises.has(key))return characterAccessPromises.get(key);
@@ -1906,8 +1921,8 @@ function myProfile(user) {
         portrait:`https://images.evetech.net/characters/${c.characterId}/portrait?size=64`,
         scopes,
         locationAccess:scopes.includes(LOCATION_SCOPE),
-        contactsAccess:scopes.includes(CONTACTS_SCOPE),
-        needsReauth:!scopes.includes(SKILLS_SCOPE)||!scopes.includes(FITTINGS_SCOPE)||!scopes.includes(ASSETS_SCOPE)||!scopes.includes(LOCATION_SCOPE)||!scopes.includes(CONTACTS_SCOPE),
+        contactsAccess:hasThreatContactAccess(scopes),
+        needsReauth:!scopes.includes(SKILLS_SCOPE)||!scopes.includes(FITTINGS_SCOPE)||!scopes.includes(ASSETS_SCOPE)||!scopes.includes(LOCATION_SCOPE)||!hasThreatContactAccess(scopes),
         marketEligible:c.name===MARKET_CHARACTER_NAME,
         marketAuthorized:c.name===MARKET_CHARACTER_NAME&&String(state.market.characterId||'')===String(c.characterId)&&Boolean(state.market.refreshTokenEnc),
         skills:c.skills||{},
@@ -2166,40 +2181,60 @@ async function resolveThreatShipNames(names){
   }
   return types;
 }
+async function esiContactRows(base,access){
+  const first=await esiGet(`${base}${base.includes('?')?'&':'?'}page=1`,access);
+  let rows=Array.isArray(first.data)?[...first.data]:[];
+  const pages=Math.max(1,Number(first.headers.get('x-pages')||1));
+  if(pages>1){
+    const remaining=await Promise.all(Array.from({length:pages-1},(_,index)=>esiGet(`${base}${base.includes('?')?'&':'?'}page=${index+2}`,access)));
+    for(const next of remaining)if(Array.isArray(next.data))rows.push(...next.data);
+  }
+  return rows;
+}
 async function positiveStandingContactsForUser(user){
   const linked=(user?.characterIds||[]).map(id=>state.characters[String(id)]).filter(Boolean);
-  const source=linked.find(ch=>String(ch.characterId)===String(user?.primaryCharacterId)&&ch.scopes?.includes(CONTACTS_SCOPE))
-    ||linked.find(ch=>ch.scopes?.includes(CONTACTS_SCOPE));
+  const source=linked.find(ch=>String(ch.characterId)===String(user?.primaryCharacterId)&&hasThreatContactAccess(ch.scopes))
+    ||linked.find(ch=>hasThreatContactAccess(ch.scopes));
   if(!source){
-    const error=new Error('Update EVE access on a linked toon to enable the positive-standings filter.');
+    const error=new Error('Update EVE access on a linked toon to enable personal, corporation, and alliance standings.');
     error.code='CONTACT_SCOPE_REQUIRED';
     throw error;
   }
   const key=String(source.characterId);
   const cached=threatContactsCache.get(key);
   if(cached&&Date.now()-cached.at<THREAT_CONTACTS_CACHE_MS)return cached.data;
+  if(threatContactsPromises.has(key))return threatContactsPromises.get(key);
+  const pending=(async()=>{
   const {access,identity}=await characterAccess(source);
-  if(!identity.scopes.includes(CONTACTS_SCOPE)){
-    const error=new Error('This toon has not granted EVE contacts access. Update EVE access and try again.');
+  if(!hasThreatContactAccess(identity.scopes)){
+    const error=new Error('This toon has not granted all three EVE contacts permissions. Update EVE access and try again.');
     error.code='CONTACT_SCOPE_REQUIRED';
     throw error;
   }
-  const base=`https://esi.evetech.net/latest/characters/${source.characterId}/contacts/?datasource=tranquility`;
-  // Contacts and public affiliation are independent requests. Starting them
-  // together removes a full ESI round trip from every cold threat scan.
-  const [first,profileResult]=await Promise.all([
-    esiGet(`${base}&page=1`,access),
+  const characterBase=`https://esi.evetech.net/latest/characters/${source.characterId}/contacts/?datasource=tranquility`;
+  // Personal contacts and public affiliation are independent requests.
+  const [personalRows,profileResult]=await Promise.all([
+    esiContactRows(characterBase,access),
     esiGet(`https://esi.evetech.net/latest/characters/${source.characterId}/?datasource=tranquility`).catch(err=>{
       console.warn('Threat friendly affiliation lookup failed',String(err.message||err));
       return null;
     }),
   ]);
-  let rows=Array.isArray(first.data)?[...first.data]:[];
-  const pages=Math.max(1,Number(first.headers.get('x-pages')||1));
-  if(pages>1){
-    const remaining=await Promise.all(Array.from({length:pages-1},(_,index)=>esiGet(`${base}&page=${index+2}`,access)));
-    for(const next of remaining)if(Array.isArray(next.data))rows.push(...next.data);
-  }
+  const profile=profileResult?.data;
+  const extraSources=[];
+  if(Number(profile?.corporation_id))extraSources.push({
+    label:'corporation',
+    base:`https://esi.evetech.net/latest/corporations/${Number(profile.corporation_id)}/contacts/?datasource=tranquility`,
+  });
+  if(Number(profile?.alliance_id))extraSources.push({
+    label:'alliance',
+    base:`https://esi.evetech.net/latest/alliances/${Number(profile.alliance_id)}/contacts/?datasource=tranquility`,
+  });
+  const extraRows=await Promise.all(extraSources.map(sourceRow=>esiContactRows(sourceRow.base,access).catch(err=>{
+    console.warn(`Threat ${sourceRow.label} contacts lookup failed`,String(err.message||err));
+    return[];
+  })));
+  const rows=[...personalRows,...extraRows.flat()];
   const sets={character:new Set(),corporation:new Set(),alliance:new Set(),faction:new Set()};
   for(const row of rows){
     if(!(Number(row?.standing)>0))continue;
@@ -2210,13 +2245,15 @@ async function positiveStandingContactsForUser(user){
   // EVE does not require a character to add their own corporation/alliance as
   // a personal contact. Treat both as friendly so same-team pilots do not
   // appear as threats when the positive-standings filter is enabled.
-  const profile=profileResult?.data;
   if(Number(profile?.corporation_id))sets.corporation.add(Number(profile.corporation_id));
   if(Number(profile?.alliance_id))sets.alliance.add(Number(profile.alliance_id));
   if(Number(profile?.faction_id))sets.faction.add(Number(profile.faction_id));
   const data={sourceCharacterId:key,sourceCharacterName:source.name,sets};
   threatContactsCache.set(key,{at:Date.now(),data});
   return data;
+  })().finally(()=>threatContactsPromises.delete(key));
+  threatContactsPromises.set(key,pending);
+  return pending;
 }
 async function createDscanInfoShare(scanText){
   const cacheKey=crypto.createHash('sha256').update(scanText).digest('hex');
@@ -2974,8 +3011,14 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
   };
 }
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.95',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
-  if(req.method==='GET'&&url.pathname==='/api/me'){const u=readSession(req);return json(res,200,{authenticated:Boolean(u),user:u?myProfile(u):null})}
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.96',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/me'){
+    const u=readSession(req);
+    if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
+      setTimeout(()=>positiveStandingContactsForUser(u).catch(err=>console.warn('Threat contacts warmup failed',String(err.message||err))),0);
+    }
+    return json(res,200,{authenticated:Boolean(u),user:u?myProfile(u):null});
+  }
   const user=requireUser(req,res);if(!user)return;
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
   if(req.method==='GET'&&url.pathname==='/api/zkill/lifetime-damage'){
@@ -3090,7 +3133,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.3.95 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.3.96 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setInterval(()=>resetExpired(true),15_000).unref();
 async function runAutomaticSyncLoop(){
   const startedAt=Date.now();
