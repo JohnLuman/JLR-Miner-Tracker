@@ -827,6 +827,65 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .threat-score-cell>strong{font-size:15.5px!important}
 .threat-score-cell>div{width:78px;height:5px;margin-top:5px}
 
+/* v2.4.5 readability pass: keep ARES character identity unique, but clearer;
+   enlarge telemetry and make character age an explicit readout. */
+.threat-pilot{min-width:230px}
+.threat-pilot>img{width:36px;height:36px}
+.threat-pilot-cell a{
+  min-height:23px;
+  padding:3px 8px 3px 6px;
+  border-left-width:2px;
+  clip-path:polygon(0 0,calc(100% - 6px) 0,100% 6px,100% 100%,6px 100%,0 calc(100% - 6px));
+}
+.threat-pilot strong{
+  font-size:11.2px;
+  font-weight:700;
+  letter-spacing:.085em;
+  transform:none;
+  text-shadow:0 0 6px color-mix(in srgb,var(--contact-accent) 18%,transparent);
+}
+.threat-pilot strong::before{content:"[";margin-right:3px;font-size:.78em}
+.threat-pilot strong::after{content:"]";margin-left:3px;font-size:.78em}
+.threat-pilot small{font-size:7.2px;letter-spacing:.03em}
+
+.threat-table-v2 th{
+  font-size:7.5px;
+  letter-spacing:.13em;
+}
+.threat-table-v2 td{
+  font-size:10.2px;
+}
+.threat-table-v2 td:nth-child(n+2):nth-child(-n+8){
+  font-size:10.5px;
+  letter-spacing:.025em;
+}
+.threat-table-v2 td:nth-child(n+2):nth-child(-n+8)>strong{
+  font-size:11.2px;
+}
+.threat-table-v2 td>small{
+  margin-top:3px;
+  font-size:6.8px;
+}
+.threat-age-cell{
+  min-width:62px;
+}
+.threat-age-cell>strong{
+  display:block;
+  font-family:var(--threat-display-font);
+  font-size:12px!important;
+  font-weight:700;
+  letter-spacing:.065em;
+}
+.threat-age-cell>small{
+  display:block;
+  margin-top:3px;
+  font-family:var(--threat-data-font);
+  font-size:6.4px!important;
+  letter-spacing:.09em;
+  color:var(--muted);
+}
+.threat-tag{font-size:6.6px;padding:3px 7px}
+
 .threat-table-v2{min-width:1280px}
 .threat-table-v2 th,.threat-table-v2 td{text-align:left}
 .threat-pilot{display:flex;align-items:center;gap:6px;min-width:190px}

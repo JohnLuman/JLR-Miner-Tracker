@@ -945,7 +945,7 @@
             </div>
           </div>
         </td>
-        <td>${threatAgeLabel(ch.birthday)}</td>
+        <td class="threat-age-cell"><strong>${threatAgeLabel(ch.birthday)}</strong><small>CHAR AGE</small></td>
         <td class="threat-score-cell"><strong>${score}</strong><div><i style="width:${score}%"></i></div></td>
         <td>${sec!==null?sec.toFixed(1):'—'}</td>
         <td><strong>${fmt(kills)} / ${fmt(losses)}</strong><small>K/D ${kd}</small></td>
