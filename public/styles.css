@@ -652,6 +652,48 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 
 
 /* JLR Threat Engine v2 */
+/* Enemy intel typography: condensed tactical labels + mono telemetry.
+   Uses local/system fonts only so the scanner stays fast and works offline. */
+.threat-results{
+  --threat-display-font:"Bahnschrift SemiCondensed","Bahnschrift","Arial Narrow","Segoe UI",sans-serif;
+  --threat-data-font:"Cascadia Mono","Consolas","Lucida Console",monospace;
+}
+.threat-results-head strong,.threat-table-v2 th,.threat-pilot strong,.threat-tag{
+  font-family:var(--threat-display-font);
+}
+.threat-results-head strong{
+  font-weight:800;
+  letter-spacing:.11em;
+}
+.threat-table-v2 th{
+  font-weight:800;
+  letter-spacing:.095em;
+}
+.threat-pilot strong{
+  font-size:9px;
+  font-weight:760;
+  letter-spacing:.025em;
+}
+.threat-pilot small{
+  font-family:var(--threat-data-font);
+  font-size:5.8px;
+  letter-spacing:.01em;
+}
+.threat-table-v2 td:nth-child(n+2):nth-child(-n+8){
+  font-family:var(--threat-data-font);
+  font-variant-numeric:tabular-nums;
+  letter-spacing:-.015em;
+}
+.threat-score-cell>strong{
+  font-family:var(--threat-display-font);
+  font-variant-numeric:tabular-nums;
+  font-weight:850;
+  letter-spacing:.02em;
+}
+.threat-tag{
+  font-weight:850;
+  letter-spacing:.07em;
+}
 .threat-table-v2{min-width:1280px}
 .threat-table-v2 th,.threat-table-v2 td{text-align:left}
 .threat-pilot{display:flex;align-items:center;gap:6px;min-width:190px}
