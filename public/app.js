@@ -692,7 +692,8 @@
       doctrineMarket=payload;
       shouldPoll=Boolean(payload?.status?.refreshing);
     }catch(error){
-      doctrineMarketError=String(error?.message||error||'Doctrine Market could not be loaded.');
+      console.error('Doctrine Market load failed',error);
+      doctrineMarketError='Doctrine market data is temporarily unavailable. Try again in a moment.';
     }finally{
       doctrineMarketLoading=false;
       renderDoctrineMarket();
