@@ -970,7 +970,7 @@
           <div class="threat-actions">
             <button id="threatPasteScan" class="orb blue" type="button">📋 PASTE & SCAN</button>
             <button id="threatRunScan" class="orb silver" type="button">SCAN TEXT</button>
-            <button id="threatShareScan" class="orb purple" type="button" title="Publish this pasted scan to dscan.info and copy its share URL" ${threatShareLoading?'disabled':''}>${threatShareLoading?'CREATING…':threatShareUrl?'📋 COPY INTEL LINK':'🔗 CREATE INTEL LINK'}</button>
+            <button id="threatShareScan" class="orb purple" type="button" title="Publish this pasted scan to dscan.info and automatically copy its share URL" ${threatShareLoading?'disabled':''}>${threatShareLoading?'CREATING…':threatShareUrl?'📋 COPY INTEL LINK':'🔗 CREATE + COPY LINK'}</button>
           </div>
         </section>
 
@@ -1067,14 +1067,35 @@
   }
   async function copyThreatShareUrl(){
     if(!threatShareUrl)return false;
+    let copied=false;
     try{
-      await navigator.clipboard.writeText(threatShareUrl);
+      if(navigator.clipboard?.writeText){
+        await navigator.clipboard.writeText(threatShareUrl);
+        copied=true;
+      }
+    }catch{}
+    if(!copied){
+      try{
+        const helper=document.createElement('textarea');
+        helper.value=threatShareUrl;
+        helper.setAttribute('readonly','');
+        helper.setAttribute('aria-hidden','true');
+        helper.style.position='fixed';
+        helper.style.left='-9999px';
+        helper.style.opacity='0';
+        document.body.appendChild(helper);
+        helper.focus();
+        helper.select();
+        copied=document.execCommand('copy');
+        helper.remove();
+      }catch{}
+    }
+    if(copied){
       toast('Intel link copied. Paste it into your intel channel.');
       return true;
-    }catch{
-      toast('Intel link is ready below. Select it to copy.');
-      return false;
     }
+    toast('Intel link is ready below. Click COPY INTEL LINK or select the link to copy.');
+    return false;
   }
   async function shareThreatScan(text){
     const value=String(text||'').trim();
