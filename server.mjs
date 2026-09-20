@@ -1027,7 +1027,7 @@ async function doctrineAccessForUser(user,{force=false}={}){
   if(!user?.id||!Array.isArray(user.characterIds)||!user.characterIds.length){
     return{allowed:false,reason:'NO_LINKED_CHARACTER',message:'Link an EVE character to access Doctrine Market.'};
   }
-  const key=String(user.id);
+  const key=String(user.id)+':'+user.characterIds.map(String).sort().join(',');
   const cached=doctrineAccessCache.get(key);
   if(!force&&cached&&Date.now()-cached.at<DOCTRINE_ACCESS_CACHE_MS)return cached.data;
 
@@ -1125,12 +1125,12 @@ async function doctrineStructureSnapshot(seedRows){
 }
 async function refreshDoctrineMarket({forceCn=false,forceAll=false}={}){
   if(doctrineRefreshPromise)return doctrineRefreshPromise;
+  const cache=doctrineCache();
+  cache.refreshing=true;
+  cache.lastError=null;
   const pending=(async()=>{
     const seed=await loadDoctrineSeed();
     const rows=seed.rows||[];
-    const cache=doctrineCache();
-    cache.refreshing=true;
-    cache.lastError=null;
     try{
       const cnStale=forceCn||!doctrineTimestampFresh(cache.cnUpdatedAt,DOCTRINE_CN_REFRESH_MS);
       if(cnStale){
