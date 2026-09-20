@@ -224,6 +224,7 @@ const zkillLifetimeDamageProgress = new Map();
 const pvpCorpMetaCache = new Map();
 const corpAffiliationCache = new Map();
 const threatScanCache = new Map();
+const threatScanJobs = new Map();
 const threatContactsCache = new Map();
 const threatContactsPromises = new Map();
 const threatShareCache = new Map();
@@ -3096,7 +3097,7 @@ async function getThreatCharacterIntel(character){
   pvpDb.threat.characters[key]=entry;
   return{...entry,cacheHit:false};
 }
-async function buildThreatIntel(scanText,{ignoreOwnIds=[],positiveStandings=null,positiveStandingsPromise=null}={}){
+async function buildThreatIntel(scanText,{ignoreOwnIds=[],positiveStandings=null,positiveStandingsPromise=null,fast=false}={}){
   const parsed=parseThreatPaste(scanText);
   if(!fountainThreatCache.data||Date.now()-fountainThreatCache.updatedAt>=FOUNTAIN_THREAT_CACHE_MS){
     refreshFountainThreatActivity(false).catch(err=>console.warn('Fountain threat warmup failed',String(err.message||err)));
@@ -3135,24 +3136,57 @@ async function buildThreatIntel(scanText,{ignoreOwnIds=[],positiveStandings=null
   const truncated=candidates.length>THREAT_MAX_CHARACTERS;
   const selected=candidates.slice(0,THREAT_MAX_CHARACTERS);
   const truncatedCount=Math.max(0,candidates.length-selected.length);
-  let cacheHits=0,refreshed=0;
-  const entries=await threatMapLimit(selected,THREAT_FETCH_CONCURRENCY,async row=>{
-    try{
-      const intel=await getThreatCharacterIntel(row);
-      if(intel.cacheHit)cacheHits++;else refreshed++;
-      return intel;
-    }catch(err){
-      console.warn('Threat character lookup failed',row?.id,String(err.message||err));
+  let cacheHits=0,refreshed=0,pendingIntel=0,staleIntel=0;
+  let entries;
+  if(fast){
+    entries=selected.map(row=>{
+      const id=Number(row?.id)||0;
+      const cached=pvpDb.threat?.characters?.[String(id)]||null;
+      if(cached){
+        cacheHits++;
+        const age=cached?.updatedAt?Date.now()-pvpDbTimestamp(cached.updatedAt):Infinity;
+        const stale=age>=THREAT_CHARACTER_CACHE_MS;
+        if(stale){staleIntel++;pendingIntel++}
+        return{...cached,cacheHit:true,stale};
+      }
+      pendingIntel++;
+      const affiliation=affiliations.get(id)||{};
       return{
-        updatedAt:now(),
-        character:{id:Number(row?.id)||0,name:String(row?.name||'Unknown'),birthday:null,security_status:null,corporation_id:null,alliance_id:null,faction_id:null},
+        updatedAt:null,
+        character:{
+          id,
+          name:String(row?.name||id||'Unknown'),
+          birthday:null,
+          security_status:null,
+          corporation_id:Number(affiliation.corporation_id)||null,
+          alliance_id:Number(affiliation.alliance_id)||null,
+          faction_id:Number(affiliation.faction_id)||null,
+        },
         stats:compactThreatStats({}),
-        statsError:String(err.message||err),
+        statsError:null,
         cacheHit:false,
+        pending:true,
       };
-    }
-  });
-  if(refreshed)await savePvpDb();
+    });
+  }else{
+    entries=await threatMapLimit(selected,THREAT_FETCH_CONCURRENCY,async row=>{
+      try{
+        const intel=await getThreatCharacterIntel(row);
+        if(intel.cacheHit)cacheHits++;else refreshed++;
+        return intel;
+      }catch(err){
+        console.warn('Threat character lookup failed',row?.id,String(err.message||err));
+        return{
+          updatedAt:now(),
+          character:{id:Number(row?.id)||0,name:String(row?.name||'Unknown'),birthday:null,security_status:null,corporation_id:null,alliance_id:null,faction_id:null},
+          stats:compactThreatStats({}),
+          statsError:String(err.message||err),
+          cacheHit:false,
+        };
+      }
+    });
+    if(refreshed)await savePvpDb();
+  }
 
   const visibleEntries=entries.filter(entry=>{
     const c=entry.character||{};
@@ -3234,6 +3268,8 @@ async function buildThreatIntel(scanText,{ignoreOwnIds=[],positiveStandings=null
       jlrThreat:jlrThreatScore(s,tags,fountain),
       statsError:entry.statsError||null,
       cacheHit:Boolean(entry.cacheHit),
+      intelPending:Boolean(entry.pending),
+      intelStale:Boolean(entry.stale),
     };
   }).sort((a,b)=>b.jlrThreat-a.jlrThreat||(Number(b.stats?.weekly?.shipsDestroyed)||0)-(Number(a.stats?.weekly?.shipsDestroyed)||0)||a.name.localeCompare(b.name));
 
@@ -3268,6 +3304,9 @@ async function buildThreatIntel(scanText,{ignoreOwnIds=[],positiveStandings=null
     standingsSource:positiveStandings?{characterId:positiveStandings.sourceCharacterId,name:positiveStandings.sourceCharacterName}:null,
     unresolvedNames:unresolved.slice(0,100),
     unresolvedShipNames:unresolvedShipNames.slice(0,30),
+    refreshing:Boolean(fast&&pendingIntel>0),
+    pendingIntel,
+    staleIntel,
     cache:{hits:cacheHits,refreshed},
     regionalIntel:fountainSnapshot?{
       ready:true,regionId:FOUNTAIN_REGION_ID,regionName:'Fountain',generatedAt:fountainSnapshot.generatedAt||null,
