@@ -24,6 +24,7 @@
   let pvpIntelLoading = false;
   const savedPvpMemberRankMode=localStorage.getItem('jlrPvpMemberRankMode');
   let pvpMemberRankMode=['activity','isk','damage'].includes(savedPvpMemberRankMode)?savedPvpMemberRankMode:'activity';
+  let pvpPinnedCharacterId=localStorage.getItem('jlrPvpPinnedCharacter')||'';
 
   const DEFAULT_FLEET = { members:{}, uptime:100, payout:95 };
   function loadFleet() {
@@ -635,11 +636,19 @@
         <td>${row.zkillGlobalRank?('#'+fmt(row.zkillGlobalRank)):'—'}</td>
       </tr>`).join('');
     const memberRankField=pvpMemberRankMode==='isk'?'rankIsk':pvpMemberRankMode==='damage'?'rankDamage':'rankActivity';
-    const memberRows=[...(d.myCorpMembers||[])].sort((a,b)=>
-      Number(a?.[memberRankField]||999999)-Number(b?.[memberRankField]||999999)
-    );
+    const linkedPvpToons=Array.isArray(d.linkedCorpCharacters)?d.linkedCorpCharacters:[];
+    if(!linkedPvpToons.some(row=>String(row.characterId)===String(pvpPinnedCharacterId))){
+      pvpPinnedCharacterId=String(linkedPvpToons.find(row=>row.primary)?.characterId||linkedPvpToons[0]?.characterId||'');
+      if(pvpPinnedCharacterId)localStorage.setItem('jlrPvpPinnedCharacter',pvpPinnedCharacterId);
+    }
+    const memberRows=[...(d.myCorpMembers||[])].sort((a,b)=>{
+      const aPinned=String(a.characterId)===String(pvpPinnedCharacterId);
+      const bPinned=String(b.characterId)===String(pvpPinnedCharacterId);
+      if(aPinned!==bPinned)return aPinned?-1:1;
+      return Number(a?.[memberRankField]||999999)-Number(b?.[memberRankField]||999999);
+    });
     const myMembers=memberRows.map(row=>`
-      <tr class="mine">
+      <tr class="mine${String(row.characterId)===String(pvpPinnedCharacterId)?' pvp-own-toon':''}">
         <td>${pvpRankBadge(row?.[memberRankField],true)}</td>
         <td><a class="pvp-killboard-link" href="https://zkillboard.com/character/${encodeURIComponent(row.characterId)}/" target="_blank" rel="noopener noreferrer" title="Open ${esc(row.name||('Character '+row.characterId))} on zKillboard"><strong>${esc(row.name||('Character '+row.characterId))}</strong></a></td>
         <td>${fmt(row.killmails)}</td>
@@ -708,6 +717,7 @@
                 <strong>YOUR CORP MEMBERS VS INIT</strong>
               </div>
               <div class="pvp-member-rank-controls" role="group" aria-label="Corp member ranking mode">
+                ${linkedPvpToons.length>1?`<select id="pvpPinnedToon" class="pvp-toon-picker" aria-label="ESI toon pinned to top">${linkedPvpToons.map(row=>`<option value="${esc(row.characterId)}" ${String(row.characterId)===String(pvpPinnedCharacterId)?'selected':''}>${esc(row.name)}</option>`).join('')}</select>`:''}
                 <button id="pvpRankActivity" class="orb ${pvpMemberRankMode==='activity'?'blue':''}" type="button" aria-pressed="${pvpMemberRankMode==='activity'}">KILLMAILS / FINALS</button>
                 <button id="pvpRankIsk" class="orb ${pvpMemberRankMode==='isk'?'blue':''}" type="button" aria-pressed="${pvpMemberRankMode==='isk'}">ISK ON KILLS</button>
                 <button id="pvpRankDamage" class="orb ${pvpMemberRankMode==='damage'?'blue':''}" type="button" aria-pressed="${pvpMemberRankMode==='damage'}">MOST DAMAGE</button>
@@ -739,6 +749,11 @@
         </section>
       </div>`;
     $('pvpRefresh')?.addEventListener('click',()=>loadPvpIntel(true));
+    $('pvpPinnedToon')?.addEventListener('change',event=>{
+      pvpPinnedCharacterId=String(event.currentTarget.value||'');
+      localStorage.setItem('jlrPvpPinnedCharacter',pvpPinnedCharacterId);
+      renderPvpIntel();
+    });
     $('pvpRankActivity')?.addEventListener('click',()=>{
       pvpMemberRankMode='activity';
       localStorage.setItem('jlrPvpMemberRankMode',pvpMemberRankMode);

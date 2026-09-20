@@ -443,7 +443,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.3.84',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.3.85',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -2157,6 +2157,25 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
   const corporation=(await esiGet(`https://esi.evetech.net/latest/corporations/${corporationId}/?datasource=tranquility`)).data;
   if(Number(corporation?.alliance_id)!==INIT_ALLIANCE_ID)throw new Error(`${corporation?.name||'Your corporation'} is not currently in INIT.`);
 
+  const linkedCorpCharacters=(await Promise.all((user.characterIds||[]).map(async rawId=>{
+    const id=Number(rawId);
+    if(!id)return null;
+    try{
+      const info=id===primaryId
+        ?character
+        :(await esiGet(`https://esi.evetech.net/latest/characters/${id}/?datasource=tranquility`)).data;
+      if(Number(info?.corporation_id)!==corporationId)return null;
+      return{
+        characterId:id,
+        name:String(state.characters?.[String(id)]?.name||info?.name||id),
+        primary:id===primaryId,
+      };
+    }catch(err){
+      console.warn('Linked PvP toon corp lookup failed',id,String(err.message||err));
+      return null;
+    }
+  }))).filter(Boolean);
+
   const base=await buildInitZkillLeaderboard(force);
   let corpDirect=null,corpVerifyError=null;
   try{
@@ -2203,6 +2222,23 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
     ownMemberMap.set(id,{
       ...direct,
       corporationId,
+      rankActivity:global?.rankActivity||null,
+      rankIsk:global?.rankIsk||null,
+      rankDamage:global?.rankDamage||null,
+      initRankMatched:Boolean(global),
+    });
+  }
+  for(const linked of linkedCorpCharacters){
+    const id=Number(linked.characterId);
+    if(ownMemberMap.has(id))continue;
+    const global=allianceById.get(id);
+    ownMemberMap.set(id,{
+      id,
+      corporationId,
+      killmails:Number(global?.killmails)||0,
+      finalBlows:Number(global?.finalBlows)||0,
+      damageDone:Number(global?.damageDone)||0,
+      iskOnKillmails:Number(global?.iskOnKillmails)||0,
       rankActivity:global?.rankActivity||null,
       rankIsk:global?.rankIsk||null,
       rankDamage:global?.rankDamage||null,
@@ -2302,10 +2338,15 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
     corporations:corpDisplay.map(decorateCorp),
     characters:topCharacters.map(decorateChar),
     myCorpMembers:myMembersBase.map(decorateChar),
+    linkedCorpCharacters:linkedCorpCharacters.map(row=>({
+      characterId:row.characterId,
+      name:row.name,
+      primary:row.primary,
+    })),
   };
 }
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.84',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.85',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){const u=readSession(req);return json(res,200,{authenticated:Boolean(u),user:u?myProfile(u):null})}
   const user=requireUser(req,res);if(!user)return;
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());

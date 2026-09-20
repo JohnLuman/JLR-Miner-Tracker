@@ -528,12 +528,14 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .pvp-section-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:7px;padding-bottom:6px;border-bottom:1px solid var(--line)}
 .pvp-section-head strong{font-size:10px;letter-spacing:.055em}
 .pvp-section-head span{color:var(--muted);font-size:7px}
-.pvp-member-head{align-items:center;flex-wrap:nowrap;min-height:34px}
-.pvp-section-title{display:flex;align-items:baseline;gap:6px;min-width:0;flex:1 1 auto;white-space:nowrap}
-.pvp-section-title strong{flex:0 0 auto}
+.pvp-member-head{align-items:center;flex-wrap:nowrap;min-height:32px;gap:5px}
+.pvp-section-title{display:flex;align-items:baseline;gap:4px;min-width:max-content;flex:0 0 auto;white-space:nowrap}
+.pvp-section-title strong{flex:0 0 auto;font-size:9px}
 .pvp-section-title span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pvp-member-rank-controls{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex:0 0 auto;margin-left:auto}
-.pvp-member-rank-controls .orb{height:28px;min-width:116px;padding:0 11px;border-radius:999px;font-size:7px;line-height:1;white-space:nowrap}
+.pvp-member-rank-controls{display:flex;align-items:center;justify-content:flex-end;gap:4px;flex:1 1 auto;min-width:0;margin-left:auto}
+.pvp-member-rank-controls .orb{height:25px;min-width:91px;padding:0 7px;border-radius:999px;font-size:6.2px;line-height:1;white-space:nowrap}
+.pvp-toon-picker{height:25px;min-width:86px;max-width:118px;padding:0 20px 0 7px;border:1px solid var(--line);border-radius:999px;background:var(--theme-panel-lo,#101018);color:var(--text);font:inherit;font-size:6.5px;white-space:nowrap;text-overflow:ellipsis}
+.pvp-own-toon{box-shadow:inset 3px 0 0 var(--theme-accent-hi,#ce68ff)}
 .pvp-member-rank-controls .orb:not(.blue){opacity:.78}
 .pvp-member-rank-controls .orb:hover,.pvp-member-rank-controls .orb:focus-visible{opacity:1}
 .pvp-table-wrap{max-height:430px;overflow:auto;border-radius:6px}
@@ -560,7 +562,8 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
   .pvp-member-head{align-items:flex-start;flex-wrap:wrap}
   .pvp-section-title{flex:1 1 100%;white-space:normal}
   .pvp-section-title span{white-space:normal;overflow:visible}
-  .pvp-member-rank-controls{width:100%;margin-left:0;justify-content:flex-start}
-  .pvp-member-rank-controls .orb{flex:1 1 0;min-width:0}
+  .pvp-member-rank-controls{width:100%;margin-left:0;justify-content:flex-start;flex-wrap:wrap}
+  .pvp-member-rank-controls .orb{flex:1 1 88px;min-width:0}
+  .pvp-toon-picker{flex:1 1 100%;max-width:none}
 }
 @media(max-width:620px){.pvp-hero{align-items:flex-start;flex-direction:column}.pvp-summary-grid{grid-template-columns:1fr 1fr}.pvp-table{font-size:7px}}
