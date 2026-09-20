@@ -22,7 +22,8 @@
   let pvpIntel = null;
   let pvpIntelError = '';
   let pvpIntelLoading = false;
-  let pvpMemberRankMode = localStorage.getItem('jlrPvpMemberRankMode')==='isk'?'isk':'activity';
+  const savedPvpMemberRankMode=localStorage.getItem('jlrPvpMemberRankMode');
+  let pvpMemberRankMode=['activity','isk','damage'].includes(savedPvpMemberRankMode)?savedPvpMemberRankMode:'activity';
 
   const DEFAULT_FLEET = { members:{}, uptime:100, payout:95 };
   function loadFleet() {
@@ -633,7 +634,7 @@
         <td>${fmt(row.iskDestroyed)} ISK</td>
         <td>${row.zkillGlobalRank?('#'+fmt(row.zkillGlobalRank)):'—'}</td>
       </tr>`).join('');
-    const memberRankField=pvpMemberRankMode==='isk'?'rankIsk':'rankActivity';
+    const memberRankField=pvpMemberRankMode==='isk'?'rankIsk':pvpMemberRankMode==='damage'?'rankDamage':'rankActivity';
     const memberRows=[...(d.myCorpMembers||[])].sort((a,b)=>
       Number(a?.[memberRankField]||999999)-Number(b?.[memberRankField]||999999)
     );
@@ -705,16 +706,16 @@
             <div class="pvp-section-head pvp-member-head">
               <div class="pvp-section-title">
                 <strong>YOUR CORP MEMBERS VS INIT</strong>
-                <span>actual INIT-wide placement</span>
               </div>
               <div class="pvp-member-rank-controls" role="group" aria-label="Corp member ranking mode">
                 <button id="pvpRankActivity" class="orb ${pvpMemberRankMode==='activity'?'blue':''}" type="button" aria-pressed="${pvpMemberRankMode==='activity'}">KILLMAILS / FINALS</button>
                 <button id="pvpRankIsk" class="orb ${pvpMemberRankMode==='isk'?'blue':''}" type="button" aria-pressed="${pvpMemberRankMode==='isk'}">ISK ON KILLS</button>
+                <button id="pvpRankDamage" class="orb ${pvpMemberRankMode==='damage'?'blue':''}" type="button" aria-pressed="${pvpMemberRankMode==='damage'}">MOST DAMAGE</button>
               </div>
             </div>
             <div class="pvp-table-wrap">
               <table class="pvp-table">
-                <thead><tr><th>${pvpMemberRankMode==='isk'?'ISK RANK':'KILL RANK'}</th><th>PILOT</th><th>KILLMAILS</th><th>FINAL</th><th>DAMAGE</th><th>ISK ON KILLS</th></tr></thead>
+                <thead><tr><th>${pvpMemberRankMode==='isk'?'ISK RANK':pvpMemberRankMode==='damage'?'DAMAGE RANK':'KILL RANK'}</th><th>PILOT</th><th>KILLMAILS</th><th>FINAL</th><th>DAMAGE</th><th>ISK ON KILLS</th></tr></thead>
                 <tbody>${myMembers||'<tr><td colspan="6">No active corp pilots found in this 7-day window.</td></tr>'}</tbody>
               </table>
             </div>
@@ -733,7 +734,7 @@
 
         <section class="pvp-footnote">
           <strong>RANKING METHOD</strong>
-          <span>Corporation rows use zKillboard's own Weekly 7d ships destroyed, points, ISK destroyed, and global 7-day rank, then are re-ranked against active INIT corporations. For YOUR CORP MEMBERS VS INIT you can switch between KILLMAILS / FINALS rank (killmail participation first, then final blows and damage) and ISK ON KILLS rank (total zKill value of killmails participated in). Both placements use the same INIT-wide 7-day population as the full INIT PILOT LEADERBOARD, so a pilot's rank number matches in both tables. Your corporation's direct 7-day crawl can correct the activity totals shown for its members, but it no longer reorders the alliance leaderboard by itself.</span>
+          <span>Corporation rows use zKillboard's own Weekly 7d ships destroyed, points, ISK destroyed, and global 7-day rank, then are re-ranked against active INIT corporations. For YOUR CORP MEMBERS VS INIT you can switch between KILLMAILS / FINALS rank, ISK ON KILLS rank, and MOST DAMAGE rank. Both placements use the same INIT-wide 7-day population as the full INIT PILOT LEADERBOARD, so a pilot's rank number matches in both tables. Your corporation's direct 7-day crawl can correct the activity totals shown for its members, but it no longer reorders the alliance leaderboard by itself.</span>
           <small>Updated ${d.generatedAt?ago(d.generatedAt):'recently'} • ${d.stale?'showing last good cache after refresh error • ':''}shared server cache • source: zKillboard public API</small>
         </section>
       </div>`;
@@ -745,6 +746,11 @@
     });
     $('pvpRankIsk')?.addEventListener('click',()=>{
       pvpMemberRankMode='isk';
+      localStorage.setItem('jlrPvpMemberRankMode',pvpMemberRankMode);
+      renderPvpIntel();
+    });
+    $('pvpRankDamage')?.addEventListener('click',()=>{
+      pvpMemberRankMode='damage';
       localStorage.setItem('jlrPvpMemberRankMode',pvpMemberRankMode);
       renderPvpIntel();
     });
