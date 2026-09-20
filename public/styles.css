@@ -886,6 +886,49 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 }
 .threat-tag{font-size:6.6px;padding:3px 7px}
 
+/* v2.4.6 identity refinement: larger portrait, smooth readable pilot name. */
+.threat-results{
+  --threat-name-font:"Rajdhani","Segoe UI",Arial,sans-serif;
+}
+.threat-pilot{min-width:245px;gap:10px}
+.threat-pilot>img{
+  width:46px;
+  height:46px;
+  border-radius:5px;
+  object-fit:cover;
+}
+.threat-pilot>div{
+  padding-left:9px;
+}
+.threat-pilot-cell a{
+  min-height:28px;
+  padding:4px 10px 4px 7px;
+}
+.threat-pilot strong{
+  font-family:var(--threat-name-font);
+  font-size:12px;
+  line-height:1;
+  font-weight:700;
+  letter-spacing:.045em;
+  text-transform:none;
+  transform:none;
+  font-style:normal;
+  text-shadow:none;
+}
+.threat-pilot strong::before{
+  content:"";
+  margin:0;
+}
+.threat-pilot strong::after{
+  content:"";
+  margin:0;
+}
+.threat-pilot small{
+  margin-top:5px;
+  font-size:7.4px;
+  letter-spacing:.025em;
+}
+
 .threat-table-v2{min-width:1280px}
 .threat-table-v2 th,.threat-table-v2 td{text-align:left}
 .threat-pilot{display:flex;align-items:center;gap:6px;min-width:190px}
