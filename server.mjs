@@ -3789,10 +3789,12 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
     corporationMap.set(corporationId,{...corpDirect.corporation});
   }
 
-  const weeklySnapshot=cachedCorporationWeeklyStatsMany([...corporationMap.keys()]);
+  const weeklyIds=[...corporationMap.keys()];
+  const weeklySnapshot=cachedCorporationWeeklyStatsMany(weeklyIds);
   const corpWeeklyStats=weeklySnapshot.data;
-  const corpWeeklyRefreshing=weeklySnapshot.staleIds.length>0;
-  if(corpWeeklyRefreshing)refreshCorporationWeeklyStatsInBackground(weeklySnapshot.staleIds,force);
+  const weeklyRefreshIds=force?weeklyIds:weeklySnapshot.staleIds;
+  const corpWeeklyRefreshing=weeklyRefreshIds.length>0;
+  if(corpWeeklyRefreshing)refreshCorporationWeeklyStatsInBackground(weeklyRefreshIds,force);
   const correctedCorporations=[...corporationMap.values()].map(row=>{
     const weekly=corpWeeklyStats.get(Number(row.id));
     return weekly
@@ -3902,6 +3904,15 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
     })),
   };
 }
+async function warmInitPvpCaches(){
+  let base=zkillInitLeaderboardCache.data||pvpDb.init7d?.data||null;
+  if(!base&&Object.keys(pvpDb.initKillmails||{}).length)base=buildInitLeaderboardFromArchive();
+  if(!base)return;
+  const ids=(base.corporations||[]).map(row=>Number(row.id)).filter(id=>id>0);
+  const {staleIds}=cachedCorporationWeeklyStatsMany(ids);
+  if(staleIds.length)refreshCorporationWeeklyStatsInBackground(staleIds,false);
+}
+
 async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.8.9',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
@@ -4061,7 +4072,7 @@ setTimeout(()=>{
   refreshInitKillmailArchive(false).then(()=>{
     zkillInitLeaderboardCache.updatedAt=0;
     return buildInitZkillLeaderboard(false);
-  }).catch(console.error);
+  }).then(()=>warmInitPvpCaches()).catch(console.error);
 },7_500).unref();
 setInterval(()=>refreshMarketPrices().catch(console.error),60*60_000).unref();
 setInterval(()=>{if(doctrineRequested)refreshDoctrineMarket().catch(console.error)},DOCTRINE_CN_REFRESH_MS).unref();
