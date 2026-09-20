@@ -605,7 +605,11 @@
     const timers=document.querySelector('.timers-panel');
     const board=document.querySelector('.board-panel');
     const hits=document.querySelector('.hit-panel');
-    [quick,timers,board,hits].filter(Boolean).forEach(el=>fields.appendChild(el));
+    const fieldSidebar=document.createElement('div');
+    fieldSidebar.className='field-sidebar';
+    [quick,timers].filter(Boolean).forEach(el=>fieldSidebar.appendChild(el));
+    if(fieldSidebar.children.length)fields.appendChild(fieldSidebar);
+    [board,hits].filter(Boolean).forEach(el=>fields.appendChild(el));
 
     const advanced=document.createElement('div');
     advanced.className='tab-advanced expanded-grid';
