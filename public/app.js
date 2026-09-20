@@ -26,6 +26,10 @@
   let pvpMemberRankMode=['activity','isk','damage'].includes(savedPvpMemberRankMode)?savedPvpMemberRankMode:'activity';
   let pvpPinnedCharacterId=localStorage.getItem('jlrPvpPinnedCharacter')||'';
   let pvpToonMenuOpen=false;
+  let pvpLifetimeDamage=null;
+  let pvpLifetimeDamageLoading=false;
+  let pvpLifetimeDamageError='';
+  let pvpLifetimeDamagePoll=null;
 
   const DEFAULT_FLEET = { members:{}, uptime:100, payout:95 };
   function loadFleet() {
@@ -627,6 +631,7 @@
       return;
     }
     const d=pvpIntel;
+    if(pvpMemberRankMode==='damage'&&!pvpLifetimeDamage&&!pvpLifetimeDamageLoading)setTimeout(()=>loadPvpLifetimeDamage(),0);
     const corpRows=(d.corporations||[]).map(row=>`
       <tr class="${row.isMyCorp?'mine':''}">
         <td>${pvpRankBadge(row.rank,row.isMyCorp)}</td>
@@ -636,21 +641,34 @@
         <td>${fmt(row.iskDestroyed)} ISK</td>
         <td>${row.zkillGlobalRank?('#'+fmt(row.zkillGlobalRank)):'—'}</td>
       </tr>`).join('');
-    const memberRankField=pvpMemberRankMode==='isk'?'rankIsk':pvpMemberRankMode==='damage'?'rankDamage':'rankActivity';
     const linkedPvpToons=Array.isArray(d.linkedCorpCharacters)?d.linkedCorpCharacters:[];
     if(!linkedPvpToons.some(row=>String(row.characterId)===String(pvpPinnedCharacterId))){
       pvpPinnedCharacterId=String(linkedPvpToons.find(row=>row.primary)?.characterId||linkedPvpToons[0]?.characterId||'');
       if(pvpPinnedCharacterId)localStorage.setItem('jlrPvpPinnedCharacter',pvpPinnedCharacterId);
     }
-    const memberRows=[...(d.myCorpMembers||[])].sort((a,b)=>{
+
+    const lifetimeMode=pvpMemberRankMode==='damage';
+    const memberRankField=pvpMemberRankMode==='isk'?'rankIsk':'rankActivity';
+    let memberRows=lifetimeMode&&pvpLifetimeDamage?.ready
+      ?[...(pvpLifetimeDamage.rows||[])]
+      :[...(d.myCorpMembers||[])];
+
+    if(lifetimeMode&&pvpLifetimeDamage?.ready&&pvpPinnedCharacterId&&!memberRows.some(row=>String(row.characterId)===String(pvpPinnedCharacterId))){
+      const linked=linkedPvpToons.find(row=>String(row.characterId)===String(pvpPinnedCharacterId));
+      if(linked)memberRows.push({rank:null,characterId:linked.characterId,name:linked.name,killmails:0,finalBlows:0,damageDone:0,iskOnKillmails:0});
+    }
+
+    memberRows.sort((a,b)=>{
       const aPinned=String(a.characterId)===String(pvpPinnedCharacterId);
       const bPinned=String(b.characterId)===String(pvpPinnedCharacterId);
       if(aPinned!==bPinned)return aPinned?-1:1;
+      if(lifetimeMode)return Number(a.rank||999999)-Number(b.rank||999999);
       return Number(a?.[memberRankField]||999999)-Number(b?.[memberRankField]||999999);
     });
+
     const myMembers=memberRows.map(row=>`
       <tr class="mine${String(row.characterId)===String(pvpPinnedCharacterId)?' pvp-own-toon':''}">
-        <td>${pvpRankBadge(row?.[memberRankField],true)}</td>
+        <td>${pvpRankBadge(lifetimeMode?row.rank:row?.[memberRankField],true)}</td>
         <td><a class="pvp-killboard-link" href="https://zkillboard.com/character/${encodeURIComponent(row.characterId)}/" target="_blank" rel="noopener noreferrer" title="Open ${esc(row.name||('Character '+row.characterId))} on zKillboard"><strong>${esc(row.name||('Character '+row.characterId))}</strong></a></td>
         <td>${fmt(row.killmails)}</td>
         <td>${fmt(row.finalBlows)}</td>
@@ -715,7 +733,7 @@
           <section class="glass pvp-section">
             <div class="pvp-section-head pvp-member-head">
               <div class="pvp-section-title">
-                <strong>YOUR CORP MEMBERS VS INIT</strong>
+                <strong>CORP MEMBERS</strong>
               </div>
               <div class="pvp-member-rank-controls" role="group" aria-label="Corp member ranking mode">
                 ${linkedPvpToons.length>1?(()=>{
@@ -738,8 +756,10 @@
             </div>
             <div class="pvp-table-wrap">
               <table class="pvp-table">
-                <thead><tr><th>${pvpMemberRankMode==='isk'?'ISK RANK':pvpMemberRankMode==='damage'?'DAMAGE RANK':'KILL RANK'}</th><th>PILOT</th><th>KILLMAILS</th><th>FINAL</th><th>DAMAGE</th><th>ISK ON KILLS</th></tr></thead>
-                <tbody>${myMembers||'<tr><td colspan="6">No active corp pilots found in this 7-day window.</td></tr>'}</tbody>
+                <thead><tr><th>${lifetimeMode?'CORP RANK':pvpMemberRankMode==='isk'?'ISK RANK':'KILL RANK'}</th><th>PILOT</th><th>KILLMAILS</th><th>FINAL</th><th>${lifetimeMode?'LIFETIME DAMAGE':'DAMAGE'}</th><th>ISK ON KILLS</th></tr></thead>
+                <tbody>${lifetimeMode&&!pvpLifetimeDamage?.ready
+                  ?`<tr><td colspan="6" class="pvp-lifetime-status">${pvpLifetimeDamageError?esc(pvpLifetimeDamageError):pvpLifetimeDamageLoading?'BUILDING LIFETIME CORP DAMAGE…':`BUILDING LIFETIME CORP DAMAGE… ${fmt(pvpLifetimeDamage?.monthsScanned||0)}/${fmt(pvpLifetimeDamage?.totalMonths||0)} MONTHS • ${fmt(pvpLifetimeDamage?.killmailsProcessed||0)} KILLMAILS`}</td></tr>`
+                  :(myMembers||'<tr><td colspan="6">No corp pilot damage found.</td></tr>')}</tbody>
               </table>
             </div>
           </section>
@@ -757,7 +777,7 @@
 
         <section class="pvp-footnote">
           <strong>RANKING METHOD</strong>
-          <span>Corporation rows use zKillboard's own Weekly 7d ships destroyed, points, ISK destroyed, and global 7-day rank, then are re-ranked against active INIT corporations. For YOUR CORP MEMBERS VS INIT you can switch between KILLMAILS / FINALS rank, ISK ON KILLS rank, and MOST DAMAGE rank. Both placements use the same INIT-wide 7-day population as the full INIT PILOT LEADERBOARD, so a pilot's rank number matches in both tables. Your corporation's direct 7-day crawl can correct the activity totals shown for its members, but it no longer reorders the alliance leaderboard by itself.</span>
+          <span>Corporation rows use zKillboard's own Weekly 7d ships destroyed, points, ISK destroyed, and global 7-day rank, then are re-ranked against active INIT corporations. CORP MEMBERS uses two 7-day INIT-wide modes for KILLMAILS / FINALS and ISK ON KILLS. MOST DAMAGE is different: it ranks current corp pilots by lifetime damage dealt on zKillboard killmails while flying for that corporation.</span>
           <small>Updated ${d.generatedAt?ago(d.generatedAt):'recently'} • ${d.stale?'showing last good cache after refresh error • ':''}shared server cache • source: zKillboard public API</small>
         </section>
       </div>`;
@@ -788,6 +808,7 @@
       pvpMemberRankMode='damage';
       localStorage.setItem('jlrPvpMemberRankMode',pvpMemberRankMode);
       renderPvpIntel();
+      loadPvpLifetimeDamage();
     });
   }
   document.addEventListener('click',event=>{
@@ -802,6 +823,25 @@
       renderPvpIntel();
     }
   });
+
+  async function loadPvpLifetimeDamage(force=false){
+    if(pvpLifetimeDamageLoading)return;
+    pvpLifetimeDamageLoading=true;
+    pvpLifetimeDamageError='';
+    try{
+      const data=await api(`/api/zkill/lifetime-damage${force?'?refresh=1':''}`);
+      pvpLifetimeDamage=data;
+      if(!data?.ready){
+        clearTimeout(pvpLifetimeDamagePoll);
+        pvpLifetimeDamagePoll=setTimeout(()=>loadPvpLifetimeDamage(false),4000);
+      }
+    }catch(error){
+      pvpLifetimeDamageError=String(error?.message||error||'Lifetime corp damage could not be loaded.');
+    }finally{
+      pvpLifetimeDamageLoading=false;
+      renderPvpIntel();
+    }
+  }
 
   async function loadPvpIntel(force=false){
     if(pvpIntelLoading)return;

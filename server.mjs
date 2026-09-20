@@ -82,6 +82,8 @@ const ZKILL_WINDOW_SECONDS = 7 * 24 * 60 * 60;
 const ZKILL_CACHE_MS = 15 * 60 * 1000;
 const ZKILL_MAX_PAGES = 100;
 const ZKILL_PAGE_GAP_MS = 1100;
+const ZKILL_LIFETIME_DAMAGE_CACHE_MS = 24 * 60 * 60 * 1000;
+const ZKILL_LIFETIME_PAGE_GAP_MS = 700;
 // Perfect null-sec refine: T2 rigged Tatara + max skills + RX-804 implant.
 const MAX_REFINE_YIELD = 0.90628105568;
 const ORE_REPROCESSING = {
@@ -158,6 +160,8 @@ const universeNameCache = new Map();
 let zkillInitLeaderboardCache = { updatedAt:0, data:null, promise:null };
 const zkillCorpLeaderboardCache = new Map();
 const zkillCorpStatsCache = new Map();
+const zkillLifetimeDamageJobs = new Map();
+const zkillLifetimeDamageProgress = new Map();
 let esiCharacterSyncActive = 0;
 const esiCharacterSyncWaiters = [];
 let esiBackoffUntil = 0;
@@ -189,6 +193,7 @@ function freshState() {
     users: {},
     characters: {},
     scans: {},
+    pvpLifetimeDamage: {},
     fields: Object.fromEntries(SYSTEM_DEFS.map((d) => [d.system, {
       status: 'ready', cherryPicked: false, timerEndsAt: null, notes: [], updatedAt: null,
       autoReopenedAt: null, autoReopenReason: null, autoReopenM3: null,
@@ -211,6 +216,7 @@ async function loadState() {
     parsed.users ||= {};
     parsed.characters ||= {};
     parsed.scans ||= {};
+    parsed.pvpLifetimeDamage ||= {};
     parsed.fields ||= {};
     for (const d of SYSTEM_DEFS) {
       const field = parsed.fields[d.system] = { ...base.fields[d.system], ...(parsed.fields[d.system] || {}) };
@@ -443,7 +449,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.3.86',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.3.87',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -2062,6 +2068,150 @@ async function zkillCorporationWeeklyStatsMany(corporationIds,force=false){
   return out;
 }
 
+function lifetimeMonthKeys(foundedAt){
+  const nowDate=new Date();
+  const founded=new Date(foundedAt||'2007-01-01T00:00:00Z');
+  const start=Number.isFinite(founded.getTime())?founded:new Date('2007-01-01T00:00:00Z');
+  const out=[];
+  let year=nowDate.getUTCFullYear(),month=nowDate.getUTCMonth()+1;
+  const startYear=start.getUTCFullYear(),startMonth=start.getUTCMonth()+1;
+  while(year>startYear||(year===startYear&&month>=startMonth)){
+    out.push({year,month});
+    month--;
+    if(month<1){month=12;year--}
+  }
+  return out;
+}
+async function currentCorporationCharacterIds(ids,corporationId){
+  const unique=[...new Set((ids||[]).map(Number).filter(id=>id>0))];
+  const current=new Set();
+  for(let i=0;i<unique.length;i+=1000){
+    const batch=unique.slice(i,i+1000);
+    if(!batch.length)continue;
+    const {data}=await esiPost('https://esi.evetech.net/latest/characters/affiliation/?datasource=tranquility',batch);
+    for(const row of Array.isArray(data)?data:[]){
+      if(Number(row?.corporation_id)===Number(corporationId))current.add(Number(row.character_id));
+    }
+  }
+  return current;
+}
+async function buildCorpLifetimeDamage(corporationId,corporationName,foundedAt){
+  const corpId=Number(corporationId);
+  const key=String(corpId);
+  const months=lifetimeMonthKeys(foundedAt);
+  const characters=new Map(),seenKillIds=new Set();
+  let pagesFetched=0,monthsScanned=0,complete=true;
+
+  const updateProgress=(extra={})=>{
+    zkillLifetimeDamageProgress.set(key,{
+      status:'building',
+      corporationId:corpId,
+      corporationName:String(corporationName||corpId),
+      monthsScanned,
+      totalMonths:months.length,
+      pagesFetched,
+      killmailsProcessed:seenKillIds.size,
+      ...extra,
+    });
+  };
+  updateProgress();
+
+  for(const bucket of months){
+    let previousPageSignature='';
+    for(let page=1;page<=ZKILL_MAX_PAGES;page++){
+      const url=`https://zkillboard.com/api/kills/corporationID/${corpId}/year/${bucket.year}/month/${bucket.month}/page/${page}/`;
+      const rows=await zkillJson(url);
+      if(!Array.isArray(rows))throw new Error(`zKillboard lifetime damage page ${bucket.year}-${bucket.month} #${page} was not a killmail list.`);
+      const signature=rows.slice(0,5).map(row=>String(row?.killmail_id||'')).join(',');
+      if(page>1&&rows.length&&signature&&signature===previousPageSignature)throw new Error('zKillboard repeated a lifetime damage page.');
+      if(signature)previousPageSignature=signature;
+      pagesFetched++;
+
+      for(const km of rows){
+        const killId=Number(km?.killmail_id);
+        if(!killId||seenKillIds.has(killId))continue;
+        seenKillIds.add(killId);
+        const value=Number(km?.zkb?.totalValue)||0;
+        for(const attacker of Array.isArray(km?.attackers)?km.attackers:[]){
+          if(Number(attacker?.corporation_id)!==corpId)continue;
+          const charId=Number(attacker?.character_id);
+          if(!charId)continue;
+          addPvpMetric(
+            characters,
+            charId,
+            corpId,
+            killId,
+            value,
+            Boolean(attacker?.final_blow),
+            Number(attacker?.damage_done)||0,
+          );
+        }
+      }
+
+      updateProgress({year:bucket.year,month:bucket.month,page});
+      if(rows.length<200)break;
+      if(page===ZKILL_MAX_PAGES){complete=false;break}
+      await sleep(ZKILL_LIFETIME_PAGE_GAP_MS);
+    }
+    monthsScanned++;
+    updateProgress({year:bucket.year,month:bucket.month,page:null});
+    await sleep(ZKILL_LIFETIME_PAGE_GAP_MS);
+  }
+
+  const currentIds=await currentCorporationCharacterIds([...characters.keys()],corpId);
+  const currentRows=[...characters.values()].filter(row=>currentIds.has(Number(row.id)));
+  const names=await resolveUniverseNames(currentRows.map(row=>row.id));
+  currentRows.sort((a,b)=>
+    b.damageDone-a.damageDone||
+    b.finalBlows-a.finalBlows||
+    b.killmails-a.killmails||
+    b.iskOnKillmails-a.iskOnKillmails||
+    a.id-b.id
+  );
+  const rows=currentRows.map((row,index)=>({
+    rank:index+1,
+    characterId:Number(row.id),
+    name:names.get(Number(row.id))||String(row.id),
+    damageDone:Number(row.damageDone)||0,
+    killmails:Number(row.killmails)||0,
+    finalBlows:Number(row.finalBlows)||0,
+    iskOnKillmails:Number(row.iskOnKillmails)||0,
+  }));
+
+  const data={
+    corporationId:corpId,
+    corporationName:String(corporationName||corpId),
+    generatedAt:now(),
+    complete,
+    monthsScanned,
+    totalMonths:months.length,
+    pagesFetched,
+    killmailsProcessed:seenKillIds.size,
+    rows,
+  };
+  state.pvpLifetimeDamage ||= {};
+  state.pvpLifetimeDamage[key]=data;
+  await save();
+  zkillLifetimeDamageProgress.set(key,{status:'ready',...data,rows:undefined});
+  return data;
+}
+function ensureCorpLifetimeDamageBuild(corporationId,corporationName,foundedAt,force=false){
+  const key=String(corporationId);
+  const cached=state.pvpLifetimeDamage?.[key]||null;
+  const age=cached?.generatedAt?Date.now()-Date.parse(cached.generatedAt):Infinity;
+  if(!force&&cached&&age<ZKILL_LIFETIME_DAMAGE_CACHE_MS)return null;
+  if(zkillLifetimeDamageJobs.has(key))return zkillLifetimeDamageJobs.get(key);
+  const job=buildCorpLifetimeDamage(corporationId,corporationName,foundedAt)
+    .catch(err=>{
+      zkillLifetimeDamageProgress.set(key,{status:'error',message:String(err.message||err)});
+      console.warn('Lifetime corp damage build failed',key,String(err.message||err));
+      throw err;
+    })
+    .finally(()=>zkillLifetimeDamageJobs.delete(key));
+  zkillLifetimeDamageJobs.set(key,job);
+  return job;
+}
+
 async function buildCorpZkillLeaderboard(corporationId,force=false){
   const corpId=Number(corporationId);
   if(!corpId)throw new Error('Corporation ID is required for zKillboard verification.');
@@ -2346,10 +2496,34 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
   };
 }
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.86',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.87',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){const u=readSession(req);return json(res,200,{authenticated:Boolean(u),user:u?myProfile(u):null})}
   const user=requireUser(req,res);if(!user)return;
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
+  if(req.method==='GET'&&url.pathname==='/api/zkill/lifetime-damage'){
+    try{
+      const primaryId=Number(user?.primaryCharacterId);
+      if(!primaryId)return json(res,400,{error:'NO_PRIMARY_TOON',message:'No primary EVE character is linked.'});
+      const character=(await esiGet(`https://esi.evetech.net/latest/characters/${primaryId}/?datasource=tranquility`)).data;
+      const corporationId=Number(character?.corporation_id);
+      if(!corporationId)return json(res,400,{error:'NO_CORPORATION',message:'Could not determine your corporation.'});
+      const corporation=(await esiGet(`https://esi.evetech.net/latest/corporations/${corporationId}/?datasource=tranquility`)).data;
+      if(Number(corporation?.alliance_id)!==INIT_ALLIANCE_ID)return json(res,409,{error:'NOT_INIT',message:'Your corporation is not currently in INIT.'});
+
+      const key=String(corporationId);
+      const cached=state.pvpLifetimeDamage?.[key]||null;
+      const age=cached?.generatedAt?Date.now()-Date.parse(cached.generatedAt):Infinity;
+      const force=url.searchParams.get('refresh')==='1'&&age>=60*60*1000;
+      ensureCorpLifetimeDamageBuild(corporationId,corporation?.name,corporation?.date_founded,force);
+
+      if(cached){
+        return json(res,200,{ready:true,stale:age>=ZKILL_LIFETIME_DAMAGE_CACHE_MS,building:zkillLifetimeDamageJobs.has(key),...cached});
+      }
+      return json(res,202,{ready:false,...(zkillLifetimeDamageProgress.get(key)||{status:'building',corporationId,corporationName:String(corporation?.name||corporationId)})});
+    }catch(err){
+      return json(res,502,{error:'LIFETIME_DAMAGE_FAILED',message:String(err.message||err)});
+    }
+  }
   if(req.method==='GET'&&url.pathname==='/api/zkill/leaderboard'){
     const wantsRefresh=url.searchParams.get('refresh')==='1';
     const cacheAge=Date.now()-Number(zkillInitLeaderboardCache.updatedAt||0);
