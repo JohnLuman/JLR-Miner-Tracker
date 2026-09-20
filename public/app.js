@@ -2973,9 +2973,11 @@
     });
     const rows=selected.map(ch=>{
       const fit=selectedFleetFit(ch);
-      return gasFitStats(ch,fit)||{character:ch,fit,error:'Selected Fleet & Fits loadout is not a gas fit'};
+      return gasFitStats(ch,fit)||{character:ch,fit,notApplicable:true};
     });
-    const valid=rows.filter(row=>!row.error&&row.m3PerHour>0);
+    const valid=rows.filter(row=>!row.notApplicable&&!row.error&&row.m3PerHour>0);
+    const actionable=rows.filter(row=>!row.notApplicable&&(row.error||!row.m3PerHour));
+    const hiddenNonGas=rows.filter(row=>row.notApplicable).length;
     const fullM3=valid.reduce((sum,row)=>sum+Number(row.m3PerHour||0),0);
     const targetM3=fullM3*uptime;
     const fullUnits=fullM3/gasVolume;
@@ -2994,11 +2996,13 @@
       :'Waiting for gas fleet + Jita price';
 
     if(!rows.length){
-      $('gasFleetOutput').innerHTML='<div class="visual-empty">Select gas huffers in Fleet & Fits to calculate output.</div>';
+      $('gasFleetOutput').innerHTML='<div class="gas-fit-status empty"><strong>NO GAS FLEET SELECTED</strong><small>Select gas huffers in Fleet & Fits to calculate output.</small></div>';
+    }else if(!valid.length&&!actionable.length){
+      $('gasFleetOutput').innerHTML='<div class="gas-fit-status empty"><strong>NO APPLICABLE GAS FITS</strong><small>'+fmt(hiddenNonGas)+' selected fleet member'+(hiddenNonGas===1?' is':'s are')+' currently using non-gas fits.</small></div>';
     }else{
-      const body=rows.map(row=>{
+      const body=[...valid,...actionable].map(row=>{
         if(row.error||!row.m3PerHour){
-          return '<div class="ice-fleet-row error"><div><strong>'+esc(row.character?.name||'Huffer')+'</strong><small>'+esc(row.fit?.name||'No selected fit')+'</small></div><span>'+esc(row.error||'No supported gas scoop or harvester')+'</span></div>';
+          return '<div class="gas-fit-issue"><div><strong>'+esc(row.character?.name||'Huffer')+'</strong><small>'+esc(row.fit?.name||'Gas fit')+'</small></div><span>'+esc(row.error||'Gas fit needs attention')+'</span></div>';
         }
         const m3=row.m3PerHour*uptime,units=m3/gasVolume;
         const jita=Number.isFinite(rawJita)&&rawJita>0?units*rawJita:0;
@@ -3013,11 +3017,16 @@
           '<div><span>Residue</span><strong>'+esc(row.residueSummary||'NONE')+'</strong></div>'+
         '</div>';
       }).join('');
-      $('gasFleetOutput').innerHTML=body+
-        '<div class="ice-fleet-total"><span>'+esc(gasType)+' fleet target</span><strong>'+
-        fmt(targetUnits)+' units/hr • '+fmt(targetM3,'m3')+' m³/hr</strong><small>Raw Jita '+
-        (rawJitaHour?fmt(rawJitaHour):'—')+'/hr • Raw C-N '+(rawCnHour?fmt(rawCnHour):'—')+
-        '/hr • Compressed Jita '+(compressedJitaHour?fmt(compressedJitaHour):'—')+'/hr</small></div>';
+      const hidden=hiddenNonGas
+        ?'<div class="gas-fit-hidden"><strong>'+fmt(hiddenNonGas)+' NON-GAS FLEET MEMBER'+(hiddenNonGas===1?'':'S')+' HIDDEN</strong><span>Only applicable gas fits are shown here.</span></div>'
+        :'';
+      const total=valid.length
+        ?'<div class="ice-fleet-total"><span>'+esc(gasType)+' fleet target</span><strong>'+
+          fmt(targetUnits)+' units/hr • '+fmt(targetM3,'m3')+' m³/hr</strong><small>Raw Jita '+
+          (rawJitaHour?fmt(rawJitaHour):'—')+'/hr • Raw C-N '+(rawCnHour?fmt(rawCnHour):'—')+
+          '/hr • Compressed Jita '+(compressedJitaHour?fmt(compressedJitaHour):'—')+'/hr</small></div>'
+        :'';
+      $('gasFleetOutput').innerHTML=body+hidden+total;
     }
 
     const sites=(Array.isArray(region.sites)?region.sites:[]).filter(site=>site.gas===gasType);
