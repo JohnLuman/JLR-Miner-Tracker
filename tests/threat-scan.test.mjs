@@ -8,6 +8,14 @@ const local = parseThreatPaste([
 assert.deepEqual(local.names, ['FC Zoetrope', 'Another Pilot']);
 assert.equal(local.shipNames.length, 0);
 
+const largeLocalNames=Array.from({length:350},(_,index)=>`Large Scan Pilot ${String(index+1).padStart(3,'0')}`);
+largeLocalNames[57]='Isanakka Oriki';
+largeLocalNames[142]='Tamano Oilen';
+const largeLocal=parseThreatPaste(largeLocalNames.join('\n'));
+assert.equal(largeLocal.names.length,350);
+assert(largeLocal.names.includes('Isanakka Oriki'));
+assert(largeLocal.names.includes('Tamano Oilen'));
+
 const dscan = parseThreatPaste([
   'Name\tType\tDistance',
   'Angry Miner\tHulk\t1,234 km',

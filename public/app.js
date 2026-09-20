@@ -954,7 +954,11 @@
     const unresolved=Array.isArray(data?.unresolvedNames)?data.unresolvedNames:[];
     const unresolvedShips=Array.isArray(data?.unresolvedShipNames)?data.unresolvedShipNames:[];
     const ignored=Number(data?.ignored?.total)||0;
-    const cacheText=data?`${fmt(data.cache?.hits||0)} local hits • ${fmt(data.cache?.refreshed||0)} refreshed${ignored?' • '+fmt(ignored)+' ignored':''}${unresolved.length?' • '+fmt(unresolved.length)+' pilots unresolved':''}${unresolvedShips.length?' • '+fmt(unresolvedShips.length)+' ship types unresolved':''}${data.truncated?' • first '+fmt(chars.length)+' pilots shown':''}`:'';
+    const parsedPilots=Number(data?.parsedPilotCount??data?.rawLineCount??chars.length)||0;
+    const resolvedPilots=Number(data?.resolvedPilotCount??data?.candidateCount??chars.length)||0;
+    const displayedPilots=Number(data?.displayedPilotCount??chars.length)||0;
+    const truncatedPilots=Number(data?.truncatedCount)||0;
+    const cacheText=data?`${fmt(parsedPilots)} parsed • ${fmt(resolvedPilots)} resolved • ${fmt(ignored)} filtered • ${fmt(displayedPilots)} displayed • ${fmt(data.cache?.hits||0)} local hits • ${fmt(data.cache?.refreshed||0)} refreshed${unresolved.length?' • '+fmt(unresolved.length)+' pilots unresolved':''}${unresolvedShips.length?' • '+fmt(unresolvedShips.length)+' ship types unresolved':''}${truncatedPilots?' • '+fmt(truncatedPilots)+' over 1,000-pilot safety limit':''}`:'';
 
     host.innerHTML=`
       <div class="threat-shell">
@@ -996,7 +1000,7 @@
 
         ${data?`
         <section class="threat-summary">
-          <article class="glass"><span>PILOTS IDENTIFIED</span><strong>${fmt(chars.length)}</strong></article>
+          <article class="glass"><span>PILOTS IDENTIFIED</span><strong>${fmt(resolvedPilots)}</strong></article>
           <article class="glass"><span>JLR THREAT 70+</span><strong>${fmt(highDanger)}</strong></article>
           <article class="glass"><span>TACTICAL SIGNALS</span><strong>${fmt(signalCount)}</strong></article>
           <article class="glass"><span>D-SCAN SHIPS</span><strong>${fmt(data.totalShips||0)}</strong></article>

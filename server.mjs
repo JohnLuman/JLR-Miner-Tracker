@@ -92,7 +92,7 @@ const ZKILL_LIFETIME_DAMAGE_CACHE_MS = 24 * 60 * 60 * 1000;
 const ZKILL_LIFETIME_PAGE_GAP_MS = 700;
 const THREAT_CHARACTER_CACHE_MS = 6 * 60 * 60 * 1000;
 const THREAT_CONTACTS_CACHE_MS = 15 * 60 * 1000;
-const THREAT_MAX_CHARACTERS = 80;
+const THREAT_MAX_CHARACTERS = 1000;
 const THREAT_FETCH_CONCURRENCY = 4;
 // Perfect null-sec refine: T2 rigged Tatara + max skills + RX-804 implant.
 const MAX_REFINE_YIELD = 0.90628105568;
@@ -2162,6 +2162,29 @@ async function resolveThreatCharacterNames(names){
   }
   return characters;
 }
+async function resolveThreatAffiliations(characters){
+  const ids=[...new Set((characters||[]).map(row=>Number(row?.id)).filter(id=>id>0))];
+  const affiliations=new Map();
+  for(let i=0;i<ids.length;i+=1000){
+    const batch=ids.slice(i,i+1000);
+    if(!batch.length)continue;
+    try{
+      const {data}=await esiPost('https://esi.evetech.net/latest/characters/affiliation/?datasource=tranquility',batch);
+      for(const row of Array.isArray(data)?data:[]){
+        const id=Number(row?.character_id);
+        if(!id)continue;
+        affiliations.set(id,{
+          corporation_id:Number(row?.corporation_id)||null,
+          alliance_id:Number(row?.alliance_id)||null,
+          faction_id:Number(row?.faction_id)||null,
+        });
+      }
+    }catch(err){
+      console.warn('Threat affiliation lookup failed',String(err.message||err));
+    }
+  }
+  return affiliations;
+}
 async function resolveThreatShipNames(names){
   const unique=[...new Map((names||[]).map(name=>[String(name).trim().toLowerCase(),String(name).trim()])).values()].filter(Boolean);
   const types=new Map();
@@ -2355,15 +2378,22 @@ async function buildThreatIntel(scanText,{ignoreOwnIds=[],positiveStandings=null
   const unique=[...new Map(ordered.map(row=>[Number(row.id),row])).values()];
   const ownIds=new Set((ignoreOwnIds||[]).map(Number).filter(Number.isFinite));
   const standingData=positiveStandings?.standingData||null;
+  const affiliations=standingData?await resolveThreatAffiliations(unique):new Map();
   let ignoredOwn=0,ignoredPositive=0;
   const candidates=unique.filter(row=>{
-    const reason=threatIgnoreReason({id:row.id},{ownIds,standingData});
+    const affiliation=affiliations.get(Number(row.id))||{};
+    const reason=threatIgnoreReason({
+      id:row.id,
+      corporation_id:affiliation.corporation_id,
+      alliance_id:affiliation.alliance_id,
+    },{ownIds,standingData});
     if(reason==='own'){ignoredOwn++;return false}
     if(reason==='positive'){ignoredPositive++;return false}
     return true;
   });
   const truncated=candidates.length>THREAT_MAX_CHARACTERS;
   const selected=candidates.slice(0,THREAT_MAX_CHARACTERS);
+  const truncatedCount=Math.max(0,candidates.length-selected.length);
   let cacheHits=0,refreshed=0;
   const entries=await threatMapLimit(selected,THREAT_FETCH_CONCURRENCY,async row=>{
     try{
@@ -2461,11 +2491,16 @@ async function buildThreatIntel(scanText,{ignoreOwnIds=[],positiveStandings=null
     totalChars:chars.length,
     totalShips:ships.reduce((sum,row)=>sum+row.count,0),
     rawLineCount:parsed.rawLineCount,
+    parsedPilotCount:parsed.names.length,
+    resolvedPilotCount:unique.length,
+    candidateCount:candidates.length,
+    selectedPilotCount:selected.length,
+    displayedPilotCount:chars.length,
     truncated,
-    candidateCount:unique.length,
+    truncatedCount,
     ignored:{own:ignoredOwn,positive:ignoredPositive,total:ignoredOwn+ignoredPositive},
     standingsSource:positiveStandings?{characterId:positiveStandings.sourceCharacterId,name:positiveStandings.sourceCharacterName}:null,
-    unresolvedNames:unresolved.slice(0,30),
+    unresolvedNames:unresolved.slice(0,100),
     unresolvedShipNames:unresolvedShipNames.slice(0,30),
     cache:{hits:cacheHits,refreshed},
     chars,
@@ -3066,11 +3101,11 @@ async function routeApi(req,res,url) {
   }
   if(req.method==='POST'&&url.pathname==='/api/threat-scan'){
     let body;
-    try{body=await readBody(req,75_000)}
+    try{body=await readBody(req,300_000)}
     catch(err){return json(res,400,{error:'BAD_SCAN',message:String(err.message||err)})}
     const scanText=String(body?.text||'').trim();
     if(scanText.length<2)return json(res,400,{error:'EMPTY_SCAN',message:'Paste character names, Local, or D-scan text first.'});
-    if(scanText.length>50_000)return json(res,413,{error:'SCAN_TOO_LARGE',message:'Threat scan text is too large. Keep the paste under 50,000 characters.'});
+    if(scanText.length>250_000)return json(res,413,{error:'SCAN_TOO_LARGE',message:'Threat scan text is too large. Keep the paste under 250,000 characters.'});
 
     const ignoreOwn=body?.ignoreOwn!==false;
     const ignorePositive=body?.ignorePositive!==false;
@@ -3135,7 +3170,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.3.97 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.3.98 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setInterval(()=>resetExpired(true),15_000).unref();
 async function runAutomaticSyncLoop(){
   const startedAt=Date.now();
