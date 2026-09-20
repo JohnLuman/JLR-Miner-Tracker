@@ -443,7 +443,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.3.78',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.3.79',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -2166,21 +2166,13 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
     console.warn('Corporation zKill verification failed',corpVerifyError);
   }
 
-  // Clone the INIT-wide rows so we can replace this user's corporation with a
-  // corporation-specific crawl. This catches participation that can be missed
-  // by a very busy alliance-wide query/cache.
-  const characterMap=new Map(base.characters.map(row=>[Number(row.id),{...row}]));
-  if(corpDirect?.characters?.length){
-    for(const row of corpDirect.characters){
-      characterMap.set(Number(row.id),{
-        ...row,
-        corporationId,
-      });
-    }
-  }
-  const correctedCharacters=rankPvpRows([...characterMap.values()]);
-  for(const row of correctedCharacters)row.rankActivity=row.rank;
-  const iskRanked=[...correctedCharacters].sort((a,b)=>
+  // INIT pilot ranks must come from one common alliance-wide population.
+  // Do not mix a complete corp-specific crawl into the alliance ranking first,
+  // or one corp can be artificially promoted when the alliance query hits
+  // zKillboard's 100-page ceiling.
+  const allianceCharacters=base.characters.map(row=>({...row,rankActivity:Number(row.rank)||null}));
+  const allianceById=new Map(allianceCharacters.map(row=>[Number(row.id),row]));
+  const iskRanked=[...allianceCharacters].sort((a,b)=>
     b.iskOnKillmails-a.iskOnKillmails||
     b.finalBlows-a.finalBlows||
     b.killmails-a.killmails||
@@ -2188,6 +2180,26 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
     a.id-b.id
   );
   iskRanked.forEach((row,index)=>row.rankIsk=index+1);
+
+  // The direct corp crawl can correct displayed member totals, but the rank
+  // fields are copied from the INIT-wide population so the number shown in
+  // YOUR CORP MEMBERS VS INIT matches the full INIT PILOT LEADERBOARD.
+  const ownMemberMap=new Map(
+    allianceCharacters
+      .filter(row=>Number(row.corporationId)===corporationId)
+      .map(row=>[Number(row.id),{...row}])
+  );
+  for(const direct of corpDirect?.characters||[]){
+    const id=Number(direct.id);
+    const global=allianceById.get(id);
+    ownMemberMap.set(id,{
+      ...direct,
+      corporationId,
+      rankActivity:global?.rankActivity||null,
+      rankIsk:global?.rankIsk||null,
+      initRankMatched:Boolean(global),
+    });
+  }
 
   const corporationMap=new Map(base.corporations.map(row=>[Number(row.id),{...row}]));
   if(corpDirect?.corporation){
@@ -2209,8 +2221,12 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
   correctedCorporations.forEach((row,index)=>row.rank=index+1);
 
   const corpBase=correctedCorporations.find(row=>Number(row.id)===corporationId)||null;
-  const myMembersBase=correctedCharacters.filter(row=>Number(row.corporationId)===corporationId);
-  const topCharacters=correctedCharacters.slice(0,100);
+  const myMembersBase=[...ownMemberMap.values()].sort((a,b)=>
+    Number(a.rankActivity||999999)-Number(b.rankActivity||999999)||
+    b.killmails-a.killmails||
+    a.id-b.id
+  );
+  const topCharacters=allianceCharacters.slice(0,100);
   const displayCharacterIds=[...new Set([...topCharacters,...myMembersBase].map(row=>row.id))];
   const corpIds=correctedCorporations.map(row=>row.id);
   const [charNames,corpNames]=await Promise.all([
@@ -2223,9 +2239,9 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
   corpDisplay.sort((a,b)=>a.rank-b.rank);
 
   const decorateChar=row=>({
-    rank:row.rankActivity||row.rank,
-    rankActivity:row.rankActivity||row.rank,
-    rankIsk:row.rankIsk||null,
+    rank:Number(row.rankActivity)||null,
+    rankActivity:Number(row.rankActivity)||null,
+    rankIsk:Number(row.rankIsk)||null,
     characterId:row.id,
     corporationId:row.corporationId,
     name:charNames.get(row.id)||String(row.id),
@@ -2257,7 +2273,7 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
     pagesFetched:base.pagesFetched,
     truncated:base.truncated,
     killmailsProcessed:base.killmailsProcessed,
-    activeCharacters:correctedCharacters.length,
+    activeCharacters:allianceCharacters.length,
     activeCorporations:correctedCorporations.length,
     myCorpVerified:Boolean(corpDirect),
     myCorpVerificationError:corpVerifyError,
@@ -2279,7 +2295,7 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
   };
 }
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.78',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.79',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){const u=readSession(req);return json(res,200,{authenticated:Boolean(u),user:u?myProfile(u):null})}
   const user=requireUser(req,res);if(!user)return;
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());

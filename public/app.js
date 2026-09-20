@@ -632,7 +632,7 @@
     );
     const myMembers=memberRows.map(row=>`
       <tr class="mine">
-        <td>${pvpRankBadge(row?.[memberRankField]||row.rank,true)}</td>
+        <td>${pvpRankBadge(row?.[memberRankField],true)}</td>
         <td><strong>${esc(row.name||('Character '+row.characterId))}</strong></td>
         <td>${fmt(row.killmails)}</td>
         <td>${fmt(row.finalBlows)}</td>
@@ -712,10 +712,10 @@
         </div>
 
         <section class="glass pvp-section">
-          <div class="pvp-section-head"><strong>INIT PILOT LEADERBOARD</strong><span>top 100 active pilots • your corp stays highlighted</span></div>
+          <div class="pvp-section-head"><strong>INIT PILOT LEADERBOARD</strong><span>rank numbers are INIT-wide • top 100 active pilots</span></div>
           <div class="pvp-table-wrap">
             <table class="pvp-table">
-              <thead><tr><th>RANK</th><th>PILOT</th><th>KILLMAILS</th><th>FINAL</th><th>DAMAGE</th><th>ISK ON KILLS</th></tr></thead>
+              <thead><tr><th>INIT RANK</th><th>PILOT</th><th>KILLMAILS</th><th>FINAL</th><th>DAMAGE</th><th>ISK ON KILLS</th></tr></thead>
               <tbody>${allianceRows||'<tr><td colspan="6">No pilot activity found.</td></tr>'}</tbody>
             </table>
           </div>
@@ -723,7 +723,7 @@
 
         <section class="pvp-footnote">
           <strong>RANKING METHOD</strong>
-          <span>Corporation rows use zKillboard's own Weekly 7d ships destroyed, points, ISK destroyed, and global 7-day rank, then are re-ranked against active INIT corporations. For YOUR CORP MEMBERS VS INIT you can switch between KILLMAILS / FINALS rank (killmail participation first, then final blows and damage) and ISK ON KILLS rank (total zKill value of killmails participated in). Both placements are calculated against all active INIT pilots in the same 7-day window. Your corporation's pilot activity is also checked with a corporation-specific 7-day crawl.</span>
+          <span>Corporation rows use zKillboard's own Weekly 7d ships destroyed, points, ISK destroyed, and global 7-day rank, then are re-ranked against active INIT corporations. For YOUR CORP MEMBERS VS INIT you can switch between KILLMAILS / FINALS rank (killmail participation first, then final blows and damage) and ISK ON KILLS rank (total zKill value of killmails participated in). Both placements use the same INIT-wide 7-day population as the full INIT PILOT LEADERBOARD, so a pilot's rank number matches in both tables. Your corporation's direct 7-day crawl can correct the activity totals shown for its members, but it no longer reorders the alliance leaderboard by itself.</span>
           <small>Updated ${d.generatedAt?ago(d.generatedAt):'recently'} • ${d.stale?'showing last good cache after refresh error • ':''}shared server cache • source: zKillboard public API</small>
         </section>
       </div>`;
