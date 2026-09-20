@@ -35,6 +35,8 @@
   let threatScanData=null;
   let threatScanLoading=false;
   let threatScanError='';
+  let threatScanPoll=null;
+  let threatScanPollCount=0;
   let threatScanText='';
   let threatIgnorePositive=localStorage.getItem('jlrThreatIgnorePositive')!=='false';
   let threatIgnoreOwn=localStorage.getItem('jlrThreatIgnoreOwn')!=='false';
@@ -1592,7 +1594,7 @@
       renderThreatScan();
     }
   }
-  async function runThreatScan(text){
+  async function runThreatScan(text,backgroundPoll=false){
     const value=String(text||'').trim();
     threatScanText=String(text||'');
     if(value.length<2){
@@ -1601,9 +1603,14 @@
       return;
     }
     if(threatScanLoading)return;
-    threatScanLoading=true;
-    threatScanError='';
-    renderThreatScan();
+    if(!backgroundPoll){
+      threatScanPollCount=0;
+      if(threatScanPoll){clearTimeout(threatScanPoll);threatScanPoll=null}
+      threatScanLoading=true;
+      threatScanError='';
+      renderThreatScan();
+    }
+    let shouldPoll=false;
     try{
       const contactsAvailable=Boolean(me?.characters?.some(character=>character.contactsAccess));
       threatScanData=await api('/api/threat-scan',{method:'POST',body:JSON.stringify({
@@ -1611,11 +1618,16 @@
         ignoreOwn:threatIgnoreOwn,
         ignorePositive:threatIgnorePositive&&contactsAvailable,
       })});
+      shouldPoll=Boolean(threatScanData?.refreshing);
     }catch(error){
-      threatScanError=String(error?.message||error||'Threat scan failed.');
+      if(!backgroundPoll)threatScanError=String(error?.message||error||'Threat scan failed.');
     }finally{
-      threatScanLoading=false;
+      if(!backgroundPoll)threatScanLoading=false;
       renderThreatScan();
+      if(shouldPoll&&threatScanPollCount<20){
+        threatScanPollCount++;
+        threatScanPoll=setTimeout(()=>runThreatScan(value,true),1500);
+      }
     }
   }
 
