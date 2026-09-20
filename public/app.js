@@ -771,6 +771,7 @@
 
           <section class="glass pvp-section">
             <div class="pvp-section-head pvp-member-head pvp-member-controls-only">
+              <div class="pvp-section-title"><strong>${esc(String(d.myCorporation?.name||'YOUR CORP').toUpperCase())}</strong><span>• CORP PILOT RANKING</span></div>
               <div class="pvp-member-rank-controls" role="group" aria-label="Corp member ranking mode">
                 ${linkedPvpToons.length>1?(()=>{
                   const selectedToon=linkedPvpToons.find(row=>String(row.characterId)===String(pvpPinnedCharacterId))||linkedPvpToons[0];
