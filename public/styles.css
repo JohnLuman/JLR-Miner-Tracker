@@ -1147,3 +1147,14 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
   .fleet-member-metrics>span{border-left:0;border-top:1px solid color-mix(in srgb,var(--line) 70%,transparent);padding:4px 0 0}
   .fleet-member-metrics>span:first-child{border-top:0}
 }
+
+
+/* v2.5.4 Explicit boosted fleet stats */
+.fleet-member-metrics{grid-template-columns:minmax(130px,1.3fr) minmax(82px,.72fr) minmax(78px,.7fr) minmax(72px,.62fr)}
+.fleet-boost-live strong{color:#79e7ff;text-shadow:0 0 8px color-mix(in srgb,#54d7ff 35%,transparent)}
+.fleet-boost-live small{color:#70bfd7}
+.calc-card.boost-live{border-color:#3489a6;background:linear-gradient(180deg,#103141,#0c202a);box-shadow:inset 0 0 0 1px #4bdcff18}
+.calc-card.boost-live strong{color:#83e8ff}
+@media(max-width:1050px){.fleet-member-metrics{grid-template-columns:1.15fr .72fr .72fr .65fr}}
+@media(max-width:760px){.fleet-member-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:430px){.fleet-member-metrics{grid-template-columns:1fr}}

@@ -1681,6 +1681,13 @@
 
     const booster=calcCharacter(calcSettings.boosterCharacterId);
     const boosterFit=calcFitting(booster,calcSettings.boosterFittingId);
+    const boosterBreakdown=window.JLRYieldMath?.boostBreakdown(
+      calcData(),
+      booster?.skills||{},
+      boosterFit,
+      Boolean(calcSettings.mindlink),
+    )||null;
+    const activeBoost=Boolean(boosterInFleet()&&booster&&boosterFit&&boosterBreakdown?.ship&&boosterBreakdown.ship!=='None');
     const list=$('fleetMemberList');
     if(soundMenu?.select.closest('#fleetMemberList'))closeSoundMenu();
     list.innerHTML='';
@@ -1714,18 +1721,33 @@
         const isBooster=id===String(calcSettings.boosterCharacterId||'');
         const boosterFitText=isBooster?(boosterFit?`${boosterFit.shipName} — ${boosterFit.name}` :'No saved booster fit'):'';
         const laser=fleetLaserDetails(entry);
-        let outputMain='EXCLUDED',outputSub='not counted',perLaser='—',range='—';
+        let outputMain='EXCLUDED',outputSub='not counted';
+        let metricOne='—',metricOneLabel='M³/HR / LASER';
+        let metricTwo='—',metricTwoLabel='LASER RANGE';
+        let metricThree='NONE',metricThreeLabel='BOOST SOURCE';
         if(isBooster){
-          outputMain=cfg.enabled?'BOOST ONLY':'BOOSTER OFF';
-          outputSub=cfg.enabled?'m³ excluded from miner total':'not in fleet';
+          const charges=boosterBreakdown?.charges?.names||[];
+          outputMain=activeBoost?'BOOST ACTIVE':cfg.enabled?'BOOST FIT READY':'BOOSTER OFF';
+          outputSub=boosterFit
+            ?`${boosterFit.shipName} • ${boosterBreakdown?.core||'None'} core • ${boosterBreakdown?.burst||'T1'} burst${calcSettings.mindlink?' • mindlink':''}`
+            :(cfg.enabled?'select a saved booster fit':'not in fleet');
+          metricOne=boosterBreakdown?`${(Number(boosterBreakdown.cycleReduction||0)*100).toFixed(2)}%`:'—';
+          metricOneLabel='CYCLE REDUCTION';
+          metricTwo=boosterBreakdown?`${(Number(boosterBreakdown.efficiencyBoost||0)*100).toFixed(1)}%`:'—';
+          metricTwoLabel='EFFICIENCY BURST';
+          metricThree=boosterBreakdown?`${(Number(boosterBreakdown.rangeBonus||0)*100).toFixed(1)}%`:'—';
+          metricThreeLabel='RANGE BOOST';
+          if(charges.length)outputSub+=` • ${charges.join(' + ')}`;
         }else if(cfg.enabled&&entry?.result){
           outputMain=`${fmt(entry.effectiveM3,'m3')} m³/hr @ ${Number(fleetSettings.uptime).toFixed(0)}%`;
-          outputSub=`${laser?.count||0} laser${laser?.count===1?'':'s'} • uptime adjusted`;
-          perLaser=laser?`${fmt(laser.perLaser,'m3')}`:'—';
-          range=laser?.rangeText||'—';
+          outputSub=`${activeBoost?`BOOSTED • ${boosterBreakdown.ship}`:'UNBOOSTED'} • ${laser?.count||0} laser${laser?.count===1?'':'s'}`;
+          metricOne=laser?`${fmt(laser.perLaser,'m3')}`:'—';
+          metricTwo=laser?.rangeText||'—';
+          metricThree=activeBoost?boosterBreakdown.ship:'NONE';
         }else if(cfg.enabled){
           outputMain=entry?.error||'NO SUPPORTED FIT';
           outputSub='check saved fit / EVE sync';
+          metricThree=activeBoost?boosterBreakdown.ship:'NONE';
         }
         if(isBooster)row.classList.add('booster');
         if(fleetArrangeMode)row.classList.add('arranging');
@@ -1735,8 +1757,9 @@
           ${isBooster?`<div class="fleet-booster-fit-inline">${esc(boosterFitText)}</div>`:`<select class="fleet-fit-select" data-id="${id}" ${fits.length?'':'disabled'}>${fitOptions}</select>`}
           <div class="fleet-member-metrics">
             <span class="fleet-member-output"><strong>${esc(outputMain)}</strong><small>${esc(outputSub)}</small></span>
-            <span><strong>${esc(perLaser)}</strong><small>M³/HR / LASER</small></span>
-            <span title="Strip-miner optimal range with detected Mining Laser Field Enhancement boost. Implant range bonuses are not modeled."><strong>${esc(range)}</strong><small>LASER RANGE</small></span>
+            <span><strong>${esc(metricOne)}</strong><small>${esc(metricOneLabel)}</small></span>
+            <span title="Strip-miner optimal range includes the detected Mining Laser Field Enhancement boost. Implant range bonuses are not modeled."><strong>${esc(metricTwo)}</strong><small>${esc(metricTwoLabel)}</small></span>
+            <span class="${activeBoost?'fleet-boost-live':''}"><strong>${esc(metricThree)}</strong><small>${esc(metricThreeLabel)}</small></span>
           </div>`;
         list.appendChild(row);
       }
@@ -2523,11 +2546,18 @@
     const fleetCount=fleetView.count,fleet=fleetView.total;
     const shipSub=fleetCount>1?`${esc(representative.character.name)} • ${fleetCount} miners selected`:`${esc(representative.character.name)} • ${esc(minerFit.name||'Saved fit')}`;
 
+    const boostActive=result.boost.ship!=='None'&&boosterInFleet();
+    const boostDescription=boostActive
+      ?`${result.boost.ship} • ${result.boost.core} core • ${result.boost.burst} burst${calcSettings.mindlink?' • mindlink':''}`
+      :'No active fleet booster';
     $('calcResults').innerHTML=`
       <article class="calc-card compact-ship-stat"><span>REFERENCE MINER</span><strong>${esc(result.shipName)}</strong><small>${shipSub}</small></article>
       <article class="calc-card expanded-stat"><span>100% FIT RATE</span><strong>${fmt(representative.rawM3,'m3')} m³/hr</strong><small>${result.m3PerSecond.toFixed(2)} m³/s • selected fit + skills + boosts</small></article>
       <article class="calc-card cycle-stat"><span>STRIP CYCLE</span><strong>${firstLaser?firstLaser.duration.toFixed(2):'—'} sec</strong><small>${esc(result.shipName)} • crystal ${esc(detectedCrystal)}</small></article>
-      <article class="calc-card boost-stat"><span>CYCLE REDUCTION</span><strong>${(result.boost.cycleReduction*100).toFixed(2)}%</strong><small>${result.boost.ship==='None'?'No active fleet booster':esc(result.boost.ship+' • '+result.boost.core+' • Burst '+result.boost.burst)}</small></article>
+      <article class="calc-card boost-stat ${boostActive?'boost-live':''}"><span>BOOST STATUS</span><strong>${boostActive?'ACTIVE':'NONE'}</strong><small>${esc(boostDescription)}</small></article>
+      <article class="calc-card boost-stat"><span>CYCLE REDUCTION</span><strong>${(result.boost.cycleReduction*100).toFixed(2)}%</strong><small>Mining Laser Optimization</small></article>
+      <article class="calc-card boost-stat"><span>EFFICIENCY BURST</span><strong>${(result.boost.efficiencyBoost*100).toFixed(1)}%</strong><small>Mining Laser Efficiency strength</small></article>
+      <article class="calc-card boost-stat"><span>RANGE BOOST</span><strong>${(Number(result.boost.rangeBonus||0)*100).toFixed(1)}%</strong><small>${firstLaser?.optimalRange?`strip range ${(Number(firstLaser.optimalRange)/1000).toFixed(1)} km`:'Field Enhancement not active'}</small></article>
       <article class="calc-card expanded-stat"><span>FLEET @ ${Number(fleetSettings.uptime).toFixed(0)}%</span><strong>${fmt(fleet,'m3')} m³/hr</strong><small>${fleetCount} selected miners • uptime-adjusted output</small></article>`;
 
     localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));
