@@ -1103,6 +1103,9 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .fleet-subhead span{min-width:0;color:var(--muted);font-size:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fleet-booster-config .calc-grid{padding:7px}
 .fleet-booster-config .check-label{margin-top:16px}
+.boost-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;padding:0 7px 7px}
+.boost-stats .calc-card{background:linear-gradient(180deg,color-mix(in srgb,var(--theme-soft,#151721) 92%,black 8%),var(--theme-panel-lo,#10121a))}
+.boost-stats .boost-status-card strong{font-size:13px}
 .fleet-manager-toolbar{position:sticky;top:48px;z-index:8;display:grid;grid-template-columns:minmax(170px,1.2fr) 145px auto auto auto;gap:5px;align-items:end;margin:0 0 6px;padding:6px;border:1px solid color-mix(in srgb,var(--theme-accent,#9d34ed) 22%,var(--line));border-radius:8px;background:color-mix(in srgb,var(--theme-panel-lo,#101018) 96%,black 4%);box-shadow:0 7px 18px #0005}
 .fleet-manager-toolbar label{display:flex;flex-direction:column;gap:3px;min-width:0;color:var(--muted);font-size:6px;font-weight:950;letter-spacing:.08em}
 .fleet-manager-toolbar input,.fleet-manager-toolbar select{width:100%;height:30px;border:1px solid var(--line);border-radius:6px;background:var(--theme-input,#0d0d14);color:var(--text);padding:4px 8px;font-size:8px;outline:none}
@@ -1132,6 +1135,7 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
   .fleet-subhead{align-items:flex-start;flex-direction:column}
   .fleet-subhead span{white-space:normal}
   .fleet-booster-config .check-label{margin-top:0}
+  .boost-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
   .fleet-manager-toolbar{position:static;grid-template-columns:1fr 1fr}
   .fleet-manager-toolbar .fleet-search{grid-column:1/-1}
   .fleet-visible-count{grid-column:1/-1}
@@ -1143,6 +1147,7 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 @media(max-width:430px){
   .fleet-manager-toolbar{grid-template-columns:1fr}
   .fleet-manager-toolbar .fleet-search{grid-column:auto}
+  .boost-stats{grid-template-columns:1fr}
   .fleet-member-metrics{grid-template-columns:1fr;padding-left:0}
   .fleet-member-metrics>span{border-left:0;border-top:1px solid color-mix(in srgb,var(--line) 70%,transparent);padding:4px 0 0}
   .fleet-member-metrics>span:first-child{border-top:0}
