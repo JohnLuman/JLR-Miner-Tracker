@@ -504,7 +504,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.3.94',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.3.95',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -2185,12 +2185,20 @@ async function positiveStandingContactsForUser(user){
     throw error;
   }
   const base=`https://esi.evetech.net/latest/characters/${source.characterId}/contacts/?datasource=tranquility`;
-  const first=await esiGet(`${base}&page=1`,access);
+  // Contacts and public affiliation are independent requests. Starting them
+  // together removes a full ESI round trip from every cold threat scan.
+  const [first,profileResult]=await Promise.all([
+    esiGet(`${base}&page=1`,access),
+    esiGet(`https://esi.evetech.net/latest/characters/${source.characterId}/?datasource=tranquility`).catch(err=>{
+      console.warn('Threat friendly affiliation lookup failed',String(err.message||err));
+      return null;
+    }),
+  ]);
   let rows=Array.isArray(first.data)?[...first.data]:[];
   const pages=Math.max(1,Number(first.headers.get('x-pages')||1));
-  for(let page=2;page<=pages;page++){
-    const next=await esiGet(`${base}&page=${page}`,access);
-    if(Array.isArray(next.data))rows.push(...next.data);
+  if(pages>1){
+    const remaining=await Promise.all(Array.from({length:pages-1},(_,index)=>esiGet(`${base}&page=${index+2}`,access)));
+    for(const next of remaining)if(Array.isArray(next.data))rows.push(...next.data);
   }
   const sets={character:new Set(),corporation:new Set(),alliance:new Set(),faction:new Set()};
   for(const row of rows){
@@ -2202,14 +2210,10 @@ async function positiveStandingContactsForUser(user){
   // EVE does not require a character to add their own corporation/alliance as
   // a personal contact. Treat both as friendly so same-team pilots do not
   // appear as threats when the positive-standings filter is enabled.
-  try{
-    const profile=(await esiGet(`https://esi.evetech.net/latest/characters/${source.characterId}/?datasource=tranquility`)).data;
-    if(Number(profile?.corporation_id))sets.corporation.add(Number(profile.corporation_id));
-    if(Number(profile?.alliance_id))sets.alliance.add(Number(profile.alliance_id));
-    if(Number(profile?.faction_id))sets.faction.add(Number(profile.faction_id));
-  }catch(err){
-    console.warn('Threat friendly affiliation lookup failed',String(err.message||err));
-  }
+  const profile=profileResult?.data;
+  if(Number(profile?.corporation_id))sets.corporation.add(Number(profile.corporation_id));
+  if(Number(profile?.alliance_id))sets.alliance.add(Number(profile.alliance_id));
+  if(Number(profile?.faction_id))sets.faction.add(Number(profile.faction_id));
   const data={sourceCharacterId:key,sourceCharacterName:source.name,sets};
   threatContactsCache.set(key,{at:Date.now(),data});
   return data;
@@ -2293,12 +2297,16 @@ async function getThreatCharacterIntel(character){
   pvpDb.threat.characters[key]=entry;
   return{...entry,cacheHit:false};
 }
-async function buildThreatIntel(scanText,{ignoreOwnIds=[],positiveStandings=null}={}){
+async function buildThreatIntel(scanText,{ignoreOwnIds=[],positiveStandings=null,positiveStandingsPromise=null}={}){
   const parsed=parseThreatPaste(scanText);
-  const [resolved,resolvedShipNames]=await Promise.all([
+  // Resolve the paste and load standings concurrently. Previously contacts had
+  // to finish before either name lookup could start, adding several seconds.
+  const [resolved,resolvedShipNames,resolvedStandings]=await Promise.all([
     resolveThreatCharacterNames(parsed.names),
     resolveThreatShipNames((parsed.shipNames||[]).map(row=>row.name)),
+    positiveStandingsPromise||Promise.resolve(positiveStandings),
   ]);
+  positiveStandings=resolvedStandings;
   const ordered=[],unresolved=[];
   for(const name of parsed.names){
     const match=resolved.get(String(name).toLowerCase());
@@ -2966,7 +2974,7 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
   };
 }
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.94',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.95',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){const u=readSession(req);return json(res,200,{authenticated:Boolean(u),user:u?myProfile(u):null})}
   const user=requireUser(req,res);if(!user)return;
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
@@ -3022,13 +3030,12 @@ async function routeApi(req,res,url) {
     const ignoreOwn=body?.ignoreOwn!==false;
     const ignorePositive=body?.ignorePositive!==false;
     try{
-      const positiveStandings=ignorePositive?await positiveStandingContactsForUser(user):null;
       const cacheKey=crypto.createHash('sha256').update(`${user.id}|${ignoreOwn?'1':'0'}|${ignorePositive?'1':'0'}|${scanText}`).digest('hex');
       const cached=threatScanCache.get(cacheKey);
       if(cached&&Date.now()-cached.at<2*60*1000)return json(res,200,{...cached.data,cached:true});
       const data=await buildThreatIntel(scanText,{
         ignoreOwnIds:ignoreOwn?user.characterIds:[],
-        positiveStandings,
+        positiveStandingsPromise:ignorePositive?positiveStandingContactsForUser(user):Promise.resolve(null),
       });
       threatScanCache.set(cacheKey,{at:Date.now(),data});
       if(threatScanCache.size>40){
@@ -3083,7 +3090,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.3.94 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.3.95 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setInterval(()=>resetExpired(true),15_000).unref();
 async function runAutomaticSyncLoop(){
   const startedAt=Date.now();
