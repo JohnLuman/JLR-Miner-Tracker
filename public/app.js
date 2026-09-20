@@ -1809,11 +1809,11 @@
   function skillLabelKey(character,key){const id=calcData()?.skillIds?.[key];return id?skillLabel(character,id):'Not synced'}
   function calcCharacter(id){return me?.characters?.find(c=>String(c.characterId)===String(id))||null}
   function calcFitting(character,id){return character?.fittings?.find(f=>String(f.fittingId)===String(id))||null}
-  function fitSortDescending(a,b){
+  function fitSortAscending(a,b){
     const options={numeric:true,sensitivity:'base'};
-    return String(b?.shipName||'').localeCompare(String(a?.shipName||''),undefined,options)
-      ||String(b?.name||'').localeCompare(String(a?.name||''),undefined,options)
-      ||String(b?.fittingId||'').localeCompare(String(a?.fittingId||''),undefined,options);
+    return String(a?.shipName||'').localeCompare(String(b?.shipName||''),undefined,options)
+      ||String(a?.name||'').localeCompare(String(b?.name||''),undefined,options)
+      ||String(a?.fittingId||'').localeCompare(String(b?.fittingId||''),undefined,options);
   }
   const GAS_MODULES={
     'Gas Cloud Scoop I':{family:'SCOOP',duration:30,yieldM3:10,residueChance:0,residueMultiplier:0},
@@ -1846,7 +1846,7 @@
     const data=calcData();
     return(character?.fittings||[])
       .filter(f=>Boolean(data?.ships?.[f.shipName])||isGasFit(f))
-      .sort(fitSortDescending);
+      .sort(fitSortAscending);
   }
   function defaultFleetFit(fits){return fits.find(isOreFit)||fits[0]||null}
   function groupedFitOptions(fits,selectedId){
