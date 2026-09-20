@@ -3635,7 +3635,7 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
       if(Number(affiliation?.corporation_id)!==corporationId)return null;
       return{
         characterId:id,
-        name:String(state.characters?.[String(id)]?.name||character?.name||id),
+        name:String(state.characters?.[String(id)]?.name||(id===primaryId?character?.name:null)||id),
         primary:id===primaryId,
       };
     }).filter(Boolean);
