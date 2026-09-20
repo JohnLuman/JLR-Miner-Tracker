@@ -40,7 +40,7 @@
   let threatShareUrl='';
   let threatShareError='';
 
-  const DEFAULT_FLEET = { members:{}, uptime:100, payout:95 };
+  const DEFAULT_FLEET = { members:{}, uptime:100, payout:95, order:[] };
   function loadFleet() {
     try {
       const raw=JSON.parse(localStorage.getItem('jlrFleet')||'{}');
@@ -48,10 +48,13 @@
         members:raw.members&&typeof raw.members==='object'?raw.members:{},
         uptime:Math.min(100,Math.max(1,Number(raw.uptime)||100)),
         payout:Math.min(100,Math.max(1,Number(raw.payout)||95)),
+        order:Array.isArray(raw.order)?raw.order.map(String):[],
       };
-    } catch { return { members:{}, uptime:100, payout:95 }; }
+    } catch { return { ...DEFAULT_FLEET, members:{}, order:[] }; }
   }
   let fleetSettings = loadFleet();
+  let fleetArrangeMode=false;
+  let fleetDragId='';
   const DEFAULT_CALC = { boosterCharacterId:'', boosterFittingId:'', mindlink:true };
   function loadCalc(){try{return{...DEFAULT_CALC,...JSON.parse(localStorage.getItem('jlrMiningCalc')||'{}')}}catch{return{...DEFAULT_CALC}}}
   let calcSettings=loadCalc();
@@ -1356,7 +1359,26 @@
   function skillLabelKey(character,key){const id=calcData()?.skillIds?.[key];return id?skillLabel(character,id):'Not synced'}
   function calcCharacter(id){return me?.characters?.find(c=>String(c.characterId)===String(id))||null}
   function calcFitting(character,id){return character?.fittings?.find(f=>String(f.fittingId)===String(id))||null}
-  function miningFits(character){const data=calcData();return(character?.fittings||[]).filter(f=>Boolean(data?.ships?.[f.shipName]))}
+  function fitSortDescending(a,b){
+    const options={numeric:true,sensitivity:'base'};
+    return String(b?.shipName||'').localeCompare(String(a?.shipName||''),undefined,options)
+      ||String(b?.name||'').localeCompare(String(a?.name||''),undefined,options)
+      ||String(b?.fittingId||'').localeCompare(String(a?.fittingId||''),undefined,options);
+  }
+  function miningFits(character){
+    const data=calcData();
+    return(character?.fittings||[]).filter(f=>Boolean(data?.ships?.[f.shipName])).sort(fitSortDescending);
+  }
+  function groupedFitOptions(fits,selectedId){
+    if(!fits.length)return'<option value="">No supported saved mining fit</option>';
+    const groups=new Map();
+    for(const fit of fits){
+      const hull=String(fit.shipName||'Other');
+      if(!groups.has(hull))groups.set(hull,[]);
+      groups.get(hull).push(fit);
+    }
+    return[...groups].map(([hull,rows])=>`<optgroup label="${esc(hull)}">${rows.map(f=>`<option value="${esc(f.fittingId)}" ${String(f.fittingId)===String(selectedId)?'selected':''}>${esc(f.shipName)} — ${esc(f.name)}</option>`).join('')}</optgroup>`).join('');
+  }
   function boosterFits(character){return(character?.fittings||[]).filter(f=>['Porpoise','Orca','Rorqual','Outrider'].includes(f.shipName))}
   function boosterInFleet(){
     const id=String(calcSettings.boosterCharacterId||'');
@@ -1588,7 +1610,15 @@
     if(document.activeElement!==$('uptime'))$('uptime').value=Number(fleetSettings.uptime)||100;
     if(document.activeElement!==$('payout'))$('payout').value=Number(fleetSettings.payout)||95;
 
-    const chars=me.characters||[];
+    const sourceChars=me.characters||[];
+    const originalOrder=new Map(sourceChars.map((character,index)=>[String(character.characterId),index]));
+    const customOrder=new Map((fleetSettings.order||[]).map((id,index)=>[String(id),index]));
+    const chars=[...sourceChars].sort((a,b)=>{
+      const aId=String(a.characterId),bId=String(b.characterId);
+      const aOrder=customOrder.has(aId)?customOrder.get(aId):100000+(originalOrder.get(aId)||0);
+      const bOrder=customOrder.has(bId)?customOrder.get(bId):100000+(originalOrder.get(bId)||0);
+      return aOrder-bOrder;
+    });
     if(!chars.some(character=>String(character.characterId)===String(calcSettings.boosterCharacterId))){
       calcSettings.boosterCharacterId='';
       calcSettings.boosterFittingId='';
@@ -1620,7 +1650,9 @@
       for(const character of chars){
         const id=String(character.characterId),cfg=fleetSettings.members[id],fits=miningFits(character),entry=byId.get(id);
         const row=document.createElement('div');row.className=`fleet-member${cfg.enabled?' selected':''}`;
-        const fitOptions=fits.length?fits.map(f=>`<option value="${f.fittingId}" ${String(f.fittingId)===String(cfg.fittingId)?'selected':''}>${esc(f.shipName)} — ${esc(f.name)}</option>`).join(''):'<option value="">No supported saved mining fit</option>';
+        row.dataset.id=id;
+        row.draggable=fleetArrangeMode;
+        const fitOptions=groupedFitOptions(fits,cfg.fittingId);
         let output='Excluded from fleet output';
         if(cfg.enabled){
           if(entry?.result)output=`${fmt(entry.effectiveM3,'m3')} m³/hr @ ${Number(fleetSettings.uptime).toFixed(0)}%`;
@@ -1629,13 +1661,66 @@
         const isBooster=id===String(calcSettings.boosterCharacterId||'');
         const boosterFitText=isBooster?(boosterFit?`${boosterFit.shipName} — ${boosterFit.name}` :'No saved booster fit'):'';
         if(isBooster)row.classList.add('booster');
+        if(fleetArrangeMode)row.classList.add('arranging');
         row.innerHTML=`
+          ${fleetArrangeMode?'<span class="fleet-drag-grip" aria-hidden="true">⠿</span>':''}
           <label class="fleet-member-toggle"><input class="fleet-member-check" data-id="${id}" type="checkbox" ${cfg.enabled?'checked':''} ${!isBooster&&!fits.length?'disabled':''}><img src="${esc(character.portrait)}" alt=""><span><strong>${esc(character.name)}</strong><small>${isBooster?(cfg.enabled?'Selected booster • in fleet':'Selected booster • not in fleet'):fits.length?`${fits.length} mining fit${fits.length===1?'':'s'}`:'No mining fits'}</small></span></label>
           ${isBooster?`<div class="fleet-booster-fit-inline">${esc(boosterFitText)}</div>`:`<select class="fleet-fit-select" data-id="${id}" ${fits.length?'':'disabled'}>${fitOptions}</select>`}
           <strong class="fleet-member-output">${esc(isBooster?(cfg.enabled?'BOOST ONLY • m³ excluded':'Booster excluded from fleet'):output)}</strong>`;
         list.appendChild(row);
       }
     }
+
+    const arrange=$('fleetArrange'),reset=$('fleetOrderReset'),hint=$('fleetArrangeHint');
+    if(arrange){
+      arrange.classList.toggle('active',fleetArrangeMode);
+      arrange.setAttribute('aria-pressed',String(fleetArrangeMode));
+      arrange.textContent=fleetArrangeMode?'✓ ARRANGING TOONS':'↕ ARRANGE TOONS';
+    }
+    if(reset)reset.disabled=!(fleetSettings.order||[]).length;
+    if(hint)hint.textContent=fleetArrangeMode?'Drag a toon above or below another':'Fits grouped by hull • Z→A';
+
+    list.querySelectorAll('.fleet-member').forEach(row=>{
+      row.addEventListener('dragstart',event=>{
+        if(!fleetArrangeMode){event.preventDefault();return}
+        fleetDragId=String(row.dataset.id||'');
+        row.classList.add('dragging');
+        if(event.dataTransfer){event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',fleetDragId)}
+      });
+      row.addEventListener('dragover',event=>{
+        if(!fleetArrangeMode||!fleetDragId||fleetDragId===String(row.dataset.id||''))return;
+        event.preventDefault();
+        list.querySelectorAll('.drag-before,.drag-after').forEach(item=>{if(item!==row)item.classList.remove('drag-before','drag-after')});
+        const after=event.clientY>row.getBoundingClientRect().top+row.getBoundingClientRect().height/2;
+        row.classList.toggle('drag-after',after);
+        row.classList.toggle('drag-before',!after);
+        if(event.dataTransfer)event.dataTransfer.dropEffect='move';
+      });
+      row.addEventListener('dragleave',event=>{
+        if(event.relatedTarget&&row.contains(event.relatedTarget))return;
+        row.classList.remove('drag-before','drag-after');
+      });
+      row.addEventListener('drop',event=>{
+        if(!fleetArrangeMode||!fleetDragId)return;
+        event.preventDefault();
+        const targetId=String(row.dataset.id||'');
+        const after=row.classList.contains('drag-after');
+        const ids=chars.map(character=>String(character.characterId));
+        const from=ids.indexOf(fleetDragId);
+        if(from>=0&&targetId&&targetId!==fleetDragId){
+          ids.splice(from,1);
+          const targetIndex=ids.indexOf(targetId);
+          ids.splice(Math.max(0,targetIndex+(after?1:0)),0,fleetDragId);
+          fleetSettings.order=ids;
+          localStorage.setItem('jlrFleet',JSON.stringify(fleetSettings));
+          renderFleet();
+        }
+      });
+      row.addEventListener('dragend',()=>{
+        fleetDragId='';
+        list.querySelectorAll('.dragging,.drag-before,.drag-after').forEach(item=>item.classList.remove('dragging','drag-before','drag-after'));
+      });
+    });
 
     list.querySelectorAll('.fleet-member-check').forEach(input=>input.addEventListener('change',()=>{
       const id=input.dataset.id;if(!fleetSettings.members[id])fleetSettings.members[id]={enabled:false,fittingId:''};
@@ -2289,6 +2374,8 @@
   $('boardArrange').addEventListener('click',toggleBoardArrange);
   $('boardSize').addEventListener('click',cycleBoardSize);
   $('boardReset').addEventListener('click',resetBoardOrder);
+  $('fleetArrange').addEventListener('click',()=>{fleetArrangeMode=!fleetArrangeMode;renderFleet()});
+  $('fleetOrderReset').addEventListener('click',()=>{fleetSettings.order=[];localStorage.setItem('jlrFleet',JSON.stringify(fleetSettings));renderFleet();toast('Toon order reset.')});
   syncBoardControls();
   $('systemSelect').addEventListener('change',()=>chooseSystem($('systemSelect').value));
   $('scanCharacter').addEventListener('change',()=>{scanCharacterId=$('scanCharacter').value;localStorage.setItem('jlrScanCharacter',scanCharacterId);renderScanCharacters()});
