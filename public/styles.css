@@ -1294,3 +1294,17 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
   .doctrine-shop-row{grid-template-columns:minmax(0,1fr) 64px}
   .doctrine-shop-remove{grid-column:1/-1}
 }
+
+
+/* v2.8.6 Doctrine shopping quantity modes */
+.doctrine-shopping-mode{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px;align-items:center;padding:6px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--theme-input,#0d0d14) 55%,transparent)}
+.doctrine-shopping-mode-buttons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}
+.doctrine-shopping-mode-buttons button,.doctrine-shopping-recalc{min-height:28px;border:1px solid var(--line);border-radius:6px;background:var(--theme-soft,#111119);color:var(--muted);padding:4px 7px;font-size:6px;font-weight:950;letter-spacing:.055em}
+.doctrine-shopping-mode-buttons button:hover,.doctrine-shopping-recalc:not(:disabled):hover{filter:brightness(1.12)}
+.doctrine-shopping-mode-buttons button.active{border-color:var(--theme-accent-hi,#ce68ff);background:linear-gradient(180deg,var(--theme-tab-hi,#4d236a),var(--theme-tab-lo,#2b173d));color:#fff;box-shadow:inset 0 1px color-mix(in srgb,#fff 25%,transparent)}
+.doctrine-shopping-recalc{border-color:var(--theme-accent-line,var(--line));color:var(--text);white-space:nowrap}
+.doctrine-shopping-recalc:disabled{opacity:.38;cursor:default}
+@media(max-width:620px){
+  .doctrine-shopping-mode{grid-template-columns:1fr}
+  .doctrine-shopping-recalc{width:100%}
+}
