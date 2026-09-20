@@ -5,6 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
+import { DOCTRINE_SEED_B64 } from './lib/doctrine-seed.mjs';
 import { parseProbeScan, parseA0Scan, parseIceScan } from './lib/probe-scan.mjs';
 import { parseThreatPaste, compactThreatStats, threatActivityLabels, fountainThreatTags, jlrThreatScore, threatIgnoreReason } from './lib/threat-scan.mjs';
 
@@ -15,7 +16,6 @@ const STATE_FILE = path.join(DATA_DIR, 'state.json');
 const PVP_DB_FILE = path.join(DATA_DIR, 'pvp-cache.json');
 const KEY_FILE = path.join(DATA_DIR, 'token.key');
 const SOURCE_FILE = path.join(__dirname, 'source-data.json');
-const DOCTRINE_SEED_FILE = path.join(__dirname, 'doctrine-seed.b64');
 const ENV_FILE = path.join(__dirname, '.env');
 
 await fsp.mkdir(DATA_DIR, { recursive: true });
@@ -951,7 +951,8 @@ async function bestPricesReachableAt(orders,targetSystemId,targetLocationId){
 
 async function loadDoctrineSeed(){
   if(doctrineSeedCache)return doctrineSeedCache;
-  const encoded=(await fsp.readFile(DOCTRINE_SEED_FILE,'utf8')).trim();
+  const encoded=String(DOCTRINE_SEED_B64||'').trim();
+  if(!encoded)throw new Error('Doctrine seed is empty.');
   const raw=zlib.gunzipSync(Buffer.from(encoded,'base64')).toString('utf8');
   const parsed=JSON.parse(raw);
   if(!Array.isArray(parsed?.rows)||!parsed.rows.length)throw new Error('Doctrine seed is empty.');
