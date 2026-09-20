@@ -570,7 +570,7 @@
   function showApp(){$('loginView').classList.add('hidden');$('app').classList.remove('hidden');}
   let activeTab=localStorage.getItem('jlrTab')||'fields';
   function applyTab(tab){
-    const valid=['fields','fleet','performance','ice','pvp','threat','mer','toons'];
+    const valid=['fields','fleet','performance','ice','gas','pvp','threat','mer','toons'];
     activeTab=valid.includes(tab)?tab:'fields';
     localStorage.setItem('jlrTab',activeTab);
     document.querySelectorAll('.app-tab').forEach(button=>button.classList.toggle('active',button.dataset.tab===activeTab));
@@ -594,6 +594,7 @@
     const fleet=makePanel('fleet');
     const performance=makePanel('performance');
     const ice=makePanel('ice');
+    const gas=makePanel('gas');
     const pvp=makePanel('pvp');
     pvp.id='pvpIntelPanel';
     const threat=makePanel('threat');
@@ -629,6 +630,8 @@
 
     const icePanel=document.querySelector('.ice-mining-panel');
     if(icePanel)ice.appendChild(icePanel);
+    const gasPanel=document.querySelector('.gas-huffing-panel');
+    if(gasPanel)gas.appendChild(gasPanel);
 
     const toonPanel=document.querySelector('.esi-panel');
     if(toonPanel)toons.appendChild(toonPanel);
@@ -1345,8 +1348,9 @@
       const id=String(character.characterId),cfg=fleetSettings.members?.[id]||{};
       if(!cfg.enabled||id===String(calcSettings.boosterCharacterId||''))continue;
       const fits=miningFits(character);
-      const fit=fits.find(x=>String(x.fittingId)===String(cfg.fittingId))||fits[0]||null;
+      const fit=fits.find(x=>String(x.fittingId)===String(cfg.fittingId))||defaultFleetFit(fits);
       if(!fit){entries.push({character,fit:null,error:'No mining fit'});continue}
+      if(isGasFit(fit)){entries.push({character,fit,error:'Gas fit — output is calculated on the Gas tab',gas:true});continue}
       try{
         const result=engine.calculate({
           data,
@@ -1372,7 +1376,7 @@
   function saveFleet(){localStorage.setItem('jlrFleet',JSON.stringify(fleetSettings));renderAll()}
   function saveCalc(){
     localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));
-    if(state){renderFleet();renderTop();renderIceMining()}
+    if(state){renderFleet();renderTop();renderIceMining();renderGasHuffing()}
     renderCalculator();
   }
   function calcData(){return state?.source?.yieldCalculator||null}
@@ -1386,19 +1390,49 @@
       ||String(b?.name||'').localeCompare(String(a?.name||''),undefined,options)
       ||String(b?.fittingId||'').localeCompare(String(a?.fittingId||''),undefined,options);
   }
+  const GAS_MODULES={
+    'Gas Cloud Scoop I':{family:'SCOOP',duration:30,yieldM3:10,residueChance:0,residueMultiplier:0},
+    'Gas Cloud Scoop II':{family:'SCOOP',duration:40,yieldM3:20,residueChance:.34,residueMultiplier:1},
+    "'Crop' Gas Cloud Scoop":{family:'SCOOP',duration:40,yieldM3:20,residueChance:1,residueMultiplier:2},
+    "'Plow' Gas Cloud Scoop":{family:'SCOOP',duration:40,yieldM3:20,residueChance:1,residueMultiplier:4},
+    'Syndicate Gas Cloud Scoop':{family:'SCOOP',duration:30,yieldM3:20,residueChance:0,residueMultiplier:0},
+    'Gas Cloud Harvester I':{family:'HARVESTER',duration:100,yieldM3:50,residueChance:0,residueMultiplier:0},
+    'Gas Cloud Harvester II':{family:'HARVESTER',duration:80,yieldM3:100,residueChance:.34,residueMultiplier:1},
+    'ORE Gas Cloud Harvester':{family:'HARVESTER',duration:80,yieldM3:100,residueChance:0,residueMultiplier:0},
+  };
+  const GAS_SHIP_BONUSES={
+    Venture:{miningFrigate:0.05,roleYield:1},
+    Prospect:{miningFrigate:0.05,roleYield:1},
+    'Venture Consortium Issue':{miningFrigate:0.05,roleYield:1},
+    Endurance:{},
+    Covetor:{barge:0.03,roleDuration:0.30},
+    Retriever:{barge:0.02,roleDuration:0.125},
+    Procurer:{barge:0.02},
+    Hulk:{barge:0.03,exhumers:0.03,roleDuration:0.30},
+    Mackinaw:{barge:0.03,exhumers:0.03,roleDuration:0.125},
+    Skiff:{},
+  };
+  function gasModulesInFit(fit){
+    return (Array.isArray(fit?.items)?fit.items:[]).filter(row=>Object.prototype.hasOwnProperty.call(GAS_MODULES,String(row.name||'')));
+  }
+  function isGasFit(fit){return gasModulesInFit(fit).length>0}
+  function isOreFit(fit){return Boolean(calcData()?.ships?.[fit?.shipName])&&!isGasFit(fit)}
   function miningFits(character){
     const data=calcData();
-    return(character?.fittings||[]).filter(f=>Boolean(data?.ships?.[f.shipName])).sort(fitSortDescending);
+    return(character?.fittings||[])
+      .filter(f=>Boolean(data?.ships?.[f.shipName])||isGasFit(f))
+      .sort(fitSortDescending);
   }
+  function defaultFleetFit(fits){return fits.find(isOreFit)||fits[0]||null}
   function groupedFitOptions(fits,selectedId){
-    if(!fits.length)return'<option value="">No supported saved mining fit</option>';
+    if(!fits.length)return'<option value="">No supported saved mining or gas fit</option>';
     const groups=new Map();
     for(const fit of fits){
       const hull=String(fit.shipName||'Other');
       if(!groups.has(hull))groups.set(hull,[]);
       groups.get(hull).push(fit);
     }
-    return[...groups].map(([hull,rows])=>`<optgroup label="${esc(hull)}">${rows.map(f=>`<option value="${esc(f.fittingId)}" ${String(f.fittingId)===String(selectedId)?'selected':''}>${esc(f.shipName)} — ${esc(f.name)}</option>`).join('')}</optgroup>`).join('');
+    return[...groups].map(([hull,rows])=>`<optgroup label="${esc(hull)}">${rows.map(f=>`<option value="${esc(f.fittingId)}" ${String(f.fittingId)===String(selectedId)?'selected':''}>${isGasFit(f)?'[GAS] ':''}${esc(f.shipName)} — ${esc(f.name)}</option>`).join('')}</optgroup>`).join('');
   }
   function boosterFits(character){return(character?.fittings||[]).filter(f=>['Porpoise','Orca','Rorqual','Outrider'].includes(f.shipName))}
   function boosterInFleet(){
@@ -1428,10 +1462,70 @@
     Skiff:{barge:0.04,exhumers:0,role:0},
   };
   function skillLevel(character,id){return Number(character?.skills?.[String(id)]?.level||0)}
+  function gasFitStats(character,fit){
+    if(!character||!fit||!isGasFit(fit))return null;
+    const ship=GAS_SHIP_BONUSES[fit.shipName]||{};
+    const gasRows=gasModulesInFit(fit);
+    if(!Object.prototype.hasOwnProperty.call(character.skills||{},'25544'))return{character,fit,error:'Use Sync EVE Data to load the Gas Cloud Harvesting skill'};
+
+    const miningFrigate=skillLevel(character,32918);
+    const gasSkill=skillLevel(character,25544);
+    const barge=skillLevel(character,17940);
+    const exhumers=skillLevel(character,22551);
+    if(ship.miningFrigate&&!Object.prototype.hasOwnProperty.call(character.skills||{},'32918')){
+      return{character,fit,error:'Use Sync EVE Data to load the Mining Frigate skill'};
+    }
+
+    const booster=calcCharacter(calcSettings.boosterCharacterId);
+    const boosterFit=calcFitting(booster,calcSettings.boosterFittingId);
+    const activeBooster=boosterInFleet();
+    const boost=window.JLRYieldMath?.boostBreakdown(
+      calcData(),
+      activeBooster?(booster?.skills||{}):{},
+      activeBooster?boosterFit:null,
+      activeBooster&&Boolean(calcSettings.mindlink),
+    )||{cycleReduction:0,rangeBonus:0,ship:'None'};
+
+    const durationMultiplier=
+      Math.max(.05,1-Number(ship.miningFrigate||0)*miningFrigate)*
+      Math.max(.05,1-Number(ship.barge||0)*barge)*
+      Math.max(.05,1-Number(ship.exhumers||0)*exhumers)*
+      Math.max(.05,1-Number(ship.roleDuration||0))*
+      Math.max(.05,1-Number(boost.cycleReduction||0));
+    const yieldMultiplier=1+Number(ship.roleYield||0);
+
+    let m3PerHour=0,moduleCount=0,activationsPerHour=0;
+    const modules=[];
+    for(const row of gasRows){
+      const name=String(row.name||''),q=Math.max(1,Number(row.quantity||1)),spec=GAS_MODULES[name];
+      const duration=Number(spec.duration)*durationMultiplier;
+      const yieldM3=Number(spec.yieldM3)*yieldMultiplier;
+      const perModuleM3Hr=duration>0?yieldM3*(3600/duration):0;
+      moduleCount+=q;
+      activationsPerHour+=duration>0?(3600/duration)*q:0;
+      m3PerHour+=perModuleM3Hr*q;
+      modules.push({
+        name,quantity:q,family:spec.family,duration,yieldM3,
+        residueChance:Number(spec.residueChance||0),
+        residueMultiplier:Number(spec.residueMultiplier||0),
+        range:1500*(1+Number(boost.rangeBonus||0)),
+      });
+    }
+    const cycle=activationsPerHour>0?moduleCount*3600/activationsPerHour:0;
+    const gasVolume=Math.max(.001,Number(state?.source?.gas?.volume)||10);
+    const unitsPerHour=m3PerHour/gasVolume;
+    const residue=modules.map(row=>row.residueChance>0?`${Math.round(row.residueChance*100)}% ×${row.residueMultiplier}`:'NONE');
+    const residueSummary=[...new Set(residue)].join(' / ');
+    return{
+      character,fit,ship:fit.shipName,modules,moduleCount,cycle,m3PerHour,unitsPerHour,gasSkill,miningFrigate,barge,exhumers,boost,
+      range:Math.max(0,...modules.map(row=>Number(row.range)||0)),
+      residueSummary,
+    };
+  }
   function selectedFleetFit(character){
     const cfg=fleetSettings.members?.[String(character?.characterId)]||{};
     const fits=miningFits(character);
-    return fits.find(f=>String(f.fittingId)===String(cfg.fittingId))||fits[0]||null;
+    return fits.find(f=>String(f.fittingId)===String(cfg.fittingId))||defaultFleetFit(fits);
   }
   function iceFitStats(character,fit){
     if(!character||!fit)return null;
@@ -1703,7 +1797,7 @@
     for(const character of chars){
       const id=String(character.characterId),fits=miningFits(character);
       const existing=fleetSettings.members[id]&&typeof fleetSettings.members[id]==='object'?fleetSettings.members[id]:{};
-      const chosen=fits.find(x=>String(x.fittingId)===String(existing.fittingId))||fits[0]||null;
+      const chosen=fits.find(x=>String(x.fittingId)===String(existing.fittingId))||defaultFleetFit(fits);
       fleetSettings.members[id]={enabled:Boolean(existing.enabled),fittingId:chosen?String(chosen.fittingId):''};
     }
 
@@ -2403,6 +2497,105 @@
         '/hr • C-N refine '+(totalCn?fmt(totalCn):'—')+'/hr</small></div>';
     }
   }
+  function renderGasHuffing(){
+    if(!state||!$('gasFleetOutput'))return;
+    const gas=state.source?.gas||null;
+    if(!gas){
+      $('gasFleetOutput').innerHTML='<div class="visual-empty">Gas data is not loaded yet.</div>';
+      return;
+    }
+    const rawJita=Number(gas.market?.raw?.jita?.buy);
+    const rawCn=Number(gas.market?.raw?.cn?.buy);
+    const compressedJita=Number(gas.market?.compressed?.jita?.buy);
+    const compressedCn=Number(gas.market?.compressed?.cn?.buy);
+    const uptime=Math.min(100,Math.max(1,Number(fleetSettings.uptime)||100))/100;
+
+    $('gasRawJita').textContent=Number.isFinite(rawJita)&&rawJita>0?fmt(rawJita)+' ISK':'—';
+    $('gasRawJitaSub').textContent=Number.isFinite(rawCn)&&rawCn>0
+      ?`raw Celadon • C-N ${fmt(rawCn)} • prices ${ago(state.market?.lastUpdatedAt)}`
+      :`raw Celadon • prices ${ago(state.market?.lastUpdatedAt)}`;
+    $('gasCompressedJita').textContent=Number.isFinite(compressedJita)&&compressedJita>0?fmt(compressedJita)+' ISK':'—';
+    $('gasCompressedJitaSub').textContent=Number.isFinite(compressedCn)&&compressedCn>0
+      ?`compressed 1:1 • C-N ${fmt(compressedCn)}`
+      :'compressed 1:1 equivalent';
+
+    const boosterId=String(calcSettings.boosterCharacterId||'');
+    const selected=(me?.characters||[]).filter(ch=>{
+      const id=String(ch.characterId);
+      return fleetSettings.members?.[id]?.enabled&&id!==boosterId;
+    });
+    const rows=selected.map(ch=>{
+      const fit=selectedFleetFit(ch);
+      return gasFitStats(ch,fit)||{character:ch,fit,error:'Selected Fleet & Fits loadout is not a gas fit'};
+    });
+    const valid=rows.filter(row=>!row.error&&row.m3PerHour>0);
+    const fullM3=valid.reduce((sum,row)=>sum+Number(row.m3PerHour||0),0);
+    const targetM3=fullM3*uptime;
+    const fullUnits=valid.reduce((sum,row)=>sum+Number(row.unitsPerHour||0),0);
+    const targetUnits=fullUnits*uptime;
+    const rawJitaHour=Number.isFinite(rawJita)&&rawJita>0?targetUnits*rawJita:0;
+    const rawCnHour=Number.isFinite(rawCn)&&rawCn>0?targetUnits*rawCn:0;
+    const compressedJitaHour=Number.isFinite(compressedJita)&&compressedJita>0?targetUnits*compressedJita:0;
+
+    $('gasFleetM3').textContent=valid.length?fmt(targetM3,'m3')+' m³/hr':'—';
+    $('gasFleetM3Sub').textContent=valid.length
+      ?`${valid.length} gas huffer${valid.length===1?'':'s'} • ${Math.round(uptime*100)}% uptime • ${fmt(fullM3,'m3')} full rate`
+      :'Select gas fits in Fleet & Fits';
+    $('gasFleetIsk').textContent=rawJitaHour?fmt(rawJitaHour)+' ISK/hr':'—';
+    $('gasFleetIskSub').textContent=rawJitaHour
+      ?`${fmt(targetUnits)} units/hr • raw Jita buy`
+      :'Waiting for gas fleet + Jita price';
+
+    if(!rows.length){
+      $('gasFleetOutput').innerHTML='<div class="visual-empty">Select gas huffers in Fleet & Fits to calculate output.</div>';
+    }else{
+      const body=rows.map(row=>{
+        if(row.error||!row.m3PerHour){
+          return '<div class="ice-fleet-row error"><div><strong>'+esc(row.character?.name||'Huffer')+'</strong><small>'+esc(row.fit?.name||'No selected fit')+'</small></div><span>'+esc(row.error||'No supported gas scoop or harvester')+'</span></div>';
+        }
+        const units=row.unitsPerHour*uptime,m3=row.m3PerHour*uptime;
+        const jita=Number.isFinite(rawJita)&&rawJita>0?units*rawJita:0;
+        const boostName=row.boost?.ship&&row.boost.ship!=='None'?row.boost.ship:'No boost';
+        const range=row.range>0?(row.range/1000).toFixed(1)+' km':'—';
+        return '<div class="ice-fleet-row gas-fleet-row">'+
+          '<div><strong>'+esc(row.character.name)+'</strong><small>'+esc(row.fit.shipName)+' • '+esc(row.fit.name||'Saved fit')+' • '+esc(boostName)+' • '+range+' range</small></div>'+
+          '<div><span>Cycle</span><strong>'+row.cycle.toFixed(1)+'s</strong></div>'+
+          '<div><span>Units/hr</span><strong>'+fmt(units)+'</strong></div>'+
+          '<div><span>m³/hr</span><strong>'+fmt(m3,'m3')+'</strong></div>'+
+          '<div><span>Jita/hr</span><strong>'+(jita?fmt(jita):'—')+'</strong></div>'+
+          '<div><span>Residue</span><strong>'+esc(row.residueSummary||'NONE')+'</strong></div>'+
+        '</div>';
+      }).join('');
+      $('gasFleetOutput').innerHTML=body+
+        '<div class="ice-fleet-total"><span>Celadon fleet target</span><strong>'+
+        fmt(targetUnits)+' units/hr • '+fmt(targetM3,'m3')+' m³/hr</strong><small>Raw Jita '+
+        (rawJitaHour?fmt(rawJitaHour):'—')+'/hr • Raw C-N '+(rawCnHour?fmt(rawCnHour):'—')+
+        '/hr • Compressed Jita '+(compressedJitaHour?fmt(compressedJitaHour):'—')+'/hr</small></div>';
+    }
+
+    const sites=Array.isArray(gas.sites)?gas.sites:[];
+    $('gasSiteTable').innerHTML=sites.length?sites.map(site=>{
+      const units=Number(site.units)||0,m3=units*Number(gas.volume||10);
+      const clearHours=targetUnits>0?units/targetUnits:null;
+      const clear=clearHours==null?'—':clearHours<1?(clearHours*60).toFixed(0)+' min':clearHours.toFixed(1)+' hr';
+      return '<div class="gas-site-row '+(site.guarded?'guarded':'unguarded')+'">'+
+        '<div><strong>'+esc(site.name)+'</strong><small>'+esc(site.region||'Fountain')+' • '+Number(site.clouds||1)+' cloud'+(Number(site.clouds||1)===1?'':'s')+'</small></div>'+
+        '<div><span>Gas</span><strong>'+fmt(units)+' units</strong><small>'+fmt(m3,'m3')+' m³</small></div>'+
+        '<div><span>Fleet clear</span><strong>'+clear+'</strong><small>'+Math.round(uptime*100)+'% uptime</small></div>'+
+        '<div><span>Risk</span><strong>'+(site.guarded?'GUARDED':'UNGUARDED')+'</strong><small>'+esc(site.hazard||'—')+'</small></div>'+
+      '</div>';
+    }).join(''):'<div class="visual-empty">No Fountain gas-site reference data loaded.</div>';
+
+    $('gasModuleTable').innerHTML=Object.entries(GAS_MODULES).map(([name,spec])=>
+      '<div class="gas-module-row">'+
+        '<div><strong>'+esc(name)+'</strong><small>'+esc(spec.family==='SCOOP'?'Frigate scoop':'Barge / exhumer harvester')+'</small></div>'+
+        '<div><span>Base cycle</span><strong>'+Number(spec.duration).toFixed(0)+'s</strong></div>'+
+        '<div><span>Base yield</span><strong>'+Number(spec.yieldM3).toFixed(0)+' m³</strong></div>'+
+        '<div><span>Residue</span><strong>'+(Number(spec.residueChance)>0?Math.round(Number(spec.residueChance)*100)+'% ×'+Number(spec.residueMultiplier):'NONE')+'</strong></div>'+
+      '</div>'
+    ).join('');
+  }
+
   function renderRanking(){
     if(!state)return;
     const list=$('oreRanking');
@@ -2575,7 +2768,7 @@
 
     localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));
   }
-  function renderAll(){if(!state)return;renderFleet();renderTop();renderSelect();renderBoards();renderHits();renderFleetPerformance();renderMiningVisuals();renderIceMining();renderRanking();renderTimers();renderSelected();renderNotes();renderScanCharacters();renderCharacters();renderCalculator();renderMerIntel();}
+  function renderAll(){if(!state)return;renderFleet();renderTop();renderSelect();renderBoards();renderHits();renderFleetPerformance();renderMiningVisuals();renderIceMining();renderGasHuffing();renderRanking();renderTimers();renderSelected();renderNotes();renderScanCharacters();renderCharacters();renderCalculator();renderMerIntel();}
 
   async function refreshMe(){const p=await api('/api/me');me=p.user;if(me){$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait}return p.authenticated}
   async function loadState(){state=await api('/api/state');renderAll()}
@@ -2845,7 +3038,7 @@
     for(const character of me?.characters||[]){
       const id=String(character.characterId),fits=miningFits(character),isBooster=id===String(calcSettings.boosterCharacterId||'');
       const existing=fleetSettings.members[id]&&typeof fleetSettings.members[id]==='object'?fleetSettings.members[id]:{};
-      if(fits.length||isBooster)fleetSettings.members[id]={...existing,enabled:true,fittingId:existing.fittingId||(fits[0]?String(fits[0].fittingId):'')};
+      if(fits.length||isBooster){const fallback=defaultFleetFit(fits);fleetSettings.members[id]={...existing,enabled:true,fittingId:existing.fittingId||(fallback?String(fallback.fittingId):'')}};
     }
     saveFleet();
     toast('All supported mining toons selected.');
