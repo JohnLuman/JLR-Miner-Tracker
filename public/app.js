@@ -753,7 +753,7 @@
             <span>${d.localArchive?'LOCAL KILLMAIL DATABASE':'KILLMAILS PROCESSED'}</span>
             <strong>${fmt(d.killmailsProcessed||0)}</strong>
             <small>${d.localArchive
-              ?`${fmt(d.killmailsStored||d.killmailsProcessed||0)} stored • ${d.truncated?'initial backfill still building':'complete rolling 7-day coverage'}`
+              ?`${fmt(d.killmailsStored||d.killmailsProcessed||0)} stored • ${d.truncated?'local history is filling • exact after 7 tracked days':'complete rolling 7-day coverage'}`
               :d.truncated?'API page cap reached • rankings may be partial':`${fmt(d.pagesFetched||0)} API pages • validated crawl`}</small>
           </article>
         </section>
