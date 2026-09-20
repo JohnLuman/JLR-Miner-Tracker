@@ -596,9 +596,16 @@
     applyTab(activeTab);
   }
 
+  function ordinalRank(value){
+    const n=Math.trunc(Number(value)||0);
+    if(n<=0)return '—';
+    const mod100=n%100;
+    const mod10=n%10;
+    const suffix=(mod100>=11&&mod100<=13)?'th':mod10===1?'st':mod10===2?'nd':mod10===3?'rd':'th';
+    return `${n}${suffix}`;
+  }
   function pvpRankBadge(rank,isMine=false){
-    const n=Number(rank)||0;
-    return `<span class="pvp-rank${isMine?' mine':''}">#${n||'—'}</span>`;
+    return `<span class="pvp-rank${isMine?' mine':''}">${ordinalRank(rank)}</span>`;
   }
   function renderPvpIntel(){
     const host=$('pvpIntelPanel');
