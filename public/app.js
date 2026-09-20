@@ -65,6 +65,8 @@
   delete calcSettings.fittingId;
   delete calcSettings.crystal;
   let iceTrackType=localStorage.getItem('jlrIceType')||'Blue Ice IV-Grade';
+  let gasRegion=localStorage.getItem('jlrGasRegion')||'Fountain';
+  let gasType=localStorage.getItem('jlrGasType')||'Celadon Cytoserocin';
   let oreTrendType=localStorage.getItem('jlrOreTrend')||'Kylixium';
   const savedFleetHistoryDays=Number(localStorage.getItem('jlrFleetHistoryDays'));
   let fleetHistoryDays=[7,30,90].includes(savedFleetHistoryDays)?savedFleetHistoryDays:7;
@@ -2499,25 +2501,61 @@
   }
   function renderGasHuffing(){
     if(!state||!$('gasFleetOutput'))return;
-    const gas=state.source?.gas||null;
-    if(!gas){
+    const gasData=state.source?.gas||null;
+    const regions=gasData?.regions||{};
+    const types=gasData?.types||{};
+    const regionNames=Object.keys(regions);
+    if(!gasData||!regionNames.length){
       $('gasFleetOutput').innerHTML='<div class="visual-empty">Gas data is not loaded yet.</div>';
       return;
     }
-    const rawJita=Number(gas.market?.raw?.jita?.buy);
-    const rawCn=Number(gas.market?.raw?.cn?.buy);
-    const compressedJita=Number(gas.market?.compressed?.jita?.buy);
-    const compressedCn=Number(gas.market?.compressed?.cn?.buy);
-    const uptime=Math.min(100,Math.max(1,Number(fleetSettings.uptime)||100))/100;
 
+    if(!regions[gasRegion])gasRegion=regionNames[0];
+    const region=regions[gasRegion]||{};
+    const regionGases=Array.isArray(region.gases)?region.gases.filter(name=>types[name]):[];
+    if(!regionGases.includes(gasType))gasType=region.defaultGas&&types[region.defaultGas]?region.defaultGas:(regionGases[0]||Object.keys(types)[0]||'');
+    localStorage.setItem('jlrGasRegion',gasRegion);
+    localStorage.setItem('jlrGasType',gasType);
+
+    const regionSelect=$('gasRegionSelect');
+    if(regionSelect&&document.activeElement!==regionSelect){
+      regionSelect.innerHTML=regionNames.map(name=>'<option value="'+esc(name)+'">'+esc(name.toUpperCase())+'</option>').join('');
+      regionSelect.value=gasRegion;
+    }
+    const typeSelect=$('gasTypeSelect');
+    if(typeSelect&&document.activeElement!==typeSelect){
+      typeSelect.innerHTML=regionGases.map(name=>'<option value="'+esc(name)+'">'+esc(name)+'</option>').join('');
+      typeSelect.value=gasType;
+    }
+
+    const gas=types[gasType]||null;
+    if(!gas){
+      $('gasFleetOutput').innerHTML='<div class="visual-empty">The selected gas type is not loaded yet.</div>';
+      return;
+    }
+    const market=gas.market||{};
+    const gasVolume=Math.max(.001,Number(gas.volume)||10);
+    const rawJita=Number(market.raw?.jita?.buy);
+    const rawCn=Number(market.raw?.cn?.buy);
+    const compressedJita=Number(market.compressed?.jita?.buy);
+    const compressedCn=Number(market.compressed?.cn?.buy);
+    const uptime=Math.min(100,Math.max(1,Number(fleetSettings.uptime)||100))/100;
+    const gasFamily=/Mykoserocin/i.test(gasType)?'MYKOSEROCIN':'CYTOSEROCIN';
+
+    $('gasRegionEyebrow').textContent=gasRegion.toUpperCase()+' • '+gasFamily;
+    $('gasRawLabel').textContent='RAW JITA / UNIT';
+    $('gasCompressedLabel').textContent='COMPRESSED JITA / UNIT';
     $('gasRawJita').textContent=Number.isFinite(rawJita)&&rawJita>0?fmt(rawJita)+' ISK':'—';
     $('gasRawJitaSub').textContent=Number.isFinite(rawCn)&&rawCn>0
-      ?`raw Celadon • C-N ${fmt(rawCn)} • prices ${ago(state.market?.lastUpdatedAt)}`
-      :`raw Celadon • prices ${ago(state.market?.lastUpdatedAt)}`;
+      ?gasType+' • C-N '+fmt(rawCn)+' • prices '+ago(state.market?.lastUpdatedAt)
+      :gasType+' • prices '+ago(state.market?.lastUpdatedAt);
     $('gasCompressedJita').textContent=Number.isFinite(compressedJita)&&compressedJita>0?fmt(compressedJita)+' ISK':'—';
     $('gasCompressedJitaSub').textContent=Number.isFinite(compressedCn)&&compressedCn>0
-      ?`compressed 1:1 • C-N ${fmt(compressedCn)}`
+      ?'compressed 1:1 • C-N '+fmt(compressedCn)
       :'compressed 1:1 equivalent';
+    $('gasOpsType').textContent=gasType;
+    $('gasOpsRegion').textContent=gasRegion+' • '+gasVolume.toFixed(gasVolume%1?1:0)+' m³ per raw unit';
+    $('gasSiteTitle').textContent='KNOWN '+gasRegion.toUpperCase()+' • '+gasType.toUpperCase()+' SITES';
 
     const boosterId=String(calcSettings.boosterCharacterId||'');
     const selected=(me?.characters||[]).filter(ch=>{
@@ -2531,7 +2569,7 @@
     const valid=rows.filter(row=>!row.error&&row.m3PerHour>0);
     const fullM3=valid.reduce((sum,row)=>sum+Number(row.m3PerHour||0),0);
     const targetM3=fullM3*uptime;
-    const fullUnits=valid.reduce((sum,row)=>sum+Number(row.unitsPerHour||0),0);
+    const fullUnits=fullM3/gasVolume;
     const targetUnits=fullUnits*uptime;
     const rawJitaHour=Number.isFinite(rawJita)&&rawJita>0?targetUnits*rawJita:0;
     const rawCnHour=Number.isFinite(rawCn)&&rawCn>0?targetUnits*rawCn:0;
@@ -2539,11 +2577,11 @@
 
     $('gasFleetM3').textContent=valid.length?fmt(targetM3,'m3')+' m³/hr':'—';
     $('gasFleetM3Sub').textContent=valid.length
-      ?`${valid.length} gas huffer${valid.length===1?'':'s'} • ${Math.round(uptime*100)}% uptime • ${fmt(fullM3,'m3')} full rate`
+      ?valid.length+' gas huffer'+(valid.length===1?'':'s')+' • '+Math.round(uptime*100)+'% uptime • '+fmt(fullM3,'m3')+' full rate'
       :'Select gas fits in Fleet & Fits';
     $('gasFleetIsk').textContent=rawJitaHour?fmt(rawJitaHour)+' ISK/hr':'—';
     $('gasFleetIskSub').textContent=rawJitaHour
-      ?`${fmt(targetUnits)} units/hr • raw Jita buy`
+      ?fmt(targetUnits)+' '+gasType+' units/hr • raw Jita buy'
       :'Waiting for gas fleet + Jita price';
 
     if(!rows.length){
@@ -2553,7 +2591,7 @@
         if(row.error||!row.m3PerHour){
           return '<div class="ice-fleet-row error"><div><strong>'+esc(row.character?.name||'Huffer')+'</strong><small>'+esc(row.fit?.name||'No selected fit')+'</small></div><span>'+esc(row.error||'No supported gas scoop or harvester')+'</span></div>';
         }
-        const units=row.unitsPerHour*uptime,m3=row.m3PerHour*uptime;
+        const m3=row.m3PerHour*uptime,units=m3/gasVolume;
         const jita=Number.isFinite(rawJita)&&rawJita>0?units*rawJita:0;
         const boostName=row.boost?.ship&&row.boost.ship!=='None'?row.boost.ship:'No boost';
         const range=row.range>0?(row.range/1000).toFixed(1)+' km':'—';
@@ -2567,24 +2605,24 @@
         '</div>';
       }).join('');
       $('gasFleetOutput').innerHTML=body+
-        '<div class="ice-fleet-total"><span>Celadon fleet target</span><strong>'+
+        '<div class="ice-fleet-total"><span>'+esc(gasType)+' fleet target</span><strong>'+
         fmt(targetUnits)+' units/hr • '+fmt(targetM3,'m3')+' m³/hr</strong><small>Raw Jita '+
         (rawJitaHour?fmt(rawJitaHour):'—')+'/hr • Raw C-N '+(rawCnHour?fmt(rawCnHour):'—')+
         '/hr • Compressed Jita '+(compressedJitaHour?fmt(compressedJitaHour):'—')+'/hr</small></div>';
     }
 
-    const sites=Array.isArray(gas.sites)?gas.sites:[];
+    const sites=(Array.isArray(region.sites)?region.sites:[]).filter(site=>site.gas===gasType);
     $('gasSiteTable').innerHTML=sites.length?sites.map(site=>{
-      const units=Number(site.units)||0,m3=units*Number(gas.volume||10);
+      const units=Number(site.units)||0,m3=units*gasVolume;
       const clearHours=targetUnits>0?units/targetUnits:null;
       const clear=clearHours==null?'—':clearHours<1?(clearHours*60).toFixed(0)+' min':clearHours.toFixed(1)+' hr';
       return '<div class="gas-site-row '+(site.guarded?'guarded':'unguarded')+'">'+
-        '<div><strong>'+esc(site.name)+'</strong><small>'+esc(site.region||'Fountain')+' • '+Number(site.clouds||1)+' cloud'+(Number(site.clouds||1)===1?'':'s')+'</small></div>'+
+        '<div><strong>'+esc(site.name)+'</strong><small>'+esc(site.security||site.region||gasRegion)+' • '+Number(site.clouds||1)+' cloud'+(Number(site.clouds||1)===1?'':'s')+'</small></div>'+
         '<div><span>Gas</span><strong>'+fmt(units)+' units</strong><small>'+fmt(m3,'m3')+' m³</small></div>'+
         '<div><span>Fleet clear</span><strong>'+clear+'</strong><small>'+Math.round(uptime*100)+'% uptime</small></div>'+
         '<div><span>Risk</span><strong>'+(site.guarded?'GUARDED':'UNGUARDED')+'</strong><small>'+esc(site.hazard||'—')+'</small></div>'+
       '</div>';
-    }).join(''):'<div class="visual-empty">No Fountain gas-site reference data loaded.</div>';
+    }).join(''):'<div class="visual-empty">No '+esc(gasType)+' site references are loaded for '+esc(gasRegion)+'.</div>';
 
     $('gasModuleTable').innerHTML=Object.entries(GAS_MODULES).map(([name,spec])=>
       '<div class="gas-module-row">'+
@@ -2999,6 +3037,19 @@
     iceTrackType=$('iceTypeSelect').value||'Blue Ice IV-Grade';
     localStorage.setItem('jlrIceType',iceTrackType);
     renderIceMining();
+  });
+
+  $('gasRegionSelect')?.addEventListener('change',()=>{
+    gasRegion=$('gasRegionSelect').value||'Fountain';
+    gasType='';
+    localStorage.setItem('jlrGasRegion',gasRegion);
+    localStorage.removeItem('jlrGasType');
+    renderGasHuffing();
+  });
+  $('gasTypeSelect')?.addEventListener('change',()=>{
+    gasType=$('gasTypeSelect').value||'';
+    localStorage.setItem('jlrGasType',gasType);
+    renderGasHuffing();
   });
 
   function readBoosterCalc(){
