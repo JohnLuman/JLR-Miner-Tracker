@@ -568,7 +568,7 @@
   function showApp(){$('loginView').classList.add('hidden');$('app').classList.remove('hidden');}
   let activeTab=localStorage.getItem('jlrTab')||'fields';
   function applyTab(tab){
-    const valid=['fields','fleet','ice','pvp','threat','mer','toons'];
+    const valid=['fields','fleet','performance','ice','pvp','threat','mer','toons'];
     activeTab=valid.includes(tab)?tab:'fields';
     localStorage.setItem('jlrTab',activeTab);
     document.querySelectorAll('.app-tab').forEach(button=>button.classList.toggle('active',button.dataset.tab===activeTab));
@@ -590,6 +590,7 @@
     };
     const fields=makePanel('fields');
     const fleet=makePanel('fleet');
+    const performance=makePanel('performance');
     const ice=makePanel('ice');
     const pvp=makePanel('pvp');
     pvp.id='pvpIntelPanel';
@@ -601,23 +602,24 @@
 
     const quick=document.querySelector('.quick-update');
     const calculator=document.querySelector('.shared-calculator');
+    const timers=document.querySelector('.timers-panel');
     const board=document.querySelector('.board-panel');
     const hits=document.querySelector('.hit-panel');
-    [quick,calculator,board,hits].filter(Boolean).forEach(el=>fields.appendChild(el));
+    [quick,timers,board,hits].filter(Boolean).forEach(el=>fields.appendChild(el));
 
     const advanced=document.createElement('div');
     advanced.className='tab-advanced expanded-grid';
     const ranking=document.querySelector('.ranking-panel');
-    const timers=document.querySelector('.timers-panel');
     if(ranking)advanced.appendChild(ranking);
-    if(timers)advanced.appendChild(timers);
     if(advanced.children.length)fields.appendChild(advanced);
 
     const setup=document.querySelector('.setup-drawer');
+    [setup,calculator].filter(Boolean).forEach(el=>fleet.appendChild(el));
+
     const command=document.querySelector('.fleet-command-panel');
     const visuals=document.querySelector('.mining-visuals-panel');
     const actual=document.querySelector('.actual-panel');
-    [setup,command,visuals,actual].filter(Boolean).forEach(el=>fleet.appendChild(el));
+    [command,visuals,actual].filter(Boolean).forEach(el=>performance.appendChild(el));
 
     const icePanel=document.querySelector('.ice-mining-panel');
     if(icePanel)ice.appendChild(icePanel);

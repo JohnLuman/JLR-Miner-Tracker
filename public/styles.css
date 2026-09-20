@@ -121,32 +121,28 @@
     grid-template-columns:minmax(360px,440px) minmax(700px,1fr);
     grid-template-areas:
       "control board"
-      "calc board"
+      "timers board"
       "hits hits"
       "advanced advanced";
     gap:8px;
     align-items:start;
   }
   .app.expanded .tab-panel[data-tab="fields"]>.quick-update{grid-area:control;margin:0}
-  .app.expanded .tab-panel[data-tab="fields"]>.shared-calculator{grid-area:calc;margin:0}
+  .app.expanded .tab-panel[data-tab="fields"]>.timers-panel{grid-area:timers;margin:0}
   .app.expanded .tab-panel[data-tab="fields"]>.board-panel{grid-area:board;margin:0}
   .app.expanded .tab-panel[data-tab="fields"]>.hit-panel{grid-area:hits;margin:0}
   .app.expanded .tab-panel[data-tab="fields"]>.tab-advanced{grid-area:advanced;margin:0}
 
   .app.expanded .tab-panel[data-tab="fleet"].active{
     display:grid;
-    grid-template-columns:minmax(380px,470px) minmax(720px,1fr);
+    grid-template-columns:minmax(420px,.9fr) minmax(620px,1.1fr);
     grid-template-areas:
-      "setup command"
-      "actual command"
-      "visuals visuals";
+      "setup calculator";
     gap:8px;
     align-items:start;
   }
   .app.expanded .tab-panel[data-tab="fleet"]>.setup-drawer{grid-area:setup;margin:0;width:auto}
-  .app.expanded .tab-panel[data-tab="fleet"]>.fleet-command-panel{grid-area:command;margin:0}
-  .app.expanded .tab-panel[data-tab="fleet"]>.mining-visuals-panel{grid-area:visuals;margin:0}
-  .app.expanded .tab-panel[data-tab="fleet"]>.actual-panel{grid-area:actual;margin:0}
+  .app.expanded .tab-panel[data-tab="fleet"]>.shared-calculator{grid-area:calculator;margin:0}
   .app.expanded .mining-visual-grid{grid-template-columns:1fr 1fr}
 
   .app.expanded .tab-panel[data-tab="ice"]>.ice-mining-panel{max-width:1450px;margin-left:auto;margin-right:auto}
@@ -170,17 +166,19 @@
     display:grid;
     grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);
     grid-template-areas:
-      "control stats"
+      "control timers"
       "board board"
       "hits hits";
     gap:8px;
     align-items:stretch;
   }
   .app.compact .tab-panel[data-tab="fields"]>.quick-update{grid-area:control;margin-bottom:0}
-  .app.compact .tab-panel[data-tab="fields"]>.shared-calculator{grid-area:stats;margin-bottom:0;display:flex;flex-direction:column}
+  .app.compact .tab-panel[data-tab="fields"]>.timers-panel{grid-area:timers;margin-bottom:0;display:flex;flex-direction:column}
   .app.compact .tab-panel[data-tab="fields"]>.board-panel{grid-area:board;margin-bottom:0}
   .app.compact .tab-panel[data-tab="fields"]>.hit-panel{grid-area:hits;margin-bottom:0}
-  .app.compact .tab-panel[data-tab="fields"] .calc-results{flex:1;grid-template-columns:1fr;grid-template-rows:repeat(3,minmax(0,1fr))}
+  .app.compact .tab-panel[data-tab="fields"]>.timers-panel .timer-list{flex:1}
+  .app.compact .tab-panel[data-tab="fleet"].active{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start}
+  .app.compact .tab-panel[data-tab="fleet"]>*{margin-bottom:0}
   .app.compact .mining-visual-grid{grid-template-columns:1.15fr .85fr}
   .app.compact .ice-layout:not(.ice-layout-single){grid-template-columns:1fr 1fr}
 }
