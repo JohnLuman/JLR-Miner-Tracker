@@ -620,10 +620,10 @@
       <tr class="${row.isMyCorp?'mine':''}">
         <td>${pvpRankBadge(row.rank,row.isMyCorp)}</td>
         <td><strong>${esc(row.name||('Corp '+row.corporationId))}</strong>${row.isMyCorp?'<small>YOUR CORP</small>':''}</td>
-        <td>${fmt(row.killmails)}</td>
-        <td>${fmt(row.finalBlows)}</td>
-        <td>${fmt(row.damageDone)}</td>
-        <td>${fmt(row.iskOnKillmails)} ISK</td>
+        <td>${fmt(row.shipsDestroyed)}</td>
+        <td>${fmt(row.pointsDestroyed)}</td>
+        <td>${fmt(row.iskDestroyed)} ISK</td>
+        <td>${row.zkillGlobalRank?('#'+fmt(row.zkillGlobalRank)):'—'}</td>
       </tr>`).join('');
     const myMembers=(d.myCorpMembers||[]).map(row=>`
       <tr class="mine">
@@ -650,7 +650,7 @@
           <div>
             <span class="pvp-eyebrow">ZKILLBOARD • ROLLING 7 DAYS</span>
             <h2>INIT PVP LEADERBOARDS</h2>
-            <p>Ranks active INIT corporations and pilots by killmail participation. Final blows and damage break ties.</p>
+            <p>Corporations use zKillboard's Weekly 7d stats; pilots use INIT killmail participation for their 7-day placement.</p>
           </div>
           <button id="pvpRefresh" class="orb blue" type="button">REFRESH</button>
         </section>
@@ -659,7 +659,7 @@
           <article class="glass pvp-summary-card">
             <span>YOUR CORP</span>
             <strong>${esc(d.myCorporation?.name||'Unknown')}</strong>
-            <small>${myRank?`#${myRank} of ${d.activeCorporations} active INIT corps`:'No kills recorded in this window'}${d.myCorpVerified?' • corp verified directly':''}</small>
+            <small>${myRank?`#${myRank} of ${d.activeCorporations} active INIT corps`:'No kills recorded in this window'}${d.myCorporation?.statsVerified?' • zKill Weekly 7d':''}</small>
           </article>
           <article class="glass pvp-summary-card">
             <span>YOUR ACTIVE PILOTS</span>
@@ -683,7 +683,7 @@
             <div class="pvp-section-head"><strong>INIT CORPORATIONS</strong><span>your corp is highlighted</span></div>
             <div class="pvp-table-wrap">
               <table class="pvp-table">
-                <thead><tr><th>RANK</th><th>CORPORATION</th><th>KILLMAILS</th><th>FINAL</th><th>DAMAGE</th><th>ISK ON KILLS</th></tr></thead>
+                <thead><tr><th>INIT RANK</th><th>CORPORATION</th><th>SHIPS</th><th>POINTS</th><th>ISK DESTROYED</th><th>ZKILL 7D RANK</th></tr></thead>
                 <tbody>${corpRows||'<tr><td colspan="6">No corp activity found.</td></tr>'}</tbody>
               </table>
             </div>
@@ -712,7 +712,7 @@
 
         <section class="pvp-footnote">
           <strong>RANKING METHOD</strong>
-          <span>Primary rank = distinct INIT killmails participated in. Ties use final blows, then damage done. “ISK on kills” is the total zKillboard value of killmails the pilot/corp appeared on; it is not personal loot or damage value. Your corporation is verified with a separate corporation-specific zKillboard crawl before its members are placed against INIT.</span>
+          <span>Corporation rows use zKillboard's own Weekly 7d ships destroyed, points, ISK destroyed, and global 7-day rank, then are re-ranked against active INIT corporations. Pilot rows remain distinct INIT killmail participation, with final blows and damage as tie-breakers. Your corporation's pilot activity is also checked with a corporation-specific 7-day crawl.</span>
           <small>Updated ${d.generatedAt?ago(d.generatedAt):'recently'} • ${d.stale?'showing last good cache after refresh error • ':''}shared server cache • source: zKillboard public API</small>
         </section>
       </div>`;

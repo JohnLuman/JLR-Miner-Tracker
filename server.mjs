@@ -157,6 +157,7 @@ const ledgerRowsByCharacter = new Map();
 const universeNameCache = new Map();
 let zkillInitLeaderboardCache = { updatedAt:0, data:null, promise:null };
 const zkillCorpLeaderboardCache = new Map();
+const zkillCorpStatsCache = new Map();
 let esiCharacterSyncActive = 0;
 const esiCharacterSyncWaiters = [];
 let esiBackoffUntil = 0;
@@ -442,7 +443,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.3.76',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.3.77',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -2004,6 +2005,63 @@ async function buildInitZkillLeaderboard(force=false){
   zkillInitLeaderboardCache.promise=pending;
   return pending;
 }
+async function zkillCorporationWeeklyStats(corporationId,force=false){
+  const corpId=Number(corporationId);
+  if(!corpId)throw new Error('Corporation ID is required for zKillboard stats.');
+  let cache=zkillCorpStatsCache.get(corpId)||{updatedAt:0,data:null,promise:null};
+  const nowMs=Date.now();
+  if(!force&&cache.data&&nowMs-cache.updatedAt<ZKILL_CACHE_MS)return cache.data;
+  if(cache.promise)return cache.promise;
+
+  const pending=(async()=>{
+    const payload=await zkillJson(`https://zkillboard.com/api/stats/corporationID/${corpId}/kills/`);
+    const weekly=payload?.rankings?.weekly?.all||{};
+    const metrics=weekly?.metrics||{};
+    const ranks=weekly?.ranks||{};
+    const data={
+      corporationId:corpId,
+      shipsDestroyed:Number(metrics.shipsDestroyed)||0,
+      shipsLost:Number(metrics.shipsLost)||0,
+      pointsDestroyed:Number(metrics.pointsDestroyed)||0,
+      pointsLost:Number(metrics.pointsLost)||0,
+      iskDestroyed:Number(metrics.iskDestroyed)||0,
+      iskLost:Number(metrics.iskLost)||0,
+      globalRanks:{
+        shipsDestroyed:Number(ranks.shipsDestroyed)||null,
+        pointsDestroyed:Number(ranks.pointsDestroyed)||null,
+        iskDestroyed:Number(ranks.iskDestroyed)||null,
+      },
+      verifiedAt:now(),
+    };
+    cache={updatedAt:Date.now(),data,promise:null};
+    zkillCorpStatsCache.set(corpId,cache);
+    return data;
+  })().finally(()=>{
+    const current=zkillCorpStatsCache.get(corpId);
+    if(current?.promise===pending)zkillCorpStatsCache.set(corpId,{...current,promise:null});
+  });
+
+  zkillCorpStatsCache.set(corpId,{...cache,promise:pending});
+  return pending;
+}
+async function zkillCorporationWeeklyStatsMany(corporationIds,force=false){
+  const ids=[...new Set((corporationIds||[]).map(Number).filter(Number.isFinite))];
+  const out=new Map();
+  const active=new Set();
+  for(let index=0;index<ids.length;index++){
+    while(active.size>=4)await Promise.race(active);
+    const id=ids[index];
+    const pending=zkillCorporationWeeklyStats(id,force)
+      .then(row=>out.set(id,row))
+      .catch(err=>console.warn('zKill corporation stats failed',id,String(err.message||err)));
+    active.add(pending);
+    pending.finally(()=>active.delete(pending));
+    if(index<ids.length-1)await sleep(250);
+  }
+  await Promise.all(active);
+  return out;
+}
+
 async function buildCorpZkillLeaderboard(corporationId,force=false){
   const corpId=Number(corporationId);
   if(!corpId)throw new Error('Corporation ID is required for zKillboard verification.');
@@ -2126,7 +2184,20 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
   if(corpDirect?.corporation){
     corporationMap.set(corporationId,{...corpDirect.corporation});
   }
-  const correctedCorporations=rankPvpRows([...corporationMap.values()]);
+
+  const corpWeeklyStats=await zkillCorporationWeeklyStatsMany([...corporationMap.keys()],force);
+  const correctedCorporations=[...corporationMap.values()].map(row=>{
+    const weekly=corpWeeklyStats.get(Number(row.id));
+    return weekly
+      ?{...row,...weekly,statsVerified:true}
+      :{...row,shipsDestroyed:Number(row.killmails)||0,pointsDestroyed:0,iskDestroyed:Number(row.iskOnKillmails)||0,globalRanks:{shipsDestroyed:null,pointsDestroyed:null,iskDestroyed:null},statsVerified:false};
+  }).sort((a,b)=>
+    b.shipsDestroyed-a.shipsDestroyed||
+    b.pointsDestroyed-a.pointsDestroyed||
+    b.iskDestroyed-a.iskDestroyed||
+    a.id-b.id
+  );
+  correctedCorporations.forEach((row,index)=>row.rank=index+1);
 
   const corpBase=correctedCorporations.find(row=>Number(row.id)===corporationId)||null;
   const myMembersBase=correctedCharacters.filter(row=>Number(row.corporationId)===corporationId);
@@ -2158,10 +2229,13 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
     corporationId:row.id,
     name:corpNames.get(row.id)||String(row.id),
     isMyCorp:Number(row.id)===corporationId,
-    killmails:row.killmails,
-    finalBlows:row.finalBlows,
-    damageDone:row.damageDone,
-    iskOnKillmails:row.iskOnKillmails,
+    shipsDestroyed:Number(row.shipsDestroyed)||0,
+    shipsLost:Number(row.shipsLost)||0,
+    pointsDestroyed:Number(row.pointsDestroyed)||0,
+    iskDestroyed:Number(row.iskDestroyed)||0,
+    iskLost:Number(row.iskLost)||0,
+    zkillGlobalRank:Number(row.globalRanks?.shipsDestroyed)||null,
+    statsVerified:Boolean(row.statsVerified),
   });
 
   return{
@@ -2182,8 +2256,11 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
       corporationId,
       name:String(corporation?.name||corpNames.get(corporationId)||corporationId),
       rank:corpBase?.rank||null,
-      killmails:corpBase?.killmails||0,
-      iskOnKillmails:corpBase?.iskOnKillmails||0,
+      shipsDestroyed:corpBase?.shipsDestroyed||0,
+      pointsDestroyed:corpBase?.pointsDestroyed||0,
+      iskDestroyed:corpBase?.iskDestroyed||0,
+      zkillGlobalRank:corpBase?.globalRanks?.shipsDestroyed||null,
+      statsVerified:Boolean(corpBase?.statsVerified),
     },
     corporations:corpDisplay.map(decorateCorp),
     characters:topCharacters.map(decorateChar),
@@ -2191,7 +2268,7 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
   };
 }
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.76',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.77',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){const u=readSession(req);return json(res,200,{authenticated:Boolean(u),user:u?myProfile(u):null})}
   const user=requireUser(req,res);if(!user)return;
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
