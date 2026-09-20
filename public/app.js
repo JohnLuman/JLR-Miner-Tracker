@@ -628,7 +628,7 @@
     const corpRows=(d.corporations||[]).map(row=>`
       <tr class="${row.isMyCorp?'mine':''}">
         <td>${pvpRankBadge(row.rank,row.isMyCorp)}</td>
-        <td><strong>${esc(row.name||('Corp '+row.corporationId))}</strong>${row.isMyCorp?'<small>YOUR CORP</small>':''}</td>
+        <td><a class="pvp-killboard-link" href="https://zkillboard.com/corporation/${encodeURIComponent(row.corporationId)}/" target="_blank" rel="noopener noreferrer" title="Open ${esc(row.name||('Corp '+row.corporationId))} on zKillboard"><strong>${esc(row.name||('Corp '+row.corporationId))}</strong></a>${row.isMyCorp?'<small>YOUR CORP</small>':''}</td>
         <td>${fmt(row.shipsDestroyed)}</td>
         <td>${fmt(row.pointsDestroyed)}</td>
         <td>${fmt(row.iskDestroyed)} ISK</td>
@@ -671,7 +671,7 @@
         <section class="pvp-summary-grid">
           <article class="glass pvp-summary-card">
             <span>YOUR CORP</span>
-            <strong>${esc(d.myCorporation?.name||'Unknown')}</strong>
+            <strong>${d.myCorporation?.corporationId?`<a class="pvp-killboard-link" href="https://zkillboard.com/corporation/${encodeURIComponent(d.myCorporation.corporationId)}/" target="_blank" rel="noopener noreferrer" title="Open ${esc(d.myCorporation?.name||'Corporation')} on zKillboard">${esc(d.myCorporation?.name||'Unknown')}</a>`:`${esc(d.myCorporation?.name||'Unknown')}`}</strong>
             <small>${myRank?`#${myRank} of ${d.activeCorporations} active INIT corps`:'No kills recorded in this window'}${d.myCorporation?.statsVerified?' • zKill Weekly 7d':''}</small>
           </article>
           <article class="glass pvp-summary-card">
