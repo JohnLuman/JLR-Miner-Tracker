@@ -508,7 +508,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.3.96',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.3.97',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -2234,21 +2234,23 @@ async function positiveStandingContactsForUser(user){
     console.warn(`Threat ${sourceRow.label} contacts lookup failed`,String(err.message||err));
     return[];
   })));
-  const rows=[...personalRows,...extraRows.flat()];
-  const sets={character:new Set(),corporation:new Set(),alliance:new Set(),faction:new Set()};
-  for(const row of rows){
-    if(!(Number(row?.standing)>0))continue;
-    const type=String(row?.contact_type||'');
+  const byOwner={character:new Map(),corporation:new Map(),alliance:new Map()};
+  const rowsByOwner=[{owner:'character',rows:personalRows},...extraSources.map((sourceRow,index)=>({owner:sourceRow.label,rows:extraRows[index]}))];
+  for(const sourceRows of rowsByOwner)for(const row of sourceRows.rows){
+    const standing=Number(row?.standing);
+    if(!Number.isFinite(standing)||standing===0)continue;
     const id=Number(row?.contact_id);
-    if(id&&sets[type])sets[type].add(id);
+    if(id)byOwner[sourceRows.owner].set(id,standing);
   }
   // EVE does not require a character to add their own corporation/alliance as
   // a personal contact. Treat both as friendly so same-team pilots do not
   // appear as threats when the positive-standings filter is enabled.
-  if(Number(profile?.corporation_id))sets.corporation.add(Number(profile.corporation_id));
-  if(Number(profile?.alliance_id))sets.alliance.add(Number(profile.alliance_id));
-  if(Number(profile?.faction_id))sets.faction.add(Number(profile.faction_id));
-  const data={sourceCharacterId:key,sourceCharacterName:source.name,sets};
+  const standingData={
+    byOwner,
+    memberCorporations:new Set(Number(profile?.corporation_id)?[Number(profile.corporation_id)]:[]),
+    memberAlliances:new Set(Number(profile?.alliance_id)?[Number(profile.alliance_id)]:[]),
+  };
+  const data={sourceCharacterId:key,sourceCharacterName:source.name,standingData};
   threatContactsCache.set(key,{at:Date.now(),data});
   return data;
   })().finally(()=>threatContactsPromises.delete(key));
@@ -2352,10 +2354,10 @@ async function buildThreatIntel(scanText,{ignoreOwnIds=[],positiveStandings=null
   }
   const unique=[...new Map(ordered.map(row=>[Number(row.id),row])).values()];
   const ownIds=new Set((ignoreOwnIds||[]).map(Number).filter(Number.isFinite));
-  const standingSets=positiveStandings?.sets||null;
+  const standingData=positiveStandings?.standingData||null;
   let ignoredOwn=0,ignoredPositive=0;
   const candidates=unique.filter(row=>{
-    const reason=threatIgnoreReason({id:row.id},{ownIds,standingSets});
+    const reason=threatIgnoreReason({id:row.id},{ownIds,standingData});
     if(reason==='own'){ignoredOwn++;return false}
     if(reason==='positive'){ignoredPositive++;return false}
     return true;
@@ -2383,7 +2385,7 @@ async function buildThreatIntel(scanText,{ignoreOwnIds=[],positiveStandings=null
 
   const visibleEntries=entries.filter(entry=>{
     const c=entry.character||{};
-    const reason=threatIgnoreReason(c,{standingSets});
+    const reason=threatIgnoreReason(c,{standingData});
     if(reason==='positive')ignoredPositive++;
     return reason!=='positive';
   });
@@ -3011,7 +3013,7 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
   };
 }
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.96',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.97',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -3133,7 +3135,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.3.96 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.3.97 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setInterval(()=>resetExpired(true),15_000).unref();
 async function runAutomaticSyncLoop(){
   const startedAt=Date.now();

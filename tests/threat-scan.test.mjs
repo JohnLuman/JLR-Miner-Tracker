@@ -56,17 +56,24 @@ assert(jlrThreatScore(stats, tags) > 0);
 
 const ignoreOptions={
   ownIds:new Set([101]),
-  standingSets:{
-    character:new Set([102]),
-    corporation:new Set([201]),
-    alliance:new Set([301]),
-    faction:new Set(),
+  standingData:{
+    byOwner:{
+      character:new Map([[102,10],[201,-10]]),
+      corporation:new Map([[201,10],[301,10],[106,-10]]),
+      alliance:new Map([[401,10]]),
+    },
+    memberCorporations:new Set([999]),
+    memberAlliances:new Set([998]),
   },
 };
 assert.equal(threatIgnoreReason({id:101,corporation_id:999},ignoreOptions),'own');
 assert.equal(threatIgnoreReason({id:102,corporation_id:999},ignoreOptions),'positive');
-assert.equal(threatIgnoreReason({id:103,corporation_id:201},ignoreOptions),'positive');
+// A personal negative override must beat a lower-level corporation blue.
+assert.equal(threatIgnoreReason({id:103,corporation_id:201},ignoreOptions),null);
 assert.equal(threatIgnoreReason({id:104,alliance_id:301},ignoreOptions),'positive');
-assert.equal(threatIgnoreReason({id:105,corporation_id:999},ignoreOptions),null);
+assert.equal(threatIgnoreReason({id:105,corporation_id:999},ignoreOptions),'positive');
+// Character-target standings take priority over corporation-target standings.
+assert.equal(threatIgnoreReason({id:106,corporation_id:201},ignoreOptions),null);
+assert.equal(threatIgnoreReason({id:107,alliance_id:401},ignoreOptions),'positive');
 
 console.log('Threat scanner regression passed');
