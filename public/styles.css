@@ -1308,3 +1308,47 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
   .doctrine-shopping-mode{grid-template-columns:1fr}
   .doctrine-shopping-recalc{width:100%}
 }
+
+
+/* v2.8.7 Doctrine shopping collapse + readability */
+.doctrine-shopping{font-family:Inter,"Segoe UI",Arial,sans-serif}
+.doctrine-shopping.collapsed{box-shadow:0 6px 18px #0006}
+.doctrine-shopping-toggle{
+  width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;
+  min-height:48px;border:0;background:color-mix(in srgb,var(--theme-accent,var(--purple)) 10%,var(--theme-panel-hi,var(--panel)));
+  color:var(--text);padding:9px 11px;text-align:left
+}
+.doctrine-shopping-toggle:hover{filter:brightness(1.08)}
+.doctrine-shopping-toggle:focus-visible{outline:2px solid var(--theme-accent-hi,#ce68ff);outline-offset:-2px}
+.doctrine-shopping-toggle-title,.doctrine-shopping-toggle-summary{min-width:0}
+.doctrine-shopping-toggle-title span{display:block;font-size:9px;font-weight:900;letter-spacing:.08em;color:var(--muted)}
+.doctrine-shopping-toggle-title strong{display:block;margin-top:2px;font-size:14px;font-weight:900;line-height:1.1}
+.doctrine-shopping-toggle-summary{display:flex;align-items:center;gap:10px;white-space:nowrap}
+.doctrine-shopping-toggle-summary span{font-size:11px;font-weight:900;color:var(--theme-accent-hi,#ce68ff)}
+.doctrine-shopping-chevron{font-size:11px;color:var(--text)}
+.doctrine-shopping-body[hidden]{display:none!important}
+.doctrine-shopping.collapsed .doctrine-shopping-toggle{border-bottom:0}
+
+.doctrine-shopping-head{padding:9px 10px}
+.doctrine-shopping-head>span{font-size:9px;font-weight:900;letter-spacing:.06em;color:var(--muted)}
+.doctrine-shop-clear{font-size:9px;min-height:30px;padding:5px 10px}
+.doctrine-shopping-hint{font-size:10px;line-height:1.45;padding:8px 10px}
+.doctrine-shopping-empty strong{font-size:11px}
+.doctrine-shopping-empty span{font-size:9px;line-height:1.4}
+.doctrine-shop-row{grid-template-columns:minmax(0,1fr) 78px auto;gap:7px;padding:8px}
+.doctrine-shop-name strong{font-size:12px;font-weight:800;line-height:1.3}
+.doctrine-shop-name small{font-size:9px;line-height:1.35;margin-top:3px}
+.doctrine-shop-qty span{font-size:8px;font-weight:900}
+.doctrine-shop-qty input{height:31px;font-size:11px;font-weight:900;padding:4px 7px}
+.doctrine-shop-remove{min-height:31px;font-size:8px;padding:4px 8px}
+.doctrine-shopping-total{padding:9px 10px}
+.doctrine-shopping-total span{font-size:8px}
+.doctrine-shopping-total strong{font-size:13px}
+.doctrine-multibuy-copy{min-height:38px;font-size:10px}
+.doctrine-shopping-mode-buttons button,.doctrine-shopping-recalc{min-height:32px;font-size:9px;padding:5px 9px}
+.doctrine-shopping-mode{padding:7px}
+@media(max-width:620px){
+  .doctrine-shopping-toggle{min-height:50px}
+  .doctrine-shop-row{grid-template-columns:minmax(0,1fr) 76px}
+  .doctrine-shop-remove{grid-column:1/-1}
+}
