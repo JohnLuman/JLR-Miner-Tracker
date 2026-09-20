@@ -305,6 +305,10 @@
     if(kind==='hover'){
       o.type='sine';o.frequency.setValueAtTime(560,n);o.frequency.exponentialRampToValueAtTime(710,n+.045);
       g.gain.setValueAtTime(.018,n);g.gain.exponentialRampToValueAtTime(.001,n+.060);o.start(n);o.stop(n+.065);
+    }else if(kind==='threatHover'){
+      // Short scanner/targeting chirp for moving across threat intel readouts.
+      o.type='triangle';o.frequency.setValueAtTime(820,n);o.frequency.exponentialRampToValueAtTime(1080,n+.035);
+      g.gain.setValueAtTime(.025,n);g.gain.exponentialRampToValueAtTime(.001,n+.055);o.start(n);o.stop(n+.060);
     }else if(kind==='systemHover'){
       o.type='triangle';o.frequency.setValueAtTime(470,n);o.frequency.exponentialRampToValueAtTime(680,n+.07);
       g.gain.setValueAtTime(.035,n);g.gain.exponentialRampToValueAtTime(.001,n+.090);o.start(n);o.stop(n+.095);
@@ -369,6 +373,12 @@
 
   document.addEventListener('pointerover',(e)=>{
     if(e.target.closest('.sound-menu'))return;
+    const threatReadout=e.target.closest('.threat-table-v2 tbody td');
+    if(threatReadout){
+      const previous=e.relatedTarget?.closest?.('.threat-table-v2 tbody td');
+      if(previous!==threatReadout)sfx('threatHover');
+      return;
+    }
     const system=e.target.closest('.system-node');
     if(system){
       const key=system.dataset.system||system.querySelector('.sys-name')?.textContent||'system';
