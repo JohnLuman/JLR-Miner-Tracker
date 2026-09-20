@@ -883,10 +883,17 @@
     return tags.length?tags:[{label:'NO MAJOR FLAGS',kind:'dim'}];
   }
   function threatShipImages(ch){
+    const characterId=Number(ch?.id)||0;
+    const characterName=String(ch?.name||'pilot');
     return (Array.isArray(ch?.ships)?ch.ships:[]).slice(0,5).map(ship=>{
       const id=Number(ship?.shipTypeID)||0;
       const name=String(ship?.shipName||'Unknown ship');
-      return id?`<img src="https://images.evetech.net/types/${id}/render?size=64" alt="" title="${esc(name)} • ${fmt(ship?.appearances||0)} appearances">`:'';
+      if(!id)return '';
+      const appearances=fmt(ship?.appearances||0);
+      const href=characterId
+        ?`https://zkillboard.com/character/${encodeURIComponent(characterId)}/scanalyzer/`
+        :`https://zkillboard.com/ship/${encodeURIComponent(id)}/`;
+      return `<a class="threat-ship-link" href="${href}" target="_blank" rel="noopener noreferrer" title="${esc(name)} • ${appearances} appearances • click for zKillboard ship history" aria-label="Open ${esc(characterName)} ${esc(name)} ship history on zKillboard"><img src="https://images.evetech.net/types/${id}/render?size=64" alt="${esc(name)}"></a>`;
     }).join('');
   }
   function threatScoreClass(score){
