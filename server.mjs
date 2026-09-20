@@ -156,6 +156,7 @@ const userSyncPromises = new Map();
 const ledgerRowsByCharacter = new Map();
 const universeNameCache = new Map();
 let zkillInitLeaderboardCache = { updatedAt:0, data:null, promise:null };
+const zkillCorpLeaderboardCache = new Map();
 let esiCharacterSyncActive = 0;
 const esiCharacterSyncWaiters = [];
 let esiBackoffUntil = 0;
@@ -441,7 +442,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.3.75',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.3.76',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -2003,6 +2004,92 @@ async function buildInitZkillLeaderboard(force=false){
   zkillInitLeaderboardCache.promise=pending;
   return pending;
 }
+async function buildCorpZkillLeaderboard(corporationId,force=false){
+  const corpId=Number(corporationId);
+  if(!corpId)throw new Error('Corporation ID is required for zKillboard verification.');
+  let cache=zkillCorpLeaderboardCache.get(corpId)||{updatedAt:0,data:null,promise:null};
+  const nowMs=Date.now();
+  if(!force&&cache.data&&nowMs-cache.updatedAt<ZKILL_CACHE_MS)return cache.data;
+  if(cache.promise)return cache.promise;
+
+  const pending=(async()=>{
+    const characters=new Map(),seenKillIds=new Set();
+    const corp={id:corpId,killmails:0,finalBlows:0,damageDone:0,iskOnKillmails:0,_kills:new Set()};
+    let pagesFetched=0,truncated=false,previousPageSignature='';
+
+    for(let page=1;page<=ZKILL_MAX_PAGES;page++){
+      const url=`https://zkillboard.com/api/kills/corporationID/${corpId}/pastSeconds/${ZKILL_WINDOW_SECONDS}/page/${page}/`;
+      const rows=await zkillJson(url);
+      if(!Array.isArray(rows))throw new Error(`zKillboard corporation page ${page} was not a killmail list.`);
+      const list=rows;
+      const signature=list.slice(0,5).map(row=>String(row?.killmail_id||'')).join(',');
+      if(page>1&&list.length&&signature&&signature===previousPageSignature){
+        throw new Error(`zKillboard corporation pagination repeated page ${page-1}.`);
+      }
+      if(signature)previousPageSignature=signature;
+      pagesFetched=page;
+
+      for(const km of list){
+        const killId=Number(km?.killmail_id);
+        if(!killId||seenKillIds.has(killId))continue;
+        seenKillIds.add(killId);
+        const value=Number(km?.zkb?.totalValue)||0;
+        let corpInvolved=false;
+
+        for(const attacker of Array.isArray(km?.attackers)?km.attackers:[]){
+          if(Number(attacker?.corporation_id)!==corpId)continue;
+          if(Number(attacker?.alliance_id)!==INIT_ALLIANCE_ID)continue;
+          corpInvolved=true;
+          const charId=Number(attacker?.character_id);
+          if(charId)addPvpMetric(
+            characters,
+            charId,
+            corpId,
+            killId,
+            value,
+            Boolean(attacker?.final_blow),
+            Number(attacker?.damage_done)||0,
+          );
+          if(attacker?.final_blow)corp.finalBlows++;
+          corp.damageDone+=Number(attacker?.damage_done)||0;
+        }
+
+        if(corpInvolved&&!corp._kills.has(killId)){
+          corp._kills.add(killId);
+          corp.killmails++;
+          corp.iskOnKillmails+=value;
+        }
+      }
+
+      if(list.length<200)break;
+      if(page===ZKILL_MAX_PAGES){truncated=true;break}
+      await sleep(ZKILL_PAGE_GAP_MS);
+    }
+
+    const rankedCharacters=rankPvpRows([...characters.values()]);
+    for(const row of rankedCharacters)delete row._kills;
+    delete corp._kills;
+    const data={
+      generatedAt:now(),
+      pagesFetched,
+      truncated,
+      killmailsProcessed:seenKillIds.size,
+      characters:rankedCharacters,
+      corporation:corp,
+      sourceComplete:!truncated,
+    };
+    cache={updatedAt:Date.now(),data,promise:null};
+    zkillCorpLeaderboardCache.set(corpId,cache);
+    return data;
+  })().finally(()=>{
+    const current=zkillCorpLeaderboardCache.get(corpId);
+    if(current?.promise===pending)zkillCorpLeaderboardCache.set(corpId,{...current,promise:null});
+  });
+
+  zkillCorpLeaderboardCache.set(corpId,{...cache,promise:pending});
+  return pending;
+}
+
 async function pvpLeaderboardForUser(user,{force=false}={}){
   const primaryId=Number(user?.primaryCharacterId);
   if(!primaryId)throw new Error('No primary EVE character is linked.');
@@ -2013,17 +2100,45 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
   if(Number(corporation?.alliance_id)!==INIT_ALLIANCE_ID)throw new Error(`${corporation?.name||'Your corporation'} is not currently in INIT.`);
 
   const base=await buildInitZkillLeaderboard(force);
-  const corpBase=base.corporations.find(row=>Number(row.id)===corporationId)||null;
-  const myMembersBase=base.characters.filter(row=>Number(row.corporationId)===corporationId);
-  const topCharacters=base.characters.slice(0,100);
+  let corpDirect=null,corpVerifyError=null;
+  try{
+    corpDirect=await buildCorpZkillLeaderboard(corporationId,force);
+  }catch(err){
+    corpVerifyError=String(err.message||err);
+    console.warn('Corporation zKill verification failed',corpVerifyError);
+  }
+
+  // Clone the INIT-wide rows so we can replace this user's corporation with a
+  // corporation-specific crawl. This catches participation that can be missed
+  // by a very busy alliance-wide query/cache.
+  const characterMap=new Map(base.characters.map(row=>[Number(row.id),{...row}]));
+  if(corpDirect?.characters?.length){
+    for(const row of corpDirect.characters){
+      characterMap.set(Number(row.id),{
+        ...row,
+        corporationId,
+      });
+    }
+  }
+  const correctedCharacters=rankPvpRows([...characterMap.values()]);
+
+  const corporationMap=new Map(base.corporations.map(row=>[Number(row.id),{...row}]));
+  if(corpDirect?.corporation){
+    corporationMap.set(corporationId,{...corpDirect.corporation});
+  }
+  const correctedCorporations=rankPvpRows([...corporationMap.values()]);
+
+  const corpBase=correctedCorporations.find(row=>Number(row.id)===corporationId)||null;
+  const myMembersBase=correctedCharacters.filter(row=>Number(row.corporationId)===corporationId);
+  const topCharacters=correctedCharacters.slice(0,100);
   const displayCharacterIds=[...new Set([...topCharacters,...myMembersBase].map(row=>row.id))];
-  const corpIds=base.corporations.map(row=>row.id);
+  const corpIds=correctedCorporations.map(row=>row.id);
   const [charNames,corpNames]=await Promise.all([
     resolveUniverseNames(displayCharacterIds),
     resolveUniverseNames(corpIds),
   ]);
 
-  const corpDisplay=base.corporations.slice(0,50);
+  const corpDisplay=correctedCorporations.slice(0,50);
   if(corpBase&&!corpDisplay.some(row=>row.id===corpBase.id))corpDisplay.push(corpBase);
   corpDisplay.sort((a,b)=>a.rank-b.rank);
 
@@ -2053,26 +2168,30 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
     allianceId:INIT_ALLIANCE_ID,
     allianceName:'The Initiative.',
     windowSeconds:ZKILL_WINDOW_SECONDS,
-    generatedAt:base.generatedAt,
+    generatedAt:corpDirect?.generatedAt||base.generatedAt,
     pagesFetched:base.pagesFetched,
     truncated:base.truncated,
     killmailsProcessed:base.killmailsProcessed,
-    activeCharacters:base.characters.length,
-    activeCorporations:base.corporations.length,
+    activeCharacters:correctedCharacters.length,
+    activeCorporations:correctedCorporations.length,
+    myCorpVerified:Boolean(corpDirect),
+    myCorpVerificationError:corpVerifyError,
+    myCorpPagesFetched:corpDirect?.pagesFetched||0,
+    myCorpKillmailsProcessed:corpDirect?.killmailsProcessed||0,
     myCorporation:{
       corporationId,
       name:String(corporation?.name||corpNames.get(corporationId)||corporationId),
       rank:corpBase?.rank||null,
       killmails:corpBase?.killmails||0,
+      iskOnKillmails:corpBase?.iskOnKillmails||0,
     },
     corporations:corpDisplay.map(decorateCorp),
     characters:topCharacters.map(decorateChar),
     myCorpMembers:myMembersBase.map(decorateChar),
   };
 }
-
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.75',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.76',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){const u=readSession(req);return json(res,200,{authenticated:Boolean(u),user:u?myProfile(u):null})}
   const user=requireUser(req,res);if(!user)return;
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());

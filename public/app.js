@@ -659,7 +659,7 @@
           <article class="glass pvp-summary-card">
             <span>YOUR CORP</span>
             <strong>${esc(d.myCorporation?.name||'Unknown')}</strong>
-            <small>${myRank?`#${myRank} of ${d.activeCorporations} active INIT corps`:'No kills recorded in this window'}</small>
+            <small>${myRank?`#${myRank} of ${d.activeCorporations} active INIT corps`:'No kills recorded in this window'}${d.myCorpVerified?' • corp verified directly':''}</small>
           </article>
           <article class="glass pvp-summary-card">
             <span>YOUR ACTIVE PILOTS</span>
@@ -712,7 +712,7 @@
 
         <section class="pvp-footnote">
           <strong>RANKING METHOD</strong>
-          <span>Primary rank = distinct INIT killmails participated in. Ties use final blows, then damage done. “ISK on kills” is the total zKillboard value of killmails the pilot/corp appeared on; it is not personal loot or damage value.</span>
+          <span>Primary rank = distinct INIT killmails participated in. Ties use final blows, then damage done. “ISK on kills” is the total zKillboard value of killmails the pilot/corp appeared on; it is not personal loot or damage value. Your corporation is verified with a separate corporation-specific zKillboard crawl before its members are placed against INIT.</span>
           <small>Updated ${d.generatedAt?ago(d.generatedAt):'recently'} • ${d.stale?'showing last good cache after refresh error • ':''}shared server cache • source: zKillboard public API</small>
         </section>
       </div>`;
