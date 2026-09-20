@@ -720,7 +720,7 @@
     const host=$('doctrineMarketPanel');
     if(!host)return;
     if(doctrineMarketLoading&&!doctrineMarket){
-      host.innerHTML='<section class="glass doctrine-loading"><strong>LOADING DOCTRINE MARKET…</strong><span>Verifying INIT access and loading protected live market data.</span></section>';
+      host.innerHTML='<section class="glass doctrine-loading"><strong>LOADING DOCTRINE MARKET…</strong><span>Loading current doctrine market data.</span></section>';
       return;
     }
     if(doctrineMarketError){
@@ -784,19 +784,15 @@
       '</tr>';
     }).join('');
 
-    const snapshot=doctrineMarket.snapshotDate||summary.date||'';
     const status=doctrineMarket.status||{};
-    const cnFresh=status.cnUpdatedAt?ago(status.cnUpdatedAt):'workbook fallback';
-    const jitaFresh=status.jitaUpdatedAt?ago(status.jitaUpdatedAt):'workbook fallback';
-    const historyFresh=status.historyUpdatedAt?ago(status.historyUpdatedAt):'workbook fallback';
     const refreshing=Boolean(status.refreshing||doctrineMarketLoading);
     host.innerHTML=`
       <section class="glass doctrine-shell">
         <div class="doctrine-hero">
           <div>
-            <span class="eyebrow">INITIATIVE • PROTECTED MARKET INTEL</span>
+            <span class="eyebrow">INITIATIVE • DOCTRINE MARKET</span>
             <strong>DOCTRINE MARKET INTEL</strong>
-            <small>Live C-N stock • Fountain demand • Jita pricing • workbook seed ${esc(snapshot||'unknown')}</small>
+            <small>C-N stock • Fountain demand • Jita pricing</small>
           </div>
           <button id="doctrineRefresh" class="board-tool" type="button" ${refreshing?'disabled':''}>${refreshing?'REFRESHING…':'REFRESH LIVE'}</button>
         </div>
@@ -826,7 +822,7 @@
 
         <div class="doctrine-summary-line">
           <strong>${fmt(rows.length)} MATCHING ITEMS</strong>
-          <span>C-N ${esc(cnFresh)} • Jita ${esc(jitaFresh)} • demand ${esc(historyFresh)} • showing ${fmt(display.length)}${rows.length>display.length?' of '+fmt(rows.length):''}</span>
+          <span>Showing ${fmt(display.length)}${rows.length>display.length?' of '+fmt(rows.length):''}</span>
         </div>
 
         <div class="doctrine-table-wrap">
@@ -836,10 +832,6 @@
           </table>
         </div>
 
-        <div class="doctrine-note">
-          <strong>TRACKER LOGIC</strong>
-          <span>The workbook formulas now run in JLR. C-N stock and lowest sell come from John's authorized structure market checker, refreshed every 15 minutes while this feature is in use. Fountain 7d/30d demand comes from ESI market history, and Jita uses a Fuzzworks-style 5% sell percentile from live The Forge orders. The workbook snapshot is retained only as a fallback while a live cache is warming.</span>
-        </div>
       </section>`;
 
     host.querySelectorAll('[data-doctrine-view]').forEach(button=>button.addEventListener('click',()=>{
