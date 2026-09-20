@@ -639,3 +639,9 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
   .threat-actions{width:100%}
   .threat-actions .orb{flex:1}
 }
+
+.pvp-member-controls-only{justify-content:flex-start}
+.pvp-member-controls-only .pvp-member-rank-controls{margin-left:0;justify-content:flex-start;width:100%}
+.pvp-member-controls-only .pvp-member-rank-controls .orb{min-width:68px;padding-inline:5px;font-size:5.35px}
+.pvp-member-controls-only #pvpRankLifetime{min-width:82px}
+.pvp-member-controls-only .pvp-toon-picker{min-width:82px;max-width:104px;flex-basis:104px}
