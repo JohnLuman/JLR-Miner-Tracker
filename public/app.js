@@ -23,7 +23,7 @@
   let pvpIntelError = '';
   let pvpIntelLoading = false;
   const savedPvpMemberRankMode=localStorage.getItem('jlrPvpMemberRankMode');
-  let pvpMemberRankMode=['activity','isk','damage','lifetime'].includes(savedPvpMemberRankMode)?savedPvpMemberRankMode:'activity';
+  let pvpMemberRankMode=['overall','activity','isk','damage','lifetime'].includes(savedPvpMemberRankMode)?savedPvpMemberRankMode:'overall';
   let pvpPinnedCharacterId=localStorage.getItem('jlrPvpPinnedCharacter')||'';
   let pvpToonMenuOpen=false;
   let pvpLifetimeDamage=null;
@@ -685,7 +685,7 @@
     }
 
     const lifetimeMode=pvpMemberRankMode==='lifetime';
-    const memberRankField=pvpMemberRankMode==='isk'?'rankIsk':pvpMemberRankMode==='damage'?'rankDamage':'rankActivity';
+    const memberRankField=pvpMemberRankMode==='overall'?'rankOverall':pvpMemberRankMode==='isk'?'rankIsk':pvpMemberRankMode==='damage'?'rankDamage':'rankActivity';
     let memberRows=lifetimeMode
       ?[...(pvpLifetimeDamage?.rows||[])]
       :[...(d.myCorpMembers||[])];
@@ -706,7 +706,7 @@
     const myMembers=memberRows.map(row=>`
       <tr class="mine${String(row.characterId)===String(pvpPinnedCharacterId)?' pvp-own-toon':''}">
         <td>${pvpRankBadge(lifetimeMode?row.rank:row?.[memberRankField],true)}</td>
-        <td><a class="pvp-killboard-link" href="https://zkillboard.com/character/${encodeURIComponent(row.characterId)}/" target="_blank" rel="noopener noreferrer" title="Open ${esc(row.name||('Character '+row.characterId))} on zKillboard"><strong>${esc(row.name||('Character '+row.characterId))}</strong></a></td>
+        <td><a class="pvp-killboard-link" href="https://zkillboard.com/character/${encodeURIComponent(row.characterId)}/" target="_blank" rel="noopener noreferrer" title="Open ${esc(row.name||('Character '+row.characterId))} on zKillboard"><strong>${esc(row.name||('Character '+row.characterId))}</strong></a>${pvpMemberRankMode==='overall'&&Number.isFinite(Number(row.overallScore))?'<small>OVERALL '+Number(row.overallScore).toFixed(1)+'</small>':''}</td>
         <td>${fmt(row.killmails)}</td>
         <td>${fmt(row.finalBlows)}</td>
         <td>${fmt(row.damageDone)}</td>
@@ -785,6 +785,7 @@
                     </div>`:''}
                   </div>`;
                 })():''}
+                <button id="pvpRankOverall" class="orb ${pvpMemberRankMode==='overall'?'blue':''}" type="button" aria-pressed="${pvpMemberRankMode==='overall'}">BEST OVERALL • CORP</button>
                 <button id="pvpRankActivity" class="orb ${pvpMemberRankMode==='activity'?'blue':''}" type="button" aria-pressed="${pvpMemberRankMode==='activity'}">KILLMAILS / FINALS</button>
                 <button id="pvpRankIsk" class="orb ${pvpMemberRankMode==='isk'?'blue':''}" type="button" aria-pressed="${pvpMemberRankMode==='isk'}">ISK ON KILLS</button>
                 <button id="pvpRankDamage" class="orb ${pvpMemberRankMode==='damage'?'blue':''}" type="button" aria-pressed="${pvpMemberRankMode==='damage'}">MOST DAMAGE • 7D</button>
@@ -793,7 +794,7 @@
             </div>
             <div class="pvp-table-wrap">
               <table class="pvp-table">
-                <thead><tr><th>${lifetimeMode?'CORP RANK':pvpMemberRankMode==='isk'?'ISK RANK':pvpMemberRankMode==='damage'?'DAMAGE RANK':'KILL RANK'}</th><th>PILOT</th><th>KILLMAILS</th><th>FINAL</th><th>${lifetimeMode?'LIFETIME DAMAGE':pvpMemberRankMode==='damage'?'DAMAGE • 7D':'DAMAGE'}</th><th>ISK ON KILLS</th></tr></thead>
+                <thead><tr><th>${lifetimeMode?'CORP RANK':pvpMemberRankMode==='overall'?'CORP RANK':pvpMemberRankMode==='isk'?'ISK RANK':pvpMemberRankMode==='damage'?'DAMAGE RANK':'KILL RANK'}</th><th>PILOT</th><th>KILLMAILS</th><th>FINAL</th><th>${lifetimeMode?'LIFETIME DAMAGE':pvpMemberRankMode==='damage'?'DAMAGE • 7D':'DAMAGE'}</th><th>ISK ON KILLS</th></tr></thead>
                 <tbody>${lifetimeMode&&!pvpLifetimeDamage?.ready?`<tr><td colspan="6" class="pvp-lifetime-status">${pvpLifetimeDamageError?esc(pvpLifetimeDamageError):`LOCAL DATABASE BUILDING • ${fmt(pvpLifetimeDamage?.monthsScanned||0)}/${fmt(pvpLifetimeDamage?.totalMonths||0)} MONTHS CACHED`}</td></tr>`:''}${myMembers||`<tr><td colspan="6">${lifetimeMode?'No lifetime damage cached yet.':'No active corp pilots found in this 7-day window.'}</td></tr>`}</tbody>
               </table>
             </div>
@@ -812,7 +813,7 @@
 
         <section class="pvp-footnote">
           <strong>RANKING METHOD</strong>
-          <span>Corporation rows use zKillboard's own Weekly 7d stats. Pilot rankings are rebuilt from JLR's local rolling killmail database, ordered by killmails, final blows, damage, then ISK. LIFETIME DAMAGE uses the separate historical local database.</span>
+          <span>Corporation rows use zKillboard's own Weekly 7d stats. BEST OVERALL is a corp-only 7-day score with equal weight for killmail participation, final blows, damage, and ISK on kills. Other pilot rankings are INIT-wide from JLR's local rolling killmail database. LIFETIME DAMAGE uses the separate historical local database.</span>
           <small>Updated ${d.generatedAt?ago(d.generatedAt):'recently'} • ${d.stale?'showing last good cache after refresh error • ':''}${d.localArchive?'local archive refreshes every 15 minutes':'shared server cache'} • source: zKillboard public API</small>
         </section>
       </div>`;
@@ -829,6 +830,11 @@
       pvpToonMenuOpen=false;
       renderPvpIntel();
     }));
+    $('pvpRankOverall')?.addEventListener('click',()=>{
+      pvpMemberRankMode='overall';
+      localStorage.setItem('jlrPvpMemberRankMode',pvpMemberRankMode);
+      renderPvpIntel();
+    });
     $('pvpRankActivity')?.addEventListener('click',()=>{
       pvpMemberRankMode='activity';
       localStorage.setItem('jlrPvpMemberRankMode',pvpMemberRankMode);
