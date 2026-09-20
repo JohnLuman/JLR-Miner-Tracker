@@ -4,14 +4,34 @@
   function level(skills,id){return n(skills?.[String(id)]?.level,0)}
   function items(fit){return Array.isArray(fit?.items)?fit.items:[]}
   function itemCount(row){return Math.max(1,n(row?.quantity,1))}
-  function detectCrystal(fit){
-    for(const row of items(fit)){
-      const name=String(row.name||'');
-      const m=name.match(/Type\s+([ABC])\s+(II|I)\b/i);
-      if(m)return `${m[1].toUpperCase()}-Type ${m[2].toUpperCase()==='II'?'T2':'T1'}`;
-    }
-    return 'None';
+  function crystalKey(row){
+    const name=String(row?.name||'');
+    const m=name.match(/Type\s+([ABC])\s+(II|I)\b/i);
+    return m?`${m[1].toUpperCase()}-Type ${m[2].toUpperCase()==='II'?'T2':'T1'}`:null;
   }
+  function isCargoFlag(flag){
+    const raw=String(flag??'').trim().toLowerCase();
+    return raw==='5'||raw==='cargo'||raw.includes('cargo');
+  }
+  function detectCrystalDetails(fit){
+    const crystals=items(fit).map(row=>({row,key:crystalKey(row)})).filter(x=>x.key);
+    const unique=(rows)=>[...new Set(rows.map(x=>x.key))];
+
+    // A crystal actually assigned outside Cargo takes priority. This prevents
+    // spare crystals saved in cargo from changing the mining calculation.
+    const loaded=unique(crystals.filter(x=>!isCargoFlag(x.row?.flag)));
+    if(loaded.length===1)return{key:loaded[0],source:'loaded',ambiguous:false};
+    if(loaded.length>1)return{key:'None',source:'loaded',ambiguous:true};
+
+    // If no loaded crystal is visible, cargo is only used when it contains one
+    // unambiguous A/B/C tier. Multiple spare crystal types are not guessed.
+    const cargo=unique(crystals.filter(x=>isCargoFlag(x.row?.flag)));
+    if(cargo.length===1)return{key:cargo[0],source:'cargo-fallback',ambiguous:false};
+    if(cargo.length>1)return{key:'None',source:'cargo-fallback',ambiguous:true};
+
+    return{key:'None',source:'none',ambiguous:false};
+  }
+  function detectCrystal(fit){return detectCrystalDetails(fit).key}
   function detectCoreTier(fit){
     const names=items(fit).map(x=>String(x.name||''));
     if(names.some(x=>/Industrial Core II\b/i.test(x)))return 'T2';
@@ -111,8 +131,9 @@
 
     const chipsetName=firstRecognized(fitItems,data.chipsets||{});
     const chipset=data.chipsets?.[chipsetName]||data.chipsets?.None||{};
+    const detectedCrystal=detectCrystalDetails(minerFit);
     let chosenCrystal=String(crystalKey||'None');
-    if(chosenCrystal==='Auto')chosenCrystal=detectCrystal(minerFit);
+    if(chosenCrystal==='Auto')chosenCrystal=detectedCrystal.key;
     if(!data.crystals?.[chosenCrystal])chosenCrystal='None';
     const boost=boostBreakdown(data,boosterSkills,boosterFit,mindlink);
 
@@ -191,6 +212,8 @@
       shipName,
       fitName:minerFit.name||'Unnamed fit',
       crystal:chosenCrystal,
+      crystalSource:chosenCrystal===detectedCrystal.key?detectedCrystal.source:'manual',
+      crystalAmbiguous:chosenCrystal===detectedCrystal.key?detectedCrystal.ambiguous:false,
       chipset:chipsetName,
       miningUpgradeBonus:upgradeBonus,
       miningUpgrades:upgradeParts,
@@ -204,5 +227,5 @@
       m3PerHour:totalM3s*3600,
     };
   }
-  globalThis.JLRYieldMath={calculate,detectCrystal,detectCoreTier,detectBurstTier,detectBoostCharges,detectEfficiencyCharge,detectOptimizationCharge,boostBreakdown};
+  globalThis.JLRYieldMath={calculate,detectCrystal,detectCrystalDetails,detectCoreTier,detectBurstTier,detectBoostCharges,detectEfficiencyCharge,detectOptimizationCharge,boostBreakdown};
 })();
