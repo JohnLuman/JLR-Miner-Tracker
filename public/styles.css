@@ -687,6 +687,12 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
   text-shadow:0 1px 2px rgba(0,0,0,.65);
   box-shadow:inset 0 1px rgba(255,255,255,.15),0 2px 5px rgba(0,0,0,.35);
 }
+.pvp-member-controls-only #pvpRankOverall{
+  background:linear-gradient(180deg,#b58a2f,#765615);
+  border-color:#f1cc6b;
+  color:#fff9e8;
+  min-width:122px;
+}
 .pvp-member-controls-only #pvpRankActivity{
   background:linear-gradient(180deg,#257dd6,#18539a);
   border-color:#5fb1ff;
