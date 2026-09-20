@@ -641,7 +641,7 @@
     const myMembers=memberRows.map(row=>`
       <tr class="mine">
         <td>${pvpRankBadge(row?.[memberRankField],true)}</td>
-        <td><strong>${esc(row.name||('Character '+row.characterId))}</strong></td>
+        <td><a class="pvp-killboard-link" href="https://zkillboard.com/character/${encodeURIComponent(row.characterId)}/" target="_blank" rel="noopener noreferrer" title="Open ${esc(row.name||('Character '+row.characterId))} on zKillboard"><strong>${esc(row.name||('Character '+row.characterId))}</strong></a></td>
         <td>${fmt(row.killmails)}</td>
         <td>${fmt(row.finalBlows)}</td>
         <td>${fmt(row.damageDone)}</td>
@@ -650,7 +650,7 @@
     const allianceRows=(d.characters||[]).map(row=>`
       <tr class="${row.isMyCorp?'mine':''}">
         <td>${pvpRankBadge(row.rank,row.isMyCorp)}</td>
-        <td><strong>${esc(row.name||('Character '+row.characterId))}</strong>${row.isMyCorp?'<small>YOUR CORP</small>':''}</td>
+        <td>${row.isMyCorp?`<a class="pvp-killboard-link" href="https://zkillboard.com/character/${encodeURIComponent(row.characterId)}/" target="_blank" rel="noopener noreferrer" title="Open ${esc(row.name||('Character '+row.characterId))} on zKillboard"><strong>${esc(row.name||('Character '+row.characterId))}</strong></a>`:`<strong>${esc(row.name||('Character '+row.characterId))}</strong>`}${row.isMyCorp?'<small>YOUR CORP</small>':''}</td>
         <td>${fmt(row.killmails)}</td>
         <td>${fmt(row.finalBlows)}</td>
         <td>${fmt(row.damageDone)}</td>
