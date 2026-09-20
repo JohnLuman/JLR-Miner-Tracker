@@ -55,6 +55,8 @@
   let fleetSettings = loadFleet();
   let fleetArrangeMode=false;
   let fleetDragId='';
+  let fleetSearchText='';
+  let fleetViewFilter=['all','selected','miners','nofit'].includes(localStorage.getItem('jlrFleetViewFilter'))?localStorage.getItem('jlrFleetViewFilter'):'all';
   const DEFAULT_CALC = { boosterCharacterId:'', boosterFittingId:'', mindlink:true };
   function loadCalc(){try{return{...DEFAULT_CALC,...JSON.parse(localStorage.getItem('jlrMiningCalc')||'{}')}}catch{return{...DEFAULT_CALC}}}
   let calcSettings=loadCalc();
@@ -1615,6 +1617,42 @@
     $('lastSync').textContent=state.esi.lastSyncAt?`EVE data synced ${ago(state.esi.lastSyncAt)}`:(state.esi.lastError?`Sync error: ${state.esi.lastError}`:'No successful sync yet');
     renderDataStatus();
   }
+  function fleetLaserDetails(entry){
+    if(!entry?.result)return null;
+    const lasers=Array.isArray(entry.result.lasers)?entry.result.lasers:[];
+    const count=lasers.reduce((sum,row)=>sum+Math.max(1,Number(row?.quantity)||1),0);
+    if(!count)return null;
+    const perLaser=(Number(entry.effectiveM3)||0)/count;
+    const ranges=[];
+    for(const row of lasers){
+      const range=Number(row?.optimalRange);
+      if(Number.isFinite(range)&&range>0)ranges.push(range);
+    }
+    let rangeText='—';
+    if(ranges.length){
+      const min=Math.min(...ranges),max=Math.max(...ranges);
+      const km=value=>value>=1000?(value/1000).toFixed(value>=10000?1:2)+' km':Math.round(value)+' m';
+      rangeText=Math.abs(max-min)>50?`${km(min)}–${km(max)}`:km(max);
+    }
+    return{count,perLaser,rangeText};
+  }
+  function fleetCharacterMatches(character){
+    const id=String(character.characterId);
+    const cfg=fleetSettings.members?.[id]||{};
+    const fits=miningFits(character);
+    if(fleetViewFilter==='selected'&&!cfg.enabled)return false;
+    if(fleetViewFilter==='miners'&&!fits.length)return false;
+    if(fleetViewFilter==='nofit'&&fits.length)return false;
+    const query=String(fleetSearchText||'').trim().toLowerCase();
+    if(!query)return true;
+    const haystack=[
+      character.name,
+      ...fits.flatMap(fit=>[fit.shipName,fit.name]),
+      id,
+    ].map(value=>String(value||'').toLowerCase()).join(' ');
+    return haystack.includes(query);
+  }
+
   function renderFleet(){
     if(!me)return;
     if(document.activeElement!==$('uptime'))$('uptime').value=Number(fleetSettings.uptime)||100;
@@ -1654,29 +1692,52 @@
     }
 
     const stats=fleetStats(),byId=new Map(stats.entries.map(x=>[String(x.character.characterId),x]));
+    const visibleChars=chars.filter(fleetCharacterMatches);
+    const selectedCount=chars.filter(character=>Boolean(fleetSettings.members?.[String(character.characterId)]?.enabled)).length;
+    const visibleCount=$('fleetVisibleCount');
+    if(visibleCount)visibleCount.textContent=`SHOWING ${visibleChars.length} / ${chars.length} • ${selectedCount} SELECTED`;
+    const searchInput=$('fleetSearchInput');
+    if(searchInput&&document.activeElement!==searchInput&&searchInput.value!==fleetSearchText)searchInput.value=fleetSearchText;
+    const viewSelect=$('fleetViewFilter');
+    if(viewSelect&&viewSelect.value!==fleetViewFilter)viewSelect.value=fleetViewFilter;
     if(!chars.length){
       list.innerHTML='<div class="fleet-empty">Connect miners to build your fleet.</div>';
+    }else if(!visibleChars.length){
+      list.innerHTML='<div class="fleet-empty">No toons match this fleet view. Clear the search or change SHOW.</div>';
     }else{
-      for(const character of chars){
+      for(const character of visibleChars){
         const id=String(character.characterId),cfg=fleetSettings.members[id],fits=miningFits(character),entry=byId.get(id);
         const row=document.createElement('div');row.className=`fleet-member${cfg.enabled?' selected':''}`;
         row.dataset.id=id;
         row.draggable=fleetArrangeMode;
         const fitOptions=groupedFitOptions(fits,cfg.fittingId);
-        let output='Excluded from fleet output';
-        if(cfg.enabled){
-          if(entry?.result)output=`${fmt(entry.effectiveM3,'m3')} m³/hr @ ${Number(fleetSettings.uptime).toFixed(0)}%`;
-          else output=entry?.error||'Select a supported saved mining fit';
-        }
         const isBooster=id===String(calcSettings.boosterCharacterId||'');
         const boosterFitText=isBooster?(boosterFit?`${boosterFit.shipName} — ${boosterFit.name}` :'No saved booster fit'):'';
+        const laser=fleetLaserDetails(entry);
+        let outputMain='EXCLUDED',outputSub='not counted',perLaser='—',range='—';
+        if(isBooster){
+          outputMain=cfg.enabled?'BOOST ONLY':'BOOSTER OFF';
+          outputSub=cfg.enabled?'m³ excluded from miner total':'not in fleet';
+        }else if(cfg.enabled&&entry?.result){
+          outputMain=`${fmt(entry.effectiveM3,'m3')} m³/hr @ ${Number(fleetSettings.uptime).toFixed(0)}%`;
+          outputSub=`${laser?.count||0} laser${laser?.count===1?'':'s'} • uptime adjusted`;
+          perLaser=laser?`${fmt(laser.perLaser,'m3')}`:'—';
+          range=laser?.rangeText||'—';
+        }else if(cfg.enabled){
+          outputMain=entry?.error||'NO SUPPORTED FIT';
+          outputSub='check saved fit / EVE sync';
+        }
         if(isBooster)row.classList.add('booster');
         if(fleetArrangeMode)row.classList.add('arranging');
         row.innerHTML=`
           ${fleetArrangeMode?'<span class="fleet-drag-grip" aria-hidden="true">⠿</span>':''}
           <label class="fleet-member-toggle"><input class="fleet-member-check" data-id="${id}" type="checkbox" ${cfg.enabled?'checked':''} ${!isBooster&&!fits.length?'disabled':''}><img src="${esc(character.portrait)}" alt=""><span><strong>${esc(character.name)}</strong><small>${isBooster?(cfg.enabled?'Selected booster • in fleet':'Selected booster • not in fleet'):fits.length?`${fits.length} mining fit${fits.length===1?'':'s'}`:'No mining fits'}</small></span></label>
           ${isBooster?`<div class="fleet-booster-fit-inline">${esc(boosterFitText)}</div>`:`<select class="fleet-fit-select" data-id="${id}" ${fits.length?'':'disabled'}>${fitOptions}</select>`}
-          <strong class="fleet-member-output">${esc(isBooster?(cfg.enabled?'BOOST ONLY • m³ excluded':'Booster excluded from fleet'):output)}</strong>`;
+          <div class="fleet-member-metrics">
+            <span class="fleet-member-output"><strong>${esc(outputMain)}</strong><small>${esc(outputSub)}</small></span>
+            <span><strong>${esc(perLaser)}</strong><small>M³/HR / LASER</small></span>
+            <span title="Strip-miner optimal range with detected Mining Laser Field Enhancement boost. Implant range bonuses are not modeled."><strong>${esc(range)}</strong><small>LASER RANGE</small></span>
+          </div>`;
         list.appendChild(row);
       }
     }
@@ -2435,7 +2496,7 @@
     const boosterNeedsReauth=Boolean(boosterInFleet()&&booster&&boosterFit&&(booster.needsReauth||!Object.keys(booster.skills||{}).length));
 
     if(!enabledMiners.length){
-      $('calcResults').innerHTML='<div class="calc-empty">Select your miners and saved fits in Fleet Setup.</div>';
+      $('calcResults').innerHTML='<div class="calc-empty">Select your miners and saved fits above.</div>';
       return;
     }
     if(minerNeedsReauth){
@@ -2728,6 +2789,34 @@
     saveFleet();
   }
   ['uptime','payout'].forEach(id=>$(id).addEventListener('input',readFleet));
+  $('fleetSearchInput')?.addEventListener('input',event=>{
+    fleetSearchText=String(event.currentTarget.value||'');
+    renderFleet();
+  });
+  $('fleetViewFilter')?.addEventListener('change',event=>{
+    fleetViewFilter=['all','selected','miners','nofit'].includes(event.currentTarget.value)?event.currentTarget.value:'all';
+    localStorage.setItem('jlrFleetViewFilter',fleetViewFilter);
+    renderFleet();
+  });
+  $('fleetSelectAll')?.addEventListener('click',()=>{
+    for(const character of me?.characters||[]){
+      const id=String(character.characterId),fits=miningFits(character),isBooster=id===String(calcSettings.boosterCharacterId||'');
+      const existing=fleetSettings.members[id]&&typeof fleetSettings.members[id]==='object'?fleetSettings.members[id]:{};
+      if(fits.length||isBooster)fleetSettings.members[id]={...existing,enabled:true,fittingId:existing.fittingId||(fits[0]?String(fits[0].fittingId):'')};
+    }
+    saveFleet();
+    toast('All supported mining toons selected.');
+  });
+  $('fleetClearMiners')?.addEventListener('click',()=>{
+    const boosterId=String(calcSettings.boosterCharacterId||'');
+    for(const character of me?.characters||[]){
+      const id=String(character.characterId);
+      if(id===boosterId)continue;
+      if(fleetSettings.members[id])fleetSettings.members[id].enabled=false;
+    }
+    saveFleet();
+    toast(boosterId?'Miners cleared. Booster left enabled.':'All miners cleared.');
+  });
   window.addEventListener('resize',updateUiScale,{passive:true});
   async function boot(){
     try{

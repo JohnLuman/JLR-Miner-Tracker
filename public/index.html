@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700&family=Rajdhani:wght@600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=2.5.2">
+  <link rel="stylesheet" href="/styles.css?v=2.5.3">
 </head>
 <body>
   <main id="loginView" class="login-shell hidden">
@@ -73,8 +73,8 @@
     <div id="tabHost" class="tab-host"></div>
 
     <section class="compact-row">
-      <details class="glass setup-drawer" open>
-        <summary><span>⚙ FLEET MEMBERS & FITS</span><span id="setupSummary">Choose miners and fits</span></summary>
+      <details class="glass setup-drawer fleet-and-fits" open>
+        <summary><span>⚙ FLEET & FITS</span><span id="setupSummary">Choose miners and fits</span></summary>
         <div class="fleet-setup-body">
           <div class="fleet-setup-controls">
             <label>Uptime %<input id="uptime" type="number" min="1" max="100"></label>
@@ -85,8 +85,33 @@
               <span id="fleetArrangeHint">Fits grouped by hull • Z→A</span>
             </div>
           </div>
+
+          <div class="fleet-booster-config">
+            <div class="fleet-subhead"><strong>BOOSTER & COMMAND BURSTS</strong><span>Keep the Rorqual / Orca / Porpoise and its saved fit in the same fleet window.</span></div>
+            <div class="calc-grid calc-booster-grid">
+              <label><span>Booster toon</span><select id="calcBoosterCharacter"><option value="">No booster</option></select></label>
+              <label><span>Saved booster fit</span><select id="calcBoosterFitting"><option value="">No booster fit</option></select></label>
+              <label class="check-label"><input id="calcMindlink" type="checkbox" checked><span>Mindlink equipped</span></label>
+              <label class="boost-charge-label"><span>Mining burst charges detected in saved fit</span><div id="calcBoostCharges" class="calc-readout">No supported mining burst charges detected</div></label>
+            </div>
+          </div>
+
+          <div class="fleet-manager-toolbar">
+            <label class="fleet-search"><span>FIND TOON / FIT</span><input id="fleetSearchInput" type="search" autocomplete="off" placeholder="Search name, hull or saved fit…"></label>
+            <label class="fleet-view-filter"><span>SHOW</span><select id="fleetViewFilter">
+              <option value="all">ALL TOONS</option>
+              <option value="selected">SELECTED</option>
+              <option value="miners">HAS MINING FIT</option>
+              <option value="nofit">NO MINING FIT</option>
+            </select></label>
+            <button id="fleetSelectAll" class="board-tool" type="button">✓ SELECT ALL MINERS</button>
+            <button id="fleetClearMiners" class="board-tool subtle" type="button">CLEAR MINERS</button>
+            <span id="fleetVisibleCount" class="fleet-visible-count">—</span>
+          </div>
+
           <div id="fleetMemberList" class="fleet-member-list"></div>
-          <div class="fleet-setup-hint">Checked miners contribute to projected fleet output. Choose the saved fit each toon is flying. A selected booster stays in fleet for boosts but is excluded from mining m³/hr.</div>
+          <div id="calcResults" class="calc-results fleet-inline-results"></div>
+          <div class="fleet-setup-hint">Each miner shows fleet output, m³/hr per laser, and laser range. Range models the saved strip miner plus detected Mining Laser Field Enhancement burst; implant range bonuses are not included.</div>
         </div>
       </details>
 
@@ -124,27 +149,6 @@
           <div id="fieldMessage" class="tiny muted">Status is shared with the fleet. RED starts the fixed 10-hour respawn timer; notes are shared per system.</div>
         </div>
       </section>
-    </section>
-
-    <section class="glass calculator-panel shared-calculator">
-      <div class="section-title calculator-title">
-        <div><strong>MINING CONFIGURATION & OUTPUT</strong></div>
-      </div>
-
-      <div class="calculator-workspace">
-        <div class="calc-group">
-          <div class="calc-group-title">BOOST CONFIGURATION</div>
-          <div class="calc-grid calc-booster-grid">
-            <label><span>Booster toon</span><select id="calcBoosterCharacter"><option value="">No booster</option></select></label>
-            <label><span>Saved booster fit</span><select id="calcBoosterFitting"><option value="">No booster fit</option></select></label>
-            <label class="check-label"><input id="calcMindlink" type="checkbox" checked><span>Mindlink equipped</span></label>
-            <label class="boost-charge-label"><span>Mining burst charges detected in saved fit</span><div id="calcBoostCharges" class="calc-readout">No supported mining burst charges detected</div></label>
-          </div>
-        </div>
-      </div>
-
-      <div id="calcResults" class="calc-results"></div>
-
     </section>
 
     <section class="glass board-panel">
@@ -324,6 +328,6 @@
     <div id="toast" class="toast hidden" role="status"></div>
   </main>
   <script src="/yield-math.js?v=2.3.74" defer></script>
-  <script src="/app.js?v=2.5.2" defer></script>
+  <script src="/app.js?v=2.5.3" defer></script>
 </body>
 </html>

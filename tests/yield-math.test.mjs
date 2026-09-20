@@ -45,6 +45,9 @@ const result=globalThis.JLRYieldMath.calculate({
 assert.ok(Math.abs(result.m3PerHour-data.regression.expectedM3PerHour)<0.01,`m3/hr ${result.m3PerHour}`);
 assert.ok(Math.abs(result.boost.cycleReduction-data.regression.expectedCycleReduction)<1e-12,`cycle reduction ${result.boost.cycleReduction}`);
 assert.ok(Math.abs(result.boost.efficiencyBoost-data.regression.expectedEfficiencyBoost)<1e-12,`efficiency ${result.boost.efficiencyBoost}`);
+assert.equal(result.boost.rangeBonus,0);
+assert.equal(result.lasers[0].baseOptimalRange,15000);
+assert.equal(result.lasers[0].optimalRange,15000);
 
 const outriderFit={
   fittingId:3,
@@ -69,6 +72,28 @@ const optimizationOnly={...outriderFit,items:[{name:'Mining Foreman Burst II',qu
 const optimizationOnlyBoost=globalThis.JLRYieldMath.boostBreakdown(data,skills,optimizationOnly,true);
 assert.ok(optimizationOnlyBoost.cycleReduction>0);
 assert.equal(optimizationOnlyBoost.efficiencyBoost,0);
+
+const rangeBoosterFit={
+  fittingId:4,
+  name:'Range Rorqual',
+  shipName:'Rorqual',
+  items:[
+    {name:'Capital Industrial Core II',quantity:1},
+    {name:'Mining Foreman Burst II',quantity:1},
+    {name:'Mining Laser Field Enhancement Charge',quantity:1},
+  ],
+};
+const rangeResult=globalThis.JLRYieldMath.calculate({
+  data,
+  minerSkills:skills,
+  minerFit,
+  crystalKey:'Auto',
+  boosterSkills:skills,
+  boosterFit:rangeBoosterFit,
+  mindlink:true,
+});
+assert.ok(Math.abs(rangeResult.boost.rangeBonus-1.640625)<1e-12,`range bonus ${rangeResult.boost.rangeBonus}`);
+assert.ok(Math.abs(rangeResult.lasers[0].optimalRange-39609.375)<1e-9,`range ${rangeResult.lasers[0].optimalRange}`);
 
 console.log('Yield Calc regression passed:',result.m3PerHour.toFixed(4),'m3/hr');
 console.log('Outrider boost regression passed:',(outriderBoost.cycleReduction*100).toFixed(4)+'%');

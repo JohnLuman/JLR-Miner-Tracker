@@ -66,11 +66,11 @@
   function boostBreakdown(data,skills,fit,mindlink){
     const ship=String(fit?.shipName||'');
     if(!['Porpoise','Orca','Rorqual','Outrider'].includes(ship)){
-      return {ship:'None',core:'None',burst:'T1',cycleReduction:0,efficiencyBoost:0,commonMultiplier:1,charges:{optimization:false,efficiency:false,fieldEnhancement:false,preservation:false,names:[]}};
+      return {ship:'None',core:'None',burst:'T1',cycleReduction:0,efficiencyBoost:0,rangeBonus:0,commonMultiplier:1,charges:{optimization:false,efficiency:false,fieldEnhancement:false,preservation:false,names:[]}};
     }
     const core=detectCoreTier(fit),burst=detectBurstTier(fit);
     const row=data.boostShips?.[`${ship}-${core}`]||data.boostShips?.[`${ship}-None`];
-    if(!row)return {ship,core,burst,cycleReduction:0,efficiencyBoost:0,commonMultiplier:1,charges:detectBoostCharges(fit)};
+    if(!row)return {ship,core,burst,cycleReduction:0,efficiencyBoost:0,rangeBonus:0,commonMultiplier:1,charges:detectBoostCharges(fit)};
     const ids=data.skillIds||{}, bonuses=data.skillBonuses||{}, b=data.boost||{};
     const commandSkill=level(skills,ship==='Rorqual'?ids.capitalIndustrialShips:(ship==='Outrider'?ids.commandDestroyers:ids.industrialCommandShips));
     const director=level(skills,ids.miningDirector);
@@ -80,7 +80,8 @@
     const charges=detectBoostCharges(fit);
     const cycleReduction=charges.optimization?n(b.optimizationBase)*common:0;
     const efficiencyBoost=charges.efficiency?n(b.efficiencyBase)*common:0;
-    return {ship,core,burst,commandSkill,director,cycleReduction,efficiencyBoost,commonMultiplier:common,charges};
+    const rangeBonus=charges.fieldEnhancement?n(b.fieldEnhancementBase)*common:0;
+    return {ship,core,burst,commandSkill,director,cycleReduction,efficiencyBoost,rangeBonus,commonMultiplier:common,charges};
   }
   function normalizeDuration(v,fallback){
     const x=n(v,NaN);
@@ -140,7 +141,7 @@
     let totalM3s=0,totalBasePerCycle=0,totalBonusPerCycle=0;
     const lasers=[];
 
-    function addLaser({displayName,sourceName,quantity=1,miningAmount,duration,criticalSuccessChance,criticalSuccessBonusYield,abyssal=false}){
+    function addLaser({displayName,sourceName,quantity=1,miningAmount,duration,optimalRange,criticalSuccessChance,criticalSuccessBonusYield,abyssal=false}){
       const modulated=/^Modulated (Deep Core )?Strip Miner II$/.test(sourceName);
       const crystal=modulated?(data.crystals?.[chosenCrystal]||data.crystals?.None):(data.crystals?.None||{yieldModifier:1,durationMultiplier:1});
       const baseYield=n(miningAmount)*n(crystal.yieldModifier,1)*
@@ -167,7 +168,9 @@
       totalM3s+=m3s*quantity;
       totalBasePerCycle+=baseYield*quantity;
       totalBonusPerCycle+=bonusYield*quantity;
-      lasers.push({name:displayName,sourceName,quantity,baseYield,bonusYield,totalYield:baseYield+bonusYield,duration:finalDuration,m3s,crystal:modulated?chosenCrystal:'None',abyssal});
+      const baseOptimalRange=n(optimalRange);
+      const finalOptimalRange=baseOptimalRange>0?baseOptimalRange*(1+n(boost.rangeBonus)):0;
+      lasers.push({name:displayName,sourceName,quantity,baseYield,bonusYield,totalYield:baseYield+bonusYield,duration:finalDuration,m3s,baseOptimalRange,optimalRange:finalOptimalRange,crystal:modulated?chosenCrystal:'None',abyssal});
     }
 
     for(const row of normalLaserRows){
@@ -176,6 +179,7 @@
         displayName:name,sourceName:name,quantity:q,
         miningAmount:n(laser.miningAmount),
         duration:n(laser.duration),
+        optimalRange:n(laser.optimalRange),
         criticalSuccessChance:n(laser.criticalSuccessChance),
         criticalSuccessBonusYield:n(laser.criticalSuccessBonusYield),
       });
@@ -200,6 +204,7 @@
           quantity:1,
           miningAmount:Number.isFinite(Number(mod.miningAmount))?Number(mod.miningAmount):n(base.miningAmount),
           duration:normalizeDuration(mod.duration,base.duration),
+          optimalRange:n(base.optimalRange),
           criticalSuccessChance:normalizeChance(mod.criticalSuccessChance,base.criticalSuccessChance),
           criticalSuccessBonusYield:normalizeBonusYield(mod.criticalSuccessBonusYield,base.criticalSuccessBonusYield),
           abyssal:true,

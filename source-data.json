@@ -103,7 +103,8 @@
       "efficiencyBase": 0.5,
       "mindlinkBonus": 0.25,
       "burstModuleT1Bonus": 0,
-      "burstModuleT2Bonus": 0.25
+      "burstModuleT2Bonus": 0.25,
+      "fieldEnhancementBase": 0.4
     },
     "ships": {
       "Covetor": {
@@ -168,7 +169,8 @@
         "residueVolumeMultiplier": 0,
         "residueProbability": 0,
         "criticalSuccessChance": 0.01,
-        "criticalSuccessBonusYield": 2
+        "criticalSuccessBonusYield": 2,
+        "optimalRange": 15000
       },
       "Modulated Strip Miner II": {
         "miningAmount": 120,
@@ -176,7 +178,8 @@
         "residueVolumeMultiplier": 1,
         "residueProbability": 0.34,
         "criticalSuccessChance": 0.01,
-        "criticalSuccessBonusYield": 2
+        "criticalSuccessBonusYield": 2,
+        "optimalRange": 15000
       },
       "ORE Strip Miner": {
         "miningAmount": 200,
@@ -184,7 +187,8 @@
         "residueVolumeMultiplier": 0,
         "residueProbability": 0,
         "criticalSuccessChance": 0.01,
-        "criticalSuccessBonusYield": 2
+        "criticalSuccessBonusYield": 2,
+        "optimalRange": 18750
       },
       "Modulated Deep Core Strip Miner II": {
         "miningAmount": 80,
@@ -192,7 +196,8 @@
         "residueVolumeMultiplier": 1,
         "residueProbability": 0.34,
         "criticalSuccessChance": 0.01,
-        "criticalSuccessBonusYield": 2
+        "criticalSuccessBonusYield": 2,
+        "optimalRange": 15000
       },
       "ORE Deep Core Strip Miner": {
         "miningAmount": 133,
@@ -200,7 +205,8 @@
         "residueVolumeMultiplier": 0,
         "residueProbability": 0,
         "criticalSuccessChance": 0.01,
-        "criticalSuccessBonusYield": 2
+        "criticalSuccessBonusYield": 2,
+        "optimalRange": 18750
       }
     },
     "crystals": {

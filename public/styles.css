@@ -1091,3 +1091,59 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .fleet-order-tools .board-tool:disabled{opacity:.35;cursor:not-allowed;filter:none}
 @media(max-width:760px){.fleet-order-tools{grid-column:1/3;justify-content:flex-start}}
 @media(max-width:430px){.fleet-order-tools{grid-column:auto;flex-wrap:wrap}.fleet-order-tools>span{flex-basis:100%}}
+
+
+/* v2.5.3 Fleet & Fits command workspace */
+.tab-panel[data-tab="fleet"].active{display:block!important}
+.tab-panel[data-tab="fleet"]>.setup-drawer{width:100%!important;max-width:none!important;margin:0!important}
+.fleet-and-fits .fleet-setup-body{padding:0 8px 8px}
+.fleet-booster-config{margin:0 0 7px;border:1px solid color-mix(in srgb,var(--theme-accent,#9d34ed) 28%,var(--line));border-radius:8px;background:color-mix(in srgb,var(--theme-soft,#111119) 96%,black 4%);overflow:hidden}
+.fleet-subhead{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:6px 8px;border-bottom:1px solid var(--line)}
+.fleet-subhead strong{font-size:8px;letter-spacing:.08em;color:var(--theme-accent-hi,#ce68ff)}
+.fleet-subhead span{min-width:0;color:var(--muted);font-size:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fleet-booster-config .calc-grid{padding:7px}
+.fleet-booster-config .check-label{margin-top:16px}
+.fleet-manager-toolbar{position:sticky;top:48px;z-index:8;display:grid;grid-template-columns:minmax(170px,1.2fr) 145px auto auto auto;gap:5px;align-items:end;margin:0 0 6px;padding:6px;border:1px solid color-mix(in srgb,var(--theme-accent,#9d34ed) 22%,var(--line));border-radius:8px;background:color-mix(in srgb,var(--theme-panel-lo,#101018) 96%,black 4%);box-shadow:0 7px 18px #0005}
+.fleet-manager-toolbar label{display:flex;flex-direction:column;gap:3px;min-width:0;color:var(--muted);font-size:6px;font-weight:950;letter-spacing:.08em}
+.fleet-manager-toolbar input,.fleet-manager-toolbar select{width:100%;height:30px;border:1px solid var(--line);border-radius:6px;background:var(--theme-input,#0d0d14);color:var(--text);padding:4px 8px;font-size:8px;outline:none}
+.fleet-manager-toolbar input:focus,.fleet-manager-toolbar select:focus{border-color:var(--theme-accent-line,#9f4dff);box-shadow:0 0 0 2px color-mix(in srgb,var(--theme-accent,#9d34ed) 25%,transparent)}
+.fleet-manager-toolbar .board-tool{height:30px}
+.fleet-visible-count{align-self:center;justify-self:end;color:var(--muted);font-size:7px;font-weight:900;white-space:nowrap}
+.fleet-and-fits .fleet-member-list{max-height:min(64vh,720px);gap:4px;padding-right:2px}
+.fleet-and-fits .fleet-member{grid-template-columns:minmax(170px,.8fr) minmax(250px,1.05fr) minmax(330px,1.25fr);padding:5px 6px}
+.fleet-member-metrics{display:grid;grid-template-columns:minmax(130px,1.35fr) minmax(85px,.8fr) minmax(78px,.75fr);gap:5px;align-items:center;min-width:0}
+.fleet-member-metrics>span{min-width:0;text-align:right;border-left:1px solid color-mix(in srgb,var(--line) 70%,transparent);padding-left:6px}
+.fleet-member-metrics>span:first-child{border-left:0;padding-left:0}
+.fleet-member-metrics strong{display:block;font-size:8.5px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.fleet-member-metrics small{display:block;margin-top:2px;color:var(--muted);font-size:5.7px;font-weight:850;letter-spacing:.045em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fleet-member-output{text-align:right}
+.fleet-inline-results{margin-top:7px;padding:7px 0 0;border-top:1px solid color-mix(in srgb,var(--line) 72%,transparent)}
+.fleet-inline-results:empty{display:none}
+@media(min-width:761px){
+  .app.compact .fleet-member-list,.app.expanded .fleet-member-list{max-height:min(64vh,720px)}
+}
+@media(max-width:1050px){
+  .fleet-manager-toolbar{grid-template-columns:minmax(160px,1fr) 130px auto auto}
+  .fleet-visible-count{grid-column:1/-1;justify-self:start}
+  .fleet-and-fits .fleet-member{grid-template-columns:minmax(155px,.8fr) minmax(200px,1fr) minmax(285px,1.2fr)}
+  .fleet-member-metrics{grid-template-columns:1.2fr .8fr .8fr}
+}
+@media(max-width:760px){
+  .fleet-subhead{align-items:flex-start;flex-direction:column}
+  .fleet-subhead span{white-space:normal}
+  .fleet-booster-config .check-label{margin-top:0}
+  .fleet-manager-toolbar{position:static;grid-template-columns:1fr 1fr}
+  .fleet-manager-toolbar .fleet-search{grid-column:1/-1}
+  .fleet-visible-count{grid-column:1/-1}
+  .fleet-and-fits .fleet-member{grid-template-columns:1fr}
+  .fleet-member-metrics{grid-template-columns:repeat(3,minmax(0,1fr));padding-left:52px}
+  .fleet-member-metrics>span{text-align:left}
+  .fleet-member-output{text-align:left}
+}
+@media(max-width:430px){
+  .fleet-manager-toolbar{grid-template-columns:1fr}
+  .fleet-manager-toolbar .fleet-search{grid-column:auto}
+  .fleet-member-metrics{grid-template-columns:1fr;padding-left:0}
+  .fleet-member-metrics>span{border-left:0;border-top:1px solid color-mix(in srgb,var(--line) 70%,transparent);padding:4px 0 0}
+  .fleet-member-metrics>span:first-child{border-top:0}
+}
