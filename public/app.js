@@ -674,7 +674,7 @@
           <article class="glass pvp-summary-card">
             <span>KILLMAILS PROCESSED</span>
             <strong>${fmt(d.killmailsProcessed||0)}</strong>
-            <small>${d.truncated?'API page cap reached • rankings may be partial':'complete for fetched 7-day window'}</small>
+            <small>${d.truncated?'API page cap reached • rankings may be partial':`${fmt(d.pagesFetched||0)} API pages • validated crawl`}</small>
           </article>
         </section>
 
@@ -713,7 +713,7 @@
         <section class="pvp-footnote">
           <strong>RANKING METHOD</strong>
           <span>Primary rank = distinct INIT killmails participated in. Ties use final blows, then damage done. “ISK on kills” is the total zKillboard value of killmails the pilot/corp appeared on; it is not personal loot or damage value.</span>
-          <small>Updated ${d.generatedAt?ago(d.generatedAt):'recently'} • shared server cache • source: zKillboard public API</small>
+          <small>Updated ${d.generatedAt?ago(d.generatedAt):'recently'} • ${d.stale?'showing last good cache after refresh error • ':''}shared server cache • source: zKillboard public API</small>
         </section>
       </div>`;
     $('pvpRefresh')?.addEventListener('click',()=>loadPvpIntel(true));

@@ -81,7 +81,7 @@ const INIT_ALLIANCE_ID = 1900696668;
 const ZKILL_WINDOW_SECONDS = 7 * 24 * 60 * 60;
 const ZKILL_CACHE_MS = 15 * 60 * 1000;
 const ZKILL_MAX_PAGES = 100;
-const ZKILL_PAGE_GAP_MS = 350;
+const ZKILL_PAGE_GAP_MS = 1100;
 // Perfect null-sec refine: T2 rigged Tatara + max skills + RX-804 implant.
 const MAX_REFINE_YIELD = 0.90628105568;
 const ORE_REPROCESSING = {
@@ -441,7 +441,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.3.74',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.3.75',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -1896,6 +1896,7 @@ async function resolveUniverseNames(ids){
   return new Map(unique.map(id=>[id,universeNameCache.get(id)||String(id)]));
 }
 async function zkillJson(url){
+  let lastError=null;
   for(let attempt=0;attempt<4;attempt++){
     const response=await fetch(url,{
       headers:{
@@ -1904,15 +1905,30 @@ async function zkillJson(url){
         'User-Agent':`${ESI_USER_AGENT} | INIT leaderboard`,
       },
     });
-    if(response.ok)return response.json();
+    if(response.ok){
+      let payload;
+      try{payload=await response.json()}
+      catch(err){lastError=new Error(`zKillboard returned invalid JSON: ${String(err.message||err)}`)}
+      if(payload!==undefined){
+        const apiError=payload&&!Array.isArray(payload)&&typeof payload==='object'&&(payload.error||payload.message);
+        if(!apiError)return payload;
+        lastError=new Error(`zKillboard API error: ${String(payload.error||payload.message).slice(0,160)}`);
+      }
+      if(attempt<3){
+        await sleep((attempt+1)*2000+Math.floor(Math.random()*500));
+        continue;
+      }
+      throw lastError||new Error('zKillboard returned an invalid response');
+    }
     if(response.status===429||[502,503,504].includes(response.status)){
       const retry=clamp(response.headers.get('retry-after'),1,120,3);
-      await sleep(retry*1000+Math.floor(Math.random()*350));
+      lastError=new Error(`zKillboard ${response.status}: temporary API failure`);
+      await sleep(retry*1000+Math.floor(Math.random()*500));
       continue;
     }
     throw new Error(`zKillboard ${response.status}: ${(await response.text().catch(()=>'' )).slice(0,120)}`);
   }
-  throw new Error('zKillboard request failed after retries');
+  throw lastError||new Error('zKillboard request failed after retries');
 }
 function addPvpMetric(map,id,corpId,killId,value,finalBlow,damage){
   if(!id)return;
@@ -1938,10 +1954,17 @@ async function buildInitZkillLeaderboard(force=false){
   const pending=(async()=>{
     const characters=new Map(),corporations=new Map(),seenKillIds=new Set();
     let pagesFetched=0,truncated=false;
+    let previousPageSignature='';
     for(let page=1;page<=ZKILL_MAX_PAGES;page++){
       const url=`https://zkillboard.com/api/kills/allianceID/${INIT_ALLIANCE_ID}/pastSeconds/${ZKILL_WINDOW_SECONDS}/page/${page}/`;
       const rows=await zkillJson(url);
-      const list=Array.isArray(rows)?rows:[];
+      if(!Array.isArray(rows))throw new Error(`zKillboard page ${page} was not a killmail list; refusing to publish a partial leaderboard.`);
+      const list=rows;
+      const signature=list.slice(0,5).map(row=>String(row?.killmail_id||'')).join(',');
+      if(page>1&&list.length&&signature&&signature===previousPageSignature){
+        throw new Error(`zKillboard pagination repeated page ${page-1}; refusing to publish incomplete rankings.`);
+      }
+      if(signature)previousPageSignature=signature;
       pagesFetched=page;
       for(const km of list){
         const killId=Number(km?.killmail_id);
@@ -1973,7 +1996,7 @@ async function buildInitZkillLeaderboard(force=false){
     const rankedCharacters=rankPvpRows([...characters.values()]);
     const rankedCorporations=rankPvpRows([...corporations.values()]);
     for(const row of [...rankedCharacters,...rankedCorporations])delete row._kills;
-    const data={generatedAt:now(),pagesFetched,truncated,killmailsProcessed:seenKillIds.size,characters:rankedCharacters,corporations:rankedCorporations};
+    const data={generatedAt:now(),pagesFetched,truncated,killmailsProcessed:seenKillIds.size,characters:rankedCharacters,corporations:rankedCorporations,sourceComplete:!truncated};
     zkillInitLeaderboardCache={updatedAt:Date.now(),data,promise:null};
     return data;
   })().finally(()=>{if(zkillInitLeaderboardCache.promise===pending)zkillInitLeaderboardCache.promise=null});
@@ -2049,7 +2072,7 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.74',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.75',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){const u=readSession(req);return json(res,200,{authenticated:Boolean(u),user:u?myProfile(u):null})}
   const user=requireUser(req,res);if(!user)return;
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
@@ -2058,7 +2081,16 @@ async function routeApi(req,res,url) {
     const cacheAge=Date.now()-Number(zkillInitLeaderboardCache.updatedAt||0);
     const force=wantsRefresh&&cacheAge>=10*60*1000;
     try{return json(res,200,await pvpLeaderboardForUser(user,{force}))}
-    catch(err){return json(res,502,{error:'ZKILL_LEADERBOARD_FAILED',message:String(err.message||err)})}
+    catch(err){
+      console.warn('zKill leaderboard refresh failed',String(err.message||err));
+      if(zkillInitLeaderboardCache.data){
+        try{
+          const fallback=await pvpLeaderboardForUser(user,{force:false});
+          return json(res,200,{...fallback,stale:true,refreshError:String(err.message||err)});
+        }catch{}
+      }
+      return json(res,502,{error:'ZKILL_LEADERBOARD_FAILED',message:String(err.message||err)});
+    }
   }
   if(req.method==='GET'&&url.pathname==='/api/events'){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});res.write(`event: state\ndata: ${JSON.stringify(publicState())}\n\n`);sseClients.add(res);req.on('close',()=>sseClients.delete(res));return}
   if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
