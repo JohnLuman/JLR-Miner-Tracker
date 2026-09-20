@@ -695,11 +695,14 @@
           </section>
 
           <section class="glass pvp-section">
-            <div class="pvp-section-head">
-              <div><strong>YOUR CORP MEMBERS VS INIT</strong><span>their actual INIT-wide placement</span></div>
-              <div class="pvp-member-rank-controls">
-                <button id="pvpRankActivity" class="orb ${pvpMemberRankMode==='activity'?'blue':''}" type="button">KILLMAILS / FINALS</button>
-                <button id="pvpRankIsk" class="orb ${pvpMemberRankMode==='isk'?'blue':''}" type="button">ISK ON KILLS</button>
+            <div class="pvp-section-head pvp-member-head">
+              <div class="pvp-section-title">
+                <strong>YOUR CORP MEMBERS VS INIT</strong>
+                <span>actual INIT-wide placement</span>
+              </div>
+              <div class="pvp-member-rank-controls" role="group" aria-label="Corp member ranking mode">
+                <button id="pvpRankActivity" class="orb ${pvpMemberRankMode==='activity'?'blue':''}" type="button" aria-pressed="${pvpMemberRankMode==='activity'}">KILLMAILS / FINALS</button>
+                <button id="pvpRankIsk" class="orb ${pvpMemberRankMode==='isk'?'blue':''}" type="button" aria-pressed="${pvpMemberRankMode==='isk'}">ISK ON KILLS</button>
               </div>
             </div>
             <div class="pvp-table-wrap">

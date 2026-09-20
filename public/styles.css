@@ -528,6 +528,14 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .pvp-section-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:7px;padding-bottom:6px;border-bottom:1px solid var(--line)}
 .pvp-section-head strong{font-size:10px;letter-spacing:.055em}
 .pvp-section-head span{color:var(--muted);font-size:7px}
+.pvp-member-head{align-items:center;flex-wrap:nowrap;min-height:34px}
+.pvp-section-title{display:flex;align-items:baseline;gap:6px;min-width:0;flex:1 1 auto;white-space:nowrap}
+.pvp-section-title strong{flex:0 0 auto}
+.pvp-section-title span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pvp-member-rank-controls{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex:0 0 auto;margin-left:auto}
+.pvp-member-rank-controls .orb{height:28px;min-width:116px;padding:0 11px;border-radius:999px;font-size:7px;line-height:1;white-space:nowrap}
+.pvp-member-rank-controls .orb:not(.blue){opacity:.78}
+.pvp-member-rank-controls .orb:hover,.pvp-member-rank-controls .orb:focus-visible{opacity:1}
 .pvp-table-wrap{max-height:430px;overflow:auto;border-radius:6px}
 .pvp-table{width:100%;border-collapse:separate;border-spacing:0;font-size:8px}
 .pvp-table th{position:sticky;z-index:1;top:0;background:var(--theme-panel-lo,#101018);color:var(--muted);font-size:6px;letter-spacing:.065em;text-align:right;padding:6px;border-bottom:1px solid var(--line);white-space:nowrap}
@@ -546,4 +554,11 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .pvp-loading span,.pvp-error span{margin-top:4px;color:var(--muted);font-size:8px}
 .pvp-error .orb{margin-top:8px}
 @media(max-width:1000px){.pvp-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.pvp-two-col{grid-template-columns:1fr}}
+@media(max-width:720px){
+  .pvp-member-head{align-items:flex-start;flex-wrap:wrap}
+  .pvp-section-title{flex:1 1 100%;white-space:normal}
+  .pvp-section-title span{white-space:normal;overflow:visible}
+  .pvp-member-rank-controls{width:100%;margin-left:0;justify-content:flex-start}
+  .pvp-member-rank-controls .orb{flex:1 1 0;min-width:0}
+}
 @media(max-width:620px){.pvp-hero{align-items:flex-start;flex-direction:column}.pvp-summary-grid{grid-template-columns:1fr 1fr}.pvp-table{font-size:7px}}
