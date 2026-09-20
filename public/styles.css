@@ -55,6 +55,9 @@
 /* v2.7.0 Fountain gas huffing */
 .gas-huffing-panel{margin-bottom:6px;border-color:#2e5a50;background:linear-gradient(180deg,#101b19,#0e1515)}
 .gas-huffing-panel .eyebrow{color:#73cdb3}
+.gas-title-tools{flex-wrap:wrap;justify-content:flex-end}
+.gas-title-tools select{min-width:150px}
+.gas-title-tools #gasTypeSelect{min-width:210px}
 .gas-huffing-panel .ice-kpi{border-color:#2d5149;background:#101a18}
 .gas-huffing-panel .ice-kpi span{color:#73cdb3}
 .gas-huffing-panel .ice-chart-card{border-color:#294c45;background:#0f1716}
