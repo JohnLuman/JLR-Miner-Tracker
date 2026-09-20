@@ -67,6 +67,13 @@
   let iceTrackType=localStorage.getItem('jlrIceType')||'Blue Ice IV-Grade';
   let gasRegion=localStorage.getItem('jlrGasRegion')||'Fountain';
   let gasType=localStorage.getItem('jlrGasType')||'Celadon Cytoserocin';
+  let doctrineMarket=null;
+  let doctrineMarketLoading=false;
+  let doctrineMarketError='';
+  let doctrineView=['restock','seed','alerts','all'].includes(localStorage.getItem('jlrDoctrineView'))?localStorage.getItem('jlrDoctrineView'):'restock';
+  let doctrineSearch='';
+  let doctrineClass='all';
+  let doctrineCategory='all';
   let oreTrendType=localStorage.getItem('jlrOreTrend')||'Kylixium';
   const savedFleetHistoryDays=Number(localStorage.getItem('jlrFleetHistoryDays'));
   let fleetHistoryDays=[7,30,90].includes(savedFleetHistoryDays)?savedFleetHistoryDays:7;
@@ -572,11 +579,12 @@
   function showApp(){$('loginView').classList.add('hidden');$('app').classList.remove('hidden');}
   let activeTab=localStorage.getItem('jlrTab')||'fields';
   function applyTab(tab){
-    const valid=['fields','fleet','performance','ice','gas','pvp','threat','mer','toons'];
+    const valid=['fields','fleet','performance','ice','gas','doctrine','pvp','threat','mer','toons'];
     activeTab=valid.includes(tab)?tab:'fields';
     localStorage.setItem('jlrTab',activeTab);
     document.querySelectorAll('.app-tab').forEach(button=>button.classList.toggle('active',button.dataset.tab===activeTab));
     document.querySelectorAll('.tab-panel').forEach(panel=>panel.classList.toggle('active',panel.dataset.tab===activeTab));
+    if(activeTab==='doctrine'&&!doctrineMarket&&!doctrineMarketLoading)loadDoctrineMarket();
     if(activeTab==='pvp'&&!pvpIntel&&!pvpIntelLoading)loadPvpIntel();
     if(activeTab==='threat')renderThreatScan();
   }
@@ -597,6 +605,8 @@
     const performance=makePanel('performance');
     const ice=makePanel('ice');
     const gas=makePanel('gas');
+    const doctrine=makePanel('doctrine');
+    doctrine.id='doctrineMarketPanel';
     const pvp=makePanel('pvp');
     pvp.id='pvpIntelPanel';
     const threat=makePanel('threat');
@@ -643,6 +653,204 @@
 
     document.querySelectorAll('.app-tab').forEach(button=>button.addEventListener('click',()=>applyTab(button.dataset.tab)));
     applyTab(activeTab);
+  }
+
+  async function doctrineInflateBase64(parts){
+    const text=parts.join('');
+    const binary=atob(text);
+    const bytes=new Uint8Array(binary.length);
+    for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+    if(typeof DecompressionStream!=='function')throw new Error('This browser does not support the doctrine data decoder.');
+    const stream=new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+    return JSON.parse(await new Response(stream).text());
+  }
+  function doctrineDecodeRow(row){
+    return{
+      typeId:Number(row[0])||0,item:String(row[1]||''),stock:Number(row[2])||0,
+      sold7:Number(row[3])||0,sold30:Number(row[4])||0,
+      daysDynamic:Number(row[5])||0,daysStandard:Number(row[6])||0,
+      required:Number(row[7])||0,cnSell:Number(row[8])||0,jitaSell:Number(row[9])||0,
+      cnJita:Number(row[10])||0,classification:String(row[11]||'Unclassified'),
+      category:String(row[12]||'Other'),breakeven:Number(row[13])||0,
+      seedMargin:Number(row[14])||0,requiredValueJita:Number(row[15])||0,
+      seed10Profit:Number(row[16])||0,
+    };
+  }
+  async function loadDoctrineMarket(force=false){
+    if(doctrineMarketLoading)return;
+    doctrineMarketLoading=true;doctrineMarketError='';
+    renderDoctrineMarket();
+    try{
+      const parts=await Promise.all(Array.from({length:5},(_,i)=>
+        fetch('/doctrine/doctrine-market-'+i+'.b64',{cache:force?'reload':'default'}).then(r=>{
+          if(!r.ok)throw new Error('Doctrine snapshot part '+(i+1)+' failed ('+r.status+')');
+          return r.text();
+        })
+      ));
+      const payload=await doctrineInflateBase64(parts);
+      doctrineMarket={
+        version:Number(payload.v)||1,
+        snapshotDate:String(payload.d||payload.s?.date||''),
+        summary:payload.s||{},
+        rows:(payload.r||[]).map(doctrineDecodeRow),
+      };
+    }catch(error){
+      doctrineMarket=null;
+      doctrineMarketError=String(error?.message||error||'Doctrine tracker could not be loaded.');
+    }finally{
+      doctrineMarketLoading=false;
+      renderDoctrineMarket();
+    }
+  }
+  function doctrinePercent(value){
+    const n=Number(value);
+    return Number.isFinite(n)?(n*100).toFixed(Math.abs(n)>=1?0:1)+'%':'—';
+  }
+  function doctrineMoney(value){
+    const n=Number(value);
+    return Number.isFinite(n)&&n!==0?fmt(n)+' ISK':'—';
+  }
+  function doctrineState(row){
+    if(row.stock<=0)return{key:'zero',label:'ZERO STOCK'};
+    if(row.daysDynamic<2)return{key:'critical',label:'< 2 DAYS'};
+    if(row.daysDynamic<7)return{key:'low',label:'LOW'};
+    if(row.required>0)return{key:'restock',label:'RESTOCK'};
+    return{key:'healthy',label:'OK'};
+  }
+  function renderDoctrineMarket(){
+    const host=$('doctrineMarketPanel');
+    if(!host)return;
+    if(doctrineMarketLoading&&!doctrineMarket){
+      host.innerHTML='<section class="glass doctrine-loading"><strong>LOADING DOCTRINE MARKET…</strong><span>Opening the Initiative doctrine stock snapshot.</span></section>';
+      return;
+    }
+    if(doctrineMarketError){
+      host.innerHTML='<section class="glass doctrine-error"><strong>DOCTRINE MARKET UNAVAILABLE</strong><span>'+esc(doctrineMarketError)+'</span><button id="doctrineRetry" class="orb blue" type="button">TRY AGAIN</button></section>';
+      $('doctrineRetry')?.addEventListener('click',()=>loadDoctrineMarket(true));
+      return;
+    }
+    if(!doctrineMarket){
+      host.innerHTML='<section class="glass doctrine-loading">Open this tab to load doctrine market data.</section>';
+      return;
+    }
+
+    const summary=doctrineMarket.summary||{};
+    const allRows=doctrineMarket.rows||[];
+    const classes=[...new Set(allRows.map(x=>x.classification).filter(Boolean))].sort();
+    const categories=[...new Set(allRows.map(x=>x.category).filter(Boolean))].sort();
+    const q=doctrineSearch.trim().toLowerCase();
+
+    let rows=allRows.filter(row=>{
+      if(doctrineClass!=='all'&&row.classification!==doctrineClass)return false;
+      if(doctrineCategory!=='all'&&row.category!==doctrineCategory)return false;
+      if(q&&!row.item.toLowerCase().includes(q)&&!String(row.typeId).includes(q))return false;
+      if(doctrineView==='restock')return row.required>0;
+      if(doctrineView==='seed')return row.seedMargin>0&&row.cnSell>0&&row.jitaSell>0;
+      if(doctrineView==='alerts')return row.cnJita>1.3;
+      return true;
+    });
+
+    if(doctrineView==='restock'){
+      rows.sort((a,b)=>
+        Number(b.stock<=0)-Number(a.stock<=0)||
+        a.daysDynamic-b.daysDynamic||
+        b.required-a.required||
+        a.item.localeCompare(b.item)
+      );
+    }else if(doctrineView==='seed'){
+      rows.sort((a,b)=>b.seedMargin-a.seedMargin||b.seed10Profit-a.seed10Profit||a.item.localeCompare(b.item));
+    }else if(doctrineView==='alerts'){
+      rows.sort((a,b)=>b.cnJita-a.cnJita||a.daysDynamic-b.daysDynamic||a.item.localeCompare(b.item));
+    }else{
+      rows.sort((a,b)=>a.item.localeCompare(b.item));
+    }
+
+    const display=rows.slice(0,200);
+    const tableRows=display.map(row=>{
+      const state=doctrineState(row);
+      const ratio=row.cnJita>0?row.cnJita.toFixed(2)+'x':'—';
+      const required=row.required>0?fmt(row.required):'—';
+      return '<tr class="doctrine-row doctrine-'+state.key+'">'+
+        '<td><span class="doctrine-state '+state.key+'">'+esc(state.label)+'</span></td>'+
+        '<td class="doctrine-item"><strong>'+esc(row.item)+'</strong><small>'+esc(row.classification)+' • '+esc(row.category)+' • ID '+esc(String(row.typeId))+'</small></td>'+
+        '<td><strong>'+fmt(row.stock)+'</strong></td>'+
+        '<td>'+row.sold7.toFixed(1)+'</td>'+
+        '<td>'+row.sold30.toFixed(1)+'</td>'+
+        '<td><strong>'+row.daysDynamic.toFixed(1)+'</strong><small>std '+row.daysStandard.toFixed(1)+'</small></td>'+
+        '<td><strong class="'+(row.required>0?'negative':'')+'">'+required+'</strong></td>'+
+        '<td>'+doctrineMoney(row.cnSell)+'</td>'+
+        '<td>'+doctrineMoney(row.jitaSell)+'</td>'+
+        '<td><strong class="'+(row.cnJita>1.3?'negative':row.cnJita>0&&row.cnJita<1?'positive':'')+'">'+ratio+'</strong></td>'+
+        '<td><strong class="'+(row.seedMargin>0?'positive':'negative')+'">'+doctrinePercent(row.seedMargin)+'</strong><small>'+doctrineMoney(row.breakeven)+'</small></td>'+
+      '</tr>';
+    }).join('');
+
+    const snapshot=doctrineMarket.snapshotDate||summary.date||'';
+    host.innerHTML=`
+      <section class="glass doctrine-shell">
+        <div class="doctrine-hero">
+          <div>
+            <span class="eyebrow">INITIATIVE • C-N MARKET</span>
+            <strong>DOCTRINE MARKET INTEL</strong>
+            <small>Doctrine stock, demand, pricing and seeding data • snapshot ${esc(snapshot||'unknown')}</small>
+          </div>
+          <button id="doctrineRefresh" class="board-tool" type="button">RELOAD SNAPSHOT</button>
+        </div>
+
+        <div class="doctrine-kpis">
+          <article><span>TRACKED ITEMS</span><strong>${fmt(summary.count||allRows.length)}</strong><small>full doctrine-market list</small></article>
+          <article><span>RESTOCK NEEDED</span><strong>${fmt(summary.need)}</strong><small>required quantity above zero</small></article>
+          <article class="critical"><span>UNDER 2 DAYS</span><strong>${fmt(summary.under2)}</strong><small>dynamic days of supply</small></article>
+          <article class="critical"><span>ZERO STOCK</span><strong>${fmt(summary.zero)}</strong><small>currently unavailable</small></article>
+          <article><span>PRICE ALERTS</span><strong>${fmt(summary.alerts)}</strong><small>C-N above 130% of Jita</small></article>
+          <article><span>SEED TO 30D</span><strong>${fmt(summary.seed30)} ISK</strong><small>tracker estimate</small></article>
+        </div>
+
+        <div class="doctrine-command">
+          <div class="doctrine-modes" role="group" aria-label="Doctrine market view">
+            <button class="doctrine-mode ${doctrineView==='restock'?'active':''}" data-doctrine-view="restock" type="button">PRIORITY RESTOCK</button>
+            <button class="doctrine-mode ${doctrineView==='seed'?'active':''}" data-doctrine-view="seed" type="button">SEEDING OPPORTUNITIES</button>
+            <button class="doctrine-mode ${doctrineView==='alerts'?'active':''}" data-doctrine-view="alerts" type="button">PRICE ALERTS</button>
+            <button class="doctrine-mode ${doctrineView==='all'?'active':''}" data-doctrine-view="all" type="button">ALL ITEMS</button>
+          </div>
+          <div class="doctrine-filters">
+            <label><span>SEARCH</span><input id="doctrineSearch" type="search" autocomplete="off" placeholder="Item or type ID…" value="${esc(doctrineSearch)}"></label>
+            <label><span>CLASS</span><select id="doctrineClass"><option value="all">ALL</option>${classes.map(x=>'<option value="'+esc(x)+'" '+(doctrineClass===x?'selected':'')+'>'+esc(x.toUpperCase())+'</option>').join('')}</select></label>
+            <label><span>TYPE</span><select id="doctrineCategory"><option value="all">ALL</option>${categories.map(x=>'<option value="'+esc(x)+'" '+(doctrineCategory===x?'selected':'')+'>'+esc(x.toUpperCase())+'</option>').join('')}</select></label>
+          </div>
+        </div>
+
+        <div class="doctrine-summary-line">
+          <strong>${fmt(rows.length)} MATCHING ITEMS</strong>
+          <span>Average C-N / Jita ${doctrinePercent(Number(summary.avgMarkup||0)-1)} • Sell market cap ${fmt(summary.sellCap)} ISK • showing ${fmt(display.length)}${rows.length>display.length?' of '+fmt(rows.length):''}</span>
+        </div>
+
+        <div class="doctrine-table-wrap">
+          <table class="doctrine-table">
+            <thead><tr><th>STATE</th><th>ITEM</th><th>STOCK</th><th>7D/DAY</th><th>30D/DAY</th><th>DAYS</th><th>REQUIRED</th><th>C-N SELL</th><th>JITA SELL</th><th>C-N/JITA</th><th>SEED MARGIN</th></tr></thead>
+            <tbody>${tableRows||'<tr><td colspan="11" class="doctrine-empty">No items match these filters.</td></tr>'}</tbody>
+          </table>
+        </div>
+
+        <div class="doctrine-note">
+          <strong>TRACKER LOGIC</strong>
+          <span>Dynamic and standard days-of-supply, required stock, C-N pricing, Jita comparison, seeding breakeven and margin are imported from Initiative Doctrine Tracker.xlsx. This first JLR version uses the workbook snapshot rather than pretending those numbers are live ESI market data.</span>
+        </div>
+      </section>`;
+
+    host.querySelectorAll('[data-doctrine-view]').forEach(button=>button.addEventListener('click',()=>{
+      doctrineView=button.dataset.doctrineView;
+      localStorage.setItem('jlrDoctrineView',doctrineView);
+      renderDoctrineMarket();
+    }));
+    $('doctrineSearch')?.addEventListener('input',event=>{
+      doctrineSearch=String(event.currentTarget.value||'');
+      renderDoctrineMarket();
+      requestAnimationFrame(()=>$('doctrineSearch')?.focus());
+    });
+    $('doctrineClass')?.addEventListener('change',event=>{doctrineClass=event.currentTarget.value||'all';renderDoctrineMarket()});
+    $('doctrineCategory')?.addEventListener('change',event=>{doctrineCategory=event.currentTarget.value||'all';renderDoctrineMarket()});
+    $('doctrineRefresh')?.addEventListener('click',()=>loadDoctrineMarket(true));
   }
 
   function ordinalRank(value){
@@ -2806,7 +3014,7 @@
 
     localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));
   }
-  function renderAll(){if(!state)return;renderFleet();renderTop();renderSelect();renderBoards();renderHits();renderFleetPerformance();renderMiningVisuals();renderIceMining();renderGasHuffing();renderRanking();renderTimers();renderSelected();renderNotes();renderScanCharacters();renderCharacters();renderCalculator();renderMerIntel();}
+  function renderAll(){if(!state)return;renderFleet();renderTop();renderSelect();renderBoards();renderHits();renderFleetPerformance();renderMiningVisuals();renderIceMining();renderGasHuffing();if(doctrineMarket)renderDoctrineMarket();renderRanking();renderTimers();renderSelected();renderNotes();renderScanCharacters();renderCharacters();renderCalculator();renderMerIntel();}
 
   async function refreshMe(){const p=await api('/api/me');me=p.user;if(me){$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait}return p.authenticated}
   async function loadState(){state=await api('/api/state');renderAll()}
