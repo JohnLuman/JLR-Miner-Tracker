@@ -70,8 +70,11 @@ Clipboard access requires a user click. If the browser blocks direct clipboard r
 
 THREAT SCAN accepts copied Local names and native D-scan rows. It resolves public identity data through ESI, uses cached public zKillboard stats for the JLR threat score, and separates D-scan ship composition from Local pilot names.
 
+D-scan ship names are never treated as Local pilots, including copies with the Distance column hidden. This prevents pilot-named friendly ships from creating false threat rows.
+
 - **Ignore your own linked characters** removes every toon linked to the signed-in JLR account.
 - **Ignore characters with positive standings** uses the first contacts-authorized linked toon, preferring the primary toon. Positive character, corporation, alliance, and faction standings are honored. The private contact list is cached in memory for 15 minutes and is not displayed or written to disk.
+- The authorized toon's own corporation and alliance are always treated as friendly when this filter is enabled, even when they are not duplicated in personal contacts.
 - **Create Intel Link** explicitly publishes the pasted scan to `dscan.info`, receives its `/v/` share URL, and copies that URL for pasting into an intel channel.
 
 ### ESI refresh scheduling

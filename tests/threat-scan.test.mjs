@@ -21,6 +21,18 @@ assert.deepEqual(dscan.shipNames, [
   { name: 'Redeemer', count: 1 },
 ]);
 
+const dscanWithoutDistance = parseThreatPaste([
+  'One Neutral',
+  'Name\tType',
+  'Hector Centauri\tHulk',
+  'Barbaydos\tSabre',
+].join('\n'));
+assert.deepEqual(dscanWithoutDistance.names, ['One Neutral']);
+assert.deepEqual(dscanWithoutDistance.shipNames, [
+  { name: 'Hulk', count: 1 },
+  { name: 'Sabre', count: 1 },
+]);
+
 const exported = parseThreatPaste('17715\tStabber Fleet Issue\t15 km');
 assert.equal(exported.shipTypeIds.get(17715), 1);
 assert.equal(exported.shipNames.length, 0);
