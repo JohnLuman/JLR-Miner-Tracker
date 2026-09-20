@@ -218,6 +218,7 @@ let zkillInitLeaderboardCache = { updatedAt:0, data:null, promise:null };
 let zkillInitArchiveRefreshPromise = null;
 const zkillCorpLeaderboardCache = new Map();
 const zkillCorpStatsCache = new Map();
+let zkillCorpStatsBatchPromise = null;
 const zkillLifetimeDamageJobs = new Map();
 const zkillLifetimeDamageProgress = new Map();
 const pvpCorpMetaCache = new Map();
@@ -2854,6 +2855,31 @@ async function zkillCorporationWeeklyStatsMany(corporationIds,force=false){
   return out;
 }
 
+function cachedCorporationWeeklyStatsMany(corporationIds){
+  const ids=[...new Set((corporationIds||[]).map(Number).filter(Number.isFinite))];
+  const data=new Map(),staleIds=[];
+  const nowMs=Date.now();
+  for(const id of ids){
+    const cache=zkillCorpStatsCache.get(id);
+    if(cache?.data)data.set(id,cache.data);
+    if(!cache?.data||nowMs-Number(cache.updatedAt||0)>=ZKILL_CACHE_MS)staleIds.push(id);
+  }
+  return{data,staleIds};
+}
+function refreshCorporationWeeklyStatsInBackground(corporationIds,force=false){
+  const ids=[...new Set((corporationIds||[]).map(Number).filter(Number.isFinite))];
+  if(!ids.length)return null;
+  if(zkillCorpStatsBatchPromise)return zkillCorpStatsBatchPromise;
+  const pending=zkillCorporationWeeklyStatsMany(ids,force)
+    .catch(err=>{
+      console.warn('Background corporation weekly stats refresh failed',String(err.message||err));
+      return new Map();
+    })
+    .finally(()=>{if(zkillCorpStatsBatchPromise===pending)zkillCorpStatsBatchPromise=null});
+  zkillCorpStatsBatchPromise=pending;
+  return pending;
+}
+
 async function resolveThreatCharacterNames(names){
   const unique=[...new Map((names||[]).map(name=>[String(name).trim().toLowerCase(),String(name).trim()])).values()].filter(Boolean);
   const characters=new Map();
@@ -3595,40 +3621,67 @@ async function buildCorpZkillLeaderboard(corporationId,force=false){
 }
 
 async function pvpLeaderboardForUser(user,{force=false}={}){
-  const primaryId=Number(user?.primaryCharacterId);
-  if(!primaryId)throw new Error('No primary EVE character is linked.');
-  const character=(await esiGet(`https://esi.evetech.net/latest/characters/${primaryId}/?datasource=tranquility`)).data;
-  const corporationId=Number(character?.corporation_id);
-  if(!corporationId)throw new Error('Could not determine your corporation from EVE.');
-  const corporation=(await esiGet(`https://esi.evetech.net/latest/corporations/${corporationId}/?datasource=tranquility`)).data;
-  if(Number(corporation?.alliance_id)!==INIT_ALLIANCE_ID)throw new Error(`${corporation?.name||'Your corporation'} is not currently in INIT.`);
+  const {primaryId,character,corporationId,corporation}=await pvpCorporationForUser(user);
 
-  const linkedCorpCharacters=(await Promise.all((user.characterIds||[]).map(async rawId=>{
-    const id=Number(rawId);
-    if(!id)return null;
-    try{
-      const info=id===primaryId
-        ?character
-        :(await esiGet(`https://esi.evetech.net/latest/characters/${id}/?datasource=tranquility`)).data;
-      if(Number(info?.corporation_id)!==corporationId)return null;
+  const linkedIds=[...new Set((user.characterIds||[]).map(Number).filter(id=>id>0))];
+  let linkedCorpCharacters=[];
+  try{
+    const {data}=linkedIds.length
+      ?await esiPost('https://esi.evetech.net/latest/characters/affiliation/?datasource=tranquility',linkedIds)
+      :{data:[]};
+    const byId=new Map((Array.isArray(data)?data:[]).map(row=>[Number(row?.character_id),row]));
+    linkedCorpCharacters=linkedIds.map(id=>{
+      const affiliation=byId.get(id);
+      if(Number(affiliation?.corporation_id)!==corporationId)return null;
       return{
         characterId:id,
-        name:String(state.characters?.[String(id)]?.name||info?.name||id),
+        name:String(state.characters?.[String(id)]?.name||character?.name||id),
         primary:id===primaryId,
       };
-    }catch(err){
-      console.warn('Linked PvP toon corp lookup failed',id,String(err.message||err));
-      return null;
-    }
-  }))).filter(Boolean);
-
-  const base=await buildInitZkillLeaderboard(force);
-  let corpDirect=null,corpVerifyError=null;
-  try{
-    corpDirect=await buildCorpZkillLeaderboard(corporationId,force);
+    }).filter(Boolean);
   }catch(err){
-    corpVerifyError=String(err.message||err);
-    console.warn('Corporation zKill verification failed',corpVerifyError);
+    console.warn('Bulk linked PvP affiliation lookup failed; falling back to individual lookups',String(err.message||err));
+    linkedCorpCharacters=(await Promise.all(linkedIds.map(async id=>{
+      try{
+        const info=id===primaryId
+          ?character
+          :(await esiGet(`https://esi.evetech.net/latest/characters/${id}/?datasource=tranquility`)).data;
+        if(Number(info?.corporation_id)!==corporationId)return null;
+        return{
+          characterId:id,
+          name:String(state.characters?.[String(id)]?.name||info?.name||id),
+          primary:id===primaryId,
+        };
+      }catch(inner){
+        console.warn('Linked PvP toon corp lookup failed',id,String(inner.message||inner));
+        return null;
+      }
+    }))).filter(Boolean);
+  }
+
+  const initAge=Date.now()-Number(zkillInitLeaderboardCache.updatedAt||0);
+  let base=zkillInitLeaderboardCache.data||pvpDb.init7d?.data||null;
+  let initRefreshing=false;
+  if(!base&&Object.keys(pvpDb.initKillmails||{}).length){
+    base=buildInitLeaderboardFromArchive();
+    zkillInitLeaderboardCache={updatedAt:Date.now(),data:base,promise:zkillInitLeaderboardCache.promise||null};
+  }
+  if(!base){
+    base=await buildInitZkillLeaderboard(force);
+  }else if(force||initAge>=ZKILL_CACHE_MS){
+    initRefreshing=true;
+    buildInitZkillLeaderboard(force).catch(err=>console.warn('Background INIT leaderboard refresh failed',String(err.message||err)));
+  }
+
+  const corpCache=zkillCorpLeaderboardCache.get(corporationId)||null;
+  let corpDirect=corpCache?.data||pvpDb.corp7d?.[String(corporationId)]?.data||null;
+  let corpVerifyError=null;
+  let corpRefreshing=false;
+  const corpAge=Date.now()-Number(corpCache?.updatedAt||pvpDbTimestamp(pvpDb.corp7d?.[String(corporationId)]?.updatedAt)||0);
+  if(!corpDirect||force||corpAge>=ZKILL_CACHE_MS){
+    corpRefreshing=true;
+    buildCorpZkillLeaderboard(corporationId,force)
+      .catch(err=>console.warn('Background corporation zKill verification failed',String(err.message||err)));
   }
 
   // INIT pilot ranks must come from one common alliance-wide population.
@@ -3736,7 +3789,10 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
     corporationMap.set(corporationId,{...corpDirect.corporation});
   }
 
-  const corpWeeklyStats=await zkillCorporationWeeklyStatsMany([...corporationMap.keys()],force);
+  const weeklySnapshot=cachedCorporationWeeklyStatsMany([...corporationMap.keys()]);
+  const corpWeeklyStats=weeklySnapshot.data;
+  const corpWeeklyRefreshing=weeklySnapshot.staleIds.length>0;
+  if(corpWeeklyRefreshing)refreshCorporationWeeklyStatsInBackground(weeklySnapshot.staleIds,force);
   const correctedCorporations=[...corporationMap.values()].map(row=>{
     const weekly=corpWeeklyStats.get(Number(row.id));
     return weekly
@@ -3813,6 +3869,15 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
     killmailsStored:Number(base.killmailsStored)||0,
     activeCharacters:allianceCharacters.length,
     activeCorporations:correctedCorporations.length,
+    refreshing:Boolean(
+      initRefreshing||
+      corpRefreshing||
+      corpWeeklyRefreshing||
+      zkillInitLeaderboardCache.promise||
+      zkillInitArchiveRefreshPromise||
+      zkillCorpLeaderboardCache.get(corporationId)?.promise||
+      zkillCorpStatsBatchPromise
+    ),
     myCorpVerified:Boolean(corpDirect),
     myCorpVerificationError:corpVerifyError,
     myCorpPagesFetched:corpDirect?.pagesFetched||0,
