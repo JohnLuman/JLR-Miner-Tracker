@@ -85,6 +85,7 @@
   }
   let doctrineShoppingList=loadDoctrineShoppingList();
   let doctrineShoppingMode=localStorage.getItem('jlrDoctrineShoppingMode')==='shortfall'?'shortfall':'full';
+  let doctrineShoppingOpen=localStorage.getItem('jlrDoctrineShoppingOpen')!=='false';
   let oreTrendType=localStorage.getItem('jlrOreTrend')||'Kylixium';
   const savedFleetHistoryDays=Number(localStorage.getItem('jlrFleetHistoryDays'));
   let fleetHistoryDays=[7,30,90].includes(savedFleetHistoryDays)?savedFleetHistoryDays:7;
@@ -945,32 +946,49 @@
             </table>
           </div>
 
-          <aside id="doctrineShoppingDrop" class="doctrine-shopping">
-            <div class="doctrine-shopping-head">
-              <div><span>SHOPPING LIST</span><strong>${fmt(shoppingRows.length)} ITEMS</strong></div>
-              <button id="doctrineShoppingClear" class="doctrine-shop-clear" type="button" ${shoppingRows.length?'':'disabled'}>CLEAR</button>
-            </div>
-            <div class="doctrine-shopping-mode">
-              <div class="doctrine-shopping-mode-buttons" role="group" aria-label="Shopping list quantity mode">
-                <button class="${doctrineShoppingMode==='full'?'active':''}" data-shop-mode="full" type="button">FULL 7D SUPPLY</button>
-                <button class="${doctrineShoppingMode==='shortfall'?'active':''}" data-shop-mode="shortfall" type="button">7D SHORTFALL</button>
+          <aside id="doctrineShoppingDrop" class="doctrine-shopping ${doctrineShoppingOpen?'open':'collapsed'}">
+            <button id="doctrineShoppingToggle" class="doctrine-shopping-toggle" type="button" aria-expanded="${String(doctrineShoppingOpen)}">
+              <div class="doctrine-shopping-toggle-title">
+                <span>SHOPPING LIST</span>
+                <strong>${fmt(shoppingRows.length)} ITEM${shoppingRows.length===1?'':'S'}</strong>
               </div>
-              <button id="doctrineShoppingRecalc" class="doctrine-shopping-recalc" type="button" ${shoppingRows.length?'':'disabled'}>APPLY TO LIST</button>
+              <div class="doctrine-shopping-toggle-summary">
+                <span>${shoppingJitaTotal?fmt(shoppingJitaTotal)+' ISK':'EMPTY'}</span>
+                <strong class="doctrine-shopping-chevron">${doctrineShoppingOpen?'▲':'▼'}</strong>
+              </div>
+            </button>
+            <div class="doctrine-shopping-body" ${doctrineShoppingOpen?'':'hidden'}>
+              <div class="doctrine-shopping-head">
+                <span>${doctrineShoppingMode==='shortfall'?'7D SHORTFALL MODE':'FULL 7D SUPPLY MODE'}</span>
+                <button id="doctrineShoppingClear" class="doctrine-shop-clear" type="button" ${shoppingRows.length?'':'disabled'}>CLEAR</button>
+              </div>
+              <div class="doctrine-shopping-mode">
+                <div class="doctrine-shopping-mode-buttons" role="group" aria-label="Shopping list quantity mode">
+                  <button class="${doctrineShoppingMode==='full'?'active':''}" data-shop-mode="full" type="button">FULL 7D SUPPLY</button>
+                  <button class="${doctrineShoppingMode==='shortfall'?'active':''}" data-shop-mode="shortfall" type="button">7D SHORTFALL</button>
+                </div>
+                <button id="doctrineShoppingRecalc" class="doctrine-shopping-recalc" type="button" ${shoppingRows.length?'':'disabled'}>APPLY TO LIST</button>
+              </div>
+              <div class="doctrine-shopping-hint">${doctrineShoppingMode==='shortfall'?'New items buy only what C-N needs to reach seven days of stock.':'New items use a full seven days of demand.'}</div>
+              <div class="doctrine-shopping-list">
+                ${shoppingHtml||'<div class="doctrine-shopping-empty"><strong>DROP ITEMS HERE</strong><span>Or use ADD beside any doctrine item.</span></div>'}
+              </div>
+              <div class="doctrine-shopping-total">
+                <span>EST. JITA TOTAL</span>
+                <strong>${shoppingJitaTotal?fmt(shoppingJitaTotal)+' ISK':'—'}</strong>
+              </div>
+              <button id="doctrineShoppingCopy" class="doctrine-multibuy-copy" type="button" ${shoppingRows.length?'':'disabled'}>COPY FOR EVE MULTIBUY</button>
             </div>
-            <div class="doctrine-shopping-hint">${doctrineShoppingMode==='shortfall'?'New items buy only what C-N needs to reach seven days of stock.':'New items use a full seven days of demand.'}</div>
-            <div class="doctrine-shopping-list">
-              ${shoppingHtml||'<div class="doctrine-shopping-empty"><strong>DROP ITEMS HERE</strong><span>Or use ADD beside any doctrine item.</span></div>'}
-            </div>
-            <div class="doctrine-shopping-total">
-              <span>EST. JITA TOTAL</span>
-              <strong>${shoppingJitaTotal?fmt(shoppingJitaTotal)+' ISK':'—'}</strong>
-            </div>
-            <button id="doctrineShoppingCopy" class="doctrine-multibuy-copy" type="button" ${shoppingRows.length?'':'disabled'}>COPY FOR EVE MULTIBUY</button>
           </aside>
         </div>
 
       </section>`;
 
+    $('doctrineShoppingToggle')?.addEventListener('click',()=>{
+      doctrineShoppingOpen=!doctrineShoppingOpen;
+      localStorage.setItem('jlrDoctrineShoppingOpen',String(doctrineShoppingOpen));
+      renderDoctrineMarket();
+    });
     host.querySelectorAll('[data-add-doctrine]').forEach(button=>button.addEventListener('click',event=>{
       event.stopPropagation();
       addDoctrineShoppingItem(button.dataset.addDoctrine);
