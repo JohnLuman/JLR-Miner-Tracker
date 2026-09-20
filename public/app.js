@@ -23,6 +23,7 @@
   let pvpIntelError = '';
   let pvpIntelLoading = false;
   let pvpIntelPoll = null;
+  let pvpIntelPollCount = 0;
   const savedPvpMemberRankMode=localStorage.getItem('jlrPvpMemberRankMode');
   let pvpMemberRankMode=['overall','activity','isk','damage','lifetime'].includes(savedPvpMemberRankMode)?savedPvpMemberRankMode:'overall';
   let pvpPinnedCharacterId=localStorage.getItem('jlrPvpPinnedCharacter')||'';
@@ -1306,8 +1307,9 @@
     }
   }
 
-  async function loadPvpIntel(force=false){
+  async function loadPvpIntel(force=false,backgroundPoll=false){
     if(pvpIntelLoading)return;
+    if(!backgroundPoll)pvpIntelPollCount=0;
     if(pvpIntelPoll){clearTimeout(pvpIntelPoll);pvpIntelPoll=null}
     pvpIntelLoading=true;pvpIntelError='';renderPvpIntel();
     let shouldPoll=false;
@@ -1319,8 +1321,9 @@
     }finally{
       pvpIntelLoading=false;
       renderPvpIntel();
-      if(shouldPoll&&activeTab==='pvp'){
-        pvpIntelPoll=setTimeout(()=>loadPvpIntel(false),3000);
+      if(shouldPoll&&activeTab==='pvp'&&pvpIntelPollCount<20){
+        pvpIntelPollCount++;
+        pvpIntelPoll=setTimeout(()=>loadPvpIntel(false,true),3000);
       }
     }
   }
