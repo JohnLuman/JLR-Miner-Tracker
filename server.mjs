@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { parseProbeScan, parseA0Scan, parseIceScan } from './lib/probe-scan.mjs';
 import { parseThreatPaste, compactThreatStats, threatActivityLabels, fountainThreatTags, jlrThreatScore, threatIgnoreReason } from './lib/threat-scan.mjs';
@@ -14,6 +15,7 @@ const STATE_FILE = path.join(DATA_DIR, 'state.json');
 const PVP_DB_FILE = path.join(DATA_DIR, 'pvp-cache.json');
 const KEY_FILE = path.join(DATA_DIR, 'token.key');
 const SOURCE_FILE = path.join(__dirname, 'source-data.json');
+const DOCTRINE_SEED_FILE = path.join(__dirname, 'doctrine-seed.b64');
 const ENV_FILE = path.join(__dirname, '.env');
 
 await fsp.mkdir(DATA_DIR, { recursive: true });
@@ -41,6 +43,14 @@ const ESI_SCOPES = [MINING_SCOPE, SKILLS_SCOPE, FITTINGS_SCOPE, ASSETS_SCOPE, LO
 const MARKET_SCOPES = [MARKET_STRUCTURE_SCOPE, SEARCH_STRUCTURES_SCOPE, READ_STRUCTURES_SCOPE];
 const MARKET_CHARACTER_NAME = String(process.env.MARKET_CHARACTER_NAME || 'John Leman Raholan').trim();
 const MARKET_STRUCTURE_ID_ENV = String(process.env.MARKET_STRUCTURE_ID || '').trim();
+const DOCTRINE_MARKET_STRUCTURE_ID = String(process.env.DOCTRINE_MARKET_STRUCTURE_ID || '1045667241057').trim();
+const DOCTRINE_CN_REFRESH_MS = 15 * 60 * 1000;
+const DOCTRINE_JITA_REFRESH_MS = 6 * 60 * 60 * 1000;
+const DOCTRINE_HISTORY_REFRESH_MS = 24 * 60 * 60 * 1000;
+const DOCTRINE_ACCESS_CACHE_MS = 15 * 60 * 1000;
+const DOCTRINE_BLUE_STANDING = 5;
+const DOCTRINE_JITA_SELL_FRACTION = 0.05;
+const DOCTRINE_TRADE_MULTIPLIER = 1.0587;
 const MINING_SKILLS = {
   3386: 'Mining',
   3410: 'Astrogeology',
@@ -221,6 +231,10 @@ let fountainThreatCache = {
   data:pvpDb.threat?.fountain7d?.data||null,
   promise:null,
 };
+let doctrineSeedCache=null;
+let doctrineRefreshPromise=null;
+let doctrineRequested=false;
+const doctrineAccessCache=new Map();
 if(pvpDb.init7d?.data){
   zkillInitLeaderboardCache={updatedAt:pvpDbTimestamp(pvpDb.init7d.updatedAt),data:pvpDb.init7d.data,promise:null};
 }
@@ -305,7 +319,9 @@ function freshState() {
       typeCache: {}, systemCache: {}, dailyFleet: [], performanceSamples: [], ledgerActivity: {}, ledgerFieldSnapshots: {}, lastSyncAt: null, lastError: null,
     },
     market: {
-      prices: {}, minerals: {}, icePrices: {}, iceProducts: {}, gasPrices: {}, iceFields: [], a0Fields: [], a0Reports: {}, a0ScannedAt: null, t3Distances: {}, history: { ore:{}, ice:{} }, lastUpdatedAt: null, lastError: null,
+      prices: {}, minerals: {}, icePrices: {}, iceProducts: {}, gasPrices: {}, iceFields: [], a0Fields: [], a0Reports: {}, a0ScannedAt: null, t3Distances: {}, history: { ore:{}, ice:{} },
+      doctrine: {cnUpdatedAt:null,jitaUpdatedAt:null,historyUpdatedAt:null,updatedAt:null,structureId:null,structureName:null,cnByType:{},jitaByType:{},historyByType:{},lastError:null,refreshing:false},
+      lastUpdatedAt: null, lastError: null,
       characterId: null, characterName: null, refreshTokenEnc: null, scopes: [], authorizedAt: null,
       structureId: null, structureName: null, privateLastError: null,
     },
@@ -338,6 +354,15 @@ async function loadState() {
     parsed.market.icePrices ||= {};
     parsed.market.iceProducts ||= {};
     parsed.market.gasPrices ||= {};
+    parsed.market.doctrine = {
+      cnUpdatedAt:null,jitaUpdatedAt:null,historyUpdatedAt:null,updatedAt:null,structureId:null,structureName:null,
+      cnByType:{},jitaByType:{},historyByType:{},lastError:null,refreshing:false,
+      ...(parsed.market.doctrine||{}),
+    };
+    parsed.market.doctrine.cnByType ||= {};
+    parsed.market.doctrine.jitaByType ||= {};
+    parsed.market.doctrine.historyByType ||= {};
+    parsed.market.doctrine.refreshing=false;
     parsed.market.iceFields ||= [];
     parsed.market.a0Fields ||= [];
     parsed.market.a0Reports ||= {};
@@ -556,7 +581,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.8.0',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.8.1',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -923,6 +948,329 @@ async function bestPricesReachableAt(orders,targetSystemId,targetLocationId){
   }
   return{buy,sell};
 }
+
+async function loadDoctrineSeed(){
+  if(doctrineSeedCache)return doctrineSeedCache;
+  const encoded=(await fsp.readFile(DOCTRINE_SEED_FILE,'utf8')).trim();
+  const raw=zlib.gunzipSync(Buffer.from(encoded,'base64')).toString('utf8');
+  const parsed=JSON.parse(raw);
+  if(!Array.isArray(parsed?.rows)||!parsed.rows.length)throw new Error('Doctrine seed is empty.');
+  doctrineSeedCache=parsed;
+  return parsed;
+}
+function doctrineCache(){
+  state.market.doctrine ||= {cnByType:{},jitaByType:{},historyByType:{}};
+  state.market.doctrine.cnByType ||= {};
+  state.market.doctrine.jitaByType ||= {};
+  state.market.doctrine.historyByType ||= {};
+  return state.market.doctrine;
+}
+function doctrineTimestampFresh(value,maxAge){
+  const t=Date.parse(String(value||''));
+  return Number.isFinite(t)&&Date.now()-t<maxAge;
+}
+function doctrineMedian(values){
+  const list=(values||[]).map(Number).filter(Number.isFinite).sort((a,b)=>a-b);
+  if(!list.length)return 0;
+  const mid=Math.floor(list.length/2);
+  return list.length%2?list[mid]:(list[mid-1]+list[mid])/2;
+}
+function doctrineHistoryStats(rows){
+  const byDate=new Map((Array.isArray(rows)?rows:[]).map(row=>[String(row?.date||''),Math.max(0,Number(row?.volume)||0)]));
+  const end=new Date();
+  end.setUTCHours(0,0,0,0);
+  end.setUTCDate(end.getUTCDate()-1);
+  const vols=[];
+  for(let offset=29;offset>=0;offset--){
+    const d=new Date(end);
+    d.setUTCDate(end.getUTCDate()-offset);
+    vols.push(byDate.get(dateUTC(d))||0);
+  }
+  const last7=vols.slice(-7);
+  const sum=x=>x.reduce((a,b)=>a+b,0);
+  return{
+    mean7:sum(last7)/7,
+    mean30:sum(vols)/30,
+    median30:doctrineMedian(vols),
+  };
+}
+function doctrinePercentileSellPrice(orders,fraction=DOCTRINE_JITA_SELL_FRACTION){
+  const sells=(orders||[])
+    .filter(row=>!row?.is_buy_order&&Number(row?.price)>0&&Number(row?.volume_remain)>0)
+    .sort((a,b)=>Number(a.price)-Number(b.price));
+  const total=sells.reduce((sum,row)=>sum+Math.max(0,Number(row.volume_remain)||0),0);
+  if(!(total>0))return 0;
+  const target=Math.max(1,total*Math.max(.001,Math.min(1,Number(fraction)||.05)));
+  let taken=0,value=0;
+  for(const row of sells){
+    if(taken>=target)break;
+    const qty=Math.min(Math.max(0,Number(row.volume_remain)||0),target-taken);
+    value+=qty*Number(row.price);
+    taken+=qty;
+  }
+  return taken>0?value/taken:0;
+}
+async function doctrineMapLimit(items,limit,worker){
+  const input=[...(items||[])],output=new Array(input.length);
+  let cursor=0;
+  const runners=Array.from({length:Math.min(Math.max(1,limit),Math.max(1,input.length))},async()=>{
+    while(true){
+      const index=cursor++;
+      if(index>=input.length)return;
+      output[index]=await worker(input[index],index);
+    }
+  });
+  await Promise.all(runners);
+  return output;
+}
+async function doctrineAccessForUser(user,{force=false}={}){
+  if(!user?.id||!Array.isArray(user.characterIds)||!user.characterIds.length){
+    return{allowed:false,reason:'NO_LINKED_CHARACTER',message:'Link an EVE character to access Doctrine Market.'};
+  }
+  const key=String(user.id);
+  const cached=doctrineAccessCache.get(key);
+  if(!force&&cached&&Date.now()-cached.at<DOCTRINE_ACCESS_CACHE_MS)return cached.data;
+
+  const ids=user.characterIds.map(Number).filter(Number.isFinite);
+  try{
+    const {data}=await esiPost('https://esi.evetech.net/latest/characters/affiliation/?datasource=tranquility',ids);
+    const direct=(Array.isArray(data)?data:[]).find(row=>Number(row?.alliance_id)===INIT_ALLIANCE_ID);
+    if(direct){
+      const linked=state.characters[String(direct.character_id)];
+      const result={
+        allowed:true,reason:'INIT_MEMBER',standing:10,
+        characterId:String(direct.character_id),characterName:linked?.name||String(direct.character_id),
+        checkedAt:now(),
+      };
+      doctrineAccessCache.set(key,{at:Date.now(),data:result});
+      return result;
+    }
+  }catch(err){
+    console.warn('Doctrine affiliation check failed',String(err.message||err));
+  }
+
+  try{
+    const contacts=await positiveStandingContactsForUser(user);
+    const maps=contacts?.standingData?.byOwner||{};
+    let standing=-Infinity,owner=null;
+    for(const [label,map] of Object.entries(maps)){
+      const value=Number(map?.get?.(INIT_ALLIANCE_ID));
+      if(Number.isFinite(value)&&value>standing){standing=value;owner=label}
+    }
+    if(standing>=DOCTRINE_BLUE_STANDING){
+      const result={
+        allowed:true,reason:'INIT_BLUE',standing,standingOwner:owner,
+        characterId:String(contacts.sourceCharacterId||''),characterName:contacts.sourceCharacterName||null,
+        checkedAt:now(),
+      };
+      doctrineAccessCache.set(key,{at:Date.now(),data:result});
+      return result;
+    }
+    const result={
+      allowed:false,reason:'INIT_BLUE_REQUIRED',
+      message:'Doctrine Market requires a linked character that is in INIT or has INIT at +5 or higher standing.',
+      standing:Number.isFinite(standing)?standing:null,checkedAt:now(),
+    };
+    doctrineAccessCache.set(key,{at:Date.now(),data:result});
+    return result;
+  }catch(err){
+    const result={
+      allowed:false,
+      reason:err?.code==='CONTACT_SCOPE_REQUIRED'?'CONTACT_ACCESS_REQUIRED':'INIT_BLUE_REQUIRED',
+      message:err?.code==='CONTACT_SCOPE_REQUIRED'
+        ?'Update EVE access on a linked toon so JLR can verify INIT standings.'
+        :'JLR could not verify this account as INIT or INIT-blue.',
+      checkedAt:now(),
+    };
+    doctrineAccessCache.set(key,{at:Date.now(),data:result});
+    return result;
+  }
+}
+async function doctrineStructureSnapshot(seedRows){
+  const access=await marketAccessToken();
+  if(!access)throw new Error('John C-N market access is not authorized.');
+  const candidates=[DOCTRINE_MARKET_STRUCTURE_ID,String(state.market?.doctrine?.structureId||''),String(state.market?.structureId||'')]
+    .filter((id,index,list)=>id&&list.indexOf(id)===index);
+  let selected=null;
+  for(const id of candidates){
+    try{
+      const [info,orders]=await Promise.all([structureInfo(id,access.access),structureMarketOrders(id,access.access)]);
+      selected={id:String(id),name:String(info?.name||id),orders};
+      break;
+    }catch(err){
+      console.warn('Doctrine C-N structure candidate failed',id,String(err.message||err));
+    }
+  }
+  if(!selected){
+    const ids=await resolveUniverseIds([CN_SYSTEM_NAME]);
+    const cnSystemId=ids.get(CN_SYSTEM_NAME);
+    selected=await resolveMarketStructure(cnSystemId,access,seedRows.slice(0,100).map(row=>Number(row.typeId)));
+  }
+  if(!selected)throw new Error('John market checker could not access the doctrine market structure in C-N.');
+
+  const targets=new Set(seedRows.map(row=>Number(row.typeId)));
+  const byType={};
+  for(const order of selected.orders||[]){
+    if(order?.is_buy_order)continue;
+    const typeId=Number(order?.type_id);
+    if(!targets.has(typeId))continue;
+    const key=String(typeId);
+    const stock=Math.max(0,Number(order?.volume_remain)||0);
+    const price=Number(order?.price)||0;
+    const row=byType[key]||(byType[key]={stock:0,sell:0});
+    row.stock+=stock;
+    if(price>0&&(!(row.sell>0)||price<row.sell))row.sell=price;
+  }
+  return{id:selected.id,name:selected.name,byType};
+}
+async function refreshDoctrineMarket({forceCn=false,forceAll=false}={}){
+  if(doctrineRefreshPromise)return doctrineRefreshPromise;
+  const pending=(async()=>{
+    const seed=await loadDoctrineSeed();
+    const rows=seed.rows||[];
+    const cache=doctrineCache();
+    cache.refreshing=true;
+    cache.lastError=null;
+    try{
+      const cnStale=forceCn||!doctrineTimestampFresh(cache.cnUpdatedAt,DOCTRINE_CN_REFRESH_MS);
+      if(cnStale){
+        try{
+          const cn=await doctrineStructureSnapshot(rows);
+          cache.cnByType=cn.byType;
+          cache.cnUpdatedAt=now();
+          cache.structureId=cn.id;
+          cache.structureName=cn.name;
+        }catch(err){
+          cache.lastError=`C-N: ${String(err.message||err)}`;
+          console.warn('Doctrine C-N refresh failed',String(err.message||err));
+        }
+      }
+
+      const jitaStale=forceAll||!doctrineTimestampFresh(cache.jitaUpdatedAt,DOCTRINE_JITA_REFRESH_MS);
+      if(jitaStale){
+        let success=0;
+        const next={...cache.jitaByType};
+        await doctrineMapLimit(rows,6,async row=>{
+          try{
+            const orders=await marketOrders(JITA_REGION_ID,Number(row.typeId));
+            next[String(row.typeId)]={sell:doctrinePercentileSellPrice(orders)};
+            success++;
+          }catch(err){
+            console.warn('Doctrine Jita refresh failed',row.typeId,String(err.message||err));
+          }
+        });
+        if(success){
+          cache.jitaByType=next;
+          cache.jitaUpdatedAt=now();
+        }
+      }
+
+      const historyStale=forceAll||!doctrineTimestampFresh(cache.historyUpdatedAt,DOCTRINE_HISTORY_REFRESH_MS);
+      if(historyStale){
+        let success=0;
+        const next={...cache.historyByType};
+        await doctrineMapLimit(rows,6,async row=>{
+          try{
+            const {data}=await esiGet(`https://esi.evetech.net/latest/markets/${FOUNTAIN_REGION_ID}/history/?datasource=tranquility&type_id=${Number(row.typeId)}`);
+            next[String(row.typeId)]=doctrineHistoryStats(data);
+            success++;
+          }catch(err){
+            console.warn('Doctrine Fountain history refresh failed',row.typeId,String(err.message||err));
+          }
+        });
+        if(success){
+          cache.historyByType=next;
+          cache.historyUpdatedAt=now();
+        }
+      }
+      cache.updatedAt=now();
+    }finally{
+      cache.refreshing=false;
+      await save();
+    }
+  })().catch(err=>{
+    const cache=doctrineCache();
+    cache.lastError=String(err.message||err);
+    cache.refreshing=false;
+    console.warn('Doctrine market refresh failed',cache.lastError);
+  }).finally(()=>{doctrineRefreshPromise=null});
+  doctrineRefreshPromise=pending;
+  return pending;
+}
+async function doctrineMarketSnapshot(){
+  const seed=await loadDoctrineSeed();
+  const cache=doctrineCache();
+  const cnLive=Boolean(cache.cnUpdatedAt);
+  const jitaLive=Boolean(cache.jitaUpdatedAt);
+  const historyLive=Boolean(cache.historyUpdatedAt);
+  const rows=(seed.rows||[]).map(base=>{
+    const id=String(base.typeId);
+    const cn=cache.cnByType?.[id]||null;
+    const jita=cache.jitaByType?.[id]||null;
+    const history=cache.historyByType?.[id]||null;
+    const stock=cnLive?Math.max(0,Number(cn?.stock)||0):Math.max(0,Number(base.snapshotStock)||0);
+    const cnSell=cnLive?Math.max(0,Number(cn?.sell)||0):Math.max(0,Number(base.snapshotCnSell)||0);
+    const jitaSell=jitaLive?Math.max(0,Number(jita?.sell)||0):Math.max(0,Number(base.snapshotJita)||0);
+
+    let sold7=Math.max(.01,Number(base.snapshotSold7)||.01);
+    let sold30=Math.max(.01,Number(base.snapshotSold30)||.01);
+    if(historyLive&&history){
+      sold7=Math.max(.01,(Number(history.mean7)||0)+.01);
+      const median=Math.max(.01,(Number(history.median30)||0)+.01);
+      const mean=Math.max(.01,(Number(history.mean30)||0)+.01);
+      sold30=median<5?Math.max(median,mean):median;
+    }
+
+    const daysDynamic=sold30>0&&sold7>0?Math.min(stock/sold30,stock/sold7):0;
+    const daysStandard=sold30>0?stock/sold30:0;
+    const required=(30-daysStandard)*sold30;
+    const cnJita=jitaSell>0?cnSell/jitaSell:0;
+    const breakeven=jitaSell*DOCTRINE_TRADE_MULTIPLIER+Math.max(0,Number(base.haulCost)||0);
+    const seedMargin=breakeven>0?cnSell/breakeven-1:0;
+    return{
+      typeId:Number(base.typeId),item:String(base.item||''),stock,sold7,sold30,daysDynamic,daysStandard,required,
+      cnSell,jitaSell,cnJita,classification:String(base.classification||'Unclassified'),category:String(base.category||'Other'),
+      breakeven,seedMargin,requiredValueJita:required*jitaSell,seed10Profit:breakeven*1.1,
+    };
+  });
+
+  const ratioRows=rows.filter(row=>row.cnJita>0);
+  const summary={
+    date:dateUTC(),
+    count:rows.length,
+    zero:rows.filter(row=>row.stock<=0).length,
+    need:rows.filter(row=>row.required>0).length,
+    under2:rows.filter(row=>row.daysDynamic<2).length,
+    alerts:rows.filter(row=>row.cnJita>1.3).length,
+    seed:rows.filter(row=>row.seedMargin>0).length,
+    avgMarkup:ratioRows.length?ratioRows.reduce((sum,row)=>sum+row.cnJita,0)/ratioRows.length:0,
+    sellCap:rows.reduce((sum,row)=>sum+row.stock*row.cnSell,0),
+    seed30:rows.reduce((sum,row)=>sum+Math.max(0,row.required)*row.jitaSell,0),
+  };
+  return{
+    version:2,
+    snapshotDate:seed.snapshotDate||null,
+    live:true,
+    summary,
+    rows,
+    status:{
+      refreshing:Boolean(cache.refreshing||doctrineRefreshPromise),
+      updatedAt:cache.updatedAt||null,
+      cnUpdatedAt:cache.cnUpdatedAt||null,
+      jitaUpdatedAt:cache.jitaUpdatedAt||null,
+      historyUpdatedAt:cache.historyUpdatedAt||null,
+      structureId:cache.structureId||DOCTRINE_MARKET_STRUCTURE_ID,
+      structureName:cache.structureName||state.market.structureName||null,
+      lastError:cache.lastError||null,
+      sources:{
+        cn:cnLive?'live-john-c-n':'workbook-fallback',
+        jita:jitaLive?'live-esi-forge-percentile':'workbook-fallback',
+        history:historyLive?'live-esi-fountain':'workbook-fallback',
+      },
+    },
+  };
+}
+
 function refinedOreValue(oreName,oreVolume,priceByMineral) {
   const recipe=ORE_REPROCESSING[oreName];
   if(!recipe||!(oreVolume>0))return null;
@@ -3489,15 +3837,27 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
   };
 }
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.8.0',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.8.1',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
       setTimeout(()=>positiveStandingContactsForUser(u).catch(err=>console.warn('Threat contacts warmup failed',String(err.message||err))),0);
     }
-    return json(res,200,{authenticated:Boolean(u),user:u?myProfile(u):null});
+    if(!u)return json(res,200,{authenticated:false,user:null});
+    const profile=myProfile(u);
+    profile.doctrineMarketAccess=await doctrineAccessForUser(u).catch(err=>({
+      allowed:false,reason:'ACCESS_CHECK_FAILED',message:String(err.message||err),checkedAt:now(),
+    }));
+    return json(res,200,{authenticated:true,user:profile});
   }
   const user=requireUser(req,res);if(!user)return;
+  if(req.method==='GET'&&url.pathname==='/api/doctrine-market'){
+    const access=await doctrineAccessForUser(user);
+    if(!access.allowed)return json(res,403,{error:'INIT_BLUE_REQUIRED',message:access.message||'INIT or INIT-blue character required.'});
+    doctrineRequested=true;
+    refreshDoctrineMarket().catch(console.error);
+    return json(res,200,await doctrineMarketSnapshot());
+  }
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
   if(req.method==='GET'&&url.pathname==='/api/zkill/lifetime-damage'){
     try{
@@ -3527,6 +3887,13 @@ async function routeApi(req,res,url) {
   }
   if(req.method==='GET'&&url.pathname==='/api/events'){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});res.write(`event: state\ndata: ${JSON.stringify(publicState())}\n\n`);sseClients.add(res);req.on('close',()=>sseClients.delete(res));return}
   if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
+  if(req.method==='POST'&&url.pathname==='/api/doctrine-market/refresh'){
+    const access=await doctrineAccessForUser(user,{force:true});
+    if(!access.allowed)return json(res,403,{error:'INIT_BLUE_REQUIRED',message:access.message||'INIT or INIT-blue character required.'});
+    doctrineRequested=true;
+    refreshDoctrineMarket({forceCn:true}).catch(console.error);
+    return json(res,202,await doctrineMarketSnapshot());
+  }
   if(req.method==='POST'&&url.pathname==='/api/threat-share'){
     let body;
     try{body=await readBody(req,75_000)}
@@ -3611,7 +3978,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.8.0 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.8.1 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setInterval(()=>resetExpired(true),15_000).unref();
 async function runAutomaticSyncLoop(){
   const startedAt=Date.now();
@@ -3631,6 +3998,7 @@ setTimeout(()=>{
   }).catch(console.error);
 },7_500).unref();
 setInterval(()=>refreshMarketPrices().catch(console.error),60*60_000).unref();
+setInterval(()=>{if(doctrineRequested)refreshDoctrineMarket().catch(console.error)},DOCTRINE_CN_REFRESH_MS).unref();
 setTimeout(()=>refreshMarketPrices().catch(console.error),2_000).unref();
 setInterval(()=>refreshFieldDistances().catch(console.error),24*60*60_000).unref();
 setTimeout(()=>refreshFieldDistances().catch(console.error),1_000).unref();
