@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { parseThreatPaste, compactThreatStats, threatActivityLabels, jlrThreatScore, threatIgnoreReason } from '../lib/threat-scan.mjs';
+import { parseThreatPaste, compactThreatStats, threatActivityLabels, fountainThreatTags, jlrThreatScore, threatIgnoreReason } from '../lib/threat-scan.mjs';
 
 const local = parseThreatPaste([
   'FC Zoetrope',
@@ -60,7 +60,19 @@ assert.equal(stats.awoxCount, 1);
 const tags = threatActivityLabels(stats, ['Sabre']);
 assert(tags.some(tag => tag.label === 'AWOX'));
 assert(tags.some(tag => tag.label === 'TACKLE'));
-assert(jlrThreatScore(stats, tags) > 0);
+const legacyThreat=jlrThreatScore(stats,tags);
+assert(legacyThreat > 0);
+const outsideFountain=jlrThreatScore(stats,tags,{ready:true,kills7d:0,kills24h:0,finalBlows7d:0,losses7d:0,iskDestroyed7d:0,systems:[]});
+const fountainTags=fountainThreatTags({ready:true,kills7d:8},['Arazu','Sabre','Redeemer']);
+assert(fountainTags.some(tag=>tag.label==='FOUNTAIN RECON'));
+assert(fountainTags.some(tag=>tag.label==='FOUNTAIN DICTOR'));
+assert(fountainTags.some(tag=>tag.label==='FOUNTAIN BLOPS'));
+const activeFountain=jlrThreatScore(stats,[...tags,...fountainTags],{
+  ready:true,kills7d:8,kills24h:3,finalBlows7d:2,losses7d:1,iskDestroyed7d:8_000_000_000,
+  systems:[30004618,30004619,30004620],lastKillAt:new Date().toISOString(),
+});
+assert(outsideFountain < legacyThreat);
+assert(activeFountain > outsideFountain);
 
 const ignoreOptions={
   ownIds:new Set([101]),
