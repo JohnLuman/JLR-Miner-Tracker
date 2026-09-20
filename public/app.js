@@ -84,6 +84,7 @@
     }catch{return[]}
   }
   let doctrineShoppingList=loadDoctrineShoppingList();
+  let doctrineShoppingMode=localStorage.getItem('jlrDoctrineShoppingMode')==='shortfall'?'shortfall':'full';
   let oreTrendType=localStorage.getItem('jlrOreTrend')||'Kylixium';
   const savedFleetHistoryDays=Number(localStorage.getItem('jlrFleetHistoryDays'));
   let fleetHistoryDays=[7,30,90].includes(savedFleetHistoryDays)?savedFleetHistoryDays:7;
@@ -729,8 +730,29 @@
   function saveDoctrineShoppingList(){
     localStorage.setItem('jlrDoctrineShoppingList',JSON.stringify(doctrineShoppingList));
   }
-  function doctrineSevenDayQty(row){
+  function doctrineSevenDayTarget(row){
     return Math.max(1,Math.ceil(Math.max(.01,Number(row?.sold7)||.01)*7));
+  }
+  function doctrineShoppingQty(row,mode=doctrineShoppingMode){
+    const target=doctrineSevenDayTarget(row);
+    if(mode==='shortfall')return Math.max(0,target-Math.max(0,Math.floor(Number(row?.stock)||0)));
+    return target;
+  }
+  function recalculateDoctrineShoppingList(){
+    const byId=new Map((doctrineMarket?.rows||[]).map(row=>[Number(row.typeId),row]));
+    let removed=0,updated=0;
+    doctrineShoppingList=doctrineShoppingList.map(item=>{
+      const row=byId.get(Number(item.typeId));
+      if(!row)return null;
+      const qty=doctrineShoppingQty(row);
+      if(qty<=0){removed++;return null}
+      if(Number(item.qty)!==qty)updated++;
+      return{typeId:Number(item.typeId),qty};
+    }).filter(Boolean);
+    saveDoctrineShoppingList();
+    renderDoctrineMarket();
+    const mode=doctrineShoppingMode==='shortfall'?'7-day shortfall':'full 7-day supply';
+    toast('Shopping list recalculated for '+mode+'.'+(removed?' '+removed+' covered item'+(removed===1?'':'s')+' removed.':''));
   }
   function addDoctrineShoppingItem(typeId){
     const id=Number(typeId);
@@ -741,10 +763,15 @@
       toast(row.item+' is already on the shopping list.');
       return;
     }
-    doctrineShoppingList.push({typeId:id,qty:doctrineSevenDayQty(row)});
+    const qty=doctrineShoppingQty(row);
+    if(qty<=0){
+      toast(row.item+' already has at least 7 days of stock in C-N.');
+      return;
+    }
+    doctrineShoppingList.push({typeId:id,qty});
     saveDoctrineShoppingList();
     renderDoctrineMarket();
-    toast(row.item+' added at a 7-day supply.');
+    toast(row.item+' added at '+(doctrineShoppingMode==='shortfall'?'the 7-day shortfall':'a full 7-day supply')+'.');
   }
   function removeDoctrineShoppingItem(typeId){
     const id=Number(typeId);
@@ -861,9 +888,10 @@
     }).filter(Boolean);
     const shoppingJitaTotal=shoppingRows.reduce((sum,item)=>sum+Math.max(1,Number(item.qty)||1)*Math.max(0,Number(item.row.jitaSell)||0),0);
     const shoppingHtml=shoppingRows.map(item=>{
-      const recommended=doctrineSevenDayQty(item.row);
+      const target=doctrineSevenDayTarget(item.row);
+      const shortfall=doctrineShoppingQty(item.row,'shortfall');
       return '<div class="doctrine-shop-row" draggable="true" data-shop-type-id="'+esc(String(item.typeId))+'">'+
-        '<div class="doctrine-shop-name"><strong>'+esc(item.row.item)+'</strong><small>7D target '+fmt(recommended)+' • '+item.row.sold7.toFixed(1)+'/day</small></div>'+
+        '<div class="doctrine-shop-name"><strong>'+esc(item.row.item)+'</strong><small>7D target '+fmt(target)+' • shortfall '+fmt(shortfall)+' • '+item.row.sold7.toFixed(1)+'/day</small></div>'+
         '<label class="doctrine-shop-qty"><span>QTY</span><input type="number" min="1" step="1" value="'+Math.max(1,Math.floor(Number(item.qty)||1))+'" data-shop-qty="'+esc(String(item.typeId))+'" aria-label="Quantity for '+esc(item.row.item)+'"></label>'+
         '<button class="doctrine-shop-remove" type="button" data-remove-doctrine="'+esc(String(item.typeId))+'" aria-label="Remove '+esc(item.row.item)+'">REMOVE</button>'+
       '</div>';
@@ -922,7 +950,14 @@
               <div><span>SHOPPING LIST</span><strong>${fmt(shoppingRows.length)} ITEMS</strong></div>
               <button id="doctrineShoppingClear" class="doctrine-shop-clear" type="button" ${shoppingRows.length?'':'disabled'}>CLEAR</button>
             </div>
-            <div class="doctrine-shopping-hint">Drag doctrine items here. New items default to a 7-day supply.</div>
+            <div class="doctrine-shopping-mode">
+              <div class="doctrine-shopping-mode-buttons" role="group" aria-label="Shopping list quantity mode">
+                <button class="${doctrineShoppingMode==='full'?'active':''}" data-shop-mode="full" type="button">FULL 7D SUPPLY</button>
+                <button class="${doctrineShoppingMode==='shortfall'?'active':''}" data-shop-mode="shortfall" type="button">7D SHORTFALL</button>
+              </div>
+              <button id="doctrineShoppingRecalc" class="doctrine-shopping-recalc" type="button" ${shoppingRows.length?'':'disabled'}>APPLY TO LIST</button>
+            </div>
+            <div class="doctrine-shopping-hint">${doctrineShoppingMode==='shortfall'?'New items buy only what C-N needs to reach seven days of stock.':'New items use a full seven days of demand.'}</div>
             <div class="doctrine-shopping-list">
               ${shoppingHtml||'<div class="doctrine-shopping-empty"><strong>DROP ITEMS HERE</strong><span>Or use ADD beside any doctrine item.</span></div>'}
             </div>
@@ -965,6 +1000,12 @@
         addDoctrineShoppingItem(event.dataTransfer.getData('text/plain'));
       });
     }
+    host.querySelectorAll('[data-shop-mode]').forEach(button=>button.addEventListener('click',()=>{
+      doctrineShoppingMode=button.dataset.shopMode==='shortfall'?'shortfall':'full';
+      localStorage.setItem('jlrDoctrineShoppingMode',doctrineShoppingMode);
+      renderDoctrineMarket();
+    }));
+    $('doctrineShoppingRecalc')?.addEventListener('click',recalculateDoctrineShoppingList);
     host.querySelectorAll('[data-shop-qty]').forEach(input=>input.addEventListener('change',()=>{
       const item=doctrineShoppingList.find(row=>Number(row.typeId)===Number(input.dataset.shopQty));
       if(!item)return;
