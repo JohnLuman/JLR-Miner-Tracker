@@ -1248,3 +1248,49 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .doctrine-loading,.doctrine-error{display:flex;align-items:center;gap:10px;padding:14px}.doctrine-loading strong,.doctrine-error strong{font-size:11px}.doctrine-loading span,.doctrine-error span{font-size:8px;color:var(--muted)}
 @media(max-width:1150px){.doctrine-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.doctrine-command{grid-template-columns:1fr}.doctrine-filters{grid-template-columns:1.5fr 1fr 1fr}}
 @media(max-width:760px){.doctrine-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.doctrine-filters{grid-template-columns:1fr}.doctrine-summary-line{align-items:flex-start;flex-direction:column}.doctrine-summary-line span{text-align:left}}
+
+
+/* v2.8.5 Doctrine shopping list */
+.doctrine-workspace{display:grid;grid-template-columns:minmax(0,1fr) 318px;gap:7px;padding:0 7px 7px;align-items:start}
+.doctrine-workspace .doctrine-table-wrap{margin:0;max-height:650px}
+.doctrine-row[draggable="true"]{cursor:grab}
+.doctrine-row[draggable="true"]:active{cursor:grabbing}
+.doctrine-row.dragging{opacity:.48}
+.doctrine-item-main{display:flex;align-items:center;justify-content:space-between;gap:7px;min-width:0}
+.doctrine-item-main>div{min-width:0}
+.doctrine-list-add{flex:0 0 auto;min-height:24px;border:1px solid var(--theme-accent-line,var(--line));border-radius:6px;background:linear-gradient(180deg,var(--theme-tab-hi,#4d236a),var(--theme-tab-lo,#2b173d));color:#fff;padding:3px 7px;font-size:6px;font-weight:950;letter-spacing:.06em}
+.doctrine-list-add:hover{filter:brightness(1.14)}
+.doctrine-shopping{position:sticky;top:8px;align-self:start;min-width:0;border:1px solid var(--theme-accent-line,var(--line));border-radius:9px;background:linear-gradient(180deg,var(--theme-panel-hi,var(--panel)),var(--theme-panel-lo,var(--panel)));box-shadow:0 10px 28px #0007;overflow:hidden;transition:border-color .12s,box-shadow .12s,transform .12s}
+.doctrine-shopping.drag-over{border-color:var(--theme-accent-hi,#ce68ff);box-shadow:0 0 0 2px color-mix(in srgb,var(--theme-accent,var(--purple)) 28%,transparent),0 12px 30px #0009;transform:translateY(-1px)}
+.doctrine-shopping-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--theme-accent,var(--purple)) 10%,var(--theme-panel-hi,var(--panel)))}
+.doctrine-shopping-head span{display:block;font-size:6px;font-weight:950;letter-spacing:.11em;color:var(--muted)}
+.doctrine-shopping-head strong{display:block;margin-top:2px;font-size:12px}
+.doctrine-shop-clear{min-height:26px;border:1px solid #74434a;border-radius:6px;background:#261419;color:#ffadb3;padding:4px 8px;font-size:6px;font-weight:950;letter-spacing:.06em}
+.doctrine-shop-clear:disabled,.doctrine-multibuy-copy:disabled{opacity:.38;cursor:default;filter:none}
+.doctrine-shopping-hint{padding:7px 9px;border-bottom:1px solid var(--line);color:var(--muted);font-size:7px;line-height:1.35}
+.doctrine-shopping-list{display:grid;gap:4px;max-height:455px;overflow:auto;padding:6px}
+.doctrine-shopping-empty{display:grid;place-items:center;min-height:120px;border:1px dashed color-mix(in srgb,var(--theme-accent-line,var(--line)) 72%,transparent);border-radius:8px;background:color-mix(in srgb,var(--theme-input,#0d0d14) 82%,transparent);text-align:center;padding:12px}
+.doctrine-shopping-empty strong{font-size:8px;letter-spacing:.08em;color:var(--theme-accent-hi,#ce68ff)}
+.doctrine-shopping-empty span{margin-top:4px;font-size:7px;color:var(--muted)}
+.doctrine-shop-row{display:grid;grid-template-columns:minmax(0,1fr) 68px auto;gap:5px;align-items:center;border:1px solid var(--line);border-radius:7px;background:var(--theme-soft,#111119);padding:6px}
+.doctrine-shop-name{min-width:0}
+.doctrine-shop-name strong{display:block;font-size:8px;line-height:1.2;white-space:normal;overflow-wrap:anywhere}
+.doctrine-shop-name small{display:block;margin-top:2px;color:var(--muted);font-size:6px}
+.doctrine-shop-qty span{display:block;margin-bottom:2px;color:var(--muted);font-size:5.5px;font-weight:950;letter-spacing:.08em}
+.doctrine-shop-qty input{width:100%;height:27px;border:1px solid var(--theme-accent-line,var(--line));border-radius:6px;background:var(--theme-input,#0d0d14);color:var(--text);padding:3px 5px;font-size:8px;font-weight:900;text-align:right;outline:none}
+.doctrine-shop-qty input:focus{border-color:var(--theme-accent-hi,#ce68ff);box-shadow:0 0 0 2px color-mix(in srgb,var(--theme-accent,var(--purple)) 20%,transparent)}
+.doctrine-shop-remove{min-height:27px;border:1px solid #55333a;border-radius:6px;background:#1d1216;color:#ef959d;padding:3px 6px;font-size:5.5px;font-weight:950;letter-spacing:.04em}
+.doctrine-shopping-total{display:flex;align-items:center;justify-content:space-between;gap:8px;border-top:1px solid var(--line);padding:8px 9px;background:color-mix(in srgb,var(--theme-input,#0d0d14) 68%,transparent)}
+.doctrine-shopping-total span{font-size:6px;font-weight:950;letter-spacing:.08em;color:var(--muted)}
+.doctrine-shopping-total strong{font-size:10px;color:var(--theme-accent-hi,#ce68ff);font-variant-numeric:tabular-nums}
+.doctrine-multibuy-copy{width:calc(100% - 12px);min-height:34px;margin:0 6px 6px;border:1px solid var(--theme-accent-hi,#ce68ff);border-radius:7px;background:linear-gradient(180deg,var(--theme-tab-hi,#4d236a),var(--theme-tab-lo,#2b173d));color:#fff;font-size:7px;font-weight:1000;letter-spacing:.07em;box-shadow:inset 0 1px color-mix(in srgb,#fff 35%,transparent)}
+.doctrine-multibuy-copy:not(:disabled):hover{filter:brightness(1.14)}
+@media(max-width:1260px){
+  .doctrine-workspace{grid-template-columns:1fr}
+  .doctrine-shopping{position:relative;top:auto;order:-1}
+  .doctrine-shopping-list{max-height:260px}
+}
+@media(max-width:620px){
+  .doctrine-shop-row{grid-template-columns:minmax(0,1fr) 64px}
+  .doctrine-shop-remove{grid-column:1/-1}
+}
