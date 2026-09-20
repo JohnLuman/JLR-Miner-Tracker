@@ -162,6 +162,7 @@ const zkillCorpLeaderboardCache = new Map();
 const zkillCorpStatsCache = new Map();
 const zkillLifetimeDamageJobs = new Map();
 const zkillLifetimeDamageProgress = new Map();
+const threatScanCache = new Map();
 let esiCharacterSyncActive = 0;
 const esiCharacterSyncWaiters = [];
 let esiBackoffUntil = 0;
@@ -449,7 +450,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.3.87',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.3.88',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -2496,7 +2497,7 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
   };
 }
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.87',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.88',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){const u=readSession(req);return json(res,200,{authenticated:Boolean(u),user:u?myProfile(u):null})}
   const user=requireUser(req,res);if(!user)return;
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
@@ -2542,6 +2543,55 @@ async function routeApi(req,res,url) {
   }
   if(req.method==='GET'&&url.pathname==='/api/events'){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});res.write(`event: state\ndata: ${JSON.stringify(publicState())}\n\n`);sseClients.add(res);req.on('close',()=>sseClients.delete(res));return}
   if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
+  if(req.method==='POST'&&url.pathname==='/api/threat-scan'){
+    let body;
+    try{body=await readBody(req,75_000)}
+    catch(err){return json(res,400,{error:'BAD_SCAN',message:String(err.message||err)})}
+    const scanText=String(body?.text||'').trim();
+    if(scanText.length<2)return json(res,400,{error:'EMPTY_SCAN',message:'Paste character names, Local, or D-scan text first.'});
+    if(scanText.length>50_000)return json(res,413,{error:'SCAN_TOO_LARGE',message:'Threat scan text is too large. Keep the paste under 50,000 characters.'});
+
+    const cacheKey=crypto.createHash('sha256').update(scanText).digest('hex');
+    const cached=threatScanCache.get(cacheKey);
+    if(cached&&Date.now()-cached.at<2*60*1000)return json(res,200,{...cached.data,cached:true});
+
+    try{
+      const response=await fetch('https://zkillboard.com/cache/bypass/scan/',{
+        method:'POST',
+        headers:{
+          'Accept':'application/json',
+          'Content-Type':'application/x-www-form-urlencoded; charset=UTF-8',
+          'User-Agent':`${ESI_USER_AGENT} | Threat Scan`,
+        },
+        body:new URLSearchParams({scan:scanText}),
+      });
+      const raw=await response.text();
+      if(!response.ok)throw new Error(`zKillboard ScanAlyzer ${response.status}: ${raw.slice(0,160)}`);
+      let payload;
+      try{payload=JSON.parse(raw)}catch{throw new Error('zKillboard ScanAlyzer returned invalid JSON.')}
+      if(!payload||typeof payload!=='object'||!Array.isArray(payload.chars))throw new Error('zKillboard ScanAlyzer returned an unexpected response.');
+
+      const data={
+        source:'zKillboard ScanAlyzer',
+        scannedAt:now(),
+        totalChars:Number(payload.totalChars)||payload.chars.length,
+        totalShips:Number(payload.totalShips)||0,
+        chars:payload.chars,
+        corps:payload.corps||{},
+        allis:payload.allis||{},
+        ships:Array.isArray(payload.ships)?payload.ships:[],
+      };
+      threatScanCache.set(cacheKey,{at:Date.now(),data});
+      if(threatScanCache.size>40){
+        const oldest=[...threatScanCache.entries()].sort((a,b)=>a[1].at-b[1].at).slice(0,10);
+        for(const [key] of oldest)threatScanCache.delete(key);
+      }
+      return json(res,200,data);
+    }catch(err){
+      console.warn('Threat scan failed',String(err.message||err));
+      return json(res,502,{error:'THREAT_SCAN_FAILED',message:String(err.message||err)});
+    }
+  }
   if(req.method==='POST'&&url.pathname==='/api/scans/preview'){
     const body=await readBody(req,150_000);
     const characterId=String(body.characterId||user.primaryCharacterId||'');

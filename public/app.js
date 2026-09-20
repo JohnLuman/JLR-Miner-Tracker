@@ -30,6 +30,10 @@
   let pvpLifetimeDamageLoading=false;
   let pvpLifetimeDamageError='';
   let pvpLifetimeDamagePoll=null;
+  let threatScanData=null;
+  let threatScanLoading=false;
+  let threatScanError='';
+  let threatScanText='';
 
   const DEFAULT_FLEET = { members:{}, uptime:100, payout:95 };
   function loadFleet() {
@@ -543,12 +547,13 @@
   function showApp(){$('loginView').classList.add('hidden');$('app').classList.remove('hidden');}
   let activeTab=localStorage.getItem('jlrTab')||'fields';
   function applyTab(tab){
-    const valid=['fields','fleet','ice','pvp','mer','toons'];
+    const valid=['fields','fleet','ice','pvp','threat','mer','toons'];
     activeTab=valid.includes(tab)?tab:'fields';
     localStorage.setItem('jlrTab',activeTab);
     document.querySelectorAll('.app-tab').forEach(button=>button.classList.toggle('active',button.dataset.tab===activeTab));
     document.querySelectorAll('.tab-panel').forEach(panel=>panel.classList.toggle('active',panel.dataset.tab===activeTab));
     if(activeTab==='pvp'&&!pvpIntel&&!pvpIntelLoading)loadPvpIntel();
+    if(activeTab==='threat')renderThreatScan();
   }
   function initTabs(){
     const host=$('tabHost');
@@ -567,6 +572,8 @@
     const ice=makePanel('ice');
     const pvp=makePanel('pvp');
     pvp.id='pvpIntelPanel';
+    const threat=makePanel('threat');
+    threat.id='threatScanPanel';
     const mer=makePanel('mer');
     mer.id='merIntelPanel';
     const toons=makePanel('toons');
@@ -852,6 +859,170 @@
       pvpIntelError=String(error?.message||error||'PvP rankings could not be loaded.');
     }finally{
       pvpIntelLoading=false;renderPvpIntel();
+    }
+  }
+
+
+  function threatEntity(collection,id){
+    if(!id)return null;
+    return collection?.[id]||collection?.[String(id)]||null;
+  }
+  function threatDanger(stats={}){
+    const direct=Number(stats.dangerRatio);
+    if(Number.isFinite(direct))return Math.max(0,Math.min(100,direct));
+    const kills=Number(stats.shipsDestroyed)||0;
+    const losses=Number(stats.shipsLost)||0;
+    return kills+losses>0?(kills/(kills+losses))*100:0;
+  }
+  function threatBadges(ch){
+    const s=ch?.stats||{};
+    const tags=[];
+    if(Number(s.gankerCount)>=10)tags.push({label:`GANKER ${fmt(s.gankerCount)}`,kind:'red'});
+    if(Number(s.awoxCount)>=10)tags.push({label:`AWOX ${fmt(s.awoxCount)}`,kind:'red'});
+    if(Number(s.allianceAwoxCount)>=15)tags.push({label:'ALLIANCE AWOX',kind:'red'});
+    if(Number(s.factionAwoxCount)>=20)tags.push({label:'FACTION AWOX',kind:'red'});
+    if(s.fc)tags.push({label:`FC ${String(s.fc.level||'').toUpperCase()}`.trim(),kind:'orange'});
+    if(s.bait)tags.push({label:`BAIT ${String(s.bait.level||'').toUpperCase()}`.trim(),kind:'orange'});
+    if(s.cyno)tags.push({label:`CYNO ${fmt(s.cyno.count||0)}`,kind:'purple'});
+    for(const tag of Array.isArray(s.characterTags)?s.characterTags:[]){
+      const label=String(tag?.label||'').trim();
+      if(label)tags.push({label:label.toUpperCase(),kind:/titan|super|capital|dropper|blops/i.test(label)?'red':'blue'});
+    }
+    if(ch?.inactive)tags.push({label:'NO RECENT KB',kind:'dim'});
+    if(ch?.unknown)tags.push({label:'UNKNOWN',kind:'dim'});
+    return tags.slice(0,9);
+  }
+  function threatShipImages(ch){
+    return (Array.isArray(ch?.ships)?ch.ships:[]).slice(0,5).map(ship=>{
+      const id=Number(ship?.shipTypeID)||0;
+      const name=String(ship?.shipName||'Unknown ship');
+      return id?`<img src="https://images.evetech.net/types/${id}/render?size=64" alt="" title="${esc(name)} • ${fmt(ship?.appearances||0)} recent appearances">`:'';
+    }).join('');
+  }
+  function renderThreatScan(){
+    const host=$('threatScanPanel');
+    if(!host)return;
+
+    const data=threatScanData;
+    const chars=Array.isArray(data?.chars)?[...data.chars]:[];
+    chars.sort((a,b)=>
+      threatDanger(b?.stats)-threatDanger(a?.stats)||
+      (Number(b?.stats?.shipsDestroyed)||0)-(Number(a?.stats?.shipsDestroyed)||0)||
+      String(a?.name||'').localeCompare(String(b?.name||''))
+    );
+
+    const highDanger=chars.filter(ch=>threatDanger(ch?.stats)>=70).length;
+    const cynos=chars.filter(ch=>ch?.stats?.cyno).length;
+    const capitalSignals=chars.filter(ch=>(ch?.stats?.characterTags||[]).some(tag=>/capital|super|titan|dropper|blops/i.test(String(tag?.label||'')))).length;
+
+    const rows=chars.map(ch=>{
+      const s=ch?.stats||{};
+      const id=Number(ch?.id)||0;
+      const corp=threatEntity(data?.corps,ch?.corporationID);
+      const alli=threatEntity(data?.allis,ch?.allianceID);
+      const danger=threatDanger(s);
+      const kills=Number(s.shipsDestroyed)||0;
+      const losses=Number(s.shipsLost)||0;
+      const kd=losses>0?(kills/losses).toFixed(2):(kills>0?'∞':'—');
+      const gang=Number(s.gangRatio);
+      const solo=Number.isFinite(gang)?Math.max(0,100-gang):null;
+      const avgGang=Number(s.avgGangSize);
+      const security=Number(ch?.secStatus);
+      const link=id>0?`https://zkillboard.com/character/${encodeURIComponent(id)}/`:'';
+      const badges=threatBadges(ch).map(tag=>`<span class="threat-tag ${tag.kind}">${esc(tag.label)}</span>`).join('');
+      const rowClass=danger>=85?'critical':danger>=70?'high':danger>=50?'watch':'';
+      return `<tr class="${rowClass}">
+        <td class="threat-danger-cell"><strong>${Math.round(danger)}%</strong><span>DANGER</span></td>
+        <td class="threat-pilot-cell">
+          ${link?`<a href="${link}" target="_blank" rel="noopener noreferrer"><strong>${esc(ch?.name||'Unknown')}</strong></a>`:`<strong>${esc(ch?.name||'Unknown')}</strong>`}
+          <small>${esc(corp?.ticker?('['+corp.ticker+'] '):'')}${esc(corp?.name||'')}${alli?.ticker?esc(' • <'+alli.ticker+'>'):''}</small>
+        </td>
+        <td>${Number.isFinite(security)?security.toFixed(1):'—'}</td>
+        <td><strong>${fmt(kills)}</strong><small>${fmt(losses)} lost • K/D ${kd}</small></td>
+        <td><strong>${solo===null?'—':Math.round(solo)+'%'}</strong><small>${Number.isFinite(avgGang)?'avg gang '+avgGang.toFixed(1):'solo data unavailable'}</small></td>
+        <td class="threat-ships">${threatShipImages(ch)||'<span>—</span>'}</td>
+        <td class="threat-tags">${badges||'<span class="threat-tag dim">NO FLAGS</span>'}</td>
+      </tr>`;
+    }).join('');
+
+    host.innerHTML=`
+      <div class="threat-shell">
+        <section class="glass threat-hero">
+          <div>
+            <span class="threat-eyebrow">LOCAL / D-SCAN INTELLIGENCE</span>
+            <h2>THREAT SCAN</h2>
+          </div>
+          <div class="threat-actions">
+            <button id="threatPasteScan" class="orb blue" type="button">📋 PASTE & SCAN</button>
+            <button id="threatRunScan" class="orb silver" type="button">SCAN TEXT</button>
+          </div>
+        </section>
+
+        <section class="glass threat-input-card">
+          <textarea id="threatScanInput" spellcheck="false" placeholder="Paste character names, an EVE Local copy, or D-scan here…">${esc(threatScanText)}</textarea>
+          <div class="threat-input-foot">
+            <span>${threatScanLoading?'SCANNING ZKILLBOARD…':threatScanError?esc(threatScanError):data?`Scanned ${fmt(data.totalChars||chars.length)} pilots • ${fmt(data.totalShips||0)} D-scan ships`:'Copy names or D-scan, then hit PASTE & SCAN.'}</span>
+            ${data?.scannedAt?`<small>updated ${ago(data.scannedAt)}</small>`:''}
+          </div>
+        </section>
+
+        ${data?`
+        <section class="threat-summary">
+          <article class="glass"><span>PILOTS</span><strong>${fmt(chars.length)}</strong></article>
+          <article class="glass"><span>70%+ DANGER</span><strong>${fmt(highDanger)}</strong></article>
+          <article class="glass"><span>CYNO SIGNALS</span><strong>${fmt(cynos)}</strong></article>
+          <article class="glass"><span>CAP / DROP SIGNALS</span><strong>${fmt(capitalSignals)}</strong></article>
+        </section>
+
+        <section class="glass threat-results">
+          <div class="threat-results-head"><strong>SCANNED PILOTS</strong><span>highest zKill danger first</span></div>
+          <div class="threat-table-wrap">
+            <table class="threat-table">
+              <thead><tr><th>THREAT</th><th>PILOT / GROUP</th><th>SEC</th><th>KILLS / K-D</th><th>SOLO / GANG</th><th>RECENT SHIPS</th><th>FLAGS</th></tr></thead>
+              <tbody>${rows||'<tr><td colspan="7" class="threat-empty">No characters were identified from that paste.</td></tr>'}</tbody>
+            </table>
+          </div>
+        </section>`:''}
+      </div>`;
+
+    const input=$('threatScanInput');
+    input?.addEventListener('input',()=>{threatScanText=input.value});
+    input?.addEventListener('keydown',event=>{
+      if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){event.preventDefault();runThreatScan(input.value)}
+    });
+    $('threatRunScan')?.addEventListener('click',()=>runThreatScan(input?.value||''));
+    $('threatPasteScan')?.addEventListener('click',async()=>{
+      try{
+        if(!navigator.clipboard?.readText)throw new Error('Clipboard access is unavailable in this browser. Paste into the box instead.');
+        const text=await navigator.clipboard.readText();
+        threatScanText=text;
+        await runThreatScan(text);
+      }catch(error){
+        threatScanError=String(error?.message||error);
+        renderThreatScan();
+        setTimeout(()=>$('threatScanInput')?.focus(),0);
+      }
+    });
+  }
+  async function runThreatScan(text){
+    const value=String(text||'').trim();
+    threatScanText=String(text||'');
+    if(value.length<2){
+      threatScanError='Paste at least one pilot name or D-scan row.';
+      renderThreatScan();
+      return;
+    }
+    if(threatScanLoading)return;
+    threatScanLoading=true;
+    threatScanError='';
+    renderThreatScan();
+    try{
+      threatScanData=await api('/api/threat-scan',{method:'POST',body:JSON.stringify({text:value})});
+    }catch(error){
+      threatScanError=String(error?.message||error||'Threat scan failed.');
+    }finally{
+      threatScanLoading=false;
+      renderThreatScan();
     }
   }
 
