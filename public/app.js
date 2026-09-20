@@ -22,6 +22,7 @@
   let pvpIntel = null;
   let pvpIntelError = '';
   let pvpIntelLoading = false;
+  let pvpMemberRankMode = localStorage.getItem('jlrPvpMemberRankMode')==='isk'?'isk':'activity';
 
   const DEFAULT_FLEET = { members:{}, uptime:100, payout:95 };
   function loadFleet() {
@@ -625,9 +626,13 @@
         <td>${fmt(row.iskDestroyed)} ISK</td>
         <td>${row.zkillGlobalRank?('#'+fmt(row.zkillGlobalRank)):'—'}</td>
       </tr>`).join('');
-    const myMembers=(d.myCorpMembers||[]).map(row=>`
+    const memberRankField=pvpMemberRankMode==='isk'?'rankIsk':'rankActivity';
+    const memberRows=[...(d.myCorpMembers||[])].sort((a,b)=>
+      Number(a?.[memberRankField]||999999)-Number(b?.[memberRankField]||999999)
+    );
+    const myMembers=memberRows.map(row=>`
       <tr class="mine">
-        <td>${pvpRankBadge(row.rank,true)}</td>
+        <td>${pvpRankBadge(row?.[memberRankField]||row.rank,true)}</td>
         <td><strong>${esc(row.name||('Character '+row.characterId))}</strong></td>
         <td>${fmt(row.killmails)}</td>
         <td>${fmt(row.finalBlows)}</td>
@@ -690,10 +695,16 @@
           </section>
 
           <section class="glass pvp-section">
-            <div class="pvp-section-head"><strong>YOUR CORP MEMBERS VS INIT</strong><span>their actual INIT-wide placement</span></div>
+            <div class="pvp-section-head">
+              <div><strong>YOUR CORP MEMBERS VS INIT</strong><span>their actual INIT-wide placement</span></div>
+              <div class="pvp-member-rank-controls">
+                <button id="pvpRankActivity" class="orb ${pvpMemberRankMode==='activity'?'blue':''}" type="button">KILLMAILS / FINALS</button>
+                <button id="pvpRankIsk" class="orb ${pvpMemberRankMode==='isk'?'blue':''}" type="button">ISK ON KILLS</button>
+              </div>
+            </div>
             <div class="pvp-table-wrap">
               <table class="pvp-table">
-                <thead><tr><th>RANK</th><th>PILOT</th><th>KILLMAILS</th><th>FINAL</th><th>DAMAGE</th><th>ISK ON KILLS</th></tr></thead>
+                <thead><tr><th>${pvpMemberRankMode==='isk'?'ISK RANK':'KILL RANK'}</th><th>PILOT</th><th>KILLMAILS</th><th>FINAL</th><th>DAMAGE</th><th>ISK ON KILLS</th></tr></thead>
                 <tbody>${myMembers||'<tr><td colspan="6">No active corp pilots found in this 7-day window.</td></tr>'}</tbody>
               </table>
             </div>
@@ -712,11 +723,21 @@
 
         <section class="pvp-footnote">
           <strong>RANKING METHOD</strong>
-          <span>Corporation rows use zKillboard's own Weekly 7d ships destroyed, points, ISK destroyed, and global 7-day rank, then are re-ranked against active INIT corporations. Pilot rows remain distinct INIT killmail participation, with final blows and damage as tie-breakers. Your corporation's pilot activity is also checked with a corporation-specific 7-day crawl.</span>
+          <span>Corporation rows use zKillboard's own Weekly 7d ships destroyed, points, ISK destroyed, and global 7-day rank, then are re-ranked against active INIT corporations. For YOUR CORP MEMBERS VS INIT you can switch between KILLMAILS / FINALS rank (killmail participation first, then final blows and damage) and ISK ON KILLS rank (total zKill value of killmails participated in). Both placements are calculated against all active INIT pilots in the same 7-day window. Your corporation's pilot activity is also checked with a corporation-specific 7-day crawl.</span>
           <small>Updated ${d.generatedAt?ago(d.generatedAt):'recently'} • ${d.stale?'showing last good cache after refresh error • ':''}shared server cache • source: zKillboard public API</small>
         </section>
       </div>`;
     $('pvpRefresh')?.addEventListener('click',()=>loadPvpIntel(true));
+    $('pvpRankActivity')?.addEventListener('click',()=>{
+      pvpMemberRankMode='activity';
+      localStorage.setItem('jlrPvpMemberRankMode',pvpMemberRankMode);
+      renderPvpIntel();
+    });
+    $('pvpRankIsk')?.addEventListener('click',()=>{
+      pvpMemberRankMode='isk';
+      localStorage.setItem('jlrPvpMemberRankMode',pvpMemberRankMode);
+      renderPvpIntel();
+    });
   }
   async function loadPvpIntel(force=false){
     if(pvpIntelLoading)return;
