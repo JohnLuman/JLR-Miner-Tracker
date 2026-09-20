@@ -22,6 +22,7 @@
   let pvpIntel = null;
   let pvpIntelError = '';
   let pvpIntelLoading = false;
+  let pvpIntelPoll = null;
   const savedPvpMemberRankMode=localStorage.getItem('jlrPvpMemberRankMode');
   let pvpMemberRankMode=['overall','activity','isk','damage','lifetime'].includes(savedPvpMemberRankMode)?savedPvpMemberRankMode:'overall';
   let pvpPinnedCharacterId=localStorage.getItem('jlrPvpPinnedCharacter')||'';
@@ -613,6 +614,7 @@
     localStorage.setItem('jlrTab',activeTab);
     document.querySelectorAll('.app-tab').forEach(button=>button.classList.toggle('active',button.dataset.tab===activeTab));
     document.querySelectorAll('.tab-panel').forEach(panel=>panel.classList.toggle('active',panel.dataset.tab===activeTab));
+    if(activeTab!=='pvp'&&pvpIntelPoll){clearTimeout(pvpIntelPoll);pvpIntelPoll=null}
     if(activeTab==='doctrine'&&!doctrineMarket&&!doctrineMarketLoading)loadDoctrineMarket();
     if(activeTab==='pvp'&&!pvpIntel&&!pvpIntelLoading)loadPvpIntel();
     if(activeTab==='threat')renderThreatScan();
@@ -1306,13 +1308,20 @@
 
   async function loadPvpIntel(force=false){
     if(pvpIntelLoading)return;
+    if(pvpIntelPoll){clearTimeout(pvpIntelPoll);pvpIntelPoll=null}
     pvpIntelLoading=true;pvpIntelError='';renderPvpIntel();
+    let shouldPoll=false;
     try{
       pvpIntel=await api(`/api/zkill/leaderboard${force?'?refresh=1':''}`);
+      shouldPoll=Boolean(pvpIntel?.refreshing);
     }catch(error){
       pvpIntelError=String(error?.message||error||'PvP rankings could not be loaded.');
     }finally{
-      pvpIntelLoading=false;renderPvpIntel();
+      pvpIntelLoading=false;
+      renderPvpIntel();
+      if(shouldPoll&&activeTab==='pvp'){
+        pvpIntelPoll=setTimeout(()=>loadPvpIntel(false),3000);
+      }
     }
   }
 
