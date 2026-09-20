@@ -5,6 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { parseProbeScan, parseA0Scan, parseIceScan } from './lib/probe-scan.mjs';
+import { parseThreatPaste, compactThreatStats, threatActivityLabels, jlrThreatScore } from './lib/threat-scan.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -499,7 +500,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.3.90',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.3.91',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -2122,31 +2123,6 @@ async function zkillCorporationWeeklyStatsMany(corporationIds,force=false){
   return out;
 }
 
-function parseThreatPaste(text){
-  const characterNames=new Map();
-  const shipCounts=new Map();
-  const rawLines=String(text||'').replace(/\r/g,'').split(/\n+/);
-  for(const raw of rawLines){
-    let line=String(raw||'').replace(/"/g,'').trim();
-    if(!line)continue;
-    const columns=(line.includes('\t')?line.split('\t'):line.split(/\s{3,}/)).map(value=>String(value||'').trim()).filter(Boolean);
-    if(!columns.length)continue;
-    const entity=columns[0].replace(/,/g,'').trim();
-    if(/^\d+$/.test(entity)){
-      const typeId=Number(entity);
-      if(typeId>0)shipCounts.set(typeId,(shipCounts.get(typeId)||0)+1);
-      const shipLabel=String(columns[1]||'').trim();
-      if(shipLabel){
-        const parts=shipLabel.split(' - ').map(x=>x.trim()).filter(Boolean);
-        const candidate=parts.length>1?parts[parts.length-1]:parts[0];
-        if(candidate&&!/^\d+(?:\.\d+)?\s*(?:m|km|au)$/i.test(candidate))characterNames.set(candidate.toLowerCase(),candidate);
-      }
-      continue;
-    }
-    if(entity&&!/^\d+(?:\.\d+)?\s*(?:m|km|au)$/i.test(entity))characterNames.set(entity.toLowerCase(),entity);
-  }
-  return{names:[...characterNames.values()],shipCounts,rawLineCount:rawLines.filter(x=>String(x).trim()).length};
-}
 async function resolveThreatCharacterNames(names){
   const unique=[...new Map((names||[]).map(name=>[String(name).trim().toLowerCase(),String(name).trim()])).values()].filter(Boolean);
   const characters=new Map();
@@ -2166,6 +2142,25 @@ async function resolveThreatCharacterNames(names){
   }
   return characters;
 }
+async function resolveThreatShipNames(names){
+  const unique=[...new Map((names||[]).map(name=>[String(name).trim().toLowerCase(),String(name).trim()])).values()].filter(Boolean);
+  const types=new Map();
+  for(let i=0;i<unique.length;i+=500){
+    const batch=unique.slice(i,i+500);
+    if(!batch.length)continue;
+    try{
+      const {data}=await esiPost('https://esi.evetech.net/latest/universe/ids/?datasource=tranquility',batch);
+      for(const row of Array.isArray(data?.inventory_types)?data.inventory_types:[]){
+        const id=Number(row?.id);
+        const name=String(row?.name||'').trim();
+        if(id&&name)types.set(name.toLowerCase(),{id,name});
+      }
+    }catch(err){
+      console.warn('Threat ship name lookup failed',String(err.message||err));
+    }
+  }
+  return types;
+}
 async function threatMapLimit(items,limit,worker){
   const input=[...(items||[])];
   const output=new Array(input.length);
@@ -2179,100 +2174,6 @@ async function threatMapLimit(items,limit,worker){
   });
   await Promise.all(runners);
   return output;
-}
-function compactThreatStats(payload){
-  const weekly=payload?.rankings?.weekly?.all?.metrics||{};
-  const recent=payload?.rankings?.recent?.all?.metrics||{};
-  const destroyed=Number(payload?.shipsDestroyed)||0;
-  const lost=Number(payload?.shipsLost)||0;
-  const pointsDestroyed=Number(payload?.pointsDestroyed)||0;
-  const pointsLost=Number(payload?.pointsLost)||0;
-  let danger=Number(payload?.dangerRatio);
-  if(!Number.isFinite(danger)){
-    const good=destroyed+pointsDestroyed,bad=lost+pointsLost;
-    danger=good+bad>0?Math.floor(good/(good+bad)*100):0;
-  }
-  return{
-    shipsDestroyed:destroyed,
-    shipsLost:lost,
-    pointsDestroyed,
-    pointsLost,
-    dangerRatio:Math.max(0,Math.min(100,danger)),
-    gangRatio:Number.isFinite(Number(payload?.gangRatio))?Number(payload.gangRatio):null,
-    avgGangSize:Number.isFinite(Number(payload?.avgGangSize))?Number(payload.avgGangSize):null,
-    soloKills:Number(payload?.soloKills)||0,
-    iskDestroyed:Number(payload?.iskDestroyed)||0,
-    iskLost:Number(payload?.iskLost)||0,
-    gankerCount:Number(payload?.gankerCount)||0,
-    awoxCount:Number(payload?.awoxCount)||0,
-    allianceAwoxCount:Number(payload?.allianceAwoxCount)||0,
-    factionAwoxCount:Number(payload?.factionAwoxCount)||0,
-    fc:payload?.fc||null,
-    bait:payload?.bait||null,
-    cyno:payload?.cyno||null,
-    activityTags:Array.isArray(payload?.activityTags)?payload.activityTags.slice(0,12):[],
-    recentShips:Array.isArray(payload?.recentShips)?payload.recentShips.slice(0,9):[],
-    topShips:Array.isArray(payload?.topShips)?payload.topShips.slice(0,9):[],
-    associates:Array.isArray(payload?.associates)?payload.associates.slice(0,10):[],
-    affiliates:Array.isArray(payload?.affiliates)?payload.affiliates.slice(0,10):[],
-    weekly:{
-      shipsDestroyed:Number(weekly.shipsDestroyed)||0,
-      shipsLost:Number(weekly.shipsLost)||0,
-      pointsDestroyed:Number(weekly.pointsDestroyed)||0,
-      pointsLost:Number(weekly.pointsLost)||0,
-      iskDestroyed:Number(weekly.iskDestroyed)||0,
-      iskLost:Number(weekly.iskLost)||0,
-    },
-    recent:{
-      shipsDestroyed:Number(recent.shipsDestroyed)||0,
-      shipsLost:Number(recent.shipsLost)||0,
-      pointsDestroyed:Number(recent.pointsDestroyed)||0,
-      pointsLost:Number(recent.pointsLost)||0,
-      iskDestroyed:Number(recent.iskDestroyed)||0,
-      iskLost:Number(recent.iskLost)||0,
-    },
-  };
-}
-function threatActivityLabels(stats,shipNames=[]){
-  const tags=[];
-  const push=(label,kind='blue')=>{if(label&&!tags.some(x=>x.label===label))tags.push({label,kind})};
-  if(stats?.cyno)push('CYNO','purple');
-  if(stats?.fc)push(`FC ${String(stats.fc.level||'').toUpperCase()}`.trim(),'orange');
-  if(stats?.bait)push(`BAIT ${String(stats.bait.level||'').toUpperCase()}`.trim(),'orange');
-  if(Number(stats?.gankerCount)>=10)push('GANKER','red');
-  if(Number(stats?.awoxCount)>=10)push('AWOX','red');
-  if(Number(stats?.allianceAwoxCount)>=15)push('ALLIANCE AWOX','red');
-  if(Number(stats?.factionAwoxCount)>=20)push('FACTION AWOX','red');
-  const solo=Number.isFinite(Number(stats?.gangRatio))?100-Number(stats.gangRatio):null;
-  if(solo!==null&&solo>=50&&Number(stats?.shipsDestroyed)>=10)push('SOLO HUNTER','orange');
-  if(Number(stats?.gangRatio)>=85&&Number(stats?.shipsDestroyed)>=10)push('FLEET REGULAR','blue');
-  if(Number(stats?.weekly?.shipsDestroyed)>=20)push('VERY ACTIVE','red');
-  for(const item of Array.isArray(stats?.activityTags)?stats.activityTags:[]){
-    const label=String(item?.label||item?.name||item||'').trim().toUpperCase();
-    if(label)push(label,/drop|capital|super|titan|blops|cyno/i.test(label)?'red':'blue');
-  }
-  const combined=shipNames.join(' ');
-  if(/Avatar|Erebus|Ragnarok|Leviathan|Komodo|Molok|Vanquisher/i.test(combined))push('TITAN','red');
-  if(/Aeon|Nyx|Hel|Wyvern|Vendetta|Revenant/i.test(combined))push('SUPER','red');
-  if(/Redeemer|Widow|Panther|Sin|Marshal/i.test(combined))push('BLOPS','red');
-  if(/Sabre|Flycatcher|Eris|Heretic|Broadsword|Onyx|Phobos|Devoter/i.test(combined))push('TACKLE','orange');
-  return tags.slice(0,10);
-}
-function jlrThreatScore(stats,tags=[]){
-  const danger=Math.max(0,Math.min(100,Number(stats?.dangerRatio)||0));
-  const weeklyKills=Number(stats?.weekly?.shipsDestroyed)||0;
-  const weeklyIsk=Number(stats?.weekly?.iskDestroyed)||0;
-  let score=danger*0.72;
-  score+=Math.min(12,Math.log10(1+weeklyKills)*8);
-  score+=Math.min(7,Math.log10(1+weeklyIsk/1e9)*3.5);
-  const labels=tags.map(x=>x.label);
-  if(labels.some(x=>/^CYNO/.test(x)))score+=7;
-  if(labels.some(x=>/^FC/.test(x)))score+=4;
-  if(labels.some(x=>/^BAIT/.test(x)))score+=3;
-  if(labels.includes('TITAN')||labels.includes('SUPER'))score+=7;
-  if(labels.includes('BLOPS'))score+=5;
-  if(labels.includes('GANKER')||labels.includes('AWOX'))score+=4;
-  return Math.round(Math.max(0,Math.min(100,score)));
 }
 async function getThreatCharacterIntel(character){
   const id=Number(character?.id);
@@ -2310,7 +2211,10 @@ async function getThreatCharacterIntel(character){
 }
 async function buildThreatIntel(scanText){
   const parsed=parseThreatPaste(scanText);
-  const resolved=await resolveThreatCharacterNames(parsed.names);
+  const [resolved,resolvedShipNames]=await Promise.all([
+    resolveThreatCharacterNames(parsed.names),
+    resolveThreatShipNames((parsed.shipNames||[]).map(row=>row.name)),
+  ]);
   const ordered=[],unresolved=[];
   for(const name of parsed.names){
     const match=resolved.get(String(name).toLowerCase());
@@ -2348,7 +2252,14 @@ async function buildThreatIntel(scanText){
     for(const associate of s.associates||[])if(Number(associate?.characterID))partnerIds.push(Number(associate.characterID));
     for(const affiliate of s.affiliates||[])if(Number(affiliate?.allianceID))allianceIds.push(Number(affiliate.allianceID));
   }
-  for(const typeId of parsed.shipCounts.keys())typeIds.push(typeId);
+  const shipCounts=new Map(parsed.shipTypeIds||[]);
+  const unresolvedShipNames=[];
+  for(const row of parsed.shipNames||[]){
+    const typeId=resolvedShipNames.get(String(row.name).toLowerCase())?.id;
+    if(typeId)shipCounts.set(typeId,(shipCounts.get(typeId)||0)+(Number(row.count)||0));
+    else unresolvedShipNames.push(row.name);
+  }
+  for(const typeId of shipCounts.keys())typeIds.push(typeId);
   const names=await resolveUniverseNames([...corpIds,...allianceIds,...typeIds,...partnerIds]);
 
   const chars=entries.map(entry=>{
@@ -2383,7 +2294,7 @@ async function buildThreatIntel(scanText){
     };
   }).sort((a,b)=>b.jlrThreat-a.jlrThreat||(Number(b.stats?.weekly?.shipsDestroyed)||0)-(Number(a.stats?.weekly?.shipsDestroyed)||0)||a.name.localeCompare(b.name));
 
-  const ships=[...parsed.shipCounts.entries()].map(([shipTypeID,count])=>({
+  const ships=[...shipCounts.entries()].map(([shipTypeID,count])=>({
     shipTypeID:Number(shipTypeID),
     name:names.get(Number(shipTypeID))||`Type ${shipTypeID}`,
     count:Number(count)||0,
@@ -2406,6 +2317,7 @@ async function buildThreatIntel(scanText){
     truncated,
     candidateCount:unique.length,
     unresolvedNames:unresolved.slice(0,30),
+    unresolvedShipNames:unresolvedShipNames.slice(0,30),
     cache:{hits:cacheHits,refreshed},
     chars,
     ships,
@@ -2952,7 +2864,7 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
   };
 }
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.90',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.91',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){const u=readSession(req);return json(res,200,{authenticated:Boolean(u),user:u?myProfile(u):null})}
   const user=requireUser(req,res);if(!user)return;
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
@@ -3049,7 +2961,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.2 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.3.91 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setInterval(()=>resetExpired(true),15_000).unref();
 async function runAutomaticSyncLoop(){
   const startedAt=Date.now();

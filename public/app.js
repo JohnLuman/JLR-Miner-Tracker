@@ -888,6 +888,11 @@
     const n=Number(score)||0;
     return n>=85?'critical':n>=70?'high':n>=50?'watch':'';
   }
+  function threatNumber(value){
+    if(value===null||value===undefined||value==='')return null;
+    const number=Number(value);
+    return Number.isFinite(number)?number:null;
+  }
   function renderThreatScan(){
     const host=$('threatScanPanel');
     if(!host)return;
@@ -910,10 +915,11 @@
       const kills=Number(weekly.shipsDestroyed)||0;
       const losses=Number(weekly.shipsLost)||0;
       const kd=losses>0?(kills/losses).toFixed(2):(kills>0?'∞':'—');
-      const gang=Number(s.gangRatio);
-      const solo=Number.isFinite(gang)?Math.max(0,100-gang):null;
-      const avgGang=Number(s.avgGangSize);
-      const sec=Number(ch?.secStatus);
+      const gang=threatNumber(s.gangRatio);
+      const soloValue=threatNumber(s.soloRatio);
+      const solo=soloValue!==null?soloValue:(gang!==null?Math.max(0,100-gang):null);
+      const avgGang=threatNumber(s.avgGangSize);
+      const sec=threatNumber(ch?.secStatus);
       const tags=threatBadges(ch).map(tag=>`<span class="threat-tag ${esc(tag.kind||'blue')}">${esc(tag.label)}</span>`).join('');
       const partner=ch?.topPartners?.[0];
       return `<tr class="${threatScoreClass(score)}">
@@ -928,10 +934,10 @@
         </td>
         <td>${threatAgeLabel(ch.birthday)}</td>
         <td class="threat-score-cell"><strong>${score}</strong><div><i style="width:${score}%"></i></div></td>
-        <td>${Number.isFinite(sec)?sec.toFixed(1):'—'}</td>
+        <td>${sec!==null?sec.toFixed(1):'—'}</td>
         <td><strong>${fmt(kills)} / ${fmt(losses)}</strong><small>K/D ${kd}</small></td>
-        <td><strong>${solo===null?'—':Math.round(solo)+'%'}</strong><small>${Number.isFinite(gang)?Math.round(gang)+'% gang':'no gang data'}</small></td>
-        <td>${Number.isFinite(avgGang)?avgGang.toFixed(1):'—'}</td>
+        <td><strong>${solo===null?'—':Math.round(solo)+'%'}</strong><small>${gang!==null?Math.round(gang)+'% gang':'no gang data'}</small></td>
+        <td>${avgGang!==null?avgGang.toFixed(1):'—'}</td>
         <td><strong>${fmt(weekly.iskDestroyed||0)}</strong><small>ISK destroyed</small></td>
         <td class="threat-tags">${tags}</td>
         <td class="threat-ships">${threatShipImages(ch)||'<span>—</span>'}</td>
@@ -940,7 +946,8 @@
     }).join('');
 
     const unresolved=Array.isArray(data?.unresolvedNames)?data.unresolvedNames:[];
-    const cacheText=data?`${fmt(data.cache?.hits||0)} local hits • ${fmt(data.cache?.refreshed||0)} refreshed${unresolved.length?' • '+fmt(unresolved.length)+' unresolved':''}${data.truncated?' • first '+fmt(chars.length)+' pilots shown':''}`:'';
+    const unresolvedShips=Array.isArray(data?.unresolvedShipNames)?data.unresolvedShipNames:[];
+    const cacheText=data?`${fmt(data.cache?.hits||0)} local hits • ${fmt(data.cache?.refreshed||0)} refreshed${unresolved.length?' • '+fmt(unresolved.length)+' pilots unresolved':''}${unresolvedShips.length?' • '+fmt(unresolvedShips.length)+' ship types unresolved':''}${data.truncated?' • first '+fmt(chars.length)+' pilots shown':''}`:'';
 
     host.innerHTML=`
       <div class="threat-shell">
