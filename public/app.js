@@ -70,6 +70,7 @@
   let doctrineMarket=null;
   let doctrineMarketLoading=false;
   let doctrineMarketError='';
+  let doctrineMarketPoll=null;
   let doctrineView=['restock','seed','alerts','all'].includes(localStorage.getItem('jlrDoctrineView'))?localStorage.getItem('jlrDoctrineView'):'restock';
   let doctrineSearch='';
   let doctrineClass='all';
@@ -578,8 +579,25 @@
   function showLogin(){$('app').classList.add('hidden');$('loginView').classList.remove('hidden');}
   function showApp(){$('loginView').classList.add('hidden');$('app').classList.remove('hidden');}
   let activeTab=localStorage.getItem('jlrTab')||'fields';
+  function doctrineAllowed(){return Boolean(me?.doctrineMarketAccess?.allowed)}
+  function syncDoctrineTabAccess(){
+    const button=document.querySelector('.app-tab[data-tab="doctrine"]');
+    const allowed=doctrineAllowed();
+    if(button){
+      button.classList.toggle('hidden',!allowed);
+      button.setAttribute('aria-hidden',String(!allowed));
+      button.title=allowed
+        ?(me?.doctrineMarketAccess?.reason==='INIT_MEMBER'?'INIT member verified':'INIT blue verified')
+        :'Requires a linked INIT or INIT-blue character';
+    }
+    if(!allowed&&activeTab==='doctrine'){
+      activeTab='fields';
+      localStorage.setItem('jlrTab',activeTab);
+    }
+  }
   function applyTab(tab){
-    const valid=['fields','fleet','performance','ice','gas','doctrine','pvp','threat','mer','toons'];
+    const valid=['fields','fleet','performance','ice','gas','pvp','threat','mer','toons'];
+    if(doctrineAllowed())valid.splice(5,0,'doctrine');
     activeTab=valid.includes(tab)?tab:'fields';
     localStorage.setItem('jlrTab',activeTab);
     document.querySelectorAll('.app-tab').forEach(button=>button.classList.toggle('active',button.dataset.tab===activeTab));
@@ -655,51 +673,32 @@
     applyTab(activeTab);
   }
 
-  async function doctrineInflateBase64(parts){
-    const text=parts.join('');
-    const binary=atob(text);
-    const bytes=new Uint8Array(binary.length);
-    for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
-    if(typeof DecompressionStream!=='function')throw new Error('This browser does not support the doctrine data decoder.');
-    const stream=new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
-    return JSON.parse(await new Response(stream).text());
-  }
-  function doctrineDecodeRow(row){
-    return{
-      typeId:Number(row[0])||0,item:String(row[1]||''),stock:Number(row[2])||0,
-      sold7:Number(row[3])||0,sold30:Number(row[4])||0,
-      daysDynamic:Number(row[5])||0,daysStandard:Number(row[6])||0,
-      required:Number(row[7])||0,cnSell:Number(row[8])||0,jitaSell:Number(row[9])||0,
-      cnJita:Number(row[10])||0,classification:String(row[11]||'Unclassified'),
-      category:String(row[12]||'Other'),breakeven:Number(row[13])||0,
-      seedMargin:Number(row[14])||0,requiredValueJita:Number(row[15])||0,
-      seed10Profit:Number(row[16])||0,
-    };
-  }
   async function loadDoctrineMarket(force=false){
+    if(!doctrineAllowed()){
+      doctrineMarket=null;
+      doctrineMarketError='Doctrine Market requires a linked INIT or INIT-blue character.';
+      renderDoctrineMarket();
+      return;
+    }
     if(doctrineMarketLoading)return;
     doctrineMarketLoading=true;doctrineMarketError='';
+    if(doctrineMarketPoll){clearTimeout(doctrineMarketPoll);doctrineMarketPoll=null}
     renderDoctrineMarket();
+    let shouldPoll=false;
     try{
-      const parts=await Promise.all(Array.from({length:5},(_,i)=>
-        fetch('/doctrine/doctrine-market-'+i+'.b64',{cache:force?'reload':'default'}).then(r=>{
-          if(!r.ok)throw new Error('Doctrine snapshot part '+(i+1)+' failed ('+r.status+')');
-          return r.text();
-        })
-      ));
-      const payload=await doctrineInflateBase64(parts);
-      doctrineMarket={
-        version:Number(payload.v)||1,
-        snapshotDate:String(payload.d||payload.s?.date||''),
-        summary:payload.s||{},
-        rows:(payload.r||[]).map(doctrineDecodeRow),
-      };
+      const payload=force
+        ?await api('/api/doctrine-market/refresh',{method:'POST',body:'{}'})
+        :await api('/api/doctrine-market');
+      doctrineMarket=payload;
+      shouldPoll=Boolean(payload?.status?.refreshing);
     }catch(error){
-      doctrineMarket=null;
-      doctrineMarketError=String(error?.message||error||'Doctrine tracker could not be loaded.');
+      doctrineMarketError=String(error?.message||error||'Doctrine Market could not be loaded.');
     }finally{
       doctrineMarketLoading=false;
       renderDoctrineMarket();
+      if(shouldPoll&&activeTab==='doctrine'){
+        doctrineMarketPoll=setTimeout(()=>loadDoctrineMarket(false),5000);
+      }
     }
   }
   function doctrinePercent(value){
@@ -721,7 +720,7 @@
     const host=$('doctrineMarketPanel');
     if(!host)return;
     if(doctrineMarketLoading&&!doctrineMarket){
-      host.innerHTML='<section class="glass doctrine-loading"><strong>LOADING DOCTRINE MARKET…</strong><span>Opening the Initiative doctrine stock snapshot.</span></section>';
+      host.innerHTML='<section class="glass doctrine-loading"><strong>LOADING DOCTRINE MARKET…</strong><span>Verifying INIT access and loading protected live market data.</span></section>';
       return;
     }
     if(doctrineMarketError){
@@ -786,15 +785,20 @@
     }).join('');
 
     const snapshot=doctrineMarket.snapshotDate||summary.date||'';
+    const status=doctrineMarket.status||{};
+    const cnFresh=status.cnUpdatedAt?ago(status.cnUpdatedAt):'workbook fallback';
+    const jitaFresh=status.jitaUpdatedAt?ago(status.jitaUpdatedAt):'workbook fallback';
+    const historyFresh=status.historyUpdatedAt?ago(status.historyUpdatedAt):'workbook fallback';
+    const refreshing=Boolean(status.refreshing||doctrineMarketLoading);
     host.innerHTML=`
       <section class="glass doctrine-shell">
         <div class="doctrine-hero">
           <div>
-            <span class="eyebrow">INITIATIVE • C-N MARKET</span>
+            <span class="eyebrow">INITIATIVE • PROTECTED MARKET INTEL</span>
             <strong>DOCTRINE MARKET INTEL</strong>
-            <small>Doctrine stock, demand, pricing and seeding data • snapshot ${esc(snapshot||'unknown')}</small>
+            <small>Live C-N stock • Fountain demand • Jita pricing • workbook seed ${esc(snapshot||'unknown')}</small>
           </div>
-          <button id="doctrineRefresh" class="board-tool" type="button">RELOAD SNAPSHOT</button>
+          <button id="doctrineRefresh" class="board-tool" type="button" ${refreshing?'disabled':''}>${refreshing?'REFRESHING…':'REFRESH LIVE'}</button>
         </div>
 
         <div class="doctrine-kpis">
@@ -822,7 +826,7 @@
 
         <div class="doctrine-summary-line">
           <strong>${fmt(rows.length)} MATCHING ITEMS</strong>
-          <span>Average C-N / Jita ${doctrinePercent(Number(summary.avgMarkup||0)-1)} • Sell market cap ${fmt(summary.sellCap)} ISK • showing ${fmt(display.length)}${rows.length>display.length?' of '+fmt(rows.length):''}</span>
+          <span>C-N ${esc(cnFresh)} • Jita ${esc(jitaFresh)} • demand ${esc(historyFresh)} • showing ${fmt(display.length)}${rows.length>display.length?' of '+fmt(rows.length):''}</span>
         </div>
 
         <div class="doctrine-table-wrap">
@@ -834,7 +838,7 @@
 
         <div class="doctrine-note">
           <strong>TRACKER LOGIC</strong>
-          <span>Dynamic and standard days-of-supply, required stock, C-N pricing, Jita comparison, seeding breakeven and margin are imported from Initiative Doctrine Tracker.xlsx. This first JLR version uses the workbook snapshot rather than pretending those numbers are live ESI market data.</span>
+          <span>The workbook formulas now run in JLR. C-N stock and lowest sell come from John's authorized structure market checker, refreshed every 15 minutes while this feature is in use. Fountain 7d/30d demand comes from ESI market history, and Jita uses a Fuzzworks-style 5% sell percentile from live The Forge orders. The workbook snapshot is retained only as a fallback while a live cache is warming.</span>
         </div>
       </section>`;
 
@@ -3016,7 +3020,7 @@
   }
   function renderAll(){if(!state)return;renderFleet();renderTop();renderSelect();renderBoards();renderHits();renderFleetPerformance();renderMiningVisuals();renderIceMining();renderGasHuffing();if(doctrineMarket)renderDoctrineMarket();renderRanking();renderTimers();renderSelected();renderNotes();renderScanCharacters();renderCharacters();renderCalculator();renderMerIntel();}
 
-  async function refreshMe(){const p=await api('/api/me');me=p.user;if(me){$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait}return p.authenticated}
+  async function refreshMe(){const p=await api('/api/me');me=p.user;if(me){$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;syncDoctrineTabAccess()}return p.authenticated}
   async function loadState(){state=await api('/api/state');renderAll()}
   function connectSse(){
     if(eventSource)eventSource.close();
@@ -3319,7 +3323,7 @@
       if(!config.ssoConfigured){$('setupWarning').classList.remove('hidden');$('setupWarning').textContent='Login is not configured yet.';}
       const auth=await fetch('/api/me',{credentials:'same-origin'}).then(r=>r.json());
       if(!auth.authenticated){showLogin();return}
-      me=auth.user;initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');await loadMerIntel();await loadState();connectSse();
+      me=auth.user;syncDoctrineTabAccess();initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');await loadMerIntel();await loadState();connectSse();
       const params=new URLSearchParams(location.search);if(params.get('linked'))toast('Mining toon connected.');if(params.get('login'))toast('Logged in.');if(params.get('market')==='authorized')toast('John market access authorized.');if(params.get('error'))toast(decodeURIComponent(params.get('error')));if(params.toString())history.replaceState({},'',location.pathname);
     }catch(e){console.error(e);showLogin();$('setupWarning').classList.remove('hidden');$('setupWarning').textContent=`JLR could not load: ${e.message}`}
   }
