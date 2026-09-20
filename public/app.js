@@ -75,6 +75,15 @@
   let doctrineSearch='';
   let doctrineClass='all';
   let doctrineCategory='all';
+  function loadDoctrineShoppingList(){
+    try{
+      const rows=JSON.parse(localStorage.getItem('jlrDoctrineShoppingList')||'[]');
+      return Array.isArray(rows)?rows
+        .map(row=>({typeId:Number(row?.typeId)||0,qty:Math.max(1,Math.floor(Number(row?.qty)||1))}))
+        .filter(row=>row.typeId):[];
+    }catch{return[]}
+  }
+  let doctrineShoppingList=loadDoctrineShoppingList();
   let oreTrendType=localStorage.getItem('jlrOreTrend')||'Kylixium';
   const savedFleetHistoryDays=Number(localStorage.getItem('jlrFleetHistoryDays'));
   let fleetHistoryDays=[7,30,90].includes(savedFleetHistoryDays)?savedFleetHistoryDays:7;
@@ -717,6 +726,66 @@
     if(row.required>0)return{key:'restock',label:'RESTOCK'};
     return{key:'healthy',label:'OK'};
   }
+  function saveDoctrineShoppingList(){
+    localStorage.setItem('jlrDoctrineShoppingList',JSON.stringify(doctrineShoppingList));
+  }
+  function doctrineSevenDayQty(row){
+    return Math.max(1,Math.ceil(Math.max(.01,Number(row?.sold7)||.01)*7));
+  }
+  function addDoctrineShoppingItem(typeId){
+    const id=Number(typeId);
+    const row=(doctrineMarket?.rows||[]).find(item=>Number(item.typeId)===id);
+    if(!row)return;
+    const existing=doctrineShoppingList.find(item=>Number(item.typeId)===id);
+    if(existing){
+      toast(row.item+' is already on the shopping list.');
+      return;
+    }
+    doctrineShoppingList.push({typeId:id,qty:doctrineSevenDayQty(row)});
+    saveDoctrineShoppingList();
+    renderDoctrineMarket();
+    toast(row.item+' added at a 7-day supply.');
+  }
+  function removeDoctrineShoppingItem(typeId){
+    const id=Number(typeId);
+    doctrineShoppingList=doctrineShoppingList.filter(item=>Number(item.typeId)!==id);
+    saveDoctrineShoppingList();
+    renderDoctrineMarket();
+  }
+  async function copyDoctrineMultibuy(){
+    const byId=new Map((doctrineMarket?.rows||[]).map(row=>[Number(row.typeId),row]));
+    const lines=doctrineShoppingList.map(item=>{
+      const row=byId.get(Number(item.typeId));
+      if(!row)return null;
+      return row.item+'\t'+Math.max(1,Math.floor(Number(item.qty)||1));
+    }).filter(Boolean);
+    if(!lines.length){toast('Add items to the shopping list first.');return}
+    const text=lines.join('\n');
+    let copied=false;
+    try{
+      if(navigator.clipboard?.writeText){
+        await navigator.clipboard.writeText(text);
+        copied=true;
+      }
+    }catch{}
+    if(!copied){
+      try{
+        const helper=document.createElement('textarea');
+        helper.value=text;
+        helper.setAttribute('readonly','');
+        helper.setAttribute('aria-hidden','true');
+        helper.style.position='fixed';
+        helper.style.left='-9999px';
+        helper.style.opacity='0';
+        document.body.appendChild(helper);
+        helper.focus();
+        helper.select();
+        copied=document.execCommand('copy');
+        helper.remove();
+      }catch{}
+    }
+    toast(copied?'Shopping list copied. Paste it into EVE Multi-Buy.':'Could not copy automatically.');
+  }
   function renderDoctrineMarket(){
     const host=$('doctrineMarketPanel');
     if(!host)return;
@@ -770,9 +839,9 @@
       const state=doctrineState(row);
       const ratio=row.cnJita>0?row.cnJita.toFixed(2)+'x':'—';
       const required=row.required>0?fmt(row.required):'—';
-      return '<tr class="doctrine-row doctrine-'+state.key+'">'+
+      return '<tr class="doctrine-row doctrine-'+state.key+'" draggable="true" data-doctrine-type-id="'+esc(String(row.typeId))+'" title="Drag to Shopping List">'+
         '<td><span class="doctrine-state '+state.key+'">'+esc(state.label)+'</span></td>'+
-        '<td class="doctrine-item"><strong>'+esc(row.item)+'</strong><small>'+esc(row.classification)+' • '+esc(row.category)+' • ID '+esc(String(row.typeId))+'</small></td>'+
+        '<td class="doctrine-item"><div class="doctrine-item-main"><div><strong>'+esc(row.item)+'</strong><small>'+esc(row.classification)+' • '+esc(row.category)+' • ID '+esc(String(row.typeId))+'</small></div><button class="doctrine-list-add" type="button" data-add-doctrine="'+esc(String(row.typeId))+'" title="Add 7-day supply to Shopping List">ADD</button></div></td>'+
         '<td><strong>'+fmt(row.stock)+'</strong></td>'+
         '<td>'+row.sold7.toFixed(1)+'</td>'+
         '<td>'+row.sold30.toFixed(1)+'</td>'+
@@ -785,6 +854,20 @@
       '</tr>';
     }).join('');
 
+    const marketById=new Map(allRows.map(row=>[Number(row.typeId),row]));
+    const shoppingRows=doctrineShoppingList.map(item=>{
+      const row=marketById.get(Number(item.typeId));
+      return row?{...item,row}:null;
+    }).filter(Boolean);
+    const shoppingJitaTotal=shoppingRows.reduce((sum,item)=>sum+Math.max(1,Number(item.qty)||1)*Math.max(0,Number(item.row.jitaSell)||0),0);
+    const shoppingHtml=shoppingRows.map(item=>{
+      const recommended=doctrineSevenDayQty(item.row);
+      return '<div class="doctrine-shop-row" draggable="true" data-shop-type-id="'+esc(String(item.typeId))+'">'+
+        '<div class="doctrine-shop-name"><strong>'+esc(item.row.item)+'</strong><small>7D target '+fmt(recommended)+' • '+item.row.sold7.toFixed(1)+'/day</small></div>'+
+        '<label class="doctrine-shop-qty"><span>QTY</span><input type="number" min="1" step="1" value="'+Math.max(1,Math.floor(Number(item.qty)||1))+'" data-shop-qty="'+esc(String(item.typeId))+'" aria-label="Quantity for '+esc(item.row.item)+'"></label>'+
+        '<button class="doctrine-shop-remove" type="button" data-remove-doctrine="'+esc(String(item.typeId))+'" aria-label="Remove '+esc(item.row.item)+'">REMOVE</button>'+
+      '</div>';
+    }).join('');
     const status=doctrineMarket.status||{};
     const refreshing=Boolean(status.refreshing||doctrineMarketLoading);
     host.innerHTML=`
@@ -826,15 +909,77 @@
           <span>Showing ${fmt(display.length)}${rows.length>display.length?' of '+fmt(rows.length):''}</span>
         </div>
 
-        <div class="doctrine-table-wrap">
-          <table class="doctrine-table">
-            <thead><tr><th>STATE</th><th>ITEM</th><th>STOCK</th><th>7D/DAY</th><th>30D/DAY</th><th>DAYS</th><th>REQUIRED</th><th>C-N SELL</th><th>JITA SELL</th><th>C-N/JITA</th><th>SEED MARGIN</th></tr></thead>
-            <tbody>${tableRows||'<tr><td colspan="11" class="doctrine-empty">No items match these filters.</td></tr>'}</tbody>
-          </table>
+        <div class="doctrine-workspace">
+          <div class="doctrine-table-wrap">
+            <table class="doctrine-table">
+              <thead><tr><th>STATE</th><th>ITEM</th><th>STOCK</th><th>7D/DAY</th><th>30D/DAY</th><th>DAYS</th><th>REQUIRED</th><th>C-N SELL</th><th>JITA SELL</th><th>C-N/JITA</th><th>SEED MARGIN</th></tr></thead>
+              <tbody>${tableRows||'<tr><td colspan="11" class="doctrine-empty">No items match these filters.</td></tr>'}</tbody>
+            </table>
+          </div>
+
+          <aside id="doctrineShoppingDrop" class="doctrine-shopping">
+            <div class="doctrine-shopping-head">
+              <div><span>SHOPPING LIST</span><strong>${fmt(shoppingRows.length)} ITEMS</strong></div>
+              <button id="doctrineShoppingClear" class="doctrine-shop-clear" type="button" ${shoppingRows.length?'':'disabled'}>CLEAR</button>
+            </div>
+            <div class="doctrine-shopping-hint">Drag doctrine items here. New items default to a 7-day supply.</div>
+            <div class="doctrine-shopping-list">
+              ${shoppingHtml||'<div class="doctrine-shopping-empty"><strong>DROP ITEMS HERE</strong><span>Or use ADD beside any doctrine item.</span></div>'}
+            </div>
+            <div class="doctrine-shopping-total">
+              <span>EST. JITA TOTAL</span>
+              <strong>${shoppingJitaTotal?fmt(shoppingJitaTotal)+' ISK':'—'}</strong>
+            </div>
+            <button id="doctrineShoppingCopy" class="doctrine-multibuy-copy" type="button" ${shoppingRows.length?'':'disabled'}>COPY FOR EVE MULTIBUY</button>
+          </aside>
         </div>
 
       </section>`;
 
+    host.querySelectorAll('[data-add-doctrine]').forEach(button=>button.addEventListener('click',event=>{
+      event.stopPropagation();
+      addDoctrineShoppingItem(button.dataset.addDoctrine);
+    }));
+    host.querySelectorAll('.doctrine-row[data-doctrine-type-id]').forEach(row=>{
+      row.addEventListener('dragstart',event=>{
+        const id=row.dataset.doctrineTypeId;
+        event.dataTransfer.effectAllowed='copy';
+        event.dataTransfer.setData('text/plain',id);
+        row.classList.add('dragging');
+      });
+      row.addEventListener('dragend',()=>row.classList.remove('dragging'));
+    });
+    const shopDrop=$('doctrineShoppingDrop');
+    if(shopDrop){
+      shopDrop.addEventListener('dragover',event=>{
+        event.preventDefault();
+        event.dataTransfer.dropEffect='copy';
+        shopDrop.classList.add('drag-over');
+      });
+      shopDrop.addEventListener('dragleave',event=>{
+        if(!shopDrop.contains(event.relatedTarget))shopDrop.classList.remove('drag-over');
+      });
+      shopDrop.addEventListener('drop',event=>{
+        event.preventDefault();
+        shopDrop.classList.remove('drag-over');
+        addDoctrineShoppingItem(event.dataTransfer.getData('text/plain'));
+      });
+    }
+    host.querySelectorAll('[data-shop-qty]').forEach(input=>input.addEventListener('change',()=>{
+      const item=doctrineShoppingList.find(row=>Number(row.typeId)===Number(input.dataset.shopQty));
+      if(!item)return;
+      item.qty=Math.max(1,Math.floor(Number(input.value)||1));
+      saveDoctrineShoppingList();
+      renderDoctrineMarket();
+    }));
+    host.querySelectorAll('[data-remove-doctrine]').forEach(button=>button.addEventListener('click',()=>removeDoctrineShoppingItem(button.dataset.removeDoctrine)));
+    $('doctrineShoppingClear')?.addEventListener('click',()=>{
+      doctrineShoppingList=[];
+      saveDoctrineShoppingList();
+      renderDoctrineMarket();
+      toast('Shopping list cleared.');
+    });
+    $('doctrineShoppingCopy')?.addEventListener('click',copyDoctrineMultibuy);
     host.querySelectorAll('[data-doctrine-view]').forEach(button=>button.addEventListener('click',()=>{
       doctrineView=button.dataset.doctrineView;
       localStorage.setItem('jlrDoctrineView',doctrineView);
