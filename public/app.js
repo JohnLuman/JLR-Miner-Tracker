@@ -10,7 +10,7 @@
   let audioUnlocked = false;
   let audioResumePending = false;
   let soundEnabled = localStorage.getItem('jlrSoundEnabled') !== 'false';
-  const THEME_IDS = new Set(['void','citadel','forge']);
+  const THEME_IDS = new Set(['void','citadel','forge','serpentis','blood','angel','edencom','aurora']);
   let activeTheme = THEME_IDS.has(localStorage.getItem('jlrTheme')) ? localStorage.getItem('jlrTheme') : 'void';
   document.documentElement.dataset.theme=activeTheme;
   let toastTimer = null;
@@ -475,7 +475,7 @@
   // Native <select> popups are drawn by the browser/OS, so moving over their
   // options does not produce page events. Use an app-owned popup for the fit
   // and booster selectors while retaining their existing change handlers.
-  const audibleSelects='#calcBoosterCharacter,#calcBoosterFitting,.fleet-fit-select,#doctrineClass,#doctrineCategory';
+  const audibleSelects='#calcBoosterCharacter,#calcBoosterFitting,.fleet-fit-select,#doctrineClass,#doctrineCategory,#themeSelect';
   let soundMenu=null, soundMenuSerial=0;
   function closeSoundMenu(refocus=false){
     if(!soundMenu)return;
@@ -508,6 +508,7 @@
     const popup=document.createElement('div');
     const id=`sound-menu-${++soundMenuSerial}`;
     popup.className='sound-menu';popup.id=id;popup.setAttribute('role','listbox');
+    if(select.id==='themeSelect')popup.classList.add('theme-menu');
     popup.setAttribute('aria-label',select.labels?.[0]?.querySelector('span')?.textContent?.trim()||select.getAttribute('aria-label')||'Saved mining fit');
     Array.from(select.options).forEach((option,index)=>{
       const button=document.createElement('button');
@@ -515,6 +516,7 @@
       button.dataset.index=String(index);button.setAttribute('role','option');
       button.setAttribute('aria-selected',String(index===select.selectedIndex));
       button.textContent=option.textContent;button.disabled=option.disabled;
+      if(select.id==='themeSelect')button.dataset.themeValue=String(option.value||'');
       popup.appendChild(button);
     });
     document.body.appendChild(popup);
@@ -522,7 +524,7 @@
     select.setAttribute('aria-expanded','true');select.setAttribute('aria-controls',id);
     select.focus({preventScroll:true});
     const rect=select.getBoundingClientRect();
-    const width=Math.min(window.innerWidth-16,Math.max(rect.width,270));
+    const width=Math.min(window.innerWidth-16,select.id==='themeSelect'?Math.max(rect.width,170):Math.max(rect.width,270));
     popup.style.width=`${width}px`;
     popup.style.left=`${Math.max(8,Math.min(rect.left,window.innerWidth-width-8))}px`;
     const height=popup.offsetHeight,spaceBelow=window.innerHeight-rect.bottom-8,spaceAbove=rect.top-8;
