@@ -65,6 +65,7 @@
       <button class="app-tab" data-tab="fleet" type="button">FLEET</button>
       <button class="app-tab" data-tab="performance" type="button">FLEET PERFORMANCE</button>
       <button class="app-tab" data-tab="ice" type="button">ICE</button>
+      <button class="app-tab" data-tab="gas" type="button">GAS</button>
       <button class="app-tab" data-tab="pvp" type="button">INIT PVP</button>
       <button class="app-tab" data-tab="threat" type="button">THREAT SCAN</button>
       <button class="app-tab" data-tab="mer" type="button">MER INTEL</button>
@@ -273,6 +274,49 @@
       </div>
 
       <div class="ice-note">Block tracking pays Blue Ice IV-Grade at 95% of Jita refined value and all other ice at 75%. Refined-sale value counts all sellable ice products except Heavy Water.</div>
+    </section>
+
+    <section class="glass gas-huffing-panel">
+      <div class="section-title">
+        <div><span class="eyebrow">FOUNTAIN • CYTOSEROCIN</span><strong>GAS HUFFING</strong></div>
+        <span class="muted tiny">Fleet Setup + saved gas fits • Mining Foreman boosts included</span>
+      </div>
+
+      <div class="ice-kpis gas-kpis">
+        <article class="ice-kpi"><span>CELADON JITA / UNIT</span><strong id="gasRawJita">—</strong><small id="gasRawJitaSub">raw Celadon Cytoserocin buy value</small></article>
+        <article class="ice-kpi"><span>COMPRESSED JITA / UNIT</span><strong id="gasCompressedJita">—</strong><small id="gasCompressedJitaSub">1 compressed unit = 1 raw unit</small></article>
+        <article class="ice-kpi"><span>SELECTED GAS FLEET</span><strong id="gasFleetM3">—</strong><small id="gasFleetM3Sub">calculated m³/hr from gas fits</small></article>
+        <article class="ice-kpi"><span>RAW JITA VALUE / HR</span><strong id="gasFleetIsk">—</strong><small id="gasFleetIskSub">fleet output × raw Celadon buy</small></article>
+      </div>
+
+      <div class="ice-layout gas-layout">
+        <article class="ice-chart-card">
+          <div class="visual-card-head"><strong>GAS FLEET OUTPUT</strong><small>cycle, units/hr, m³/hr, residue and market value</small></div>
+          <div id="gasFleetOutput" class="ice-fleet-output gas-fleet-output"></div>
+        </article>
+        <article class="ice-chart-card">
+          <div class="visual-card-head"><strong>KNOWN FOUNTAIN CELADON SITES</strong><small>site volume and danger at a glance</small></div>
+          <div id="gasSiteTable" class="gas-site-table"></div>
+        </article>
+      </div>
+
+      <div class="ice-layout gas-layout">
+        <article class="ice-chart-card">
+          <div class="visual-card-head"><strong>SUPPORTED GAS MODULES</strong><small>scoops for frigates • harvesters for barges/exhumers</small></div>
+          <div id="gasModuleTable" class="gas-module-table"></div>
+        </article>
+        <article class="ice-chart-card gas-ops-card">
+          <div class="visual-card-head"><strong>GAS OPERATIONS</strong><small>Fountain huffing reference</small></div>
+          <div class="gas-ops-grid">
+            <div><span>LOCAL GAS</span><strong>Celadon Cytoserocin</strong><small>10 m³ per raw unit</small></div>
+            <div><span>FIT SOURCE</span><strong>Fleet & Fits</strong><small>select a saved gas fit on each huffer</small></div>
+            <div><span>BOOSTS</span><strong>Mining Foreman</strong><small>cycle and range bonuses use the selected booster</small></div>
+            <div><span>VALUE BASIS</span><strong>Raw Jita Buy</strong><small>compressed and C-N prices shown separately when available</small></div>
+          </div>
+        </article>
+      </div>
+
+      <div class="ice-note">Gas fits are selectable in Fleet & Fits but are excluded from normal ore fleet totals. The Gas tab calculates them separately so ore, ice and gas output do not contaminate each other.</div>
     </section>
 
     <section id="expandedArea" class="expanded-area">
