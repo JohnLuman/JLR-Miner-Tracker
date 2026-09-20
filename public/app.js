@@ -864,93 +864,89 @@
   }
 
 
-  function threatEntity(collection,id){
-    if(!id)return null;
-    return collection?.[id]||collection?.[String(id)]||null;
-  }
-  function threatDanger(stats={}){
-    const direct=Number(stats.dangerRatio);
-    if(Number.isFinite(direct))return Math.max(0,Math.min(100,direct));
-    const kills=Number(stats.shipsDestroyed)||0;
-    const losses=Number(stats.shipsLost)||0;
-    return kills+losses>0?(kills/(kills+losses))*100:0;
+  function threatAgeLabel(birthday){
+    const born=Date.parse(String(birthday||''));
+    if(!Number.isFinite(born))return '—';
+    const days=Math.max(0,(Date.now()-born)/86400000);
+    if(days>=365)return `${Math.floor(days/365)}y`;
+    if(days>=30)return `${Math.floor(days/30)}m`;
+    return `${Math.max(1,Math.floor(days))}d`;
   }
   function threatBadges(ch){
-    const s=ch?.stats||{};
-    const tags=[];
-    if(Number(s.gankerCount)>=10)tags.push({label:`GANKER ${fmt(s.gankerCount)}`,kind:'red'});
-    if(Number(s.awoxCount)>=10)tags.push({label:`AWOX ${fmt(s.awoxCount)}`,kind:'red'});
-    if(Number(s.allianceAwoxCount)>=15)tags.push({label:'ALLIANCE AWOX',kind:'red'});
-    if(Number(s.factionAwoxCount)>=20)tags.push({label:'FACTION AWOX',kind:'red'});
-    if(s.fc)tags.push({label:`FC ${String(s.fc.level||'').toUpperCase()}`.trim(),kind:'orange'});
-    if(s.bait)tags.push({label:`BAIT ${String(s.bait.level||'').toUpperCase()}`.trim(),kind:'orange'});
-    if(s.cyno)tags.push({label:`CYNO ${fmt(s.cyno.count||0)}`,kind:'purple'});
-    for(const tag of Array.isArray(s.characterTags)?s.characterTags:[]){
-      const label=String(tag?.label||'').trim();
-      if(label)tags.push({label:label.toUpperCase(),kind:/titan|super|capital|dropper|blops/i.test(label)?'red':'blue'});
-    }
-    if(ch?.inactive)tags.push({label:'NO RECENT KB',kind:'dim'});
-    if(ch?.unknown)tags.push({label:'UNKNOWN',kind:'dim'});
-    return tags.slice(0,9);
+    const tags=Array.isArray(ch?.tags)?ch.tags:[];
+    if(ch?.statsError&&!tags.length)return[{label:'LIMITED DATA',kind:'dim'}];
+    return tags.length?tags:[{label:'NO MAJOR FLAGS',kind:'dim'}];
   }
   function threatShipImages(ch){
     return (Array.isArray(ch?.ships)?ch.ships:[]).slice(0,5).map(ship=>{
       const id=Number(ship?.shipTypeID)||0;
       const name=String(ship?.shipName||'Unknown ship');
-      return id?`<img src="https://images.evetech.net/types/${id}/render?size=64" alt="" title="${esc(name)} • ${fmt(ship?.appearances||0)} recent appearances">`:'';
+      return id?`<img src="https://images.evetech.net/types/${id}/render?size=64" alt="" title="${esc(name)} • ${fmt(ship?.appearances||0)} appearances">`:'';
     }).join('');
+  }
+  function threatScoreClass(score){
+    const n=Number(score)||0;
+    return n>=85?'critical':n>=70?'high':n>=50?'watch':'';
   }
   function renderThreatScan(){
     const host=$('threatScanPanel');
     if(!host)return;
-
     const data=threatScanData;
-    const chars=Array.isArray(data?.chars)?[...data.chars]:[];
-    chars.sort((a,b)=>
-      threatDanger(b?.stats)-threatDanger(a?.stats)||
-      (Number(b?.stats?.shipsDestroyed)||0)-(Number(a?.stats?.shipsDestroyed)||0)||
-      String(a?.name||'').localeCompare(String(b?.name||''))
-    );
+    const chars=Array.isArray(data?.chars)?data.chars:[];
+    const highDanger=chars.filter(ch=>Number(ch?.jlrThreat)>=70).length;
+    const signalCount=chars.filter(ch=>(ch?.tags||[]).some(tag=>/CYNO|FC|BAIT|BLOPS|TITAN|SUPER/i.test(String(tag?.label||'')))).length;
+    const dscanShips=Array.isArray(data?.ships)?data.ships:[];
 
-    const highDanger=chars.filter(ch=>threatDanger(ch?.stats)>=70).length;
-    const cynos=chars.filter(ch=>ch?.stats?.cyno).length;
-    const capitalSignals=chars.filter(ch=>(ch?.stats?.characterTags||[]).some(tag=>/capital|super|titan|dropper|blops/i.test(String(tag?.label||'')))).length;
+    const shipStrip=dscanShips.length?`
+      <section class="glass threat-dscan-strip">
+        <div class="threat-results-head"><strong>D-SCAN COMPOSITION</strong><span>${fmt(data.totalShips||0)} ships detected</span></div>
+        <div class="threat-dscan-list">${dscanShips.slice(0,18).map(ship=>`
+          <span><img src="https://images.evetech.net/types/${encodeURIComponent(ship.shipTypeID)}/render?size=64" alt=""><b>${fmt(ship.count)}×</b> ${esc(ship.name)}</span>`).join('')}</div>
+      </section>`:'';
 
     const rows=chars.map(ch=>{
-      const s=ch?.stats||{};
-      const id=Number(ch?.id)||0;
-      const corp=threatEntity(data?.corps,ch?.corporationID);
-      const alli=threatEntity(data?.allis,ch?.allianceID);
-      const danger=threatDanger(s);
-      const kills=Number(s.shipsDestroyed)||0;
-      const losses=Number(s.shipsLost)||0;
+      const s=ch?.stats||{},weekly=s.weekly||{};
+      const score=Number(ch?.jlrThreat)||0;
+      const kills=Number(weekly.shipsDestroyed)||0;
+      const losses=Number(weekly.shipsLost)||0;
       const kd=losses>0?(kills/losses).toFixed(2):(kills>0?'∞':'—');
       const gang=Number(s.gangRatio);
       const solo=Number.isFinite(gang)?Math.max(0,100-gang):null;
       const avgGang=Number(s.avgGangSize);
-      const security=Number(ch?.secStatus);
-      const link=id>0?`https://zkillboard.com/character/${encodeURIComponent(id)}/`:'';
-      const badges=threatBadges(ch).map(tag=>`<span class="threat-tag ${tag.kind}">${esc(tag.label)}</span>`).join('');
-      const rowClass=danger>=85?'critical':danger>=70?'high':danger>=50?'watch':'';
-      return `<tr class="${rowClass}">
-        <td class="threat-danger-cell"><strong>${Math.round(danger)}%</strong><span>DANGER</span></td>
+      const sec=Number(ch?.secStatus);
+      const tags=threatBadges(ch).map(tag=>`<span class="threat-tag ${esc(tag.kind||'blue')}">${esc(tag.label)}</span>`).join('');
+      const partner=ch?.topPartners?.[0];
+      return `<tr class="${threatScoreClass(score)}">
         <td class="threat-pilot-cell">
-          ${link?`<a href="${link}" target="_blank" rel="noopener noreferrer"><strong>${esc(ch?.name||'Unknown')}</strong></a>`:`<strong>${esc(ch?.name||'Unknown')}</strong>`}
-          <small>${esc(corp?.ticker?('['+corp.ticker+'] '):'')}${esc(corp?.name||'')}${alli?.ticker?esc(' • <'+alli.ticker+'>'):''}</small>
+          <div class="threat-pilot">
+            <img src="https://images.evetech.net/characters/${encodeURIComponent(ch.id)}/portrait?size=64" alt="">
+            <div>
+              <a href="https://zkillboard.com/character/${encodeURIComponent(ch.id)}/" target="_blank" rel="noopener noreferrer"><strong>${esc(ch.name)}</strong></a>
+              <small>${esc(ch.corporationName||'No corporation')}${ch.allianceName?esc(' • '+ch.allianceName):''}</small>
+            </div>
+          </div>
         </td>
-        <td>${Number.isFinite(security)?security.toFixed(1):'—'}</td>
-        <td><strong>${fmt(kills)}</strong><small>${fmt(losses)} lost • K/D ${kd}</small></td>
-        <td><strong>${solo===null?'—':Math.round(solo)+'%'}</strong><small>${Number.isFinite(avgGang)?'avg gang '+avgGang.toFixed(1):'solo data unavailable'}</small></td>
+        <td>${threatAgeLabel(ch.birthday)}</td>
+        <td class="threat-score-cell"><strong>${score}</strong><div><i style="width:${score}%"></i></div></td>
+        <td>${Number.isFinite(sec)?sec.toFixed(1):'—'}</td>
+        <td><strong>${fmt(kills)} / ${fmt(losses)}</strong><small>K/D ${kd}</small></td>
+        <td><strong>${solo===null?'—':Math.round(solo)+'%'}</strong><small>${Number.isFinite(gang)?Math.round(gang)+'% gang':'no gang data'}</small></td>
+        <td>${Number.isFinite(avgGang)?avgGang.toFixed(1):'—'}</td>
+        <td><strong>${fmt(weekly.iskDestroyed||0)}</strong><small>ISK destroyed</small></td>
+        <td class="threat-tags">${tags}</td>
         <td class="threat-ships">${threatShipImages(ch)||'<span>—</span>'}</td>
-        <td class="threat-tags">${badges||'<span class="threat-tag dim">NO FLAGS</span>'}</td>
+        <td>${partner?`<a class="pvp-killboard-link" href="https://zkillboard.com/character/${encodeURIComponent(partner.characterID)}/" target="_blank" rel="noopener noreferrer">${esc(partner.name)}</a><small>${fmt(partner.sharedKills)} shared</small>`:'—'}</td>
       </tr>`;
     }).join('');
+
+    const unresolved=Array.isArray(data?.unresolvedNames)?data.unresolvedNames:[];
+    const cacheText=data?`${fmt(data.cache?.hits||0)} local hits • ${fmt(data.cache?.refreshed||0)} refreshed${unresolved.length?' • '+fmt(unresolved.length)+' unresolved':''}${data.truncated?' • first '+fmt(chars.length)+' pilots shown':''}`:'';
 
     host.innerHTML=`
       <div class="threat-shell">
         <section class="glass threat-hero">
           <div>
-            <span class="threat-eyebrow">LOCAL / D-SCAN INTELLIGENCE</span>
+            <span class="threat-eyebrow">JLR LOCAL / D-SCAN INTELLIGENCE</span>
             <h2>THREAT SCAN</h2>
           </div>
           <div class="threat-actions">
@@ -960,29 +956,36 @@
         </section>
 
         <section class="glass threat-input-card">
-          <textarea id="threatScanInput" spellcheck="false" placeholder="Paste character names, an EVE Local copy, or D-scan here…">${esc(threatScanText)}</textarea>
+          <textarea id="threatScanInput" spellcheck="false" placeholder="Paste Local names or copied D-scan rows here…">${esc(threatScanText)}</textarea>
           <div class="threat-input-foot">
-            <span>${threatScanLoading?'SCANNING ZKILLBOARD…':threatScanError?esc(threatScanError):data?`Scanned ${fmt(data.totalChars||chars.length)} pilots • ${fmt(data.totalShips||0)} D-scan ships`:'Copy names or D-scan, then hit PASTE & SCAN.'}</span>
+            <span>${threatScanLoading?'BUILDING THREAT INTEL…':threatScanError?esc(threatScanError):data?`JLR threat engine • ${cacheText}`:'Paste names or D-scan, then scan.'}</span>
             ${data?.scannedAt?`<small>updated ${ago(data.scannedAt)}</small>`:''}
           </div>
         </section>
 
         ${data?`
         <section class="threat-summary">
-          <article class="glass"><span>PILOTS</span><strong>${fmt(chars.length)}</strong></article>
-          <article class="glass"><span>70%+ DANGER</span><strong>${fmt(highDanger)}</strong></article>
-          <article class="glass"><span>CYNO SIGNALS</span><strong>${fmt(cynos)}</strong></article>
-          <article class="glass"><span>CAP / DROP SIGNALS</span><strong>${fmt(capitalSignals)}</strong></article>
+          <article class="glass"><span>PILOTS IDENTIFIED</span><strong>${fmt(chars.length)}</strong></article>
+          <article class="glass"><span>JLR THREAT 70+</span><strong>${fmt(highDanger)}</strong></article>
+          <article class="glass"><span>TACTICAL SIGNALS</span><strong>${fmt(signalCount)}</strong></article>
+          <article class="glass"><span>D-SCAN SHIPS</span><strong>${fmt(data.totalShips||0)}</strong></article>
         </section>
 
+        ${shipStrip}
+
         <section class="glass threat-results">
-          <div class="threat-results-head"><strong>SCANNED PILOTS</strong><span>highest zKill danger first</span></div>
+          <div class="threat-results-head"><strong>PILOT INTELLIGENCE</strong><span>JLR threat score • public ESI + cached zKill stats</span></div>
           <div class="threat-table-wrap">
-            <table class="threat-table">
-              <thead><tr><th>THREAT</th><th>PILOT / GROUP</th><th>SEC</th><th>KILLS / K-D</th><th>SOLO / GANG</th><th>RECENT SHIPS</th><th>FLAGS</th></tr></thead>
-              <tbody>${rows||'<tr><td colspan="7" class="threat-empty">No characters were identified from that paste.</td></tr>'}</tbody>
+            <table class="threat-table threat-table-v2">
+              <thead><tr><th>CHARACTER</th><th>AGE</th><th>JLR THREAT</th><th>SEC</th><th>7D K/L</th><th>SOLO</th><th>AVG GANG</th><th>7D ISK</th><th>TAGS</th><th>RECENT SHIPS</th><th>PARTNER</th></tr></thead>
+              <tbody>${rows||`<tr><td colspan="11" class="threat-empty">${dscanShips.length?'D-scan ships found. No pilot names could be resolved from this paste. Paste Local names as well for pilot threat intel.':'No EVE characters were identified from that paste.'}</td></tr>`}</tbody>
             </table>
           </div>
+        </section>
+
+        <section class="threat-source-note">
+          <strong>JLR THREAT ENGINE</strong>
+          <span>Identity, corporation, alliance, age and security come from public ESI. PvP behavior comes from zKillboard's public GET stats API and is cached in our local PvP database for 6 hours. We no longer use the Cloudflare-blocked ScanAlyzer POST endpoint.</span>
         </section>`:''}
       </div>`;
 
@@ -1026,6 +1029,7 @@
       renderThreatScan();
     }
   }
+
 
   function merPct(value){return `${(Number(value||0)*100).toFixed(1)}%`}
   function merRank(row){return row&&row.rank?`#${row.rank} / ${row.of}`:'—'}

@@ -85,6 +85,9 @@ const ZKILL_MAX_PAGES = 100;
 const ZKILL_PAGE_GAP_MS = 1100;
 const ZKILL_LIFETIME_DAMAGE_CACHE_MS = 24 * 60 * 60 * 1000;
 const ZKILL_LIFETIME_PAGE_GAP_MS = 700;
+const THREAT_CHARACTER_CACHE_MS = 6 * 60 * 60 * 1000;
+const THREAT_MAX_CHARACTERS = 80;
+const THREAT_FETCH_CONCURRENCY = 4;
 // Perfect null-sec refine: T2 rigged Tatara + max skills + RX-804 implant.
 const MAX_REFINE_YIELD = 0.90628105568;
 const ORE_REPROCESSING = {
@@ -202,16 +205,18 @@ function b64url(v) { return Buffer.from(v).toString('base64url'); }
 function randomId(bytes = 24) { return crypto.randomBytes(bytes).toString('base64url'); }
 
 function freshPvpDb(){
-  return {version:1,init7d:null,corp7d:{},corpWeekly:{},lifetime:{}};
+  return {version:2,init7d:null,corp7d:{},corpWeekly:{},lifetime:{},threat:{characters:{}}};
 }
 async function loadPvpDb(){
   try{
     const parsed=JSON.parse(await fsp.readFile(PVP_DB_FILE,'utf8'));
     const base=freshPvpDb();
-    parsed.version=1;
+    parsed.version=2;
     parsed.corp7d ||= {};
     parsed.corpWeekly ||= {};
     parsed.lifetime ||= {};
+    parsed.threat ||= {};
+    parsed.threat.characters ||= {};
     return {...base,...parsed};
   }catch{
     return freshPvpDb();
@@ -494,7 +499,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.3.89',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.3.90',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -2117,6 +2122,296 @@ async function zkillCorporationWeeklyStatsMany(corporationIds,force=false){
   return out;
 }
 
+function parseThreatPaste(text){
+  const characterNames=new Map();
+  const shipCounts=new Map();
+  const rawLines=String(text||'').replace(/\r/g,'').split(/\n+/);
+  for(const raw of rawLines){
+    let line=String(raw||'').replace(/"/g,'').trim();
+    if(!line)continue;
+    const columns=(line.includes('\t')?line.split('\t'):line.split(/\s{3,}/)).map(value=>String(value||'').trim()).filter(Boolean);
+    if(!columns.length)continue;
+    const entity=columns[0].replace(/,/g,'').trim();
+    if(/^\d+$/.test(entity)){
+      const typeId=Number(entity);
+      if(typeId>0)shipCounts.set(typeId,(shipCounts.get(typeId)||0)+1);
+      const shipLabel=String(columns[1]||'').trim();
+      if(shipLabel){
+        const parts=shipLabel.split(' - ').map(x=>x.trim()).filter(Boolean);
+        const candidate=parts.length>1?parts[parts.length-1]:parts[0];
+        if(candidate&&!/^\d+(?:\.\d+)?\s*(?:m|km|au)$/i.test(candidate))characterNames.set(candidate.toLowerCase(),candidate);
+      }
+      continue;
+    }
+    if(entity&&!/^\d+(?:\.\d+)?\s*(?:m|km|au)$/i.test(entity))characterNames.set(entity.toLowerCase(),entity);
+  }
+  return{names:[...characterNames.values()],shipCounts,rawLineCount:rawLines.filter(x=>String(x).trim()).length};
+}
+async function resolveThreatCharacterNames(names){
+  const unique=[...new Map((names||[]).map(name=>[String(name).trim().toLowerCase(),String(name).trim()])).values()].filter(Boolean);
+  const characters=new Map();
+  for(let i=0;i<unique.length;i+=500){
+    const batch=unique.slice(i,i+500);
+    if(!batch.length)continue;
+    try{
+      const {data}=await esiPost('https://esi.evetech.net/latest/universe/ids/?datasource=tranquility',batch);
+      for(const row of Array.isArray(data?.characters)?data.characters:[]){
+        const id=Number(row?.id);
+        const name=String(row?.name||'').trim();
+        if(id&&name)characters.set(name.toLowerCase(),{id,name});
+      }
+    }catch(err){
+      console.warn('Threat character name lookup failed',String(err.message||err));
+    }
+  }
+  return characters;
+}
+async function threatMapLimit(items,limit,worker){
+  const input=[...(items||[])];
+  const output=new Array(input.length);
+  let cursor=0;
+  const runners=Array.from({length:Math.min(Math.max(1,limit),input.length)},async()=>{
+    while(true){
+      const index=cursor++;
+      if(index>=input.length)return;
+      output[index]=await worker(input[index],index);
+    }
+  });
+  await Promise.all(runners);
+  return output;
+}
+function compactThreatStats(payload){
+  const weekly=payload?.rankings?.weekly?.all?.metrics||{};
+  const recent=payload?.rankings?.recent?.all?.metrics||{};
+  const destroyed=Number(payload?.shipsDestroyed)||0;
+  const lost=Number(payload?.shipsLost)||0;
+  const pointsDestroyed=Number(payload?.pointsDestroyed)||0;
+  const pointsLost=Number(payload?.pointsLost)||0;
+  let danger=Number(payload?.dangerRatio);
+  if(!Number.isFinite(danger)){
+    const good=destroyed+pointsDestroyed,bad=lost+pointsLost;
+    danger=good+bad>0?Math.floor(good/(good+bad)*100):0;
+  }
+  return{
+    shipsDestroyed:destroyed,
+    shipsLost:lost,
+    pointsDestroyed,
+    pointsLost,
+    dangerRatio:Math.max(0,Math.min(100,danger)),
+    gangRatio:Number.isFinite(Number(payload?.gangRatio))?Number(payload.gangRatio):null,
+    avgGangSize:Number.isFinite(Number(payload?.avgGangSize))?Number(payload.avgGangSize):null,
+    soloKills:Number(payload?.soloKills)||0,
+    iskDestroyed:Number(payload?.iskDestroyed)||0,
+    iskLost:Number(payload?.iskLost)||0,
+    gankerCount:Number(payload?.gankerCount)||0,
+    awoxCount:Number(payload?.awoxCount)||0,
+    allianceAwoxCount:Number(payload?.allianceAwoxCount)||0,
+    factionAwoxCount:Number(payload?.factionAwoxCount)||0,
+    fc:payload?.fc||null,
+    bait:payload?.bait||null,
+    cyno:payload?.cyno||null,
+    activityTags:Array.isArray(payload?.activityTags)?payload.activityTags.slice(0,12):[],
+    recentShips:Array.isArray(payload?.recentShips)?payload.recentShips.slice(0,9):[],
+    topShips:Array.isArray(payload?.topShips)?payload.topShips.slice(0,9):[],
+    associates:Array.isArray(payload?.associates)?payload.associates.slice(0,10):[],
+    affiliates:Array.isArray(payload?.affiliates)?payload.affiliates.slice(0,10):[],
+    weekly:{
+      shipsDestroyed:Number(weekly.shipsDestroyed)||0,
+      shipsLost:Number(weekly.shipsLost)||0,
+      pointsDestroyed:Number(weekly.pointsDestroyed)||0,
+      pointsLost:Number(weekly.pointsLost)||0,
+      iskDestroyed:Number(weekly.iskDestroyed)||0,
+      iskLost:Number(weekly.iskLost)||0,
+    },
+    recent:{
+      shipsDestroyed:Number(recent.shipsDestroyed)||0,
+      shipsLost:Number(recent.shipsLost)||0,
+      pointsDestroyed:Number(recent.pointsDestroyed)||0,
+      pointsLost:Number(recent.pointsLost)||0,
+      iskDestroyed:Number(recent.iskDestroyed)||0,
+      iskLost:Number(recent.iskLost)||0,
+    },
+  };
+}
+function threatActivityLabels(stats,shipNames=[]){
+  const tags=[];
+  const push=(label,kind='blue')=>{if(label&&!tags.some(x=>x.label===label))tags.push({label,kind})};
+  if(stats?.cyno)push('CYNO','purple');
+  if(stats?.fc)push(`FC ${String(stats.fc.level||'').toUpperCase()}`.trim(),'orange');
+  if(stats?.bait)push(`BAIT ${String(stats.bait.level||'').toUpperCase()}`.trim(),'orange');
+  if(Number(stats?.gankerCount)>=10)push('GANKER','red');
+  if(Number(stats?.awoxCount)>=10)push('AWOX','red');
+  if(Number(stats?.allianceAwoxCount)>=15)push('ALLIANCE AWOX','red');
+  if(Number(stats?.factionAwoxCount)>=20)push('FACTION AWOX','red');
+  const solo=Number.isFinite(Number(stats?.gangRatio))?100-Number(stats.gangRatio):null;
+  if(solo!==null&&solo>=50&&Number(stats?.shipsDestroyed)>=10)push('SOLO HUNTER','orange');
+  if(Number(stats?.gangRatio)>=85&&Number(stats?.shipsDestroyed)>=10)push('FLEET REGULAR','blue');
+  if(Number(stats?.weekly?.shipsDestroyed)>=20)push('VERY ACTIVE','red');
+  for(const item of Array.isArray(stats?.activityTags)?stats.activityTags:[]){
+    const label=String(item?.label||item?.name||item||'').trim().toUpperCase();
+    if(label)push(label,/drop|capital|super|titan|blops|cyno/i.test(label)?'red':'blue');
+  }
+  const combined=shipNames.join(' ');
+  if(/Avatar|Erebus|Ragnarok|Leviathan|Komodo|Molok|Vanquisher/i.test(combined))push('TITAN','red');
+  if(/Aeon|Nyx|Hel|Wyvern|Vendetta|Revenant/i.test(combined))push('SUPER','red');
+  if(/Redeemer|Widow|Panther|Sin|Marshal/i.test(combined))push('BLOPS','red');
+  if(/Sabre|Flycatcher|Eris|Heretic|Broadsword|Onyx|Phobos|Devoter/i.test(combined))push('TACKLE','orange');
+  return tags.slice(0,10);
+}
+function jlrThreatScore(stats,tags=[]){
+  const danger=Math.max(0,Math.min(100,Number(stats?.dangerRatio)||0));
+  const weeklyKills=Number(stats?.weekly?.shipsDestroyed)||0;
+  const weeklyIsk=Number(stats?.weekly?.iskDestroyed)||0;
+  let score=danger*0.72;
+  score+=Math.min(12,Math.log10(1+weeklyKills)*8);
+  score+=Math.min(7,Math.log10(1+weeklyIsk/1e9)*3.5);
+  const labels=tags.map(x=>x.label);
+  if(labels.some(x=>/^CYNO/.test(x)))score+=7;
+  if(labels.some(x=>/^FC/.test(x)))score+=4;
+  if(labels.some(x=>/^BAIT/.test(x)))score+=3;
+  if(labels.includes('TITAN')||labels.includes('SUPER'))score+=7;
+  if(labels.includes('BLOPS'))score+=5;
+  if(labels.includes('GANKER')||labels.includes('AWOX'))score+=4;
+  return Math.round(Math.max(0,Math.min(100,score)));
+}
+async function getThreatCharacterIntel(character){
+  const id=Number(character?.id);
+  const key=String(id);
+  const cached=pvpDb.threat?.characters?.[key];
+  const cacheAge=cached?.updatedAt?Date.now()-pvpDbTimestamp(cached.updatedAt):Infinity;
+  if(cached&&cacheAge<THREAT_CHARACTER_CACHE_MS)return{...cached,cacheHit:true};
+
+  let profile=null,rawStats=null,statsError=null;
+  const [profileResult,statsResult]=await Promise.allSettled([
+    esiGet(`https://esi.evetech.net/latest/characters/${id}/?datasource=tranquility`),
+    zkillJson(`https://zkillboard.com/api/stats/characterID/${id}/kills/`),
+  ]);
+  if(profileResult.status==='fulfilled')profile=profileResult.value?.data||null;
+  if(statsResult.status==='fulfilled')rawStats=statsResult.value||null;
+  else statsError=String(statsResult.reason?.message||statsResult.reason||'zKill stats unavailable');
+
+  const entry={
+    updatedAt:now(),
+    character:{
+      id,
+      name:String(profile?.name||character?.name||id),
+      birthday:profile?.birthday||null,
+      security_status:Number.isFinite(Number(profile?.security_status))?Number(profile.security_status):null,
+      corporation_id:Number(profile?.corporation_id)||null,
+      alliance_id:Number(profile?.alliance_id)||null,
+    },
+    stats:compactThreatStats(rawStats||{}),
+    statsError,
+  };
+  pvpDb.threat ||= {characters:{}};
+  pvpDb.threat.characters ||= {};
+  pvpDb.threat.characters[key]=entry;
+  return{...entry,cacheHit:false};
+}
+async function buildThreatIntel(scanText){
+  const parsed=parseThreatPaste(scanText);
+  const resolved=await resolveThreatCharacterNames(parsed.names);
+  const ordered=[],unresolved=[];
+  for(const name of parsed.names){
+    const match=resolved.get(String(name).toLowerCase());
+    if(match)ordered.push(match);
+    else unresolved.push(name);
+  }
+  const unique=[...new Map(ordered.map(row=>[Number(row.id),row])).values()];
+  const truncated=unique.length>THREAT_MAX_CHARACTERS;
+  const selected=unique.slice(0,THREAT_MAX_CHARACTERS);
+  let cacheHits=0,refreshed=0;
+  const entries=await threatMapLimit(selected,THREAT_FETCH_CONCURRENCY,async row=>{
+    try{
+      const intel=await getThreatCharacterIntel(row);
+      if(intel.cacheHit)cacheHits++;else refreshed++;
+      return intel;
+    }catch(err){
+      console.warn('Threat character lookup failed',row?.id,String(err.message||err));
+      return{
+        updatedAt:now(),
+        character:{id:Number(row?.id)||0,name:String(row?.name||'Unknown'),birthday:null,security_status:null,corporation_id:null,alliance_id:null},
+        stats:compactThreatStats({}),
+        statsError:String(err.message||err),
+        cacheHit:false,
+      };
+    }
+  });
+  if(refreshed)await savePvpDb();
+
+  const corpIds=[],allianceIds=[],typeIds=[],partnerIds=[];
+  for(const entry of entries){
+    const c=entry.character||{},s=entry.stats||{};
+    if(c.corporation_id)corpIds.push(c.corporation_id);
+    if(c.alliance_id)allianceIds.push(c.alliance_id);
+    for(const ship of [...(s.recentShips||[]),...(s.topShips||[])])if(Number(ship?.shipTypeID))typeIds.push(Number(ship.shipTypeID));
+    for(const associate of s.associates||[])if(Number(associate?.characterID))partnerIds.push(Number(associate.characterID));
+    for(const affiliate of s.affiliates||[])if(Number(affiliate?.allianceID))allianceIds.push(Number(affiliate.allianceID));
+  }
+  for(const typeId of parsed.shipCounts.keys())typeIds.push(typeId);
+  const names=await resolveUniverseNames([...corpIds,...allianceIds,...typeIds,...partnerIds]);
+
+  const chars=entries.map(entry=>{
+    const c=entry.character||{},s=entry.stats||{};
+    const ships=(s.recentShips||[]).slice(0,6).map(ship=>({
+      ...ship,
+      shipTypeID:Number(ship?.shipTypeID)||0,
+      shipName:names.get(Number(ship?.shipTypeID))||`Type ${ship?.shipTypeID||'?'}`,
+    }));
+    const topPartners=(s.associates||[]).slice(0,3).map(row=>({
+      characterID:Number(row?.characterID)||0,
+      name:names.get(Number(row?.characterID))||`Character ${row?.characterID||'?'}`,
+      sharedKills:Number(row?.sharedKills)||0,
+    }));
+    const tags=threatActivityLabels(s,ships.map(x=>x.shipName));
+    return{
+      id:Number(c.id)||0,
+      name:String(c.name||'Unknown'),
+      birthday:c.birthday||null,
+      secStatus:Number.isFinite(Number(c.security_status))?Number(c.security_status):null,
+      corporationID:Number(c.corporation_id)||0,
+      allianceID:Number(c.alliance_id)||0,
+      corporationName:c.corporation_id?(names.get(Number(c.corporation_id))||String(c.corporation_id)):'',
+      allianceName:c.alliance_id?(names.get(Number(c.alliance_id))||String(c.alliance_id)):'',
+      stats:s,
+      ships,
+      topPartners,
+      tags,
+      jlrThreat:jlrThreatScore(s,tags),
+      statsError:entry.statsError||null,
+      cacheHit:Boolean(entry.cacheHit),
+    };
+  }).sort((a,b)=>b.jlrThreat-a.jlrThreat||(Number(b.stats?.weekly?.shipsDestroyed)||0)-(Number(a.stats?.weekly?.shipsDestroyed)||0)||a.name.localeCompare(b.name));
+
+  const ships=[...parsed.shipCounts.entries()].map(([shipTypeID,count])=>({
+    shipTypeID:Number(shipTypeID),
+    name:names.get(Number(shipTypeID))||`Type ${shipTypeID}`,
+    count:Number(count)||0,
+  })).sort((a,b)=>b.count-a.count||a.name.localeCompare(b.name));
+
+  // Keep the persistent threat cache bounded.
+  const stored=Object.entries(pvpDb.threat?.characters||{});
+  if(stored.length>5000){
+    stored.sort((a,b)=>pvpDbTimestamp(b[1]?.updatedAt)-pvpDbTimestamp(a[1]?.updatedAt));
+    pvpDb.threat.characters=Object.fromEntries(stored.slice(0,4000));
+    await savePvpDb();
+  }
+
+  return{
+    source:'JLR Threat Engine',
+    scannedAt:now(),
+    totalChars:chars.length,
+    totalShips:ships.reduce((sum,row)=>sum+row.count,0),
+    rawLineCount:parsed.rawLineCount,
+    truncated,
+    candidateCount:unique.length,
+    unresolvedNames:unresolved.slice(0,30),
+    cache:{hits:cacheHits,refreshed},
+    chars,
+    ships,
+  };
+}
+
 function lifetimeMonthKeys(foundedAt){
   const nowDate=new Date();
   const founded=new Date(foundedAt||'2007-01-01T00:00:00Z');
@@ -2657,7 +2952,7 @@ async function pvpLeaderboardForUser(user,{force=false}={}){
   };
 }
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.89',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.3.90',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){const u=readSession(req);return json(res,200,{authenticated:Boolean(u),user:u?myProfile(u):null})}
   const user=requireUser(req,res);if(!user)return;
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
@@ -2700,33 +2995,8 @@ async function routeApi(req,res,url) {
     const cacheKey=crypto.createHash('sha256').update(scanText).digest('hex');
     const cached=threatScanCache.get(cacheKey);
     if(cached&&Date.now()-cached.at<2*60*1000)return json(res,200,{...cached.data,cached:true});
-
     try{
-      const response=await fetch('https://zkillboard.com/cache/bypass/scan/',{
-        method:'POST',
-        headers:{
-          'Accept':'application/json',
-          'Content-Type':'application/x-www-form-urlencoded; charset=UTF-8',
-          'User-Agent':`${ESI_USER_AGENT} | Threat Scan`,
-        },
-        body:new URLSearchParams({scan:scanText}),
-      });
-      const raw=await response.text();
-      if(!response.ok)throw new Error(`zKillboard ScanAlyzer ${response.status}: ${raw.slice(0,160)}`);
-      let payload;
-      try{payload=JSON.parse(raw)}catch{throw new Error('zKillboard ScanAlyzer returned invalid JSON.')}
-      if(!payload||typeof payload!=='object'||!Array.isArray(payload.chars))throw new Error('zKillboard ScanAlyzer returned an unexpected response.');
-
-      const data={
-        source:'zKillboard ScanAlyzer',
-        scannedAt:now(),
-        totalChars:Number(payload.totalChars)||payload.chars.length,
-        totalShips:Number(payload.totalShips)||0,
-        chars:payload.chars,
-        corps:payload.corps||{},
-        allis:payload.allis||{},
-        ships:Array.isArray(payload.ships)?payload.ships:[],
-      };
+      const data=await buildThreatIntel(scanText);
       threatScanCache.set(cacheKey,{at:Date.now(),data});
       if(threatScanCache.size>40){
         const oldest=[...threatScanCache.entries()].sort((a,b)=>a[1].at-b[1].at).slice(0,10);

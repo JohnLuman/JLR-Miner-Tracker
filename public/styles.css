@@ -645,3 +645,28 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .pvp-member-controls-only .pvp-member-rank-controls .orb{min-width:68px;padding-inline:5px;font-size:5.35px}
 .pvp-member-controls-only #pvpRankLifetime{min-width:82px}
 .pvp-member-controls-only .pvp-toon-picker{min-width:82px;max-width:104px;flex-basis:104px}
+
+
+/* JLR Threat Engine v2 */
+.threat-table-v2{min-width:1280px}
+.threat-table-v2 th,.threat-table-v2 td{text-align:left}
+.threat-pilot{display:flex;align-items:center;gap:6px;min-width:190px}
+.threat-pilot>img{width:30px;height:30px;border-radius:6px;border:1px solid var(--line);background:#08090d}
+.threat-pilot>div{min-width:0}
+.threat-pilot strong{display:block;max-width:160px;overflow:hidden;text-overflow:ellipsis}
+.threat-pilot small{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.threat-score-cell{min-width:82px}
+.threat-score-cell>strong{font-size:11px}
+.threat-score-cell>div{width:70px;height:4px;margin-top:3px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}
+.threat-score-cell i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#4faeef,#ffb34b,#ff5d5d)}
+.threat-dscan-strip{padding:8px}
+.threat-dscan-list{display:flex;flex-wrap:wrap;gap:5px}
+.threat-dscan-list>span{display:flex;align-items:center;gap:4px;padding:3px 6px;border:1px solid var(--line);border-radius:999px;background:var(--theme-soft,#111119);font-size:6.5px}
+.threat-dscan-list img{width:20px;height:20px;border-radius:50%;background:#08090d}
+.threat-dscan-list b{color:var(--theme-accent-hi,#ce68ff)}
+.threat-source-note{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--theme-soft,#111119)}
+.threat-source-note strong{display:block;color:var(--theme-accent-hi,#ce68ff);font-size:7px;letter-spacing:.08em}
+.threat-source-note span{display:block;margin-top:3px;color:var(--muted);font-size:7px;line-height:1.4}
+.threat-table-v2 tr.critical .threat-score-cell>strong{color:#ff6868}
+.threat-table-v2 tr.high .threat-score-cell>strong{color:#ff9b64}
+.threat-table-v2 tr.watch .threat-score-cell>strong{color:#ffd267}
