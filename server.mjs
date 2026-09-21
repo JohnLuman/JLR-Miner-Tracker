@@ -1904,7 +1904,7 @@ function skillSnapshot(payload) {
   }
   return out;
 }
-async function miningFittingSnapshot(fittings=[],abyssalModules=[]) {
+async function miningFittingSnapshot(fittings=[],abyssalModules=[],previousFittings=[]) {
   await ensureType(fittings.map(f=>f.ship_type_id));
   const mine=fittings.filter(f=>MINING_HULLS.has(state.esi.typeCache[String(f.ship_type_id)]?.name));
   await ensureType(mine.flatMap(f=>(f.items||[]).map(i=>i.type_id)));
@@ -1924,6 +1924,17 @@ async function miningFittingSnapshot(fittings=[],abyssalModules=[]) {
     const requirementKey=`${Number(f.ship_type_id)}|${[...needed.entries()].sort((a,b)=>a[0]-b[0]).map(([typeId,count])=>`${typeId}:${count}`).join(',')}`;
     return{f,shipName,items,required,needed,requirementKey,normalizedFitName:normalizeName(f.name)};
   });
+
+  const previousByFittingId=new Map();
+  const previousByName=new Map();
+  for(const prior of Array.isArray(previousFittings)?previousFittings:[]){
+    const id=String(prior?.fittingId||'');
+    if(id)previousByFittingId.set(id,prior);
+    const key=`${Number(prior?.shipTypeId||0)}|${normalizeName(prior?.name)}`;
+    if(!normalizeName(prior?.name))continue;
+    if(!previousByName.has(key))previousByName.set(key,[]);
+    previousByName.get(key).push(prior);
+  }
 
   const physicalGroups=new Map();
   for(const mod of abyssalModules.filter(row=>row.parentItemId)){
@@ -1964,10 +1975,29 @@ async function miningFittingSnapshot(fittings=[],abyssalModules=[]) {
         :[];
 
       let chosen=null;
-      if(row.normalizedFitName&&fitNameCounts.get(row.normalizedFitName)===1&&namedCandidates.length===1){
+
+      // A previously verified physical ship binding is stronger than a display
+      // name. Preserve it when the saved fit is edited but still requires a
+      // compatible Abyssal module set.
+      const currentFittingId=String(row.f.fitting_id||'');
+      const priorExact=previousByFittingId.get(currentFittingId)||null;
+      const priorNameKey=`${Number(row.f.ship_type_id||0)}|${row.normalizedFitName}`;
+      const priorSameNameRows=row.normalizedFitName?(previousByName.get(priorNameKey)||[]):[];
+      const priorSameName=priorSameNameRows.length===1?priorSameNameRows[0]:null;
+      const prior=priorExact||priorSameName;
+      const priorShipItemId=String(prior?.abyssalShipItemId||prior?.localCache?.physicalShipItemId||'');
+      if(priorShipItemId){
+        const bound=candidates.find(candidate=>String(candidate.shipItemId)===priorShipItemId);
+        if(bound){
+          chosen=bound;
+          abyssalMatchMethod=priorExact?'persistent-binding':'persistent-name-binding';
+        }
+      }
+
+      if(!chosen&&row.normalizedFitName&&fitNameCounts.get(row.normalizedFitName)===1&&namedCandidates.length===1){
         chosen=namedCandidates[0];
         abyssalMatchMethod='ship-name';
-      }else if(requirementCounts.get(row.requirementKey)===1&&candidates.length===1){
+      }else if(!chosen&&requirementCounts.get(row.requirementKey)===1&&candidates.length===1){
         chosen=candidates[0];
         abyssalMatchMethod='unique-candidate';
       }
@@ -2366,7 +2396,8 @@ async function refreshCharacterFittings(ch){
   ch.assetsEsiCache=assetBundle.cache;
   ch.savedFittingsCount=Array.isArray(fits)?fits.length:0;
   const fittingsUpdatedAt=now();
-  const miningFits=await miningFittingSnapshot(fits,abyssalModules);
+  const previousFittings=characterCachedFittings(ch);
+  const miningFits=await miningFittingSnapshot(fits,abyssalModules,previousFittings);
   const cachedFittings=storeCharacterFitCache(ch,miningFits,fittingsUpdatedAt);
   ch.fittingsUpdatedAt=fittingsUpdatedAt;
   ch.fittingsEsiCache=fitBundle.cache;
@@ -2408,7 +2439,8 @@ async function syncCharacterOnce(ch,{forceMetadata=false}={}){
         const fits=await characterFittings(ch.characterId,access);
         ch.savedFittingsCount=Array.isArray(fits)?fits.length:0;
         const fittingsUpdatedAt=now();
-        const miningFits=await miningFittingSnapshot(fits,abyssalModules);
+        const previousFittings=characterCachedFittings(ch);
+        const miningFits=await miningFittingSnapshot(fits,abyssalModules,previousFittings);
         storeCharacterFitCache(ch,miningFits,fittingsUpdatedAt);
         ch.fittingsUpdatedAt=fittingsUpdatedAt;
       }
@@ -4354,7 +4386,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.14 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.15 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setInterval(()=>resetExpired(true),15_000).unref();
 async function runAutomaticSyncLoop(){
   const startedAt=Date.now();
