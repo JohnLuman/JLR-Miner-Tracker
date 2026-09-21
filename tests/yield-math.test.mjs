@@ -135,6 +135,40 @@ for(const laser of abyssalResult.abyssalLasers){
   assert.equal(laser.m3s,laser.withBuff.m3s,'legacy m3s should remain the active-buff value');
 }
 
+const slotMappedAbyssalFit={
+  ...abyssalFit,
+  fittingId:6,
+  name:'Slot-specific physical Abyssal lasers',
+  items:[
+    {name:'Abyssal Modulated Strip Miner',typeId:90467,flag:'HiSlot0',quantity:1},
+    {name:'Abyssal Modulated Strip Miner',typeId:90467,flag:'HiSlot1',quantity:1},
+    ...abyssalFit.items.slice(1),
+  ],
+  // Deliberately put slot 2 first to prove matching uses the fitting slot,
+  // not array order or the first module of the same type.
+  abyssalLasers:[
+    abyssalFit.abyssalLasers[0],
+    abyssalFit.abyssalLasers[1],
+  ],
+};
+const slotMappedResult=globalThis.JLRYieldMath.calculate({
+  data,
+  minerSkills:skills,
+  minerFit:slotMappedAbyssalFit,
+  crystalKey:'Auto',
+  boosterSkills:skills,
+  boosterFit,
+  mindlink:true,
+});
+const slotOne=slotMappedResult.abyssalLasers.find(row=>row.locationFlag==='HiSlot0');
+const slotTwo=slotMappedResult.abyssalLasers.find(row=>row.locationFlag==='HiSlot1');
+assert.ok(slotOne,'HiSlot0 should have its own physical Abyssal module');
+assert.ok(slotTwo,'HiSlot1 should have its own physical Abyssal module');
+assert.equal(slotOne.itemId,'900000000000001');
+assert.equal(slotTwo.itemId,'900000000000002');
+assert.equal(new Set(slotMappedResult.abyssalLasers.map(row=>row.itemId)).size,2,'one physical Abyssal item must never be reused for two slots');
+assert.notEqual(slotOne.withoutBuff.m3s,slotTwo.withoutBuff.m3s,'different Abyssal rolls must retain different per-slot stats');
+
 console.log('Yield Calc regression passed:',result.m3PerHour.toFixed(4),'m3/hr');
 console.log('Outrider boost regression passed:',(outriderBoost.cycleReduction*100).toFixed(4)+'%');
 console.log('Abyssal per-laser buff comparison passed:',abyssalResult.abyssalLasers.map(row=>row.withBuff.m3s.toFixed(2)).join(' < '),'m3/s');
