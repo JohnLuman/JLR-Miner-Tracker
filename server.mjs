@@ -310,9 +310,60 @@ function pvpDbTimestamp(value){
   return Number.isFinite(t)?t:0;
 }
 
+function buildCharacterFitCache(characterId,fittings=[],cachedAt=now()){
+  const stamp=cachedAt||now();
+  const byFittingId={};
+  for(const fit of Array.isArray(fittings)?fittings:[]){
+    const fittingId=String(fit?.fittingId||'');
+    if(!fittingId)continue;
+    const abyssalItemIds=(Array.isArray(fit.abyssalLasers)?fit.abyssalLasers:[])
+      .map(row=>String(row?.itemId||''))
+      .filter(Boolean);
+    byFittingId[fittingId]={
+      ...fit,
+      localCache:{
+        key:`${String(characterId)}:${fittingId}`,
+        characterId:String(characterId),
+        fittingId,
+        cachedAt:stamp,
+        physicalShipItemId:fit.abyssalShipItemId?String(fit.abyssalShipItemId):null,
+        physicalShipName:fit.abyssalShipName||null,
+        abyssalItemIds,
+        matchStatus:fit.abyssalMatch||'none',
+        matchMethod:fit.abyssalMatchMethod||null,
+      },
+    };
+  }
+  return{version:1,updatedAt:stamp,byFittingId};
+}
+function characterCachedFittings(ch){
+  const by=ch?.fitCache?.byFittingId;
+  if(by&&typeof by==='object'&&!Array.isArray(by)){
+    return Object.values(by).filter(row=>row&&row.fittingId!==undefined);
+  }
+  return Array.isArray(ch?.fittings)?ch.fittings:[];
+}
+function migrateCharacterFitCache(ch){
+  if(!ch||typeof ch!=='object')return ch;
+  const cached=characterCachedFittings(ch);
+  if(!ch.fitCache||typeof ch.fitCache!=='object'||!ch.fitCache.byFittingId){
+    ch.fitCache=buildCharacterFitCache(ch.characterId,cached,ch.fittingsUpdatedAt||now());
+  }else{
+    // Normalize older cache entries so every fit has an auditable local mapping.
+    ch.fitCache=buildCharacterFitCache(ch.characterId,cached,ch.fitCache.updatedAt||ch.fittingsUpdatedAt||now());
+  }
+  delete ch.fittings;
+  return ch;
+}
+function storeCharacterFitCache(ch,fittings,cachedAt=now()){
+  ch.fitCache=buildCharacterFitCache(ch.characterId,fittings,cachedAt);
+  delete ch.fittings;
+  return characterCachedFittings(ch);
+}
+
 function freshState() {
   return {
-    version: 2,
+    version: 3,
     createdAt: now(),
     users: {},
     characters: {},
@@ -338,9 +389,10 @@ async function loadState() {
   try {
     const parsed = JSON.parse(await fsp.readFile(STATE_FILE, 'utf8'));
     const base = freshState();
-    parsed.version = 2;
+    parsed.version = 3;
     parsed.users ||= {};
     parsed.characters ||= {};
+    for(const ch of Object.values(parsed.characters))migrateCharacterFitCache(ch);
     parsed.scans ||= {};
     parsed.pvpLifetimeDamage ||= {};
     parsed.fields ||= {};
@@ -729,7 +781,7 @@ async function handleCallback(req,res,url) {
       lastError:null,
       skills:old?.skills||{},
       skillsUpdatedAt:old?.skillsUpdatedAt||null,
-      fittings:old?.fittings||[],
+      fitCache:old?.fitCache||buildCharacterFitCache(charId,old?.fittings||[],old?.fittingsUpdatedAt||now()),
       fittingsUpdatedAt:old?.fittingsUpdatedAt||null,
       savedFittingsCount:old?.savedFittingsCount||0,
       abyssalStripCount:old?.abyssalStripCount||0,
@@ -2313,15 +2365,17 @@ async function refreshCharacterFittings(ch){
   ch.assetsUpdatedAt=now();
   ch.assetsEsiCache=assetBundle.cache;
   ch.savedFittingsCount=Array.isArray(fits)?fits.length:0;
-  ch.fittings=await miningFittingSnapshot(fits,abyssalModules);
-  ch.fittingsUpdatedAt=now();
+  const fittingsUpdatedAt=now();
+  const miningFits=await miningFittingSnapshot(fits,abyssalModules);
+  const cachedFittings=storeCharacterFitCache(ch,miningFits,fittingsUpdatedAt);
+  ch.fittingsUpdatedAt=fittingsUpdatedAt;
   ch.fittingsEsiCache=fitBundle.cache;
 
   return{
     characterId:key,
     characterName:ch.name,
     savedFittingsCount:ch.savedFittingsCount,
-    miningFittingsCount:ch.fittings.length,
+    miningFittingsCount:cachedFittings.length,
     abyssalStripCount:Number(ch.abyssalStripCount||0),
     fittingsUpdatedAt:ch.fittingsUpdatedAt,
     assetsRefreshed:true,
@@ -2353,8 +2407,10 @@ async function syncCharacterOnce(ch,{forceMetadata=false}={}){
       if(id.scopes.includes(FITTINGS_SCOPE)){
         const fits=await characterFittings(ch.characterId,access);
         ch.savedFittingsCount=Array.isArray(fits)?fits.length:0;
-        ch.fittings=await miningFittingSnapshot(fits,abyssalModules);
-        ch.fittingsUpdatedAt=now();
+        const fittingsUpdatedAt=now();
+        const miningFits=await miningFittingSnapshot(fits,abyssalModules);
+        storeCharacterFitCache(ch,miningFits,fittingsUpdatedAt);
+        ch.fittingsUpdatedAt=fittingsUpdatedAt;
       }
       metadataRefreshed=true;
     }
@@ -2545,11 +2601,12 @@ function myProfile(user) {
         marketAuthorized:c.name===MARKET_CHARACTER_NAME&&String(state.market.characterId||'')===String(c.characterId)&&Boolean(state.market.refreshTokenEnc),
         skills:c.skills||{},
         skillsUpdatedAt:c.skillsUpdatedAt||null,
-        savedFittingsCount:Number.isFinite(Number(c.savedFittingsCount))?Number(c.savedFittingsCount):(c.fittings||[]).length,
+        savedFittingsCount:Number.isFinite(Number(c.savedFittingsCount))?Number(c.savedFittingsCount):characterCachedFittings(c).length,
         abyssalStripCount:Number(c.abyssalStripCount||0),
         assetsUpdatedAt:c.assetsUpdatedAt||null,
         assetsEsiCache:c.assetsEsiCache||null,
-        fittings:c.fittings||[],
+        fittings:characterCachedFittings(c),
+        fitCacheUpdatedAt:c.fitCache?.updatedAt||null,
         fittingsUpdatedAt:c.fittingsUpdatedAt||null,
         fittingsEsiCache:c.fittingsEsiCache||null,
         ledgerActivity:(()=>{
@@ -4297,7 +4354,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.13 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.14 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setInterval(()=>resetExpired(true),15_000).unref();
 async function runAutomaticSyncLoop(){
   const startedAt=Date.now();
