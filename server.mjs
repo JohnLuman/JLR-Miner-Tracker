@@ -48,6 +48,8 @@ const THREAT_CONTACT_SCOPES = [CONTACTS_SCOPE, CORPORATION_CONTACTS_SCOPE, ALLIA
 const ESI_SCOPES = [MINING_SCOPE, SKILLS_SCOPE, FITTINGS_SCOPE, ASSETS_SCOPE, LOCATION_SCOPE, ...THREAT_CONTACT_SCOPES];
 const MARKET_SCOPES = [MARKET_STRUCTURE_SCOPE, SEARCH_STRUCTURES_SCOPE, READ_STRUCTURES_SCOPE];
 const MARKET_CHARACTER_NAME = String(process.env.MARKET_CHARACTER_NAME || 'John Leman Raholan').trim();
+const TRACKER_CORPORATION_ID_ENV = Number(process.env.TRACKER_CORPORATION_ID)||0;
+const TRACKER_ACCESS_CACHE_MS = 5 * 60 * 1000;
 const MARKET_STRUCTURE_ID_ENV = String(process.env.MARKET_STRUCTURE_ID || '').trim();
 const JANICE_API_KEY = String(process.env.JANICE_API_KEY || '').trim();
 const JANICE_API_URL = String(process.env.JANICE_API_URL || 'https://janice.e-351.com/api/rest/v2').trim().replace(/\/$/,'');
@@ -219,6 +221,8 @@ const ledgerRowsByCharacter = new Map();
 const universeNameCache = new Map();
 let zkillInitLeaderboardCache = { updatedAt:0, data:null, promise:null };
 let heavyFighterTrackerCache = {updatedAt:0,data:null,promise:null};
+let trackerCorporationCache = {at:0,data:null,promise:null};
+const trackerAccessCache = new Map();
 let zkillInitArchiveRefreshPromise = null;
 const zkillCorpLeaderboardCache = new Map();
 const zkillCorpStatsCache = new Map();
@@ -4288,6 +4292,73 @@ async function lifetimeDamageSnapshot(corporationId,corporationName,foundedAt){
     rows,
   };
 }
+
+async function trackerCorporationIdentity(){
+  if(trackerCorporationCache.data&&Date.now()-trackerCorporationCache.at<30*60*1000){
+    return trackerCorporationCache.data;
+  }
+  if(trackerCorporationCache.promise)return trackerCorporationCache.promise;
+  const pending=(async()=>{
+    let corporationId=TRACKER_CORPORATION_ID_ENV;
+    let ownerCharacterId=null;
+    if(!corporationId){
+      const ids=await resolveUniverseIds([MARKET_CHARACTER_NAME]);
+      ownerCharacterId=Number(ids.get(MARKET_CHARACTER_NAME))||0;
+      if(!ownerCharacterId)throw new Error('Tracker owner character could not be resolved.');
+      const character=(await esiGet(`https://esi.evetech.net/latest/characters/${ownerCharacterId}/?datasource=tranquility`)).data;
+      corporationId=Number(character?.corporation_id)||0;
+    }
+    if(!corporationId)throw new Error('Tracker corporation could not be determined.');
+    const corporation=(await esiGet(`https://esi.evetech.net/latest/corporations/${corporationId}/?datasource=tranquility`)).data;
+    const data={
+      corporationId,
+      corporationName:String(corporation?.name||corporationId),
+      ownerCharacterId:ownerCharacterId||null,
+      ownerCharacterName:MARKET_CHARACTER_NAME,
+    };
+    trackerCorporationCache={at:Date.now(),data,promise:null};
+    return data;
+  })().finally(()=>{
+    if(trackerCorporationCache.promise===pending)trackerCorporationCache.promise=null;
+  });
+  trackerCorporationCache.promise=pending;
+  return pending;
+}
+
+async function trackerAccessForUser(user,{force=false}={}){
+  const key=String(user?.id||'');
+  const cached=trackerAccessCache.get(key);
+  if(!force&&cached&&Date.now()-cached.at<TRACKER_ACCESS_CACHE_MS)return cached.data;
+  const target=await trackerCorporationIdentity();
+  const characterIds=[...new Set((user?.characterIds||[]).map(Number).filter(id=>id>0))];
+  if(!characterIds.length){
+    const data={allowed:false,reason:'NO_LINKED_CHARACTER'};
+    trackerAccessCache.set(key,{at:Date.now(),data});
+    return data;
+  }
+  const affiliations=[];
+  for(let i=0;i<characterIds.length;i+=1000){
+    const batch=characterIds.slice(i,i+1000);
+    const {data}=await esiPost('https://esi.evetech.net/latest/characters/affiliation/?datasource=tranquility',batch);
+    if(Array.isArray(data))affiliations.push(...data);
+  }
+  const matched=affiliations.find(row=>Number(row?.corporation_id)===Number(target.corporationId))||null;
+  const data=matched?{
+    allowed:true,
+    reason:'CORPORATION_MEMBER',
+    corporationId:target.corporationId,
+    corporationName:target.corporationName,
+    matchedCharacterId:Number(matched.character_id)||null,
+  }:{
+    allowed:false,
+    reason:'CORPORATION_REQUIRED',
+    corporationId:target.corporationId,
+    corporationName:target.corporationName,
+  };
+  trackerAccessCache.set(key,{at:Date.now(),data});
+  return data;
+}
+
 async function pvpCorporationForUser(user){
   const primaryId=Number(user?.primaryCharacterId);
   if(!primaryId)throw new Error('No primary EVE character is linked.');
@@ -4677,6 +4748,9 @@ async function routeApi(req,res,url) {
     }
     if(!u)return json(res,200,{authenticated:false,user:null});
     const profile=myProfile(u);
+    profile.trackerAccess=await trackerAccessForUser(u).catch(err=>({
+      allowed:false,reason:'ACCESS_CHECK_FAILED',message:String(err.message||err),
+    }));
     profile.doctrineMarketAccess=await doctrineAccessForUser(u).catch(err=>({
       allowed:false,reason:'ACCESS_CHECK_FAILED',message:String(err.message||err),checkedAt:now(),
     }));
@@ -4736,9 +4810,19 @@ async function routeApi(req,res,url) {
     }
   }
   if(req.method==='GET'&&url.pathname==='/api/tracker/heavy-fighters'){
+    let access;
+    try{access=await trackerAccessForUser(user)}
+    catch(err){
+      console.warn('Tracker access check failed',String(err.message||err));
+      return json(res,503,{error:'TRACKER_ACCESS_CHECK_FAILED',message:'Tracker access could not be verified with EVE right now.'});
+    }
+    if(!access.allowed)return json(res,403,{
+      error:'TRACKER_CORPORATION_REQUIRED',
+      message:'Tracker is restricted to the configured corporation.',
+    });
     const wantsRefresh=url.searchParams.get('refresh')==='1';
     const force=wantsRefresh&&Date.now()-Number(heavyFighterTrackerCache.updatedAt||0)>=10*1000;
-    try{return json(res,200,await heavyFighterTracker(force))}
+    try{return json(res,200,{...(await heavyFighterTracker(force)),access:{corporationName:access.corporationName}})}
     catch(err){
       console.warn('Heavy Fighter tracker failed',String(err.message||err));
       return json(res,502,{error:'HEAVY_FIGHTER_TRACKER_FAILED',message:String(err.message||err)});
