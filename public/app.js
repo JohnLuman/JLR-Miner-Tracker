@@ -2932,18 +2932,23 @@
       const id=String(ch.characterId);
       return fleetSettings.members?.[id]?.enabled&&id!==boosterId;
     });
-    const stats=selectedMiners.map(ch=>{
+    const rows=selectedMiners.map(ch=>{
       const fit=selectedFleetFit(ch);
-      return iceFitStats(ch,fit)||{character:ch,fit,error:'Selected Fleet Setup fit is not an ice fit'};
+      return iceFitStats(ch,fit)||{character:ch,fit,notApplicable:true};
     });
+    const valid=rows.filter(row=>!row.notApplicable&&!row.error&&row.blocksPerHour>0);
+    const actionable=rows.filter(row=>!row.notApplicable&&(row.error||!row.blocksPerHour));
+    const hiddenNonIce=rows.filter(row=>row.notApplicable).length;
 
-    if(!stats.length){
-      $('iceFleetOutput').innerHTML='<div class="visual-empty">Select miners in Fleet Setup to calculate ice output.</div>';
+    if(!rows.length){
+      $('iceFleetOutput').innerHTML='<div class="ice-fit-status empty"><strong>NO ICE FLEET SELECTED</strong><small>Select ice miners in Fleet & Fits to calculate output.</small></div>';
+    }else if(!valid.length&&!actionable.length){
+      $('iceFleetOutput').innerHTML='<div class="ice-fit-status empty"><strong>NO APPLICABLE ICE FITS</strong><small>'+fmt(hiddenNonIce)+' selected fleet member'+(hiddenNonIce===1?' is':'s are')+' currently using non-ice fits.</small></div>';
     }else{
       let totalBlocks=0,totalM3=0,totalTrack=0,totalJita=0,totalCn=0;
-      const body=stats.map(row=>{
+      const body=[...valid,...actionable].map(row=>{
         if(row.error||!row.blocksPerHour){
-          return '<div class="ice-fleet-row error"><div><strong>'+esc(row.character?.name||'Miner')+'</strong><small>'+esc(row.fit?.name||'No selected fit')+'</small></div><span>'+esc(row.error||'No supported ice harvester')+'</span></div>';
+          return '<div class="ice-fit-issue"><div><strong>'+esc(row.character?.name||'Miner')+'</strong><small>'+esc(row.fit?.name||'Ice fit')+'</small></div><span>'+esc(row.error||'Ice fit needs attention')+'</span></div>';
         }
         const blocks=row.blocksPerHour,m3=row.m3PerHour;
         const track=blocks*Number(selected?.track||0);
@@ -2959,11 +2964,16 @@
           '<div><span>C-N refine/hr</span><strong>'+(cn?fmt(cn):'—')+'</strong></div>'+
         '</div>';
       }).join('');
-      $('iceFleetOutput').innerHTML=body+
-        '<div class="ice-fleet-total"><span>'+esc(iceTrackType)+' fleet total</span><strong>'+
-        totalBlocks.toFixed(1)+' blocks/hr • '+fmt(totalM3,'m3')+' m³/hr</strong><small>Payout '+
-        (totalTrack?fmt(totalTrack):'—')+'/hr • Jita refine '+(totalJita?fmt(totalJita):'—')+
-        '/hr • C-N refine '+(totalCn?fmt(totalCn):'—')+'/hr</small></div>';
+      const hidden=hiddenNonIce
+        ?'<div class="ice-fit-hidden"><strong>'+fmt(hiddenNonIce)+' NON-ICE FLEET MEMBER'+(hiddenNonIce===1?'':'S')+' HIDDEN</strong><span>Only applicable ice fits are shown here.</span></div>'
+        :'';
+      const total=valid.length
+        ?'<div class="ice-fleet-total"><span>'+esc(iceTrackType)+' fleet total</span><strong>'+
+          totalBlocks.toFixed(1)+' blocks/hr • '+fmt(totalM3,'m3')+' m³/hr</strong><small>Payout '+
+          (totalTrack?fmt(totalTrack):'—')+'/hr • Jita refine '+(totalJita?fmt(totalJita):'—')+
+          '/hr • C-N refine '+(totalCn?fmt(totalCn):'—')+'/hr</small></div>'
+        :'';
+      $('iceFleetOutput').innerHTML=body+hidden+total;
     }
   }
   function renderGasHuffing(){
