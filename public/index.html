@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700&family=Rajdhani:wght@600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=2.9.27">
+  <link rel="stylesheet" href="/styles.css?v=2.9.28">
 </head>
 <body>
   <main id="loginView" class="login-shell hidden">
@@ -117,6 +117,7 @@
               <option value="alpha">ABC</option>
               <option value="custom">CUSTOM / DRAG</option>
             </select></label>
+            <button id="fleetUpgradeMode" class="board-tool fleet-upgrade-toggle" type="button" aria-pressed="false" title="Rank selected Abyssal lasers from lowest to highest output">⚙ UPGRADE MODE</button>
             <button id="fleetSelectAll" class="board-tool" type="button">✓ SELECT ALL MINERS</button>
             <button id="fleetClearMiners" class="board-tool subtle" type="button">CLEAR MINERS</button>
             <span id="fleetVisibleCount" class="fleet-visible-count">—</span>
@@ -124,7 +125,7 @@
 
           <div id="fleetMemberList" class="fleet-member-list"></div>
           <div id="calcResults" class="calc-results fleet-inline-results"></div>
-          <div class="fleet-setup-hint">Each miner shows fleet output, m³/hr per laser, and laser range. Abyssal cards rank the physical lasers worst → best by m³/s and compare Without Buff against the active With Buff setup. Range models the saved strip miner plus detected Mining Laser Field Enhancement burst; implant range bonuses are not included.</div>
+          <div class="fleet-setup-hint">Each miner shows fleet output, per-laser m³/hr, range, and the physical Abyssal rolls in their actual high slots. Upgrade Mode hides non-Abyssal rows and ranks the selected fleet by its weakest individual laser so upgrades are easy to spot.</div>
         </div>
       </details>
 
@@ -405,7 +406,7 @@
     </section>
     <div id="toast" class="toast hidden" role="status"></div>
   </main>
-  <script src="/yield-math.js?v=2.9.27" defer></script>
-  <script src="/app.js?v=2.9.27" defer></script>
+  <script src="/yield-math.js?v=2.9.28" defer></script>
+  <script src="/app.js?v=2.9.28" defer></script>
 </body>
 </html>
