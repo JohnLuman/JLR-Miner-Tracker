@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700&family=Rajdhani:wght@600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=2.9.23">
+  <link rel="stylesheet" href="/styles.css?v=2.9.24">
 </head>
 <body>
   <main id="loginView" class="login-shell hidden">
@@ -62,7 +62,7 @@
       <article class="kpi market-kpi"><span>JITA PAYOUT / HR</span><strong id="jitaValueKpi">—</strong><small id="jitaValueSub">fleet target × refined mineral value</small></article>
       <article class="kpi market-kpi"><span>C-N PAYOUT / HR</span><strong id="cnValueKpi">—</strong><small id="cnValueSub">fleet target × private market refine</small></article>
       <article class="kpi api-kpi"><span>LEDGER M³ TODAY</span><strong id="actualTodayM3">—</strong><small id="actualTodaySub">recorded by EVE mining ledger</small></article>
-      <article class="kpi api-kpi"><span>LEDGER PAYOUT TODAY</span><strong id="actualTodayIsk">—</strong><small id="actualTodayIskSub">recorded ore × payout setting</small></article>
+      <article id="ledgerPayoutCard" class="kpi api-kpi ledger-audit-trigger" tabindex="0" role="button" aria-haspopup="dialog" title="Open per-toon payout audit"><span>LEDGER PAYOUT • EVE DAY (UTC)</span><strong id="actualTodayIsk">—</strong><small id="actualTodayIskSub">recorded ore × payout setting • click for toon audit</small></article>
     </section>
 
     <nav class="app-tabs" aria-label="Dashboard sections">
@@ -196,14 +196,20 @@
       <div class="section-title fleet-command-title">
         <div><span class="eyebrow">ESI LIVE OPERATIONS</span><strong>FLEET PERFORMANCE</strong></div>
         <div class="fleet-history-controls" aria-label="Fleet performance history controls">
-          <div class="fleet-control-group" aria-label="History range">
-            <button class="fleet-range active" data-days="7" type="button">7D</button>
-            <button class="fleet-range" data-days="30" type="button">30D</button>
-            <button class="fleet-range" data-days="90" type="button">90D</button>
+          <div class="fleet-control-block">
+            <span class="fleet-control-caption">HISTORY</span>
+            <div class="fleet-control-group" aria-label="History range">
+              <button class="fleet-range active" data-days="7" type="button">7D</button>
+              <button class="fleet-range" data-days="30" type="button">30D</button>
+              <button class="fleet-range" data-days="90" type="button">90D</button>
+            </div>
           </div>
-          <div class="fleet-control-group" aria-label="History metric">
-            <button class="fleet-metric active" data-metric="m3" type="button">M³</button>
-            <button class="fleet-metric" data-metric="value" type="button">PAYOUT</button>
+          <div class="fleet-control-block metric-block">
+            <span class="fleet-control-caption">GRAPH SHOWS</span>
+            <div class="fleet-control-group metric-switch" aria-label="Choose what the bar graph displays">
+              <button class="fleet-metric active" data-metric="m3" type="button" title="Show mined volume by day">M³ VOLUME</button>
+              <button class="fleet-metric" data-metric="value" type="button" title="Show tracked ISK payout by day">ISK PAYOUT</button>
+            </div>
           </div>
           <span id="fleetLiveStatus" class="status-pill">● WAITING FOR ESI</span>
         </div>
@@ -223,6 +229,10 @@
         </article>
         <article class="fleet-command-card fleet-history-card">
           <div class="visual-card-head"><strong id="fleetHistoryTitle">DAILY MINING VOLUME</strong><small id="fleetHistorySubtitle">last 7 days • hover for daily totals</small></div>
+          <div id="fleetHistoryTotals" class="fleet-history-totals">
+            <div><span id="fleetHistoryVolumeLabel">7D VOLUME</span><strong id="fleetHistoryVolume">—</strong><small id="fleetHistoryPeriod">selected history range</small></div>
+            <div><span id="fleetHistoryValueLabel">7D PAYOUT</span><strong id="fleetHistoryValue">—</strong><small id="fleetHistoryValueSub">tracked T3 value × payout</small></div>
+          </div>
           <div id="fleetHistoryChart" class="fleet-history-chart"></div>
         </article>
         <article class="fleet-command-card fleet-ore-card">
@@ -378,6 +388,15 @@
 
     </section>
 
+    <section id="ledgerAuditPanel" class="confirm-panel hidden" role="dialog" aria-modal="true" aria-labelledby="ledgerAuditTitle">
+      <div class="confirm-card ledger-audit-card">
+        <div class="eyebrow">LEDGER PAYOUT AUDIT</div>
+        <h2 id="ledgerAuditTitle">EVE DAY (UTC)</h2>
+        <p id="ledgerAuditSummary">Loading linked-character ledger rows…</p>
+        <div id="ledgerAuditBody" class="ledger-audit-body"></div>
+        <div class="confirm-actions"><button id="ledgerAuditClose" class="orb silver" type="button">CLOSE</button></div>
+      </div>
+    </section>
     <section id="confirmPanel" class="confirm-panel hidden" role="dialog" aria-modal="true">
       <div class="confirm-card"><div class="eyebrow">CONFIRMATION REQUIRED</div><h2 id="confirmTitle">ARE YOU SURE YOU WANT TO START TIMER?</h2><p id="confirmText"></p><div class="confirm-actions"><button id="confirmYes" class="orb red" type="button">YES — START 10 HOURS</button><button id="confirmNo" class="orb silver" type="button">CANCEL</button></div></div>
     </section>
@@ -386,7 +405,7 @@
     </section>
     <div id="toast" class="toast hidden" role="status"></div>
   </main>
-  <script src="/yield-math.js?v=2.9.23" defer></script>
-  <script src="/app.js?v=2.9.23" defer></script>
+  <script src="/yield-math.js?v=2.9.24" defer></script>
+  <script src="/app.js?v=2.9.24" defer></script>
 </body>
 </html>
