@@ -734,6 +734,8 @@ async function handleCallback(req,res,url) {
       savedFittingsCount:old?.savedFittingsCount||0,
       abyssalStripCount:old?.abyssalStripCount||0,
       assetsUpdatedAt:old?.assetsUpdatedAt||null,
+      assetsEsiCache:old?.assetsEsiCache||null,
+      fittingsEsiCache:old?.fittingsEsiCache||null,
     };
     if(!user.characterIds.includes(charId))user.characterIds.push(charId); user.lastLoginAt=now(); if(!user.primaryCharacterId)user.primaryCharacterId=charId;
     threatContactsCache.delete(charId);
@@ -1717,15 +1719,40 @@ async function miningLedger(characterId,access) {
 async function characterSkills(characterId,access) {
   return (await esiGet(`https://esi.evetech.net/latest/characters/${characterId}/skills/?datasource=tranquility`,access)).data;
 }
-async function characterFittings(characterId,access) {
-  return (await esiGet(`https://esi.evetech.net/latest/characters/${characterId}/fittings/?datasource=tranquility`,access)).data;
+function esiCacheInfo(headers){
+  const cacheControl=String(headers?.get?.('cache-control')||'');
+  const maxAgeMatch=cacheControl.match(/(?:^|[,\\s])max-age=(\\d+)/i);
+  const maxAgeSeconds=maxAgeMatch?Number(maxAgeMatch[1]):null;
+  const responseDateMs=Date.parse(String(headers?.get?.('date')||''));
+  const expiresMs=Date.parse(String(headers?.get?.('expires')||''));
+  const lastModifiedMs=Date.parse(String(headers?.get?.('last-modified')||''));
+  const freshUntilMs=Number.isFinite(expiresMs)
+    ?expiresMs
+    :(Number.isFinite(responseDateMs)&&Number.isFinite(maxAgeSeconds)?responseDateMs+maxAgeSeconds*1000:NaN);
+  return{
+    cacheControl:cacheControl||null,
+    maxAgeSeconds:Number.isFinite(maxAgeSeconds)?maxAgeSeconds:null,
+    responseDate:Number.isFinite(responseDateMs)?new Date(responseDateMs).toISOString():null,
+    lastModified:Number.isFinite(lastModifiedMs)?new Date(lastModifiedMs).toISOString():null,
+    freshUntil:Number.isFinite(freshUntilMs)?new Date(freshUntilMs).toISOString():null,
+  };
 }
-async function characterAssets(characterId,access) {
+async function characterFittingsBundle(characterId,access) {
+  const response=await esiGet(`https://esi.evetech.net/latest/characters/${characterId}/fittings/?datasource=tranquility`,access);
+  return{rows:response.data,cache:esiCacheInfo(response.headers)};
+}
+async function characterFittings(characterId,access) {
+  return (await characterFittingsBundle(characterId,access)).rows;
+}
+async function characterAssetsBundle(characterId,access) {
   const first=await esiGet(`https://esi.evetech.net/latest/characters/${characterId}/assets/?datasource=tranquility&page=1`,access);
   let rows=[...first.data];
   const pages=Math.max(1,Number(first.headers.get('x-pages')||1));
   for(let p=2;p<=pages;p++)rows.push(...(await esiGet(`https://esi.evetech.net/latest/characters/${characterId}/assets/?datasource=tranquility&page=${p}`,access)).data);
-  return rows;
+  return{rows,cache:esiCacheInfo(first.headers)};
+}
+async function characterAssets(characterId,access) {
+  return (await characterAssetsBundle(characterId,access)).rows;
 }
 async function dogmaAttributeName(attributeId) {
   const key=String(attributeId);
@@ -2198,17 +2225,21 @@ async function refreshCharacterFittings(ch){
   // JLR fit refreshes are intended for Abyssal-rolled mining fits. Always
   // refresh both saved fittings and assets together so the selected fit gets
   // the current mutated item/Dogma values instead of stale or base stats.
-  const [fits,assets]=await Promise.all([
-    characterFittings(ch.characterId,access),
-    characterAssets(ch.characterId,access),
+  const [fitBundle,assetBundle]=await Promise.all([
+    characterFittingsBundle(ch.characterId,access),
+    characterAssetsBundle(ch.characterId,access),
   ]);
+  const fits=fitBundle.rows;
+  const assets=assetBundle.rows;
   const abyssalModules=await abyssalStripSnapshot(assets);
 
   ch.abyssalStripCount=abyssalModules.length;
   ch.assetsUpdatedAt=now();
+  ch.assetsEsiCache=assetBundle.cache;
   ch.savedFittingsCount=Array.isArray(fits)?fits.length:0;
   ch.fittings=await miningFittingSnapshot(fits,abyssalModules);
   ch.fittingsUpdatedAt=now();
+  ch.fittingsEsiCache=fitBundle.cache;
 
   return{
     characterId:key,
@@ -2218,6 +2249,8 @@ async function refreshCharacterFittings(ch){
     abyssalStripCount:Number(ch.abyssalStripCount||0),
     fittingsUpdatedAt:ch.fittingsUpdatedAt,
     assetsRefreshed:true,
+    fittingsEsiCache:fitBundle.cache,
+    assetsEsiCache:assetBundle.cache,
   };
 }
 
@@ -2439,8 +2472,10 @@ function myProfile(user) {
         savedFittingsCount:Number.isFinite(Number(c.savedFittingsCount))?Number(c.savedFittingsCount):(c.fittings||[]).length,
         abyssalStripCount:Number(c.abyssalStripCount||0),
         assetsUpdatedAt:c.assetsUpdatedAt||null,
+        assetsEsiCache:c.assetsEsiCache||null,
         fittings:c.fittings||[],
         fittingsUpdatedAt:c.fittingsUpdatedAt||null,
+        fittingsEsiCache:c.fittingsEsiCache||null,
         ledgerActivity:(()=>{
           const p=state.esi.ledgerActivity?.[String(c.characterId)]||null;
           if(!p)return null;
@@ -4186,7 +4221,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.11 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.12 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setInterval(()=>resetExpired(true),15_000).unref();
 async function runAutomaticSyncLoop(){
   const startedAt=Date.now();
