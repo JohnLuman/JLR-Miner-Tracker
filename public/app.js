@@ -2190,8 +2190,12 @@
 
     $('actualTodayM3').textContent=fmt(state.esi.actual.today.m3,'m3');
     $('actualTodayIsk').textContent=fmt(actualValue(state.esi.actual.today.jbv));
-    $('actualTodaySub').textContent=state.esi.lastSyncAt?`ledger total • synced ${ago(state.esi.lastSyncAt)}`:'waiting for first EVE ledger sync';
-    $('actualTodayIskSub').textContent=`tracked T3 ore • ${(payout*100).toFixed(1)}% payout setting`;
+    $('actualTodaySub').textContent=state.esi.lastSyncAt?`tracked T3 ledger • EVE day (UTC) • synced ${ago(state.esi.lastSyncAt)}`:'waiting for first EVE ledger sync';
+    const payoutPriceBasis=state.market?.jitaBuyBasis==='janice-immediate-buy'?'Janice Jita buy':'ESI Jita buy fallback';
+    const unpricedM3=Number(state.esi.actual.today.unpricedM3||0);
+    $('actualTodayIskSub').textContent=unpricedM3>0
+      ?`${payoutPriceBasis} refined • ${fmt(unpricedM3,'m3')} m³ awaiting price`
+      :`${payoutPriceBasis} refined • exact grade • ${(payout*100).toFixed(1)}% payout`;
     $('actualExpTodayM3').textContent=`${fmt(state.esi.actual.today.m3,'m3')} m³`;
     $('actualExpTodayValue').textContent=`${fmt(actualValue(state.esi.actual.today.jbv))} ISK`;
     $('actualWeekM3').textContent=`${fmt(state.esi.actual.week.m3,'m3')} m³`;

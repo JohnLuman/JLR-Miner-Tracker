@@ -11,6 +11,7 @@ Recommended beginner path: GitHub + Railway + EVE SSO.
    - `PUBLIC_URL` = your full Railway https URL (no trailing slash)
    - `EVE_CLIENT_ID` = EVE developer Client ID
    - `EVE_CLIENT_SECRET` = EVE developer Client Secret
+   - `JANICE_API_KEY` = your personal Janice API key (required for exact Janice Jita-buy valuation; otherwise JLR uses its labeled ESI fallback)
    - `ESI_USER_AGENT` = `JLR-Miner-Tracker/2.1 contact=YOUR-CONTACT`
 7. Deploy the staged Railway changes.
 8. Open your Railway URL and click Log in with EVE Online. After login, use + Add Toon for more characters.

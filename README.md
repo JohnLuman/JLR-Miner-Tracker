@@ -55,7 +55,7 @@ Character location is requested only by the Probe Scanner import action. The cur
 
 Characters authorized before v2.2 need to use **Authorize** once so EVE can grant the two new read-only scopes.
 
-During an ESI sync, the server temporarily reads the mining ledger's system and ore IDs so it can calculate m³ and apply the supplied T3 workbook value. The persisted mining history is then reduced to **fleet totals by date**. It does not persist which pilot mined in which system.
+During an ESI sync, the server temporarily reads each mining-ledger row's system and exact ore `type_id`. Only the expected T3 ore family in a tracked field is counted. Refined value uses that grade's CCP SDE recipe, the configured Jita mineral-buy source, and the max-refine yield. The persisted mining history is then reduced to **fleet totals by date**. It does not persist which pilot mined in which system.
 
 Actuals on the dashboard come from EVE mining-ledger API data. Projected values come from the user's local fleet calculator.
 
@@ -138,11 +138,14 @@ Set these environment variables in the hosting provider's GUI/dashboard:
 PUBLIC_URL=https://YOUR-DOMAIN
 EVE_CLIENT_ID=your-client-id
 EVE_CLIENT_SECRET=your-client-secret
+JANICE_API_KEY=your-personal-janice-api-key
 SESSION_SECRET=a-long-random-secret
 TOKEN_ENCRYPTION_KEY=another-long-random-secret
 ESI_USER_AGENT=JLR-Miner-Tracker/2.2 contact=your-contact
 PORT=3187
 ```
+
+`JANICE_API_KEY` makes T3 refined-value and ledger-payout calculations use Janice market 2 (`immediatePrices.buyPrice`). If it is omitted or Janice is temporarily unavailable, JLR labels and uses its direct ESI Jita-buy fallback instead.
 
 If `PUBLIC_URL` is omitted, JLR can infer it from normal reverse-proxy headers, but an explicit HTTPS URL is safer for production.
 
