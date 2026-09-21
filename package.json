@@ -1,12 +1,12 @@
 {
   "name": "jlr-miner-tracker-web",
-  "version": "2.9.30",
+  "version": "2.9.31",
   "private": true,
   "type": "module",
   "description": "Shared EVE Online mining tracker with website SSO, fleet ESI actuals, T3 field timers, and compact/expanded UI.",
   "scripts": {
     "start": "node server.mjs",
-    "test": "node --check public/yield-math.js && node --check public/app.js && node --check server.mjs && node tests/yield-math.test.mjs && node tests/ledger-valuation.test.mjs && node tests/probe-scan.test.mjs && node tests/threat-scan.test.mjs"
+    "test": "node --check public/yield-math.js && node --check public/app.js && node --check public/tracker.js && node --check server.mjs && node tests/yield-math.test.mjs && node tests/ledger-valuation.test.mjs && node tests/probe-scan.test.mjs && node tests/threat-scan.test.mjs"
   },
   "engines": {
     "node": ">=22"
