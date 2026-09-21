@@ -2178,6 +2178,48 @@ async function probeScanPreview(ch,text){
   };
 }
 
+async function refreshCharacterFittings(ch){
+  const key=String(ch.characterId);
+  const fullSync=characterSyncPromises.get(key);
+  if(fullSync)await fullSync;
+
+  const {access,identity:id}=await characterAccess(ch);
+  if(!id.scopes.includes(FITTINGS_SCOPE)){
+    const error=new Error('This toon needs EVE saved-fitting access. Use UPDATE ACCESS, then try again.');
+    error.code='FITTINGS_SCOPE_REQUIRED';
+    throw error;
+  }
+
+  const fits=await characterFittings(ch.characterId,access);
+  const hasAbyssal=(Array.isArray(fits)?fits:[]).some(fit=>
+    (fit.items||[]).some(item=>ABYSSAL_STRIP_TYPES.has(Number(item.type_id)))
+  );
+
+  let abyssalModules=[];
+  let assetsRefreshed=false;
+  if(hasAbyssal&&id.scopes.includes(ASSETS_SCOPE)){
+    const assets=await characterAssets(ch.characterId,access);
+    abyssalModules=await abyssalStripSnapshot(assets);
+    ch.abyssalStripCount=abyssalModules.length;
+    ch.assetsUpdatedAt=now();
+    assetsRefreshed=true;
+  }
+
+  ch.savedFittingsCount=Array.isArray(fits)?fits.length:0;
+  ch.fittings=await miningFittingSnapshot(fits,abyssalModules);
+  ch.fittingsUpdatedAt=now();
+
+  return{
+    characterId:key,
+    characterName:ch.name,
+    savedFittingsCount:ch.savedFittingsCount,
+    miningFittingsCount:ch.fittings.length,
+    abyssalStripCount:Number(ch.abyssalStripCount||0),
+    fittingsUpdatedAt:ch.fittingsUpdatedAt,
+    assetsRefreshed,
+  };
+}
+
 async function syncCharacterOnce(ch,{forceMetadata=false}={}){
   try{
     const {access,identity:id}=await characterAccess(ch);
@@ -4113,6 +4155,22 @@ async function routeApi(req,res,url) {
   if(nm&&req.method==='POST'){const system=decodeURIComponent(nm[1]);const f=state.fields[system];if(!f)return json(res,404,{error:'UNKNOWN_SYSTEM'});const body=await readBody(req);const note=String(body.text||'').trim();if(!note||note.length>240)return json(res,400,{error:'BAD_NOTE',message:'Enter a note of 1 to 240 characters.'});f.notes.push({id:randomId(8),text:note,createdAt:now()});await save();broadcast();return json(res,201,{ok:true,field:f})}
   const cm=url.pathname.match(/^\/api\/fields\/([^/]+)\/cherry$/);
   if(cm&&req.method==='POST'){const system=decodeURIComponent(cm[1]);const f=state.fields[system];if(!f)return json(res,404,{error:'UNKNOWN_SYSTEM'});f.cherryPicked=true;f.updatedAt=now();await save();broadcast();return json(res,200,{ok:true,field:f})}
+  const fitSyncMatch=url.pathname.match(/^\/api\/esi\/fittings\/(\d+)$/);
+  if(fitSyncMatch&&req.method==='POST'){
+    const characterId=String(fitSyncMatch[1]);
+    if(!user.characterIds.map(String).includes(characterId))return json(res,404,{error:'CHARACTER_NOT_LINKED',message:'That toon is not linked to your JLR account.'});
+    const ch=state.characters[characterId];
+    if(!ch)return json(res,404,{error:'CHARACTER_NOT_LINKED',message:'That toon is not linked to your JLR account.'});
+    try{
+      const fitSync=await refreshCharacterFittings(ch);
+      await save();
+      broadcast();
+      return json(res,200,{ok:true,fitSync,user:myProfile(user)});
+    }catch(err){
+      const status=err?.code==='FITTINGS_SCOPE_REQUIRED'?409:502;
+      return json(res,status,{error:err?.code||'FIT_SYNC_FAILED',message:String(err.message||err)});
+    }
+  }
   if(req.method==='POST'&&url.pathname==='/api/esi/sync'){syncUserCharacters(user).catch(console.error);return json(res,202,{ok:true,queuedCharacters:user.characterIds.length})}
   if(req.method==='DELETE'&&url.pathname.startsWith('/api/me/characters/')){const id=url.pathname.split('/').pop();if(!user.characterIds.includes(id))return json(res,404,{error:'NOT_LINKED'});if(user.characterIds.length<=1)return json(res,409,{error:'LAST_LOGIN_TOON',message:'Add another toon before disconnecting your last EVE login character.'});delete state.characters[id];if(state.esi.ledgerFieldSnapshots)delete state.esi.ledgerFieldSnapshots[id];user.characterIds=user.characterIds.filter(x=>x!==id);if(String(state.market.characterId||'')===String(id)){state.market.characterId=null;state.market.characterName=null;state.market.refreshTokenEnc=null;state.market.scopes=[];state.market.authorizedAt=null;state.market.structureId=null;state.market.structureName=null;}if(user.primaryCharacterId===id){user.primaryCharacterId=user.characterIds[0];const next=state.characters[user.primaryCharacterId];if(next)user.displayName=next.name;}await save();broadcast();return json(res,200,{ok:true,user:myProfile(user)})}
   return json(res,404,{error:'NOT_FOUND'});
@@ -4127,7 +4185,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.10 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.11 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setInterval(()=>resetExpired(true),15_000).unref();
 async function runAutomaticSyncLoop(){
   const startedAt=Date.now();
