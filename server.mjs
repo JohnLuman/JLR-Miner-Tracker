@@ -2189,22 +2189,23 @@ async function refreshCharacterFittings(ch){
     error.code='FITTINGS_SCOPE_REQUIRED';
     throw error;
   }
-
-  const fits=await characterFittings(ch.characterId,access);
-  const hasAbyssal=(Array.isArray(fits)?fits:[]).some(fit=>
-    (fit.items||[]).some(item=>ABYSSAL_STRIP_TYPES.has(Number(item.type_id)))
-  );
-
-  let abyssalModules=[];
-  let assetsRefreshed=false;
-  if(hasAbyssal&&id.scopes.includes(ASSETS_SCOPE)){
-    const assets=await characterAssets(ch.characterId,access);
-    abyssalModules=await abyssalStripSnapshot(assets);
-    ch.abyssalStripCount=abyssalModules.length;
-    ch.assetsUpdatedAt=now();
-    assetsRefreshed=true;
+  if(!id.scopes.includes(ASSETS_SCOPE)){
+    const error=new Error('Abyssal fit updates need EVE asset access so JLR can read the rolled strip-miner stats. Use UPDATE ACCESS, then try again.');
+    error.code='ASSETS_SCOPE_REQUIRED';
+    throw error;
   }
 
+  // JLR fit refreshes are intended for Abyssal-rolled mining fits. Always
+  // refresh both saved fittings and assets together so the selected fit gets
+  // the current mutated item/Dogma values instead of stale or base stats.
+  const [fits,assets]=await Promise.all([
+    characterFittings(ch.characterId,access),
+    characterAssets(ch.characterId,access),
+  ]);
+  const abyssalModules=await abyssalStripSnapshot(assets);
+
+  ch.abyssalStripCount=abyssalModules.length;
+  ch.assetsUpdatedAt=now();
   ch.savedFittingsCount=Array.isArray(fits)?fits.length:0;
   ch.fittings=await miningFittingSnapshot(fits,abyssalModules);
   ch.fittingsUpdatedAt=now();
@@ -2216,7 +2217,7 @@ async function refreshCharacterFittings(ch){
     miningFittingsCount:ch.fittings.length,
     abyssalStripCount:Number(ch.abyssalStripCount||0),
     fittingsUpdatedAt:ch.fittingsUpdatedAt,
-    assetsRefreshed,
+    assetsRefreshed:true,
   };
 }
 
