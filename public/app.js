@@ -1886,15 +1886,23 @@
   function defaultFleetFit(fits){return fits.find(isOreFit)||fits[0]||null}
   function abyssalFitBadge(fit){
     if(fit?.abyssalMatch==='matched'){
-      if(fit?.abyssalVerification==='pending')return' • ABYSSAL SAVED • WAITING ESI';
+      if(fit?.abyssalVerification==='pending')return' • A01 WAIT ESI';
       if(String(fit.abyssalMatchMethod||'').startsWith('persistent'))return' • ABYSSAL BOUND';
       if(fit.abyssalMatchMethod==='saved-fit-cache')return' • ABYSSAL SAVED';
       return fit.abyssalMatchMethod==='ship-name'?' • ABYSSAL EXACT':' • ABYSSAL MATCHED';
     }
-    if(fit?.abyssalVerification==='unresolved'&&fit?.abyssalRetryAfter&&Date.parse(fit.abyssalRetryAfter)>Date.now())return' • WAITING ESI';
-    if(fit?.abyssalMatch==='ambiguous')return' • ABYSSAL UNMATCHED';
-    if(fit?.abyssalMatch==='missing')return' • ABYSSAL MISSING';
+    if(fit?.abyssalErrorCode==='A01'||(fit?.abyssalVerification==='unresolved'&&fit?.abyssalRetryAfter&&Date.parse(fit.abyssalRetryAfter)>Date.now()))return' • A01 WAIT ESI';
+    if(fit?.abyssalErrorCode==='A02'||fit?.abyssalMatch==='ambiguous')return' • A02 MULTI MATCH';
+    if(fit?.abyssalErrorCode==='A03'||fit?.abyssalMatch==='missing'||fit?.abyssalVerification==='invalid')return' • A03 NO MATCH';
     return'';
+  }
+  function compactAbyssalError(message,fit){
+    const text=String(message||'');
+    const code=String(fit?.abyssalErrorCode||text.match(/\[(A0\d)\]/)?.[1]||'');
+    if(code==='A01')return{main:'A01 • WAIT ESI',sub:'next ESI asset check',detail:text};
+    if(code==='A02')return{main:'A02 • MULTI MATCH',sub:'multiple physical ships',detail:text};
+    if(code==='A03')return{main:'A03 • NO MATCH',sub:'saved Abyssals not verified',detail:text};
+    return{main:text||'NO SUPPORTED FIT',sub:'check saved fit / EVE sync',detail:text};
   }
   function groupedFitOptions(fits,selectedId){
     if(!fits.length)return'<option value="">No supported saved mining or gas fit</option>';
@@ -2296,7 +2304,7 @@
         const isBooster=id===String(calcSettings.boosterCharacterId||'');
         const boosterFitText=isBooster?(boosterFit?`${boosterFit.shipName} — ${boosterFit.name}` :'No saved booster fit'):'';
         const laser=fleetLaserDetails(entry);
-        let outputMain='EXCLUDED',outputSub='not counted';
+        let outputMain='EXCLUDED',outputSub='not counted',outputTitle='';
         let metricOne='—',metricOneLabel='M³/HR / LASER';
         let metricTwo='—',metricTwoLabel='LASER RANGE';
         let metricThree='NONE',metricThreeLabel='BOOST SOURCE';
@@ -2320,8 +2328,10 @@
           metricTwo=laser?.rangeText||'—';
           metricThree=activeBoost?boosterBreakdown.ship:'NONE';
         }else if(cfg.enabled){
-          outputMain=entry?.error||'NO SUPPORTED FIT';
-          outputSub='check saved fit / EVE sync';
+          const compactError=compactAbyssalError(entry?.error||'NO SUPPORTED FIT',entry?.fit);
+          outputMain=compactError.main;
+          outputSub=compactError.sub;
+          outputTitle=compactError.detail;
           metricThree=activeBoost?boosterBreakdown.ship:'NONE';
         }
         if(isBooster)row.classList.add('booster');
@@ -2331,7 +2341,7 @@
           <label class="fleet-member-toggle"><input class="fleet-member-check" data-id="${id}" type="checkbox" ${cfg.enabled?'checked':''} ${!isBooster&&!fits.length?'disabled':''}><img src="${esc(character.portrait)}" alt=""><span><strong>${esc(character.name)}</strong><small>${isBooster?(cfg.enabled?'Selected booster • in fleet':'Selected booster • not in fleet'):fits.length?`${fits.length} mining fit${fits.length===1?'':'s'}`:'No mining fits'}</small></span></label>
           ${isBooster?`<div class="fleet-booster-fit-inline">${esc(boosterFitText)}</div>`:`<select class="fleet-fit-select" data-id="${id}" ${fits.length?'':'disabled'}>${fitOptions}</select>`}
           <div class="fleet-member-metrics">
-            <span class="fleet-member-output"><strong>${esc(outputMain)}</strong><small>${esc(outputSub)}</small></span>
+            <span class="fleet-member-output" ${outputTitle?`title="${esc(outputTitle)}"`:''}><strong>${esc(outputMain)}</strong><small>${esc(outputSub)}</small></span>
             <span><strong>${esc(metricOne)}</strong><small>${esc(metricOneLabel)}</small></span>
             <span title="Strip-miner optimal range includes the detected Mining Laser Field Enhancement boost. Implant range bonuses are not modeled."><strong>${esc(metricTwo)}</strong><small>${esc(metricTwoLabel)}</small></span>
             <span class="${activeBoost?'fleet-boost-live':''}"><strong>${esc(metricThree)}</strong><small>${esc(metricThreeLabel)}</small></span>
