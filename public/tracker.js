@@ -297,6 +297,10 @@
       setTimeout(bind,250);
       return;
     }
+    if(trackerTab.classList.contains('hidden')){
+      trackerPanel.innerHTML='';
+      return;
+    }
     if(trackerPanel.dataset.trackerReady==='1')return;
     trackerPanel.dataset.trackerReady='1';
     setBadge();
