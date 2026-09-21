@@ -146,6 +146,22 @@
     if (!iso) return 'not yet'; const ms=Date.now()-Date.parse(iso); if(!Number.isFinite(ms))return 'time unavailable';
     const m=Math.max(0,Math.floor(ms/60000)); if(m<1)return 'just now'; if(m<60)return `${m}m ago`; const h=Math.floor(m/60); if(h<24)return `${h}h ${m%60}m ago`; return `${Math.floor(h/24)}d ago`;
   }
+  function until(iso){
+    if(!iso)return'';
+    const ms=Date.parse(iso)-Date.now();
+    if(!Number.isFinite(ms))return'';
+    if(ms<=0)return'ready now';
+    const m=Math.ceil(ms/60000);
+    if(m<60)return`in ${m}m`;
+    const h=Math.floor(m/60),rem=m%60;
+    return rem?`in ${h}h ${rem}m`:`in ${h}h`;
+  }
+  function esiCacheLabel(cache){
+    if(!cache)return'';
+    const source=cache.lastModified?ago(cache.lastModified):'time unavailable';
+    const next=until(cache.freshUntil);
+    return next?`ESI source ${source} • cache ${next}`:`ESI source ${source}`;
+  }
   function renderDataStatus(){
     const el=$('liveBadge');
     if(!el)return;
@@ -3201,7 +3217,8 @@
         ?' • access update required for skills/fits/assets/location/contacts'
         :` • ${savedFits} saved fits • ${miningFits} mining fits${abyssal?` • ${abyssal} Abyssal strips`:''}`;
       const syncState=c.lastError?`⚠ sync error: ${esc(c.lastError)}`:`EVE data synced ${ago(c.lastSyncAt)}`;
-      const fitState=c.fittingsUpdatedAt?` • fits ${ago(c.fittingsUpdatedAt)}`:'';
+      const assetCacheLabel=esiCacheLabel(c.assetsEsiCache);
+      const fitState=c.fittingsUpdatedAt?` • fits ${ago(c.fittingsUpdatedAt)}${assetCacheLabel?` • Abyssal ${assetCacheLabel}`:''}`:'';
       const marketButton=c.marketEligible
         ?`<button class="orb ${c.marketAuthorized?'green':'purple'} market-auth" data-id="${c.characterId}" type="button">${c.marketAuthorized?'C-N MARKET CONNECTED':'CONNECT C-N MARKET'}</button>`
         :'';
@@ -3214,11 +3231,20 @@
       b.disabled=true;
       b.textContent='UPDATING…';
       try{
+        const requestedAt=Date.now();
         const p=await api(`/api/esi/fittings/${encodeURIComponent(b.dataset.id)}`,{method:'POST',body:'{}'});
         me=p.user;
         renderAll();
         const f=p.fitSync||{};
-        toast(`${f.characterName||'Toon'}: ${Number(f.savedFittingsCount||0)} saved fits • ${Number(f.miningFittingsCount||0)} mining fits${f.assetsRefreshed?' • Abyssal data refreshed':''}`);
+        const assetCache=f.assetsEsiCache||null;
+        const sourceMs=Date.parse(assetCache?.lastModified||'');
+        const freshUntilMs=Date.parse(assetCache?.freshUntil||'');
+        const servedCached=Number.isFinite(sourceMs)&&requestedAt-sourceMs>15000&&Number.isFinite(freshUntilMs)&&freshUntilMs>Date.now();
+        if(servedCached){
+          toast(`${f.characterName||'Toon'}: fittings checked • ESI is still serving Abyssal assets from ${ago(assetCache.lastModified)} • cache refresh ${until(assetCache.freshUntil)}`);
+        }else{
+          toast(`${f.characterName||'Toon'}: ${Number(f.savedFittingsCount||0)} saved fits • ${Number(f.miningFittingsCount||0)} mining fits • Abyssal data checked`);
+        }
       }catch(e){
         b.disabled=false;
         b.textContent=original;
