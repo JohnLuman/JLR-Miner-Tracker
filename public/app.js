@@ -2209,21 +2209,33 @@
   function fleetLaserDetails(entry){
     if(!entry?.result)return null;
     const lasers=Array.isArray(entry.result.lasers)?entry.result.lasers:[];
-    const count=lasers.reduce((sum,row)=>sum+Math.max(1,Number(row?.quantity)||1),0);
-    if(!count)return null;
-    const perLaser=(Number(entry.effectiveM3)||0)/count;
+    if(!lasers.length)return null;
+    const uptime=Math.min(100,Math.max(1,Number(fleetSettings.uptime)||100))/100;
+    const expanded=[];
     const ranges=[];
+    let fallbackSlot=1;
     for(const row of lasers){
+      const quantity=Math.max(1,Number(row?.quantity)||1);
+      const rate=Math.max(0,Number(row?.m3s)||0)*3600*uptime;
       const range=Number(row?.optimalRange);
-      if(Number.isFinite(range)&&range>0)ranges.push(range);
+      const slotMatch=String(row?.locationFlag||'').match(/^HiSlot(\d+)$/i);
+      const firstSlot=slotMatch?Number(slotMatch[1])+1:null;
+      for(let index=0;index<quantity;index++){
+        const slot=firstSlot!==null?firstSlot+index:fallbackSlot++;
+        expanded.push({slot,rate});
+        if(Number.isFinite(range)&&range>0)ranges.push(range);
+      }
     }
+    expanded.sort((a,b)=>a.slot-b.slot);
+    const rateText=expanded.map(row=>`L${row.slot} ${fmt(row.rate,'m3')}`).join(' • ');
+    const rateTitle=expanded.map(row=>`Laser ${row.slot}: ${Math.round(row.rate).toLocaleString()} m³/hr @ ${Math.round(uptime*100)}% uptime`).join(' • ');
     let rangeText='—';
     if(ranges.length){
       const min=Math.min(...ranges),max=Math.max(...ranges);
       const km=value=>value>=1000?(value/1000).toFixed(value>=10000?1:2)+' km':Math.round(value)+' m';
       rangeText=Math.abs(max-min)>50?`${km(min)}–${km(max)}`:km(max);
     }
-    return{count,perLaser,rangeText};
+    return{count:expanded.length,rateText,rateTitle,rangeText};
   }
   function abyssalCycleText(stats){
     const yieldM3=Number(stats?.baseYield),duration=Number(stats?.duration),m3s=Number(stats?.baseM3s);
@@ -2364,7 +2376,7 @@
         const laser=fleetLaserDetails(entry);
         const abyssalComparison=!isBooster&&cfg.enabled&&entry?.result?abyssalLaserComparison(entry,activeBoost):'';
         let outputMain='EXCLUDED',outputSub='not counted',outputTitle='';
-        let metricOne='—',metricOneLabel='M³/HR / LASER';
+        let metricOne='—',metricOneLabel='M³/HR BY LASER',metricOneTitle='';
         let metricTwo='—',metricTwoLabel='LASER RANGE';
         let metricThree='NONE',metricThreeLabel='BOOST SOURCE';
         if(isBooster){
@@ -2383,7 +2395,9 @@
         }else if(cfg.enabled&&entry?.result){
           outputMain=`${fmt(entry.effectiveM3,'m3')} m³/hr @ ${Number(fleetSettings.uptime).toFixed(0)}%`;
           outputSub=`${activeBoost?`BOOSTED • ${boosterBreakdown.ship}`:'UNBOOSTED'} • ${laser?.count||0} laser${laser?.count===1?'':'s'}`;
-          metricOne=laser?`${fmt(laser.perLaser,'m3')}`:'—';
+          metricOne=laser?.rateText||'—';
+          metricOneTitle=laser?.rateTitle||'';
+          metricOneLabel=`M³/HR BY LASER @ ${Number(fleetSettings.uptime).toFixed(0)}%`;
           metricTwo=laser?.rangeText||'—';
           metricThree=activeBoost?boosterBreakdown.ship:'NONE';
         }else if(cfg.enabled){
@@ -2402,7 +2416,7 @@
           <div class="fleet-member-performance">
             <div class="fleet-member-metrics">
               <span class="fleet-member-output" ${outputTitle?`title="${esc(outputTitle)}"`:''}><strong>${esc(outputMain)}</strong><small>${esc(outputSub)}</small></span>
-              <span><strong>${esc(metricOne)}</strong><small>${esc(metricOneLabel)}</small></span>
+              <span ${metricOneTitle?`title="${esc(metricOneTitle)}"`:''}><strong>${esc(metricOne)}</strong><small>${esc(metricOneLabel)}</small></span>
               <span title="Strip-miner optimal range includes the detected Mining Laser Field Enhancement boost. Implant range bonuses are not modeled."><strong>${esc(metricTwo)}</strong><small>${esc(metricTwoLabel)}</small></span>
               <span class="${activeBoost?'fleet-boost-live':''}"><strong>${esc(metricThree)}</strong><small>${esc(metricThreeLabel)}</small></span>
             </div>
