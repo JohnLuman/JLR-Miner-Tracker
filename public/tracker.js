@@ -299,6 +299,7 @@
     }
     if(trackerTab.classList.contains('hidden')){
       trackerPanel.innerHTML='';
+      setTimeout(bind,250);
       return;
     }
     if(trackerPanel.dataset.trackerReady==='1')return;
