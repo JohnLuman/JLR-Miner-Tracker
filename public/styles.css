@@ -1795,3 +1795,56 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
   .abyssal-upgrade-note{align-items:flex-start;flex-direction:column}
   .abyssal-upgrade-note strong{text-align:left}
 }
+
+
+/* v2.9.29 — Fleet toolbar readability */
+.fleet-manager-toolbar{
+  gap:8px;
+  padding:8px;
+}
+.fleet-manager-toolbar label{
+  gap:4px;
+  font-size:9px;
+  line-height:1.2;
+}
+.fleet-manager-toolbar label>span{
+  font-size:9px;
+  line-height:1.2;
+}
+.fleet-manager-toolbar input,
+.fleet-manager-toolbar select{
+  height:36px;
+  padding:6px 10px;
+  font-size:11px;
+  line-height:1.2;
+}
+.fleet-manager-toolbar .board-tool,
+.fleet-upgrade-toggle{
+  min-height:36px;
+  height:auto;
+  padding:7px 10px;
+  font-size:11px;
+  line-height:1.15;
+  letter-spacing:.02em;
+  white-space:nowrap;
+}
+.fleet-visible-count{
+  font-size:11px;
+  line-height:1.2;
+  font-weight:900;
+  white-space:normal;
+}
+@media(max-width:1120px){
+  .fleet-manager-toolbar{
+    grid-template-columns:minmax(180px,1fr) 140px 145px auto auto auto;
+  }
+}
+@media(max-width:760px){
+  .fleet-manager-toolbar .board-tool,
+  .fleet-upgrade-toggle{
+    min-height:40px;
+  }
+  .fleet-visible-count{
+    grid-column:1/-1;
+  }
+}
