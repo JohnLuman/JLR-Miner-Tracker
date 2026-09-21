@@ -1544,3 +1544,48 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 /* Important card text wraps instead of being hidden behind ellipses. */
 .kpi strong,.kpi small,.fleet-perf-kpis strong,.fleet-perf-kpis small,.ice-kpi strong,.ice-kpi small,.calc-card strong,.calc-card small,.mer-kpi strong,.pvp-summary-card>strong,.pvp-summary-card>small,.fleet-command-kpis strong,.fleet-command-kpis small,.ore-mix-kpis strong,.ore-mix-kpis small,.doctrine-kpis strong,.doctrine-kpis small,.actual-card strong,.actual-card small,.field-selected-detail strong,.field-selected-detail span,.fleet-member-metrics strong,.fleet-member-metrics small,.abyssal-laser-head small,.abyssal-laser-state strong,.abyssal-laser-expected strong{white-space:normal!important;overflow:visible!important;text-overflow:clip!important;overflow-wrap:anywhere}
 @media(max-width:760px){.fleet-history-controls{justify-content:flex-start}.fleet-control-block{flex:1 1 auto}.metric-switch .fleet-metric{min-width:72px}.fleet-history-totals{grid-template-columns:1fr}.ledger-audit-totals{grid-template-columns:repeat(2,minmax(0,1fr))}.ledger-audit-row{grid-template-columns:1fr 1fr}.ledger-audit-row>div:not(:first-child){text-align:left}}
+
+
+/* v2.9.25 — fleet / Abyssal readability pass */
+.fleet-member-metrics strong,
+.fleet-member-metrics small,
+.abyssal-laser-head strong,
+.abyssal-laser-head small,
+.abyssal-laser-head b,
+.abyssal-laser-state span,
+.abyssal-laser-state strong,
+.abyssal-laser-expected span,
+.abyssal-laser-expected strong{
+  font-size:11px!important;
+  line-height:1.3!important;
+  letter-spacing:.02em;
+}
+.fleet-member-metrics{
+  gap:8px;
+}
+.fleet-member-metrics>span{
+  min-width:0;
+}
+.abyssal-laser-card{
+  padding:8px 9px;
+}
+.abyssal-laser-head{
+  gap:9px;
+  margin-bottom:6px;
+}
+.abyssal-laser-head small{
+  margin-top:3px;
+}
+.abyssal-laser-head b{
+  padding:3px 6px;
+}
+.abyssal-laser-state{
+  grid-template-columns:108px minmax(0,1fr);
+  gap:8px;
+  padding-top:4px;
+}
+.abyssal-laser-expected{
+  gap:8px;
+  margin-top:5px;
+  padding-top:5px;
+}
