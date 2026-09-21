@@ -1717,3 +1717,81 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
   }
   .fleet-member-metrics>span:first-child{border-top:0!important}
 }
+
+
+/* v2.9.28 — dedicated Abyssal Upgrade Mode */
+.fleet-manager-toolbar{
+  grid-template-columns:minmax(170px,1.2fr) 145px 145px auto auto auto auto;
+}
+.fleet-upgrade-toggle{
+  border-color:#77501f!important;
+  color:#ffd39a;
+}
+.fleet-upgrade-toggle.active{
+  border-color:#e69436!important;
+  background:linear-gradient(180deg,#6f3d12,#3d230e)!important;
+  color:#fff0d2;
+  box-shadow:inset 0 1px #ffffff24,0 0 0 1px #e6943638;
+}
+.fleet-upgrade-mode .fleet-member{
+  border-color:color-mix(in srgb,#d9872c 26%,var(--line));
+}
+.fleet-upgrade-mode .abyssal-laser-head b.abyssal-upgrade-badge{
+  display:inline-flex!important;
+  align-items:center;
+  justify-content:center;
+  flex:0 0 auto;
+  padding:3px 7px;
+  border:1px solid #8f5d27;
+  border-radius:999px;
+  background:#3b250f;
+  color:#ffd08a;
+  font-size:11px!important;
+  line-height:1.1!important;
+  font-weight:950;
+  letter-spacing:.02em;
+}
+.fleet-upgrade-mode .abyssal-laser-card.upgrade-priority{
+  border-color:#bd6d28;
+  box-shadow:inset 3px 0 #e58a34;
+}
+.abyssal-upgrade-note{
+  display:flex;
+  justify-content:space-between;
+  align-items:baseline;
+  gap:8px;
+  margin-top:6px;
+  padding-top:6px;
+  border-top:1px solid #5c3c1e;
+}
+.abyssal-upgrade-note span,
+.abyssal-upgrade-note strong{
+  font-size:11px;
+  line-height:1.25;
+}
+.abyssal-upgrade-note span{
+  color:#d99a5a;
+  font-weight:950;
+  white-space:nowrap;
+}
+.abyssal-upgrade-note strong{
+  color:#ffd5a3;
+  text-align:right;
+  font-variant-numeric:tabular-nums;
+}
+.fleet-sort select:disabled{
+  opacity:.45;
+  cursor:not-allowed;
+}
+@media(max-width:1120px){
+  .fleet-manager-toolbar{grid-template-columns:minmax(160px,1fr) 125px 135px auto auto auto}
+  .fleet-visible-count{grid-column:1/-1;justify-self:start}
+}
+@media(max-width:760px){
+  .fleet-manager-toolbar{grid-template-columns:1fr 1fr}
+  .fleet-upgrade-toggle{width:100%}
+}
+@media(max-width:520px){
+  .abyssal-upgrade-note{align-items:flex-start;flex-direction:column}
+  .abyssal-upgrade-note strong{text-align:left}
+}
