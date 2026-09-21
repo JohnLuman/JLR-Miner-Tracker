@@ -16,6 +16,10 @@
   let trackerPanel=null;
   let trackerTab=null;
   let trackerAudio=null;
+  let trackerStream=null;
+  let trackerStreamConnected=false;
+  let trackerStreamState='offline';
+  let trackerStreamStatus=null;
 
   function esc(value){
     return String(value==null?'':value).replace(/[&<>'"]/g,function(ch){
@@ -67,6 +71,103 @@
     const payload=type.includes('application/json')?await response.json():await response.text();
     if(!response.ok)throw new Error((payload&&payload.message)||(payload&&payload.error)||payload||('Request failed '+response.status));
     return payload;
+  }
+  function mergeClientLosses(rows){
+    const merged=new Map();
+    (Array.isArray(rows)?rows:[]).forEach(function(row){
+      const id=String(row&&row.killmailId||'');
+      if(id&&!merged.has(id))merged.set(id,row);
+    });
+    return Array.from(merged.values()).sort(function(a,b){
+      return Date.parse(b&&b.killmailTime||'')-Date.parse(a&&a.killmailTime||'')||Number(b&&b.killmailId||0)-Number(a&&a.killmailId||0);
+    }).slice(0,200);
+  }
+  function ensureTrackerData(){
+    if(trackerData)return trackerData;
+    trackerData={
+      groupId:GROUP_ID,
+      groupName:'Heavy Fighter',
+      source:'zKillboard R2Z2 + search API',
+      sourceUrl:'https://zkillboard.com/group/'+GROUP_ID+'/losses/',
+      windowSeconds:24*60*60,
+      pollSeconds:60,
+      searchApiDelaySeconds:300,
+      updatedAt:null,
+      count:0,
+      losses:[],
+      live:trackerStreamStatus,
+    };
+    return trackerData;
+  }
+  function applyStreamStatus(status){
+    if(status&&typeof status==='object')trackerStreamStatus=status;
+    if(trackerStreamStatus&&trackerStreamStatus.caughtUp)trackerStreamState='live';
+    else if(trackerStreamConnected)trackerStreamState='catching-up';
+    if(trackerData&&trackerStreamStatus)trackerData={...trackerData,live:{...(trackerData.live||{}),...trackerStreamStatus}};
+    render();
+  }
+  function handleLiveLoss(row){
+    const id=String(row&&row.killmailId||'');
+    if(!id||trackerSeenIds.has(id))return;
+    trackerSeenIds.add(id);
+    trackerFreshIds.add(id);
+    const data=ensureTrackerData();
+    const losses=mergeClientLosses([row].concat(Array.isArray(data.losses)?data.losses:[]));
+    trackerData={
+      ...data,
+      losses:losses,
+      count:losses.length,
+      live:{...(data.live||{}),...(trackerStreamStatus||{}),caughtUp:true,lastHeavyFighterAt:row.receivedAt||new Date().toISOString()},
+    };
+    if(isActive())trackerUnread=0;
+    else trackerUnread=Math.min(999,trackerUnread+1);
+    setBadge();
+    notifyLosses([row]);
+    render();
+  }
+  function closeTrackerStream(){
+    if(trackerStream){
+      try{trackerStream.close();}catch(e){}
+      trackerStream=null;
+    }
+    trackerStreamConnected=false;
+    trackerStreamState='offline';
+  }
+  function connectTrackerStream(){
+    if(trackerStream||!('EventSource' in window))return;
+    trackerStreamState='connecting';
+    render();
+    const stream=new EventSource('/api/tracker/heavy-fighters/stream');
+    trackerStream=stream;
+    stream.onopen=function(){
+      if(trackerStream!==stream)return;
+      trackerStreamConnected=true;
+      if(trackerStreamState==='connecting'||trackerStreamState==='reconnecting')trackerStreamState='catching-up';
+      render();
+    };
+    stream.addEventListener('ready',function(event){
+      if(trackerStream!==stream)return;
+      trackerStreamConnected=true;
+      try{applyStreamStatus(JSON.parse(event.data||'{}'));}catch(e){render();}
+    });
+    stream.addEventListener('status',function(event){
+      if(trackerStream!==stream)return;
+      try{applyStreamStatus(JSON.parse(event.data||'{}'));}catch(e){}
+    });
+    stream.addEventListener('loss',function(event){
+      if(trackerStream!==stream)return;
+      try{handleLiveLoss(JSON.parse(event.data||'{}'));}catch(e){}
+    });
+    stream.onerror=function(){
+      if(trackerStream!==stream)return;
+      trackerStreamConnected=false;
+      trackerStreamState='reconnecting';
+      render();
+    };
+  }
+  function syncTrackerStream(){
+    if(trackerArmed||isActive())connectTrackerStream();
+    else closeTrackerStream();
   }
   function ensureAudio(){
     if(!trackerAudio){
@@ -146,12 +247,15 @@
     if(!background)trackerError='';
     render();
     try{
-      const next=await api('/api/tracker/heavy-fighters'+(force?'?refresh=1':''));
-      const losses=Array.isArray(next&&next.losses)?next.losses:[];
+      const responseData=await api('/api/tracker/heavy-fighters'+(force?'?refresh=1':''));
+      const responseLosses=Array.isArray(responseData&&responseData.losses)?responseData.losses:[];
+      const existingLosses=Array.isArray(trackerData&&trackerData.losses)?trackerData.losses:[];
+      const losses=mergeClientLosses(responseLosses.concat(existingLosses));
+      const next={...responseData,losses:losses,count:losses.length};
       const ids=losses.map(function(row){return String(row&&row.killmailId||'');}).filter(Boolean);
       let fresh=[];
       if(!trackerSeeded){
-        trackerSeenIds=new Set(ids);
+        trackerSeenIds=new Set(Array.from(trackerSeenIds).concat(ids));
         trackerSeeded=true;
       }else{
         fresh=losses.filter(function(row){
@@ -162,6 +266,7 @@
       }
       trackerFreshIds=new Set(fresh.map(function(row){return String(row.killmailId);}));
       trackerData=next;
+      if(next&&next.live)trackerStreamStatus={...(trackerStreamStatus||{}),...next.live};
       trackerError='';
       if(fresh.length){
         if(isActive())trackerUnread=0;
@@ -182,6 +287,7 @@
     localStorage.setItem(ALERT_PREF,String(trackerArmed));
     if(trackerArmed){
       const unlocked=await unlockAudio();
+      syncTrackerStream();
       if('Notification' in window&&Notification.permission==='default'){
         try{await Notification.requestPermission();}catch(e){}
       }
@@ -193,6 +299,7 @@
         clearTimeout(trackerPoll);
         trackerPoll=null;
       }
+      syncTrackerStream();
       schedule();
       toast('Heavy Fighter alerts disarmed.');
     }
@@ -237,6 +344,13 @@
     const losses=Array.isArray(data&&data.losses)?data.losses:[];
     const latest=losses[0]||null;
     const sourceUrl=data&&data.sourceUrl||'https://zkillboard.com/group/'+GROUP_ID+'/losses/';
+    const live={...((data&&data.live)||{}),...(trackerStreamStatus||{})};
+    const liveLabel=trackerStreamConnected
+      ?(live.caughtUp?'LIVE':'CATCHING UP')
+      :(trackerStreamState==='reconnecting'?'RECONNECTING':(live.caughtUp?'SERVER LIVE':'OFFLINE'));
+    const liveDetail=live.caughtUp
+      ?'R2Z2 at live edge • '+fmt(live.edgeWaitSeconds||6)+'s edge checks'
+      :(live.lastError?String(live.lastError).slice(0,90):'connecting to R2Z2 live sequence');
     const status=trackerError
       ?trackerError
       :trackerLoading
@@ -256,9 +370,9 @@
       '<div class="tracker-shell">'+
         '<section class="glass tracker-hero">'+
           '<div>'+
-            '<span class="tracker-eyebrow">zKILLBOARD • GROUP 1653</span>'+
+            '<span class="tracker-eyebrow">zKILLBOARD R2Z2 LIVE • GROUP 1653</span>'+
             '<h2>TRACKER</h2>'+
-            '<p>Heavy Fighter loss watch. Arm alerts to keep checking while you use the rest of JLR.</p>'+
+            '<p>Near-live Heavy Fighter loss watch. R2Z2 pushes new losses while the regular zKill API backs up the 24-hour history.</p>'+
           '</div>'+
           '<div class="tracker-actions">'+
             '<button id="trackerArm" class="tracker-arm '+(trackerArmed?'armed':'off')+'" type="button" aria-pressed="'+String(trackerArmed)+'">'+(trackerArmed?'LOUD ALERTS ARMED':'ARM LOUD ALERTS')+'</button>'+
@@ -270,7 +384,7 @@
           '<article class="glass '+(trackerArmed?'armed':'')+'"><span>ALERT STATUS</span><strong>'+(trackerArmed?'ARMED':'OFF')+'</strong><small>'+(trackerArmed?'background checks while JLR is open':'open Tracker to check manually')+'</small></article>'+
           '<article class="glass"><span>24H FEED</span><strong>'+fmt(losses.length)+'</strong><small>latest Heavy Fighter losses returned</small></article>'+
           '<article class="glass"><span>LATEST LOSS</span><strong>'+(latest?esc(ago(latest.killmailTime).toUpperCase()):'—')+'</strong><small>'+(latest?esc(latest.systemName||'Unknown system'):'waiting for a loss')+'</small></article>'+
-          '<article class="glass"><span>SOURCE LATENCY</span><strong>~5 MIN</strong><small>zKill search API withholds very new killmails</small></article>'+
+          '<article class="glass"><span>LIVE INGEST</span><strong>'+esc(liveLabel)+'</strong><small>'+esc(liveDetail)+'</small></article>'+
         '</section>'+
         '<section class="glass tracker-feed-head">'+
           '<div><strong>HEAVY FIGHTER LOSSES</strong><span>'+esc(status)+'</span></div>'+
@@ -279,7 +393,7 @@
         '<section class="tracker-feed">'+body+'</section>'+
         '<section class="tracker-source-note">'+
           '<strong>HOW ALERTS WORK</strong>'+
-          '<span>JLR checks the public zKillboard Heavy Fighter loss feed every '+fmt(data&&data.pollSeconds||DEFAULT_POLL_SECONDS)+' seconds while alerts are armed. zKillboard\'s regular search API withholds killmails less than about five minutes old, so the siren fires when a loss becomes public in that feed rather than at the exact in-game second. Keep this JLR page open for sound alerts.</span>'+
+          '<span>JLR follows zKillboard\'s R2Z2 live sequence on the server and filters it locally for Heavy Fighter group 1653. Matching losses are pushed to this browser over a corporation-authorized live stream, normally within seconds of reaching zKillboard. The regular search API remains the 24-hour history and fallback and can be about five minutes delayed. Keep JLR open and alerts armed for sound alerts.</span>'+
         '</section>'+
       '</div>';
 
@@ -312,6 +426,7 @@
       setBadge();
       setTimeout(function(){
         render();
+        syncTrackerStream();
         if(!trackerData&&!trackerLoading)loadTracker(false,false);
         else schedule();
       },0);
@@ -323,10 +438,12 @@
         setBadge();
         if(!trackerData&&!trackerLoading)loadTracker(false,false);
       }
+      syncTrackerStream();
       schedule();
     });
     observer.observe(trackerPanel,{attributes:true,attributeFilter:['class']});
 
+    syncTrackerStream();
     if(trackerArmed)setTimeout(function(){loadTracker(false,true);},1200);
   }
 
