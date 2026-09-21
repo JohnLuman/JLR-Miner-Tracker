@@ -114,8 +114,14 @@ const ZKILL_PAGE_GAP_MS = 1100;
 const ZKILL_ARCHIVE_RETENTION_MS = 8 * 24 * 60 * 60 * 1000;
 const ZKILL_ARCHIVE_REFRESH_MS = 15 * 60 * 1000;
 const HEAVY_FIGHTER_GROUP_ID = 1653;
-const HEAVY_FIGHTER_TRACKER_CACHE_MS = 30 * 1000;
+const HEAVY_FIGHTER_TRACKER_CACHE_MS = 60 * 1000;
 const HEAVY_FIGHTER_TRACKER_WINDOW_SECONDS = 24 * 60 * 60;
+const TRACKER_R2Z2_BASE_URL = 'https://r2z2.zkillboard.com/ephemeral';
+const TRACKER_R2Z2_EDGE_WAIT_MS = 6 * 1000;
+const TRACKER_R2Z2_REQUEST_GAP_MS = 120;
+const TRACKER_R2Z2_ERROR_WAIT_MS = 5 * 1000;
+const TRACKER_LIVE_RETENTION_MS = 24 * 60 * 60 * 1000;
+const TRACKER_R2Z2_ENABLED = String(process.env.TRACKER_R2Z2_ENABLED || 'true').trim().toLowerCase() !== 'false';
 const ZKILL_LIFETIME_DAMAGE_CACHE_MS = 24 * 60 * 60 * 1000;
 const ZKILL_LIFETIME_PAGE_GAP_MS = 700;
 const THREAT_CHARACTER_CACHE_MS = 6 * 60 * 60 * 1000;
@@ -220,6 +226,22 @@ const characterAccessPromises = new Map();
 const userSyncPromises = new Map();
 const ledgerRowsByCharacter = new Map();
 const universeNameCache = new Map();
+const trackerLiveClients = new Set();
+let heavyFighterTypeIdsCache = {at:0,ids:null,promise:null};
+let trackerLiveLosses = [];
+const trackerLiveSeenKillIds = new Set();
+let trackerR2z2State = {
+  running:false,
+  caughtUp:false,
+  nextSequence:null,
+  lastSequence:null,
+  lastPollAt:null,
+  lastSuccessAt:null,
+  lastHeavyFighterAt:null,
+  lastError:null,
+  startedAt:null,
+  liveSince:null,
+};
 let zkillInitLeaderboardCache = { updatedAt:0, data:null, promise:null };
 let heavyFighterTrackerCache = {updatedAt:0,data:null,promise:null};
 let trackerCorporationCache = {at:0,data:null,promise:null};
@@ -656,7 +678,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.30',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.32',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -3078,12 +3100,291 @@ async function zkillJson(url){
   throw lastError||new Error('zKillboard request failed after retries');
 }
 
+async function decorateHeavyFighterKillmails(rows){
+  const sourceRows=Array.isArray(rows)?rows:[];
+  const ids=[];
+  for(const km of sourceRows){
+    const victim=km?.victim||{};
+    const finalBlow=(Array.isArray(km?.attackers)?km.attackers:[]).find(attacker=>attacker?.final_blow)||null;
+    for(const id of [
+      km?.solar_system_id,
+      victim?.ship_type_id,
+      victim?.character_id,
+      victim?.corporation_id,
+      victim?.alliance_id,
+      finalBlow?.character_id,
+      finalBlow?.corporation_id,
+      finalBlow?.alliance_id,
+      finalBlow?.ship_type_id,
+    ]){
+      const number=Number(id);
+      if(number>0)ids.push(number);
+    }
+  }
+  const names=await resolveUniverseNames(ids);
+  const nameOf=id=>{
+    const number=Number(id);
+    return number>0?(names.get(number)||String(number)):null;
+  };
+  return sourceRows.map(km=>{
+    const victim=km?.victim||{};
+    const attackers=Array.isArray(km?.attackers)?km.attackers:[];
+    const finalBlow=attackers.find(attacker=>attacker?.final_blow)||null;
+    const killmailId=Number(km?.killmail_id)||0;
+    const shipTypeId=Number(victim?.ship_type_id)||0;
+    const systemId=Number(km?.solar_system_id)||0;
+    return{
+      killmailId,
+      killmailTime:km?.killmail_time||null,
+      shipTypeId,
+      shipTypeName:nameOf(shipTypeId)||'Heavy Fighter',
+      systemId,
+      systemName:nameOf(systemId)||`System ${systemId}`,
+      victim:{
+        characterId:Number(victim?.character_id)||null,
+        characterName:nameOf(victim?.character_id),
+        corporationId:Number(victim?.corporation_id)||null,
+        corporationName:nameOf(victim?.corporation_id),
+        allianceId:Number(victim?.alliance_id)||null,
+        allianceName:nameOf(victim?.alliance_id),
+        damageTaken:Number(victim?.damage_taken)||0,
+      },
+      finalBlow:finalBlow?{
+        characterId:Number(finalBlow?.character_id)||null,
+        characterName:nameOf(finalBlow?.character_id),
+        corporationId:Number(finalBlow?.corporation_id)||null,
+        corporationName:nameOf(finalBlow?.corporation_id),
+        allianceId:Number(finalBlow?.alliance_id)||null,
+        allianceName:nameOf(finalBlow?.alliance_id),
+        shipTypeId:Number(finalBlow?.ship_type_id)||null,
+        shipTypeName:nameOf(finalBlow?.ship_type_id),
+        damageDone:Number(finalBlow?.damage_done)||0,
+      }:null,
+      attackerCount:attackers.length,
+      totalValue:Number(km?.zkb?.totalValue)||0,
+      points:Number(km?.zkb?.points)||0,
+      npc:Boolean(km?.zkb?.npc),
+      solo:Boolean(km?.zkb?.solo),
+      awox:Boolean(km?.zkb?.awox),
+      href:killmailId?`https://zkillboard.com/kill/${killmailId}/`:null,
+    };
+  }).filter(row=>row.killmailId&&row.shipTypeId);
+}
+
+async function heavyFighterTypeIds(){
+  const fresh=heavyFighterTypeIdsCache.ids&&Date.now()-heavyFighterTypeIdsCache.at<24*60*60*1000;
+  if(fresh)return heavyFighterTypeIdsCache.ids;
+  if(heavyFighterTypeIdsCache.promise)return heavyFighterTypeIdsCache.promise;
+  const pending=(async()=>{
+    const {data}=await esiGet(`https://esi.evetech.net/latest/universe/groups/${HEAVY_FIGHTER_GROUP_ID}/?datasource=tranquility`);
+    const ids=new Set((Array.isArray(data?.types)?data.types:[]).map(Number).filter(id=>id>0));
+    if(!ids.size)throw new Error('EVE returned no Heavy Fighter type IDs for group 1653.');
+    heavyFighterTypeIdsCache={at:Date.now(),ids,promise:null};
+    return ids;
+  })().catch(err=>{
+    if(heavyFighterTypeIdsCache.ids?.size){
+      console.warn('Heavy Fighter type refresh failed; using cached IDs',String(err.message||err));
+      return heavyFighterTypeIdsCache.ids;
+    }
+    throw err;
+  }).finally(()=>{
+    if(heavyFighterTypeIdsCache.promise===pending)heavyFighterTypeIdsCache.promise=null;
+  });
+  heavyFighterTypeIdsCache.promise=pending;
+  return pending;
+}
+
+function trackerLiveStatus(){
+  return{
+    enabled:TRACKER_R2Z2_ENABLED,
+    source:'R2Z2',
+    running:Boolean(trackerR2z2State.running),
+    caughtUp:Boolean(trackerR2z2State.caughtUp),
+    nextSequence:Number(trackerR2z2State.nextSequence)||null,
+    lastSequence:Number(trackerR2z2State.lastSequence)||null,
+    lastPollAt:trackerR2z2State.lastPollAt||null,
+    lastSuccessAt:trackerR2z2State.lastSuccessAt||null,
+    lastHeavyFighterAt:trackerR2z2State.lastHeavyFighterAt||null,
+    liveSince:trackerR2z2State.liveSince||null,
+    lastError:trackerR2z2State.lastError||null,
+    edgeWaitSeconds:Math.round(TRACKER_R2Z2_EDGE_WAIT_MS/1000),
+  };
+}
+
+function sendTrackerEvent(event,payload){
+  const msg=`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
+  for(const res of [...trackerLiveClients]){
+    try{res.write(msg)}
+    catch{trackerLiveClients.delete(res)}
+  }
+}
+
+function trimTrackerLiveLosses(){
+  const cutoff=Date.now()-TRACKER_LIVE_RETENTION_MS;
+  trackerLiveLosses=trackerLiveLosses.filter(row=>{
+    const at=Date.parse(row?.killmailTime||row?.receivedAt||'');
+    return !Number.isFinite(at)||at>=cutoff;
+  }).slice(0,200);
+  while(trackerLiveSeenKillIds.size>5000){
+    const first=trackerLiveSeenKillIds.values().next().value;
+    if(first==null)break;
+    trackerLiveSeenKillIds.delete(first);
+  }
+}
+
+function mergeTrackerLosses(historyLosses){
+  trimTrackerLiveLosses();
+  const merged=new Map();
+  for(const row of [...trackerLiveLosses,...(Array.isArray(historyLosses)?historyLosses:[])]){
+    const id=Number(row?.killmailId)||0;
+    if(id&&!merged.has(id))merged.set(id,row);
+  }
+  return [...merged.values()]
+    .sort((a,b)=>Date.parse(b?.killmailTime||'')-Date.parse(a?.killmailTime||'')||Number(b?.killmailId||0)-Number(a?.killmailId||0))
+    .slice(0,200);
+}
+
+function trackerSnapshot(data){
+  const base=data&&typeof data==='object'?data:{};
+  const losses=mergeTrackerLosses(base.losses);
+  return{
+    ...base,
+    source:'zKillboard R2Z2 + search API',
+    pollSeconds:Math.round(HEAVY_FIGHTER_TRACKER_CACHE_MS/1000),
+    count:losses.length,
+    losses,
+    live:trackerLiveStatus(),
+  };
+}
+
+function extractR2z2Killmail(payload){
+  const packagePayload=payload?.package&&typeof payload.package==='object'?payload.package:null;
+  const candidates=[payload?.killmail,packagePayload?.killmail,packagePayload,payload];
+  const km=candidates.find(row=>row&&typeof row==='object'&&Number(row.killmail_id)>0&&row.victim);
+  if(!km)return null;
+  const zkb=km.zkb||packagePayload?.zkb||payload?.zkb||{};
+  return {...km,zkb};
+}
+
+async function r2z2Json(url,{allow404=false}={}){
+  const response=await fetch(url,{
+    headers:{
+      'Accept':'application/json',
+      'Accept-Encoding':'gzip, deflate, br',
+      'User-Agent':`${ESI_USER_AGENT} | JLR Heavy Fighter Tracker R2Z2`,
+    },
+    signal:AbortSignal.timeout(15_000),
+  });
+  if(allow404&&response.status===404)return null;
+  if(response.status===429){
+    const retry=clamp(response.headers.get('retry-after'),1,120,6);
+    const err=new Error(`R2Z2 rate limited; retry after ${retry}s`);
+    err.retryMs=retry*1000;
+    throw err;
+  }
+  if(!response.ok)throw new Error(`R2Z2 ${response.status}: ${(await response.text().catch(()=>'' )).slice(0,160)}`);
+  return response.json();
+}
+
+async function processR2z2TrackerPayload(payload,sequence){
+  const km=extractR2z2Killmail(payload);
+  if(!km)return;
+  const shipTypeId=Number(km?.victim?.ship_type_id)||0;
+  if(!shipTypeId)return;
+  const typeIds=await heavyFighterTypeIds();
+  if(!typeIds.has(shipTypeId))return;
+
+  const [loss]=await decorateHeavyFighterKillmails([km]);
+  if(!loss)return;
+  const killId=String(loss.killmailId);
+  if(trackerLiveSeenKillIds.has(killId))return;
+  trackerLiveSeenKillIds.add(killId);
+
+  const liveLoss={
+    ...loss,
+    live:true,
+    r2z2Sequence:Number(sequence)||null,
+    receivedAt:now(),
+  };
+  trackerLiveLosses=[liveLoss,...trackerLiveLosses.filter(row=>String(row.killmailId)!==killId)];
+  trimTrackerLiveLosses();
+  trackerR2z2State.lastHeavyFighterAt=liveLoss.receivedAt;
+
+  if(trackerR2z2State.caughtUp){
+    sendTrackerEvent('loss',liveLoss);
+  }
+}
+
+async function seedR2z2Sequence(){
+  const pointer=await r2z2Json(`${TRACKER_R2Z2_BASE_URL}/sequence.json`);
+  const sequence=Number(pointer?.sequence)||0;
+  if(!sequence)throw new Error('R2Z2 sequence pointer was invalid.');
+  trackerR2z2State.nextSequence=sequence;
+  trackerR2z2State.lastSequence=null;
+  trackerR2z2State.lastSuccessAt=null;
+  trackerR2z2State.caughtUp=false;
+  trackerR2z2State.liveSince=null;
+  return sequence;
+}
+
+async function runTrackerR2z2Loop(){
+  if(!TRACKER_R2Z2_ENABLED||trackerR2z2State.running)return;
+  trackerR2z2State.running=true;
+  trackerR2z2State.startedAt=now();
+  console.log('Heavy Fighter Tracker: starting R2Z2 live ingest');
+  for(;;){
+    try{
+      if(!Number(trackerR2z2State.nextSequence))await seedR2z2Sequence();
+      const sequence=Number(trackerR2z2State.nextSequence);
+      const payload=await r2z2Json(`${TRACKER_R2Z2_BASE_URL}/${sequence}.json`,{allow404:true});
+      trackerR2z2State.lastPollAt=now();
+
+      if(payload===null){
+        const lastSuccessMs=Date.parse(trackerR2z2State.lastSuccessAt||'');
+        if(!Number.isFinite(lastSuccessMs)||Date.now()-lastSuccessMs>30*60*1000){
+          trackerR2z2State.nextSequence=null;
+          trackerR2z2State.caughtUp=false;
+          trackerR2z2State.liveSince=null;
+          trackerR2z2State.lastError='R2Z2 sequence went stale; reseeding.';
+          sendTrackerEvent('status',trackerLiveStatus());
+          await sleep(TRACKER_R2Z2_EDGE_WAIT_MS);
+          continue;
+        }
+        if(!trackerR2z2State.caughtUp){
+          trackerR2z2State.caughtUp=true;
+          trackerR2z2State.liveSince=now();
+          trackerR2z2State.lastError=null;
+          console.log(`Heavy Fighter Tracker: R2Z2 live at sequence ${trackerR2z2State.nextSequence}`);
+          sendTrackerEvent('status',trackerLiveStatus());
+        }
+        await sleep(TRACKER_R2Z2_EDGE_WAIT_MS);
+        continue;
+      }
+
+      trackerR2z2State.lastSequence=sequence;
+      trackerR2z2State.nextSequence=sequence+1;
+      trackerR2z2State.lastSuccessAt=now();
+      trackerR2z2State.lastError=null;
+      await processR2z2TrackerPayload(payload,sequence);
+      await sleep(TRACKER_R2Z2_REQUEST_GAP_MS);
+    }catch(err){
+      const message=String(err?.message||err);
+      if(trackerR2z2State.lastError!==message){
+        console.warn('Heavy Fighter Tracker R2Z2 error',message);
+        trackerR2z2State.lastError=message;
+        sendTrackerEvent('status',trackerLiveStatus());
+      }
+      await sleep(Number(err?.retryMs)||TRACKER_R2Z2_ERROR_WAIT_MS);
+    }
+  }
+}
+
 async function heavyFighterTracker(force=false){
   const nowMs=Date.now();
   if(!force&&heavyFighterTrackerCache.data&&nowMs-heavyFighterTrackerCache.updatedAt<HEAVY_FIGHTER_TRACKER_CACHE_MS){
-    return heavyFighterTrackerCache.data;
+    return trackerSnapshot(heavyFighterTrackerCache.data);
   }
-  if(heavyFighterTrackerCache.promise)return heavyFighterTrackerCache.promise;
+  if(heavyFighterTrackerCache.promise)return trackerSnapshot(await heavyFighterTrackerCache.promise);
 
   const pending=(async()=>{
     const url=`https://zkillboard.com/api/losses/groupID/${HEAVY_FIGHTER_GROUP_ID}/pastSeconds/${HEAVY_FIGHTER_TRACKER_WINDOW_SECONDS}/`;
@@ -3091,75 +3392,7 @@ async function heavyFighterTracker(force=false){
     if(!Array.isArray(rows))throw new Error('zKillboard Heavy Fighter feed was not a killmail list.');
 
     const recent=rows.slice(0,200);
-    const ids=[];
-    for(const km of recent){
-      const victim=km?.victim||{};
-      const finalBlow=(Array.isArray(km?.attackers)?km.attackers:[]).find(attacker=>attacker?.final_blow)||null;
-      for(const id of [
-        km?.solar_system_id,
-        victim?.ship_type_id,
-        victim?.character_id,
-        victim?.corporation_id,
-        victim?.alliance_id,
-        finalBlow?.character_id,
-        finalBlow?.corporation_id,
-        finalBlow?.alliance_id,
-        finalBlow?.ship_type_id,
-      ]){
-        const number=Number(id);
-        if(number>0)ids.push(number);
-      }
-    }
-    const names=await resolveUniverseNames(ids);
-    const nameOf=id=>{
-      const number=Number(id);
-      return number>0?(names.get(number)||String(number)):null;
-    };
-
-    const losses=recent.map(km=>{
-      const victim=km?.victim||{};
-      const attackers=Array.isArray(km?.attackers)?km.attackers:[];
-      const finalBlow=attackers.find(attacker=>attacker?.final_blow)||null;
-      const killmailId=Number(km?.killmail_id)||0;
-      const shipTypeId=Number(victim?.ship_type_id)||0;
-      const systemId=Number(km?.solar_system_id)||0;
-      return{
-        killmailId,
-        killmailTime:km?.killmail_time||null,
-        shipTypeId,
-        shipTypeName:nameOf(shipTypeId)||'Heavy Fighter',
-        systemId,
-        systemName:nameOf(systemId)||`System ${systemId}`,
-        victim:{
-          characterId:Number(victim?.character_id)||null,
-          characterName:nameOf(victim?.character_id),
-          corporationId:Number(victim?.corporation_id)||null,
-          corporationName:nameOf(victim?.corporation_id),
-          allianceId:Number(victim?.alliance_id)||null,
-          allianceName:nameOf(victim?.alliance_id),
-          damageTaken:Number(victim?.damage_taken)||0,
-        },
-        finalBlow:finalBlow?{
-          characterId:Number(finalBlow?.character_id)||null,
-          characterName:nameOf(finalBlow?.character_id),
-          corporationId:Number(finalBlow?.corporation_id)||null,
-          corporationName:nameOf(finalBlow?.corporation_id),
-          allianceId:Number(finalBlow?.alliance_id)||null,
-          allianceName:nameOf(finalBlow?.alliance_id),
-          shipTypeId:Number(finalBlow?.ship_type_id)||null,
-          shipTypeName:nameOf(finalBlow?.ship_type_id),
-          damageDone:Number(finalBlow?.damage_done)||0,
-        }:null,
-        attackerCount:attackers.length,
-        totalValue:Number(km?.zkb?.totalValue)||0,
-        points:Number(km?.zkb?.points)||0,
-        npc:Boolean(km?.zkb?.npc),
-        solo:Boolean(km?.zkb?.solo),
-        awox:Boolean(km?.zkb?.awox),
-        href:killmailId?`https://zkillboard.com/kill/${killmailId}/`:null,
-      };
-    }).filter(row=>row.killmailId&&row.shipTypeId);
-
+    const losses=await decorateHeavyFighterKillmails(recent);
     const data={
       groupId:HEAVY_FIGHTER_GROUP_ID,
       groupName:'Heavy Fighter',
@@ -3180,12 +3413,30 @@ async function heavyFighterTracker(force=false){
       console.warn('Heavy Fighter tracker refresh failed; using cached feed',String(err.message||err));
       return {...heavyFighterTrackerCache.data,stale:true,refreshError:String(err.message||err)};
     }
+    if(trackerLiveLosses.length){
+      console.warn('Heavy Fighter history unavailable; serving R2Z2 live cache',String(err.message||err));
+      return{
+        groupId:HEAVY_FIGHTER_GROUP_ID,
+        groupName:'Heavy Fighter',
+        source:'R2Z2',
+        sourceUrl:`https://zkillboard.com/group/${HEAVY_FIGHTER_GROUP_ID}/losses/`,
+        windowSeconds:HEAVY_FIGHTER_TRACKER_WINDOW_SECONDS,
+        pollSeconds:Math.round(HEAVY_FIGHTER_TRACKER_CACHE_MS/1000),
+        searchApiDelaySeconds:300,
+        updatedAt:now(),
+        count:0,
+        truncated:false,
+        losses:[],
+        staleHistory:true,
+        refreshError:String(err.message||err),
+      };
+    }
     throw err;
   }).finally(()=>{
     if(heavyFighterTrackerCache.promise===pending)heavyFighterTrackerCache.promise=null;
   });
   heavyFighterTrackerCache.promise=pending;
-  return pending;
+  return trackerSnapshot(await pending);
 }
 
 function fountainActivityRow(map, characterId) {
@@ -4741,7 +4992,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.30',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.32',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -4828,6 +5079,26 @@ async function routeApi(req,res,url) {
       console.warn('Heavy Fighter tracker failed',String(err.message||err));
       return json(res,502,{error:'HEAVY_FIGHTER_TRACKER_FAILED',message:String(err.message||err)});
     }
+  }
+  if(req.method==='GET'&&url.pathname==='/api/tracker/heavy-fighters/stream'){
+    let access;
+    try{access=await trackerAccessForUser(user)}
+    catch(err){
+      console.warn('Tracker stream access check failed',String(err.message||err));
+      return json(res,503,{error:'TRACKER_ACCESS_CHECK_FAILED',message:'Tracker access could not be verified with EVE right now.'});
+    }
+    if(!access.allowed)return json(res,403,{error:'TRACKER_CORPORATION_REQUIRED',message:'Tracker is restricted to the configured corporation.'});
+    res.writeHead(200,{
+      'Content-Type':'text/event-stream',
+      'Cache-Control':'no-cache, no-transform',
+      'Connection':'keep-alive',
+      'X-Accel-Buffering':'no',
+    });
+    res.write('retry: 3000\\n');
+    res.write(`event: ready\\ndata: ${JSON.stringify({...trackerLiveStatus(),corporationName:access.corporationName})}\\n\\n`);
+    trackerLiveClients.add(res);
+    req.on('close',()=>trackerLiveClients.delete(res));
+    return;
   }
   if(req.method==='GET'&&url.pathname==='/api/events'){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});res.write(`event: state\ndata: ${JSON.stringify(publicState())}\n\n`);sseClients.add(res);req.on('close',()=>sseClients.delete(res));return}
   if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
@@ -4982,7 +5253,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.30 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.32 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});\nsetTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();\nsetInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': tracker-heartbeat\\n\\n')}catch{trackerLiveClients.delete(res)}}},20_000).unref();
 setInterval(()=>resetExpired(true),15_000).unref();
 async function runAutomaticSyncLoop(){
   const startedAt=Date.now();
