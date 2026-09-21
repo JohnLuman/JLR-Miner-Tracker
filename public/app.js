@@ -1884,6 +1884,14 @@
       .sort(fitSortAscending);
   }
   function defaultFleetFit(fits){return fits.find(isOreFit)||fits[0]||null}
+  function abyssalFitBadge(fit){
+    if(fit?.abyssalMatch==='matched'){
+      return fit.abyssalMatchMethod==='ship-name'?' • ABYSSAL EXACT':' • ABYSSAL MATCHED';
+    }
+    if(fit?.abyssalMatch==='ambiguous')return' • ABYSSAL UNMATCHED';
+    if(fit?.abyssalMatch==='missing')return' • ABYSSAL MISSING';
+    return'';
+  }
   function groupedFitOptions(fits,selectedId){
     if(!fits.length)return'<option value="">No supported saved mining or gas fit</option>';
     const groups=new Map();
@@ -1892,7 +1900,7 @@
       if(!groups.has(hull))groups.set(hull,[]);
       groups.get(hull).push(fit);
     }
-    return[...groups].map(([hull,rows])=>`<optgroup label="${esc(hull)}">${rows.map(f=>`<option value="${esc(f.fittingId)}" ${String(f.fittingId)===String(selectedId)?'selected':''}>${isGasFit(f)?'[GAS] ':''}${esc(f.shipName)} — ${esc(f.name)}</option>`).join('')}</optgroup>`).join('');
+    return[...groups].map(([hull,rows])=>`<optgroup label="${esc(hull)}">${rows.map(f=>`<option value="${esc(f.fittingId)}" ${String(f.fittingId)===String(selectedId)?'selected':''}>${isGasFit(f)?'[GAS] ':''}${esc(f.shipName)} — ${esc(f.name)}${esc(abyssalFitBadge(f))}</option>`).join('')}</optgroup>`).join('');
   }
   function boosterFits(character){return(character?.fittings||[]).filter(f=>['Porpoise','Orca','Rorqual','Outrider'].includes(f.shipName))}
   function boosterInFleet(){
