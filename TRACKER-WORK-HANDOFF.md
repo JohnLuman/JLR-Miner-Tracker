@@ -119,6 +119,70 @@ Version bumped to **2.9.30**.
 - `8a19b21e5a8ae9caae215ca851e4a339d8fa03e7` — Style Heavy Fighter Tracker
 - `92da874ad09ab71c25946571035524f2b4ce0c44` — Load Tracker styles
 
+## R2Z2 live alert upgrade — v2.9.32
+
+RedisQ was **not** used because zKillboard sunset RedisQ on May 31, 2026. Tracker now uses the supported **R2Z2** live sequence feed.
+
+### Server live ingest
+`server.mjs`
+
+Added:
+- one server-side R2Z2 consumer using `https://r2z2.zkillboard.com/ephemeral`
+- sequence bootstrap from `sequence.json`
+- sequential numbered killmail reads
+- ~120 ms catch-up spacing (comfortably below zKillboard's 15 req/s limit)
+- minimum 6-second wait at the live 404 edge
+- stale-sequence reseeding
+- retry/backoff handling
+- Heavy Fighter type resolution from EVE universe group **1653**
+- local filtering before doing name enrichment
+- dedupe by killmail ID
+- 24-hour in-memory live Heavy Fighter cache
+- silent initial catch-up so a JLR restart does **not** alarm on existing kills
+- live-status metadata included with the normal Tracker snapshot
+
+### Authenticated browser push
+New endpoint:
+- `GET /api/tracker/heavy-fighters/stream`
+
+Behavior:
+- normal JLR session auth required
+- TEMPLAR corporation gate required
+- Server-Sent Events (SSE)
+- `ready` event gives current R2Z2 status
+- `status` event reports catch-up/errors
+- `loss` event pushes a newly observed Heavy Fighter loss
+- 20-second heartbeat keeps the stream alive through proxies
+
+### Tracker client
+`public/tracker.js`
+
+Added:
+- authenticated `EventSource` connection
+- immediate processing of `loss` events
+- live event dedupe against normal REST history polling
+- immediate unread badge
+- immediate loud siren/browser notification when armed
+- live kill card insertion without waiting for the five-minute search API delay
+- automatic reconnect behavior
+- live UI states: CONNECTING / CATCHING UP / LIVE / RECONNECTING / SERVER LIVE
+- REST history remains the fallback and fills the 24-hour list
+
+The first REST history load still seeds silently. R2Z2 events received **after the server reaches the live edge** are the events that can trigger alarms.
+
+### Version/cache
+- app version: **2.9.32**
+- frontend asset cache keys: **2.9.32**
+- `npm test` already includes `node --check public/tracker.js`
+
+### R2Z2 commits
+- `d1aaa5514e9bd3c9bc8dc42f23f46c3cbbdd034d` — Add R2Z2 live Heavy Fighter ingest and SSE
+- `f0761c13278a23c21f5b4bb73537c2c2229cd78e` — Fix R2Z2 tracker startup wiring
+- `9712f2c2c7d1f4958b93b1e600daecb6e545dc69` — Fix Tracker SSE event framing
+- `b408898c19dc06c8d10686442b3039dbba4f1e9c` — Connect Tracker client to R2Z2 live stream
+- `4e96ad573d55cc5439b391472f20770e53611ea2` — Bump JLR to 2.9.32 for R2Z2 Tracker
+- `0a7744d9e75327af50ac1c9cee0f8dcb18d04b78` — Refresh frontend cache version to 2.9.32
+
 ## Current status / remaining checks
 
 ### 1. Tracker client initialization race — FIXED
