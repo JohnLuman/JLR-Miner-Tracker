@@ -1198,7 +1198,7 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .boost-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;padding:0 7px 7px}
 .boost-stats .calc-card{background:linear-gradient(180deg,color-mix(in srgb,var(--theme-soft,#151721) 92%,black 8%),var(--theme-panel-lo,#10121a))}
 .boost-stats .boost-status-card strong{font-size:13px}
-.fleet-manager-toolbar{position:sticky;top:48px;z-index:8;display:grid;grid-template-columns:minmax(170px,1.2fr) 145px auto auto auto;gap:5px;align-items:end;margin:0 0 6px;padding:6px;border:1px solid color-mix(in srgb,var(--theme-accent,#9d34ed) 22%,var(--line));border-radius:8px;background:color-mix(in srgb,var(--theme-panel-lo,#101018) 96%,black 4%);box-shadow:0 7px 18px #0005}
+.fleet-manager-toolbar{position:sticky;top:48px;z-index:8;display:grid;grid-template-columns:minmax(170px,1.2fr) 145px 145px auto auto auto;gap:5px;align-items:end;margin:0 0 6px;padding:6px;border:1px solid color-mix(in srgb,var(--theme-accent,#9d34ed) 22%,var(--line));border-radius:8px;background:color-mix(in srgb,var(--theme-panel-lo,#101018) 96%,black 4%);box-shadow:0 7px 18px #0005}
 .fleet-manager-toolbar label{display:flex;flex-direction:column;gap:3px;min-width:0;color:var(--muted);font-size:6px;font-weight:950;letter-spacing:.08em}
 .fleet-manager-toolbar input,.fleet-manager-toolbar select{width:100%;height:30px;border:1px solid var(--line);border-radius:6px;background:var(--theme-input,#0d0d14);color:var(--text);padding:4px 8px;font-size:8px;outline:none}
 .fleet-manager-toolbar input:focus,.fleet-manager-toolbar select:focus{border-color:var(--theme-accent-line,#9f4dff);box-shadow:0 0 0 2px color-mix(in srgb,var(--theme-accent,#9d34ed) 25%,transparent)}
@@ -1218,7 +1218,7 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
   .app.compact .fleet-member-list,.app.expanded .fleet-member-list{max-height:min(64vh,720px)}
 }
 @media(max-width:1050px){
-  .fleet-manager-toolbar{grid-template-columns:minmax(160px,1fr) 130px auto auto}
+  .fleet-manager-toolbar{grid-template-columns:minmax(160px,1fr) 125px 135px auto auto}
   .fleet-visible-count{grid-column:1/-1;justify-self:start}
   .fleet-and-fits .fleet-member{grid-template-columns:minmax(155px,.8fr) minmax(200px,1fr) minmax(285px,1.2fr)}
   .fleet-member-metrics{grid-template-columns:1.2fr .8fr .8fr}

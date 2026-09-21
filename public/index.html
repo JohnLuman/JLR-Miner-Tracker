@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700&family=Rajdhani:wght@600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=2.9.10">
+  <link rel="stylesheet" href="/styles.css?v=2.9.20">
 </head>
 <body>
   <main id="loginView" class="login-shell hidden">
@@ -111,6 +111,11 @@
               <option value="selected">SELECTED</option>
               <option value="miners">HAS MINING FIT</option>
               <option value="nofit">NO MINING FIT</option>
+            </select></label>
+            <label class="fleet-sort"><span>SORT</span><select id="fleetSortMode">
+              <option value="yield-asc">WORST → BEST</option>
+              <option value="alpha">ABC</option>
+              <option value="custom">CUSTOM / DRAG</option>
             </select></label>
             <button id="fleetSelectAll" class="board-tool" type="button">✓ SELECT ALL MINERS</button>
             <button id="fleetClearMiners" class="board-tool subtle" type="button">CLEAR MINERS</button>
@@ -382,6 +387,6 @@
     <div id="toast" class="toast hidden" role="status"></div>
   </main>
   <script src="/yield-math.js?v=2.3.74" defer></script>
-  <script src="/app.js?v=2.9.10" defer></script>
+  <script src="/app.js?v=2.9.20" defer></script>
 </body>
 </html>

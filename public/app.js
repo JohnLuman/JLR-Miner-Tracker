@@ -63,6 +63,7 @@
   let fleetDragId='';
   let fleetSearchText='';
   let fleetViewFilter=['all','selected','miners','nofit'].includes(localStorage.getItem('jlrFleetViewFilter'))?localStorage.getItem('jlrFleetViewFilter'):'all';
+  let fleetSortMode=['yield-asc','alpha','custom'].includes(localStorage.getItem('jlrFleetSortMode'))?localStorage.getItem('jlrFleetSortMode'):'yield-asc';
   const DEFAULT_CALC = { boosterCharacterId:'', boosterFittingId:'', mindlink:true };
   function loadCalc(){try{return{...DEFAULT_CALC,...JSON.parse(localStorage.getItem('jlrMiningCalc')||'{}')}}catch{return{...DEFAULT_CALC}}}
   let calcSettings=loadCalc();
@@ -2236,6 +2237,11 @@
     return haystack.includes(query);
   }
 
+  function fleetCharacterNameSort(a,b){
+    return String(a?.name||'').localeCompare(String(b?.name||''),undefined,{numeric:true,sensitivity:'base'})
+      ||String(a?.characterId||'').localeCompare(String(b?.characterId||''),undefined,{numeric:true});
+  }
+
   function renderFleet(){
     if(!me)return;
     if(document.activeElement!==$('uptime'))$('uptime').value=Number(fleetSettings.uptime)||100;
@@ -2244,13 +2250,13 @@
     const sourceChars=me.characters||[];
     const originalOrder=new Map(sourceChars.map((character,index)=>[String(character.characterId),index]));
     const customOrder=new Map((fleetSettings.order||[]).map((id,index)=>[String(id),index]));
-    const chars=[...sourceChars].sort((a,b)=>{
-      const aId=String(a.characterId),bId=String(b.characterId);
-      const aOrder=customOrder.has(aId)?customOrder.get(aId):100000+(originalOrder.get(aId)||0);
-      const bOrder=customOrder.has(bId)?customOrder.get(bId):100000+(originalOrder.get(bId)||0);
-      return aOrder-bOrder;
-    });
-    if(!chars.some(character=>String(character.characterId)===String(calcSettings.boosterCharacterId))){
+    for(const character of sourceChars){
+      const id=String(character.characterId),fits=miningFits(character);
+      const existing=fleetSettings.members[id]&&typeof fleetSettings.members[id]==='object'?fleetSettings.members[id]:{};
+      const chosen=fits.find(x=>String(x.fittingId)===String(existing.fittingId))||defaultFleetFit(fits);
+      fleetSettings.members[id]={enabled:Boolean(existing.enabled),fittingId:chosen?String(chosen.fittingId):''};
+    }
+    if(!sourceChars.some(character=>String(character.characterId)===String(calcSettings.boosterCharacterId))){
       calcSettings.boosterCharacterId='';
       calcSettings.boosterFittingId='';
     }
@@ -2274,14 +2280,27 @@
     const list=$('fleetMemberList');
     if(soundMenu?.select.closest('#fleetMemberList'))closeSoundMenu();
     list.innerHTML='';
-    for(const character of chars){
-      const id=String(character.characterId),fits=miningFits(character);
-      const existing=fleetSettings.members[id]&&typeof fleetSettings.members[id]==='object'?fleetSettings.members[id]:{};
-      const chosen=fits.find(x=>String(x.fittingId)===String(existing.fittingId))||defaultFleetFit(fits);
-      fleetSettings.members[id]={enabled:Boolean(existing.enabled),fittingId:chosen?String(chosen.fittingId):''};
-    }
-
     const stats=fleetStats(),byId=new Map(stats.entries.map(x=>[String(x.character.characterId),x]));
+    const yieldSortStates=new Map(sourceChars.map(character=>{
+      const id=String(character.characterId),cfg=fleetSettings.members?.[id]||{},entry=byId.get(id);
+      if(id===String(calcSettings.boosterCharacterId||''))return[id,{group:0,yield:0}];
+      if(cfg.enabled&&entry?.error&&!entry?.gas)return[id,{group:1,yield:0}];
+      if(cfg.enabled&&entry?.result)return[id,{group:2,yield:Number(entry.effectiveM3)||0}];
+      if(cfg.enabled&&entry?.gas)return[id,{group:3,yield:0}];
+      if(miningFits(character).length)return[id,{group:4,yield:0}];
+      return[id,{group:5,yield:0}];
+    }));
+    const chars=[...sourceChars].sort((a,b)=>{
+      if(fleetSortMode==='alpha')return fleetCharacterNameSort(a,b);
+      if(fleetSortMode==='custom'){
+        const aId=String(a.characterId),bId=String(b.characterId);
+        const aOrder=customOrder.has(aId)?customOrder.get(aId):100000+(originalOrder.get(aId)||0);
+        const bOrder=customOrder.has(bId)?customOrder.get(bId):100000+(originalOrder.get(bId)||0);
+        return aOrder-bOrder;
+      }
+      const aState=yieldSortStates.get(String(a.characterId)),bState=yieldSortStates.get(String(b.characterId));
+      return aState.group-bState.group||aState.yield-bState.yield||fleetCharacterNameSort(a,b);
+    });
     const visibleChars=chars.filter(fleetCharacterMatches);
     const selectedCount=chars.filter(character=>Boolean(fleetSettings.members?.[String(character.characterId)]?.enabled)).length;
     const visibleCount=$('fleetVisibleCount');
@@ -2290,6 +2309,8 @@
     if(searchInput&&document.activeElement!==searchInput&&searchInput.value!==fleetSearchText)searchInput.value=fleetSearchText;
     const viewSelect=$('fleetViewFilter');
     if(viewSelect&&viewSelect.value!==fleetViewFilter)viewSelect.value=fleetViewFilter;
+    const sortSelect=$('fleetSortMode');
+    if(sortSelect&&sortSelect.value!==fleetSortMode)sortSelect.value=fleetSortMode;
     if(!chars.length){
       list.innerHTML='<div class="fleet-empty">Connect miners to build your fleet.</div>';
     }else if(!visibleChars.length){
@@ -2357,7 +2378,9 @@
       arrange.textContent=fleetArrangeMode?'✓ ARRANGING TOONS':'↕ ARRANGE TOONS';
     }
     if(reset)reset.disabled=!(fleetSettings.order||[]).length;
-    if(hint)hint.textContent=fleetArrangeMode?'Drag a toon above or below another':'Fits grouped by hull • Z→A';
+    if(hint)hint.textContent=fleetArrangeMode
+      ?'Drag a toon above or below another'
+      :fleetSortMode==='yield-asc'?'Toons: worst → best output':fleetSortMode==='alpha'?'Toons: A → Z':'Toons: custom order';
 
     list.querySelectorAll('.fleet-member').forEach(row=>{
       row.addEventListener('dragstart',event=>{
@@ -3420,8 +3443,26 @@
   $('boardArrange').addEventListener('click',toggleBoardArrange);
   $('boardSize').addEventListener('click',cycleBoardSize);
   $('boardReset').addEventListener('click',resetBoardOrder);
-  $('fleetArrange').addEventListener('click',()=>{fleetArrangeMode=!fleetArrangeMode;renderFleet()});
-  $('fleetOrderReset').addEventListener('click',()=>{fleetSettings.order=[];localStorage.setItem('jlrFleet',JSON.stringify(fleetSettings));renderFleet();toast('Toon order reset.')});
+  $('fleetArrange').addEventListener('click',()=>{
+    if(!fleetArrangeMode){
+      const visibleIds=[...document.querySelectorAll('#fleetMemberList .fleet-member')].map(row=>String(row.dataset.id||'')).filter(Boolean);
+      const remainingIds=(me?.characters||[]).map(character=>String(character.characterId)).filter(id=>!visibleIds.includes(id));
+      fleetSettings.order=[...visibleIds,...remainingIds];
+      fleetSortMode='custom';
+      localStorage.setItem('jlrFleetSortMode',fleetSortMode);
+      localStorage.setItem('jlrFleet',JSON.stringify(fleetSettings));
+    }
+    fleetArrangeMode=!fleetArrangeMode;
+    renderFleet();
+  });
+  $('fleetOrderReset').addEventListener('click',()=>{
+    fleetSettings.order=[];
+    if(fleetSortMode==='custom')fleetSortMode='yield-asc';
+    localStorage.setItem('jlrFleetSortMode',fleetSortMode);
+    localStorage.setItem('jlrFleet',JSON.stringify(fleetSettings));
+    renderFleet();
+    toast('Custom toon order reset.');
+  });
   syncBoardControls();
   $('systemSelect').addEventListener('change',()=>chooseSystem($('systemSelect').value));
   $('scanCharacter').addEventListener('change',()=>{scanCharacterId=$('scanCharacter').value;localStorage.setItem('jlrScanCharacter',scanCharacterId);renderScanCharacters()});
@@ -3664,6 +3705,12 @@
   $('fleetViewFilter')?.addEventListener('change',event=>{
     fleetViewFilter=['all','selected','miners','nofit'].includes(event.currentTarget.value)?event.currentTarget.value:'all';
     localStorage.setItem('jlrFleetViewFilter',fleetViewFilter);
+    renderFleet();
+  });
+  $('fleetSortMode')?.addEventListener('change',event=>{
+    fleetSortMode=['yield-asc','alpha','custom'].includes(event.currentTarget.value)?event.currentTarget.value:'yield-asc';
+    fleetArrangeMode=false;
+    localStorage.setItem('jlrFleetSortMode',fleetSortMode);
     renderFleet();
   });
   $('fleetSelectAll')?.addEventListener('click',()=>{
