@@ -1,6 +1,11 @@
 'use strict';
 (() => {
   function n(v, fallback=0){const x=Number(v);return Number.isFinite(x)?x:fallback}
+  function optionalNumber(v,fallback=NaN){
+    if(v===null||v===undefined||v==='')return fallback;
+    const x=Number(v);
+    return Number.isFinite(x)?x:fallback;
+  }
   function level(skills,id){return n(skills?.[String(id)]?.level,0)}
   function items(fit){return Array.isArray(fit?.items)?fit.items:[]}
   function itemCount(row){return Math.max(1,n(row?.quantity,1))}
@@ -84,17 +89,17 @@
     return {ship,core,burst,commandSkill,director,cycleReduction,efficiencyBoost,rangeBonus,commonMultiplier:common,charges};
   }
   function normalizeDuration(v,fallback){
-    const x=n(v,NaN);
+    const x=optionalNumber(v,NaN);
     if(!Number.isFinite(x))return n(fallback);
     return x>1000?x/1000:x;
   }
   function normalizeChance(v,fallback){
-    const x=n(v,NaN);
+    const x=optionalNumber(v,NaN);
     if(!Number.isFinite(x))return n(fallback);
     return x>0.5?x/100:x;
   }
   function normalizeBonusYield(v,fallback){
-    const x=n(v,NaN);
+    const x=optionalNumber(v,NaN);
     if(!Number.isFinite(x))return n(fallback);
     return x>10?x/100:x;
   }
@@ -204,9 +209,9 @@
           displayName:String(mod.name||row.name||'Abyssal Strip Miner'),
           sourceName,
           quantity:1,
-          miningAmount:Number.isFinite(Number(mod.miningAmount))?Number(mod.miningAmount):n(base.miningAmount),
+          miningAmount:optionalNumber(mod.miningAmount,n(base.miningAmount)),
           duration:normalizeDuration(mod.duration,base.duration),
-          optimalRange:Number.isFinite(Number(mod.optimalRange))?Number(mod.optimalRange):n(base.optimalRange),
+          optimalRange:optionalNumber(mod.optimalRange,n(base.optimalRange)),
           criticalSuccessChance:normalizeChance(mod.criticalSuccessChance,base.criticalSuccessChance),
           criticalSuccessBonusYield:normalizeBonusYield(mod.criticalSuccessBonusYield,base.criticalSuccessBonusYield),
           abyssal:true,
