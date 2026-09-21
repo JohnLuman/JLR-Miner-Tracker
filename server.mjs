@@ -329,8 +329,12 @@ function buildCharacterFitCache(characterId,fittings=[],cachedAt=now()){
         physicalShipItemId:fit.abyssalShipItemId?String(fit.abyssalShipItemId):null,
         physicalShipName:fit.abyssalShipName||null,
         abyssalItemIds,
+        abyssalSnapshot:(Array.isArray(fit.abyssalLasers)?fit.abyssalLasers:[]).map(row=>({...row})),
         matchStatus:fit.abyssalMatch||'none',
         matchMethod:fit.abyssalMatchMethod||null,
+        verification:fit.abyssalVerification||null,
+        verifiedAt:fit.abyssalVerifiedAt||null,
+        retryAfter:fit.abyssalRetryAfter||null,
       },
     };
   }
@@ -2389,6 +2393,92 @@ async function probeScanPreview(ch,text){
   };
 }
 
+function abyssalRequirementSignature(fit){
+  const counts=new Map();
+  for(const row of Array.isArray(fit?.items)?fit.items:[]){
+    const typeId=Number(row?.typeId);
+    if(!ABYSSAL_STRIP_TYPES.has(typeId))continue;
+    counts.set(typeId,(counts.get(typeId)||0)+Math.max(1,Number(row?.quantity)||1));
+  }
+  return [...counts.entries()].sort((a,b)=>a[0]-b[0]).map(([typeId,count])=>`${typeId}:${count}`).join(',');
+}
+function laterIso(...values){
+  let best=null,bestMs=-Infinity;
+  for(const value of values){
+    const ms=Date.parse(String(value||''));
+    if(Number.isFinite(ms)&&ms>bestMs){bestMs=ms;best=new Date(ms).toISOString();}
+  }
+  return best;
+}
+function preserveSavedAbyssalRolls(nextFittings,previousFittings,{refreshedAt=now(),fittingsCache=null,assetsCache=null}={}){
+  const previous=Array.isArray(previousFittings)?previousFittings:[];
+  const byId=new Map(previous.map(fit=>[String(fit?.fittingId||''),fit]).filter(([id])=>id));
+  const normalize=value=>String(value||'').trim().replace(/\s+/g,' ').toLowerCase();
+  const byName=new Map();
+  for(const fit of previous){
+    const key=`${Number(fit?.shipTypeId||0)}|${normalize(fit?.name)}`;
+    if(!normalize(fit?.name))continue;
+    if(!byName.has(key))byName.set(key,[]);
+    byName.get(key).push(fit);
+  }
+  const retryAfter=laterIso(fittingsCache?.freshUntil,assetsCache?.freshUntil);
+
+  return (Array.isArray(nextFittings)?nextFittings:[]).map(next=>{
+    const required=abyssalRequirementSignature(next);
+    if(!required){
+      return{
+        ...next,
+        abyssalVerification:'not-applicable',
+        abyssalVerifiedAt:null,
+        abyssalRetryAfter:null,
+        abyssalPendingReason:null,
+      };
+    }
+
+    if(next.abyssalMatch==='matched'&&Array.isArray(next.abyssalLasers)&&next.abyssalLasers.length){
+      return{
+        ...next,
+        abyssalVerification:'verified',
+        abyssalVerifiedAt:refreshedAt,
+        abyssalRetryAfter:null,
+        abyssalPendingReason:null,
+      };
+    }
+
+    const exact=byId.get(String(next?.fittingId||''))||null;
+    const nameKey=`${Number(next?.shipTypeId||0)}|${normalize(next?.name)}`;
+    const sameName=normalize(next?.name)?(byName.get(nameKey)||[]):[];
+    const prior=exact||(sameName.length===1?sameName[0]:null);
+    const priorRolls=Array.isArray(prior?.abyssalLasers)?prior.abyssalLasers:[];
+    const priorRequired=abyssalRequirementSignature(prior);
+    const priorWasSaved=prior&&prior.abyssalMatch==='matched'&&priorRolls.length&&priorRequired===required;
+
+    if(priorWasSaved){
+      const pendingReason=next.abyssalMatch||'unresolved';
+      return{
+        ...next,
+        abyssalMatch:'matched',
+        abyssalMatchMethod:'saved-fit-cache',
+        abyssalShipItemId:prior.abyssalShipItemId||prior.localCache?.physicalShipItemId||null,
+        abyssalShipName:prior.abyssalShipName||prior.localCache?.physicalShipName||null,
+        abyssalLasers:priorRolls.map(row=>({...row})),
+        abyssalVerification:'pending',
+        abyssalVerifiedAt:prior.abyssalVerifiedAt||prior.localCache?.verifiedAt||prior.localCache?.cachedAt||null,
+        abyssalRetryAfter:retryAfter,
+        abyssalPendingReason:pendingReason,
+      };
+    }
+
+    return{
+      ...next,
+      abyssalVerification:'unresolved',
+      abyssalVerifiedAt:null,
+      abyssalRetryAfter:retryAfter,
+      abyssalPendingReason:next.abyssalMatch||'unresolved',
+    };
+  });
+}
+
 function bindCharacterAbyssalFit(ch,fittingId,shipItemId){
   migrateCharacterFitCache(ch);
   const id=String(fittingId||'');
@@ -2420,6 +2510,10 @@ function bindCharacterAbyssalFit(ch,fittingId,shipItemId){
   fit.abyssalShipName=candidate.shipName||null;
   fit.abyssalLasers=lasers;
   fit.abyssalCandidates=[];
+  fit.abyssalVerification='verified';
+  fit.abyssalVerifiedAt=boundAt;
+  fit.abyssalRetryAfter=null;
+  fit.abyssalPendingReason=null;
   fit.localCache={
     ...(fit.localCache||{}),
     key:`${String(ch.characterId)}:${id}`,
@@ -2429,8 +2523,12 @@ function bindCharacterAbyssalFit(ch,fittingId,shipItemId){
     physicalShipItemId:shipId,
     physicalShipName:candidate.shipName||null,
     abyssalItemIds:lasers.map(row=>String(row.itemId||'')).filter(Boolean),
+    abyssalSnapshot:lasers.map(row=>({...row})),
     matchStatus:'matched',
     matchMethod:'manual-binding',
+    verification:'verified',
+    verifiedAt:boundAt,
+    retryAfter:null,
     manuallyBoundAt:boundAt,
   };
   ch.fitCache.updatedAt=boundAt;
@@ -2472,7 +2570,12 @@ async function refreshCharacterFittings(ch){
   ch.savedFittingsCount=Array.isArray(fits)?fits.length:0;
   const fittingsUpdatedAt=now();
   const previousFittings=characterCachedFittings(ch);
-  const miningFits=await miningFittingSnapshot(fits,abyssalModules,previousFittings);
+  const discoveredFits=await miningFittingSnapshot(fits,abyssalModules,previousFittings);
+  const miningFits=preserveSavedAbyssalRolls(discoveredFits,previousFittings,{
+    refreshedAt:fittingsUpdatedAt,
+    fittingsCache:fitBundle.cache,
+    assetsCache:assetBundle.cache,
+  });
   const cachedFittings=storeCharacterFitCache(ch,miningFits,fittingsUpdatedAt);
   ch.fittingsUpdatedAt=fittingsUpdatedAt;
   ch.fittingsEsiCache=fitBundle.cache;
@@ -2504,20 +2607,29 @@ async function syncCharacterOnce(ch,{forceMetadata=false}={}){
     const fitBundleStale=forceMetadata||timestampStale(ch.assetsUpdatedAt,ESI_METADATA_REFRESH_MS)||timestampStale(ch.fittingsUpdatedAt,ESI_METADATA_REFRESH_MS);
     if(fitBundleStale){
       let abyssalModules=[];
+      let assetBundle=null;
       if(id.scopes.includes(ASSETS_SCOPE)){
-        const assets=await characterAssets(ch.characterId,access);
-        abyssalModules=await abyssalStripSnapshot(assets,{characterId:ch.characterId,access});
+        assetBundle=await characterAssetsBundle(ch.characterId,access);
+        abyssalModules=await abyssalStripSnapshot(assetBundle.rows,{characterId:ch.characterId,access});
         ch.abyssalStripCount=abyssalModules.length;
         ch.assetsUpdatedAt=now();
+        ch.assetsEsiCache=assetBundle.cache;
       }
       if(id.scopes.includes(FITTINGS_SCOPE)){
-        const fits=await characterFittings(ch.characterId,access);
+        const fitBundle=await characterFittingsBundle(ch.characterId,access);
+        const fits=fitBundle.rows;
         ch.savedFittingsCount=Array.isArray(fits)?fits.length:0;
         const fittingsUpdatedAt=now();
         const previousFittings=characterCachedFittings(ch);
-        const miningFits=await miningFittingSnapshot(fits,abyssalModules,previousFittings);
+        const discoveredFits=await miningFittingSnapshot(fits,abyssalModules,previousFittings);
+        const miningFits=preserveSavedAbyssalRolls(discoveredFits,previousFittings,{
+          refreshedAt:fittingsUpdatedAt,
+          fittingsCache:fitBundle.cache,
+          assetsCache:assetBundle?.cache||ch.assetsEsiCache||null,
+        });
         storeCharacterFitCache(ch,miningFits,fittingsUpdatedAt);
         ch.fittingsUpdatedAt=fittingsUpdatedAt;
+        ch.fittingsEsiCache=fitBundle.cache;
       }
       metadataRefreshed=true;
     }
@@ -4481,7 +4593,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.16 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.17 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setInterval(()=>resetExpired(true),15_000).unref();
 async function runAutomaticSyncLoop(){
   const startedAt=Date.now();
