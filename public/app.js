@@ -61,6 +61,7 @@
   }
   let fleetSettings = loadFleet();
   let fleetArrangeMode=false;
+  let fleetUpgradeMode=localStorage.getItem('jlrFleetUpgradeMode')==='true';
   let fleetDragId='';
   let fleetSearchText='';
   let fleetViewFilter=['all','selected','miners','nofit'].includes(localStorage.getItem('jlrFleetViewFilter'))?localStorage.getItem('jlrFleetViewFilter'):'all';
@@ -2246,7 +2247,31 @@
     const match=String(laser?.locationFlag||'').match(/^HiSlot(\d+)$/i);
     return match?`HIGH SLOT ${Number(match[1])+1}`:`LASER ${fallback}`;
   }
-  function abyssalLaserComparison(entry,activeBoost){
+  function upgradeLaserKey(characterId,laser,index=0){
+    const itemId=String(laser?.itemId||'');
+    if(itemId)return itemId;
+    return String(characterId||'')+':'+String(laser?.locationFlag||'laser-'+index);
+  }
+  function buildUpgradeRanks(byId,activeBoost){
+    const metric=activeBoost?'withBuff':'withoutBuff';
+    const candidates=[];
+    for(const [characterId,entry] of byId){
+      const lasers=Array.isArray(entry?.result?.abyssalLasers)?entry.result.abyssalLasers:[];
+      lasers.forEach((laser,index)=>{
+        const rate=Number(laser?.[metric]?.m3s||0);
+        if(rate>0)candidates.push({key:upgradeLaserKey(characterId,laser,index),characterId,rate});
+      });
+    }
+    candidates.sort((a,b)=>a.rate-b.rate||a.key.localeCompare(b.key,undefined,{numeric:true}));
+    const best=Math.max(0,...candidates.map(row=>row.rate));
+    return new Map(candidates.map((row,index)=>[row.key,{
+      rank:index+1,
+      total:candidates.length,
+      rate:row.rate,
+      belowBestPct:best>0?Math.max(0,(best-row.rate)/best*100):0,
+    }]));
+  }
+  function abyssalLaserComparison(entry,activeBoost,upgradeRanks=null,characterId=''){
     const source=Array.isArray(entry?.result?.abyssalLasers)?entry.result.abyssalLasers:[];
     if(!source.length)return'';
     const slotNo=laser=>{
@@ -2257,11 +2282,15 @@
     return`<div class="abyssal-laser-grid" aria-label="Abyssal lasers by high slot">${rows.map((laser,index)=>{
       const itemId=String(laser?.itemId||''),itemLabel=itemId?` • ITEM …${itemId.slice(-6)}`:'';
       const title=`${abyssalLaserSlot(laser,index+1)}${itemId?` • item ${itemId}`:''}`;
-      return`<article class="abyssal-laser-card" title="${esc(title)}">
-        <div class="abyssal-laser-head"><span><strong>${esc(abyssalLaserSlot(laser,index+1))}</strong><small>${esc(String(laser?.sourceName||laser?.name||'Abyssal Strip Miner')+itemLabel)}</small></span></div>
+      const rank=upgradeRanks?.get(upgradeLaserKey(characterId,laser,index))||null;
+      const rankBadge=rank?`<b class="abyssal-upgrade-badge">PRIORITY #${rank.rank}</b>`:'';
+      const upgradeLine=rank?`<div class="abyssal-upgrade-note"><span>UPGRADE VIEW</span><strong>#${rank.rank} of ${rank.total} • ${rank.belowBestPct.toFixed(1)}% below fleet best</strong></div>`:'';
+      return`<article class="abyssal-laser-card${rank&&rank.rank<=3?' upgrade-priority':''}" title="${esc(title)}">
+        <div class="abyssal-laser-head"><span><strong>${esc(abyssalLaserSlot(laser,index+1))}</strong><small>${esc(String(laser?.sourceName||laser?.name||'Abyssal Strip Miner')+itemLabel)}</small></span>${rankBadge}</div>
         <div class="abyssal-laser-state"><span>WITHOUT BUFF</span><strong>${esc(abyssalCycleText(laser?.withoutBuff))}</strong></div>
         <div class="abyssal-laser-state with-buff${activeBoost?' active':' off'}"><span>WITH BUFF${activeBoost?'':' • OFF'}</span><strong>${activeBoost?esc(abyssalCycleText(laser?.withBuff)):'SELECT / ENABLE BOOSTER'}</strong></div>
         <div class="abyssal-laser-expected"><span>EXPECTED + CRITS</span><strong>${esc(activeBoost?`${fmt(Number(laser?.withoutBuff?.m3s||0)*3600,'m3')} → ${fmt(Number(laser?.withBuff?.m3s||0)*3600,'m3')} m³/hr`:`${fmt(Number(laser?.withoutBuff?.m3s||0)*3600,'m3')} m³/hr • BUFF OFF`)}</strong></div>
+        ${upgradeLine}
       </article>`;
     }).join('')}</div>`;
   }
@@ -2326,6 +2355,14 @@
     if(soundMenu?.select.closest('#fleetMemberList'))closeSoundMenu();
     list.innerHTML='';
     const stats=fleetStats(),byId=new Map(stats.entries.map(x=>[String(x.character.characterId),x]));
+    const upgradeRanks=buildUpgradeRanks(byId,activeBoost);
+    const upgradePriorityById=new Map();
+    for(const [characterId,entry] of byId){
+      const lasers=Array.isArray(entry?.result?.abyssalLasers)?entry.result.abyssalLasers:[];
+      const ranks=lasers.map((laser,index)=>upgradeRanks.get(upgradeLaserKey(characterId,laser,index))?.rank).filter(Number.isFinite);
+      if(ranks.length)upgradePriorityById.set(characterId,Math.min(...ranks));
+    }
+    list.classList.toggle('fleet-upgrade-mode',fleetUpgradeMode);
     const yieldSortStates=new Map(sourceChars.map(character=>{
       const id=String(character.characterId),cfg=fleetSettings.members?.[id]||{},entry=byId.get(id);
       if(id===String(calcSettings.boosterCharacterId||''))return[id,{group:0,yield:0}];
@@ -2336,6 +2373,11 @@
       return[id,{group:5,yield:0}];
     }));
     const chars=[...sourceChars].sort((a,b)=>{
+      if(fleetUpgradeMode){
+        const ap=upgradePriorityById.get(String(a.characterId))??Number.MAX_SAFE_INTEGER;
+        const bp=upgradePriorityById.get(String(b.characterId))??Number.MAX_SAFE_INTEGER;
+        return ap-bp||fleetCharacterNameSort(a,b);
+      }
       if(fleetSortMode==='alpha')return fleetCharacterNameSort(a,b);
       if(fleetSortMode==='custom'){
         const aId=String(a.characterId),bId=String(b.characterId);
@@ -2346,20 +2388,32 @@
       const aState=yieldSortStates.get(String(a.characterId)),bState=yieldSortStates.get(String(b.characterId));
       return aState.group-bState.group||aState.yield-bState.yield||fleetCharacterNameSort(a,b);
     });
-    const visibleChars=chars.filter(fleetCharacterMatches);
+    const visibleChars=chars.filter(fleetCharacterMatches).filter(character=>!fleetUpgradeMode||upgradePriorityById.has(String(character.characterId)));
     const selectedCount=chars.filter(character=>Boolean(fleetSettings.members?.[String(character.characterId)]?.enabled)).length;
     const visibleCount=$('fleetVisibleCount');
-    if(visibleCount)visibleCount.textContent=`SHOWING ${visibleChars.length} / ${chars.length} • ${selectedCount} SELECTED`;
+    if(visibleCount)visibleCount.textContent=fleetUpgradeMode
+      ?`UPGRADE MODE • ${visibleChars.length} ABYSSAL MINERS • ${upgradeRanks.size} LASERS`
+      :`SHOWING ${visibleChars.length} / ${chars.length} • ${selectedCount} SELECTED`;
     const searchInput=$('fleetSearchInput');
     if(searchInput&&document.activeElement!==searchInput&&searchInput.value!==fleetSearchText)searchInput.value=fleetSearchText;
     const viewSelect=$('fleetViewFilter');
     if(viewSelect&&viewSelect.value!==fleetViewFilter)viewSelect.value=fleetViewFilter;
     const sortSelect=$('fleetSortMode');
     if(sortSelect&&sortSelect.value!==fleetSortMode)sortSelect.value=fleetSortMode;
+    if(sortSelect)sortSelect.disabled=fleetUpgradeMode;
+    const upgradeButton=$('fleetUpgradeMode');
+    if(upgradeButton){
+      upgradeButton.classList.toggle('active',fleetUpgradeMode);
+      upgradeButton.setAttribute('aria-pressed',String(fleetUpgradeMode));
+      upgradeButton.textContent=fleetUpgradeMode?'✓ UPGRADE MODE':'⚙ UPGRADE MODE';
+      upgradeButton.title=fleetUpgradeMode?'Showing selected Abyssal miners with the lowest-output laser first':'Rank selected Abyssal lasers from lowest to highest output';
+    }
     if(!chars.length){
       list.innerHTML='<div class="fleet-empty">Connect miners to build your fleet.</div>';
     }else if(!visibleChars.length){
-      list.innerHTML='<div class="fleet-empty">No toons match this fleet view. Clear the search or change SHOW.</div>';
+      list.innerHTML=fleetUpgradeMode
+        ?'<div class="fleet-empty">UPGRADE MODE: no selected miners currently have verified Abyssal strip miners. Select miners / fits first.</div>'
+        :'<div class="fleet-empty">No toons match this fleet view. Clear the search or change SHOW.</div>';
     }else{
       for(const character of visibleChars){
         const id=String(character.characterId),cfg=fleetSettings.members[id],fits=miningFits(character),entry=byId.get(id);
@@ -2370,7 +2424,7 @@
         const isBooster=id===String(calcSettings.boosterCharacterId||'');
         const boosterFitText=isBooster?(boosterFit?`${boosterFit.shipName} — ${boosterFit.name}` :'No saved booster fit'):'';
         const laser=fleetLaserDetails(entry);
-        const abyssalComparison=!isBooster&&cfg.enabled&&entry?.result?abyssalLaserComparison(entry,activeBoost):'';
+        const abyssalComparison=!isBooster&&cfg.enabled&&entry?.result?abyssalLaserComparison(entry,activeBoost,fleetUpgradeMode?upgradeRanks:null,id):'';
         let outputMain='EXCLUDED',outputSub='not counted',outputTitle='';
         let metricOne='—',metricOneLabel='M³/HR BY LASER',metricOneTitle='';
         let metricTwo='—',metricTwoLabel='LASER RANGE';
@@ -2432,9 +2486,11 @@
       arrange.textContent=fleetArrangeMode?'✓ ARRANGING TOONS':'↕ ARRANGE TOONS';
     }
     if(reset)reset.disabled=!(fleetSettings.order||[]).length;
-    if(hint)hint.textContent=fleetArrangeMode
-      ?'Drag a toon above or below another'
-      :fleetSortMode==='yield-asc'?'Toons: worst → best output':fleetSortMode==='alpha'?'Toons: A → Z':'Toons: custom order';
+    if(hint)hint.textContent=fleetUpgradeMode
+      ?'Upgrade Mode: lowest-output Abyssal laser first across the selected fleet'
+      :fleetArrangeMode
+        ?'Drag a toon above or below another'
+        :fleetSortMode==='yield-asc'?'Toons: worst → best output':fleetSortMode==='alpha'?'Toons: A → Z':'Toons: custom order';
 
     list.querySelectorAll('.fleet-member').forEach(row=>{
       row.addEventListener('dragstart',event=>{
@@ -3849,6 +3905,13 @@
   $('ledgerPayoutCard')?.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();openLedgerAudit();}});
   $('ledgerAuditClose')?.addEventListener('click',closeLedgerAudit);
   $('ledgerAuditPanel')?.addEventListener('click',event=>{if(event.target===event.currentTarget)closeLedgerAudit();});
+  $('fleetUpgradeMode')?.addEventListener('click',()=>{
+    fleetUpgradeMode=!fleetUpgradeMode;
+    fleetArrangeMode=false;
+    localStorage.setItem('jlrFleetUpgradeMode',String(fleetUpgradeMode));
+    renderFleet();
+    toast(fleetUpgradeMode?'Upgrade Mode: weakest Abyssal lasers are shown first.':'Upgrade Mode off.');
+  });
   window.addEventListener('resize',updateUiScale,{passive:true});
   async function boot(){
     try{
