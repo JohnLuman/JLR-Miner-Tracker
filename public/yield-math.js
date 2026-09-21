@@ -115,14 +115,15 @@
     if(!normalLaserRows.length&&!abyssalRows.length)throw new Error('No supported strip miner was found in this saved fit.');
     if(abyssalRows.length&&minerFit.abyssalMatch!=='matched'){
       const retryMs=Date.parse(String(minerFit.abyssalRetryAfter||''))-Date.now();
-      if(Number.isFinite(retryMs)&&retryMs>0){
-        const mins=Math.max(1,Math.ceil(retryMs/60000));
-        throw new Error(`Waiting for ESI to refresh Abyssal data for "${minerFit.name||'this fit'}" (~${mins}m). The saved fit data will not be replaced until ESI is current.`);
+      const code=String(minerFit.abyssalErrorCode||'');
+      if(code==='A01'||(Number.isFinite(retryMs)&&retryMs>0)){
+        const mins=Number.isFinite(retryMs)&&retryMs>0?Math.max(1,Math.ceil(retryMs/60000)):null;
+        throw new Error(`[A01] WAIT ESI — Abyssal data for "${minerFit.name||'this fit'}" is waiting on the next ESI asset snapshot${mins?` (~${mins}m)`:''}. Last saved rolls are not being mixed with another fit.`);
       }
-      if(minerFit.abyssalMatch==='ambiguous'){
-        throw new Error(`Fresh ESI data still has multiple possible Abyssal ships for "${minerFit.name||'this fit'}". JLR will not guess or mix another fit's rolls.`);
+      if(code==='A02'||minerFit.abyssalMatch==='ambiguous'){
+        throw new Error(`[A02] MULTIPLE MATCHES — fresh ESI still has more than one physical ship matching "${minerFit.name||'this fit'}". JLR will not guess.`);
       }
-      throw new Error(`Fresh ESI data could not verify Abyssal rolls for "${minerFit.name||'this fit'}". JLR will not guess or mix another fit's rolls.`);
+      throw new Error(`[A03] NO MATCH — fresh ESI cannot verify the saved Abyssal items for "${minerFit.name||'this fit'}". The old item IDs may have been sold, moved, or replaced.`);
     }
 
     const ids=data.skillIds||{}, sb=data.skillBonuses||{};
