@@ -618,6 +618,22 @@
   function showApp(){$('loginView').classList.add('hidden');$('app').classList.remove('hidden');}
   let activeTab=localStorage.getItem('jlrTab')||'fields';
   function doctrineAllowed(){return Boolean(me?.doctrineMarketAccess?.allowed)}
+  function trackerAllowed(){return Boolean(me?.trackerAccess?.allowed)}
+  function syncTrackerTabAccess(){
+    const button=document.querySelector('.app-tab[data-tab="tracker"]');
+    const allowed=trackerAllowed();
+    if(button){
+      button.classList.toggle('hidden',!allowed);
+      button.setAttribute('aria-hidden',String(!allowed));
+      button.title=allowed
+        ?('Corporation verified'+(me?.trackerAccess?.corporationName?' • '+me.trackerAccess.corporationName:''))
+        :'Restricted to the configured corporation';
+    }
+    if(!allowed&&activeTab==='tracker'){
+      activeTab='fields';
+      localStorage.setItem('jlrTab',activeTab);
+    }
+  }
   function syncDoctrineTabAccess(){
     const button=document.querySelector('.app-tab[data-tab="doctrine"]');
     const allowed=doctrineAllowed();
@@ -634,8 +650,12 @@
     }
   }
   function applyTab(tab){
-    const valid=['fields','fleet','performance','ice','gas','pvp','tracker','threat','mer','toons'];
+    const valid=['fields','fleet','performance','ice','gas','pvp','threat','mer','toons'];
     if(doctrineAllowed())valid.splice(5,0,'doctrine');
+    if(trackerAllowed()){
+      const pvpIndex=valid.indexOf('pvp');
+      valid.splice(pvpIndex+1,0,'tracker');
+    }
     activeTab=valid.includes(tab)?tab:'fields';
     localStorage.setItem('jlrTab',activeTab);
     document.querySelectorAll('.app-tab').forEach(button=>button.classList.toggle('active',button.dataset.tab===activeTab));
@@ -3553,7 +3573,7 @@
 
   function renderAll(){if(!state)return;renderFleet();renderTop();renderSelect();renderBoards();renderHits();renderFleetPerformance();renderMiningVisuals();renderIceMining();renderGasHuffing();if(doctrineMarket)renderDoctrineMarket();renderRanking();renderTimers();renderSelected();renderNotes();renderScanCharacters();renderCharacters();renderCalculator();renderMerIntel();}
 
-  async function refreshMe(){const p=await api('/api/me');me=p.user;if(me){$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;syncDoctrineTabAccess()}return p.authenticated}
+  async function refreshMe(){const p=await api('/api/me');me=p.user;if(me){$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;syncDoctrineTabAccess();syncTrackerTabAccess()}return p.authenticated}
   async function loadState(){state=await api('/api/state');renderAll()}
   async function refreshFleetPerformanceData(showStatus=false){
     if(fleetPerformanceRefreshPromise)return fleetPerformanceRefreshPromise;
@@ -3921,7 +3941,7 @@
       if(!config.ssoConfigured){$('setupWarning').classList.remove('hidden');$('setupWarning').textContent='Login is not configured yet.';}
       const auth=await fetch('/api/me',{credentials:'same-origin'}).then(r=>r.json());
       if(!auth.authenticated){showLogin();return}
-      me=auth.user;syncDoctrineTabAccess();initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');await loadMerIntel();await loadState();connectSse();
+      me=auth.user;syncDoctrineTabAccess();syncTrackerTabAccess();initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');await loadMerIntel();await loadState();connectSse();
       const params=new URLSearchParams(location.search);if(params.get('linked'))toast('Mining toon connected.');if(params.get('login'))toast('Logged in.');if(params.get('market')==='authorized')toast('John market access authorized.');if(params.get('error'))toast(decodeURIComponent(params.get('error')));if(params.toString())history.replaceState({},'',location.pathname);
     }catch(e){console.error(e);showLogin();$('setupWarning').classList.remove('hidden');$('setupWarning').textContent=`JLR could not load: ${e.message}`}
   }
