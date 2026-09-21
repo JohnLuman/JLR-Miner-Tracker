@@ -3201,13 +3201,30 @@
         ?' • access update required for skills/fits/assets/location/contacts'
         :` • ${savedFits} saved fits • ${miningFits} mining fits${abyssal?` • ${abyssal} Abyssal strips`:''}`;
       const syncState=c.lastError?`⚠ sync error: ${esc(c.lastError)}`:`EVE data synced ${ago(c.lastSyncAt)}`;
+      const fitState=c.fittingsUpdatedAt?` • fits ${ago(c.fittingsUpdatedAt)}`:'';
       const marketButton=c.marketEligible
         ?`<button class="orb ${c.marketAuthorized?'green':'purple'} market-auth" data-id="${c.characterId}" type="button">${c.marketAuthorized?'C-N MARKET CONNECTED':'CONNECT C-N MARKET'}</button>`
         :'';
-      r.innerHTML=`<img src="${esc(c.portrait)}" alt=""><div><strong>${esc(c.name)}</strong><small>${syncState}${scopeState}${c.marketAuthorized?' • private C-N market prices enabled':''}</small></div><div class="character-actions">${marketButton}${c.needsReauth?'<button class="orb blue reauth" type="button">UPDATE ACCESS</button>':''}<button class="orb red disconnect" data-id="${c.characterId}" type="button">DISCONNECT</button></div>`;
+      r.innerHTML=`<img src="${esc(c.portrait)}" alt=""><div><strong>${esc(c.name)}</strong><small>${syncState}${fitState}${scopeState}${c.marketAuthorized?' • private C-N market prices enabled':''}</small></div><div class="character-actions">${marketButton}<button class="orb blue fit-refresh" data-id="${c.characterId}" type="button" title="Refresh saved fits for this toon only. Skips skills and mining ledger.">↻ UPDATE FITS</button>${c.needsReauth?'<button class="orb blue reauth" type="button">UPDATE ACCESS</button>':''}<button class="orb red disconnect" data-id="${c.characterId}" type="button">DISCONNECT</button></div>`;
       $('characterList').appendChild(r);
     }
     $('characterList').querySelectorAll('.market-auth').forEach(b=>b.addEventListener('click',()=>{location.href=`/auth/eve/market/start?character=${encodeURIComponent(b.dataset.id)}`}));
+    $('characterList').querySelectorAll('.fit-refresh').forEach(b=>b.addEventListener('click',async()=>{
+      const original=b.textContent;
+      b.disabled=true;
+      b.textContent='UPDATING…';
+      try{
+        const p=await api(`/api/esi/fittings/${encodeURIComponent(b.dataset.id)}`,{method:'POST',body:'{}'});
+        me=p.user;
+        renderAll();
+        const f=p.fitSync||{};
+        toast(`${f.characterName||'Toon'}: ${Number(f.savedFittingsCount||0)} saved fits • ${Number(f.miningFittingsCount||0)} mining fits${f.assetsRefreshed?' • Abyssal data refreshed':''}`);
+      }catch(e){
+        b.disabled=false;
+        b.textContent=original;
+        toast(e.message);
+      }
+    }));
     $('characterList').querySelectorAll('.reauth').forEach(b=>b.addEventListener('click',()=>{location.href='/auth/eve/start?intent=link'}));
     $('characterList').querySelectorAll('.disconnect').forEach(b=>b.addEventListener('click',async()=>{if(!confirm('Disconnect this mining toon from JLR?'))return;try{const p=await api(`/api/me/characters/${b.dataset.id}`,{method:'DELETE'});me=p.user;renderCharacters();renderCalculator();toast('Toon disconnected.')}catch(e){toast(e.message)}}));
   }
