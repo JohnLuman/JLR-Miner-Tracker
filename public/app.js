@@ -1886,9 +1886,12 @@
   function defaultFleetFit(fits){return fits.find(isOreFit)||fits[0]||null}
   function abyssalFitBadge(fit){
     if(fit?.abyssalMatch==='matched'){
+      if(fit?.abyssalVerification==='pending')return' • ABYSSAL SAVED • WAITING ESI';
       if(String(fit.abyssalMatchMethod||'').startsWith('persistent'))return' • ABYSSAL BOUND';
+      if(fit.abyssalMatchMethod==='saved-fit-cache')return' • ABYSSAL SAVED';
       return fit.abyssalMatchMethod==='ship-name'?' • ABYSSAL EXACT':' • ABYSSAL MATCHED';
     }
+    if(fit?.abyssalVerification==='unresolved'&&fit?.abyssalRetryAfter&&Date.parse(fit.abyssalRetryAfter)>Date.now())return' • WAITING ESI';
     if(fit?.abyssalMatch==='ambiguous')return' • ABYSSAL UNMATCHED';
     if(fit?.abyssalMatch==='missing')return' • ABYSSAL MISSING';
     return'';
