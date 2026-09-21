@@ -110,6 +110,9 @@ const ZKILL_MAX_PAGES = 100;
 const ZKILL_PAGE_GAP_MS = 1100;
 const ZKILL_ARCHIVE_RETENTION_MS = 8 * 24 * 60 * 60 * 1000;
 const ZKILL_ARCHIVE_REFRESH_MS = 15 * 60 * 1000;
+const HEAVY_FIGHTER_GROUP_ID = 1653;
+const HEAVY_FIGHTER_TRACKER_CACHE_MS = 30 * 1000;
+const HEAVY_FIGHTER_TRACKER_WINDOW_SECONDS = 24 * 60 * 60;
 const ZKILL_LIFETIME_DAMAGE_CACHE_MS = 24 * 60 * 60 * 1000;
 const ZKILL_LIFETIME_PAGE_GAP_MS = 700;
 const THREAT_CHARACTER_CACHE_MS = 6 * 60 * 60 * 1000;
@@ -215,6 +218,7 @@ const userSyncPromises = new Map();
 const ledgerRowsByCharacter = new Map();
 const universeNameCache = new Map();
 let zkillInitLeaderboardCache = { updatedAt:0, data:null, promise:null };
+let heavyFighterTrackerCache = {updatedAt:0,data:null,promise:null};
 let zkillInitArchiveRefreshPromise = null;
 const zkillCorpLeaderboardCache = new Map();
 const zkillCorpStatsCache = new Map();
@@ -647,7 +651,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.29',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.30',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -3068,6 +3072,117 @@ async function zkillJson(url){
   }
   throw lastError||new Error('zKillboard request failed after retries');
 }
+
+async function heavyFighterTracker(force=false){
+  const nowMs=Date.now();
+  if(!force&&heavyFighterTrackerCache.data&&nowMs-heavyFighterTrackerCache.updatedAt<HEAVY_FIGHTER_TRACKER_CACHE_MS){
+    return heavyFighterTrackerCache.data;
+  }
+  if(heavyFighterTrackerCache.promise)return heavyFighterTrackerCache.promise;
+
+  const pending=(async()=>{
+    const url=`https://zkillboard.com/api/losses/groupID/${HEAVY_FIGHTER_GROUP_ID}/pastSeconds/${HEAVY_FIGHTER_TRACKER_WINDOW_SECONDS}/`;
+    const rows=await zkillJson(url);
+    if(!Array.isArray(rows))throw new Error('zKillboard Heavy Fighter feed was not a killmail list.');
+
+    const recent=rows.slice(0,200);
+    const ids=[];
+    for(const km of recent){
+      const victim=km?.victim||{};
+      const finalBlow=(Array.isArray(km?.attackers)?km.attackers:[]).find(attacker=>attacker?.final_blow)||null;
+      for(const id of [
+        km?.solar_system_id,
+        victim?.ship_type_id,
+        victim?.character_id,
+        victim?.corporation_id,
+        victim?.alliance_id,
+        finalBlow?.character_id,
+        finalBlow?.corporation_id,
+        finalBlow?.alliance_id,
+        finalBlow?.ship_type_id,
+      ]){
+        const number=Number(id);
+        if(number>0)ids.push(number);
+      }
+    }
+    const names=await resolveUniverseNames(ids);
+    const nameOf=id=>{
+      const number=Number(id);
+      return number>0?(names.get(number)||String(number)):null;
+    };
+
+    const losses=recent.map(km=>{
+      const victim=km?.victim||{};
+      const attackers=Array.isArray(km?.attackers)?km.attackers:[];
+      const finalBlow=attackers.find(attacker=>attacker?.final_blow)||null;
+      const killmailId=Number(km?.killmail_id)||0;
+      const shipTypeId=Number(victim?.ship_type_id)||0;
+      const systemId=Number(km?.solar_system_id)||0;
+      return{
+        killmailId,
+        killmailTime:km?.killmail_time||null,
+        shipTypeId,
+        shipTypeName:nameOf(shipTypeId)||'Heavy Fighter',
+        systemId,
+        systemName:nameOf(systemId)||`System ${systemId}`,
+        victim:{
+          characterId:Number(victim?.character_id)||null,
+          characterName:nameOf(victim?.character_id),
+          corporationId:Number(victim?.corporation_id)||null,
+          corporationName:nameOf(victim?.corporation_id),
+          allianceId:Number(victim?.alliance_id)||null,
+          allianceName:nameOf(victim?.alliance_id),
+          damageTaken:Number(victim?.damage_taken)||0,
+        },
+        finalBlow:finalBlow?{
+          characterId:Number(finalBlow?.character_id)||null,
+          characterName:nameOf(finalBlow?.character_id),
+          corporationId:Number(finalBlow?.corporation_id)||null,
+          corporationName:nameOf(finalBlow?.corporation_id),
+          allianceId:Number(finalBlow?.alliance_id)||null,
+          allianceName:nameOf(finalBlow?.alliance_id),
+          shipTypeId:Number(finalBlow?.ship_type_id)||null,
+          shipTypeName:nameOf(finalBlow?.ship_type_id),
+          damageDone:Number(finalBlow?.damage_done)||0,
+        }:null,
+        attackerCount:attackers.length,
+        totalValue:Number(km?.zkb?.totalValue)||0,
+        points:Number(km?.zkb?.points)||0,
+        npc:Boolean(km?.zkb?.npc),
+        solo:Boolean(km?.zkb?.solo),
+        awox:Boolean(km?.zkb?.awox),
+        href:killmailId?`https://zkillboard.com/kill/${killmailId}/`:null,
+      };
+    }).filter(row=>row.killmailId&&row.shipTypeId);
+
+    const data={
+      groupId:HEAVY_FIGHTER_GROUP_ID,
+      groupName:'Heavy Fighter',
+      source:'zKillboard',
+      sourceUrl:`https://zkillboard.com/group/${HEAVY_FIGHTER_GROUP_ID}/losses/`,
+      windowSeconds:HEAVY_FIGHTER_TRACKER_WINDOW_SECONDS,
+      pollSeconds:Math.round(HEAVY_FIGHTER_TRACKER_CACHE_MS/1000),
+      searchApiDelaySeconds:300,
+      updatedAt:now(),
+      count:losses.length,
+      truncated:rows.length>=200,
+      losses,
+    };
+    heavyFighterTrackerCache={updatedAt:Date.now(),data,promise:null};
+    return data;
+  })().catch(err=>{
+    if(heavyFighterTrackerCache.data){
+      console.warn('Heavy Fighter tracker refresh failed; using cached feed',String(err.message||err));
+      return {...heavyFighterTrackerCache.data,stale:true,refreshError:String(err.message||err)};
+    }
+    throw err;
+  }).finally(()=>{
+    if(heavyFighterTrackerCache.promise===pending)heavyFighterTrackerCache.promise=null;
+  });
+  heavyFighterTrackerCache.promise=pending;
+  return pending;
+}
+
 function fountainActivityRow(map, characterId) {
   const id=Number(characterId);
   let row=map.get(id);
@@ -4554,7 +4669,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.29',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.30',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -4618,6 +4733,15 @@ async function routeApi(req,res,url) {
         }catch{}
       }
       return json(res,502,{error:'ZKILL_LEADERBOARD_FAILED',message:String(err.message||err)});
+    }
+  }
+  if(req.method==='GET'&&url.pathname==='/api/tracker/heavy-fighters'){
+    const wantsRefresh=url.searchParams.get('refresh')==='1';
+    const force=wantsRefresh&&Date.now()-Number(heavyFighterTrackerCache.updatedAt||0)>=10*1000;
+    try{return json(res,200,await heavyFighterTracker(force))}
+    catch(err){
+      console.warn('Heavy Fighter tracker failed',String(err.message||err));
+      return json(res,502,{error:'HEAVY_FIGHTER_TRACKER_FAILED',message:String(err.message||err)});
     }
   }
   if(req.method==='GET'&&url.pathname==='/api/events'){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});res.write(`event: state\ndata: ${JSON.stringify(publicState())}\n\n`);sseClients.add(res);req.on('close',()=>sseClients.delete(res));return}
@@ -4773,7 +4897,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.29 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.30 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setInterval(()=>resetExpired(true),15_000).unref();
 async function runAutomaticSyncLoop(){
   const startedAt=Date.now();
