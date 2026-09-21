@@ -45,6 +45,7 @@
   let threatShareLoading=false;
   let threatShareUrl='';
   let threatShareError='';
+  let ledgerAuditLoading=false;
 
   const DEFAULT_FLEET = { members:{}, uptime:100, payout:95, order:[] };
   function loadFleet() {
@@ -2850,6 +2851,14 @@
     const latest=samples.at(-1)||null,payout=Number(fleetSettings.payout||95)/100;
     const rangeM3=daily.reduce((sum,row)=>sum+Number(row.m3||0),0);
     const rangeValue=daily.reduce((sum,row)=>sum+Number(row.jbv||0),0)*payout;
+    const historyStart=daily.length?chartDateLabel(daily[0].date):'—';
+    const historyEnd=daily.length?chartDateLabel(daily[daily.length-1].date):'—';
+    if($('fleetHistoryVolumeLabel'))$('fleetHistoryVolumeLabel').textContent=fleetHistoryDays+'D VOLUME';
+    if($('fleetHistoryVolume'))$('fleetHistoryVolume').textContent=fmt(rangeM3,'m3')+' m³';
+    if($('fleetHistoryPeriod'))$('fleetHistoryPeriod').textContent=historyStart+' — '+historyEnd;
+    if($('fleetHistoryValueLabel'))$('fleetHistoryValueLabel').textContent=fleetHistoryDays+'D PAYOUT';
+    if($('fleetHistoryValue'))$('fleetHistoryValue').textContent=fmt(rangeValue)+' ISK';
+    if($('fleetHistoryValueSub'))$('fleetHistoryValueSub').textContent='tracked T3 • '+(payout*100).toFixed(1)+'% payout';
     const best=daily.reduce((top,row)=>Number(row.m3||0)>Number(top?.m3||0)?row:top,null);
     const fleet=fleetStats(),target=Number(fleet.total||0);
     const liveRate=Number(latest?.actualM3PerHour||0);
@@ -2871,8 +2880,8 @@
     $('fleetRangeTotalSub').textContent=`${fmt(rangeValue)} ISK tracked payout`;
     $('fleetBestDay').textContent=best&&Number(best.m3)>0?`${fmt(best.m3,'m3')} m³`:'—';
     $('fleetBestDaySub').textContent=best&&Number(best.m3)>0?chartDateLabel(best.date):'no production history yet';
-    $('fleetHistoryTitle').textContent=fleetHistoryMetric==='value'?'DAILY TRACKED PAYOUT':'DAILY MINING VOLUME';
-    $('fleetHistorySubtitle').textContent=`last ${fleetHistoryDays} days • hover for daily totals`;
+    $('fleetHistoryTitle').textContent=fleetHistoryMetric==='value'?'DAILY ISK PAYOUT':'DAILY MINING VOLUME';
+    $('fleetHistorySubtitle').textContent=fleetHistoryMetric==='value'?`bars show ISK payout • last ${fleetHistoryDays} days • hover for daily totals`:`bars show mined m³ • last ${fleetHistoryDays} days • hover for daily totals`;
     $('fleetOreMixSubtitle').textContent=`last ${fleetHistoryDays} days • mined m³ by ore`;
     renderFleetActivityChart($('fleetActivityChart'),samples,target);
     renderFleetDailyChart($('fleetHistoryChart'),daily,fleetHistoryMetric);
@@ -3420,6 +3429,57 @@
 
     localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));
   }
+  function closeLedgerAudit(){
+    const panel=$('ledgerAuditPanel');
+    if(panel)panel.classList.add('hidden');
+  }
+  function renderLedgerAudit(data){
+    const payout=Math.min(100,Math.max(1,Number(fleetSettings.payout)||95))/100;
+    const rows=Array.isArray(data&&data.characters)?data.characters:[];
+    const linked=Number(data&&data.linkedCharacters||0);
+    const cached=Number(data&&data.cachedCharacters||0);
+    const missing=Number(data&&data.missingCharacters||0);
+    const totals=data&&data.totals||{};
+    const totalM3=Number(totals.m3||0);
+    const rawValue=Number(totals.jbv||0);
+    const unpricedM3=Number(totals.unpricedM3||0);
+    const title=$('ledgerAuditTitle'),summary=$('ledgerAuditSummary'),body=$('ledgerAuditBody');
+    if(title)title.textContent='EVE DAY '+String(data&&data.date||'—')+' (UTC)';
+    if(summary)summary.textContent=cached+'/'+linked+' linked characters included'+(missing?' • '+missing+' waiting for ledger cache':'')+'.';
+    if(!body)return;
+    const basis=data&&data.jitaBuyBasis==='janice-immediate-buy'?'Janice Jita immediate buy':'ESI Jita buy fallback';
+    const list=rows.map(row=>{
+      const ready=Boolean(row.cacheReady);
+      const sync=row.lastSyncAt?ago(row.lastSyncAt):'not synced';
+      return '<article class="ledger-audit-row'+(ready?'':' missing')+'">'+
+        '<div class="ledger-audit-pilot"><strong>'+esc(row.name||row.characterId)+'</strong><small>'+(ready?'ledger cached • sync '+esc(sync):'WAITING FOR LEDGER CACHE')+'</small></div>'+
+        '<div><span>VOLUME</span><strong>'+(ready?esc(fmt(row.m3,'m3'))+' m³':'—')+'</strong></div>'+
+        '<div><span>REFINED VALUE</span><strong>'+(ready?esc(fmt(row.jbv))+' ISK':'—')+'</strong></div>'+
+        '<div><span>PAYOUT</span><strong>'+(ready?esc(fmt(Number(row.jbv||0)*payout))+' ISK':'—')+'</strong></div>'+
+      '</article>';
+    }).join('');
+    body.innerHTML='<div class="ledger-audit-totals">'+
+      '<div><span>CHARACTERS</span><strong>'+cached+'/'+linked+'</strong><small>ledger cache included</small></div>'+
+      '<div><span>VOLUME</span><strong>'+esc(fmt(totalM3,'m3'))+' m³</strong><small>EVE day UTC</small></div>'+
+      '<div><span>RAW REFINED</span><strong>'+esc(fmt(rawValue))+' ISK</strong><small>'+esc(basis)+'</small></div>'+
+      '<div><span>'+esc((payout*100).toFixed(1))+'% PAYOUT</span><strong>'+esc(fmt(rawValue*payout))+' ISK</strong><small>'+(unpricedM3>0?esc(fmt(unpricedM3,'m3'))+' m³ awaiting price':'all cached volume priced')+'</small></div>'+
+      '</div><div class="ledger-audit-list">'+(list||'<div class="visual-empty">No linked characters found.</div>')+'</div>';
+  }
+  async function openLedgerAudit(){
+    const panel=$('ledgerAuditPanel');
+    if(!panel||ledgerAuditLoading)return;
+    panel.classList.remove('hidden');
+    if($('ledgerAuditTitle'))$('ledgerAuditTitle').textContent='EVE DAY (UTC)';
+    if($('ledgerAuditSummary'))$('ledgerAuditSummary').textContent='Checking every toon linked to this account…';
+    if($('ledgerAuditBody'))$('ledgerAuditBody').innerHTML='<div class="visual-empty">Loading per-toon ledger totals…</div>';
+    ledgerAuditLoading=true;
+    try{renderLedgerAudit(await api('/api/ledger-audit'));}
+    catch(error){
+      if($('ledgerAuditSummary'))$('ledgerAuditSummary').textContent='Could not load the ledger audit.';
+      if($('ledgerAuditBody'))$('ledgerAuditBody').innerHTML='<div class="visual-empty">'+esc(error.message||error)+'</div>';
+    }finally{ledgerAuditLoading=false;}
+  }
+
   function renderAll(){if(!state)return;renderFleet();renderTop();renderSelect();renderBoards();renderHits();renderFleetPerformance();renderMiningVisuals();renderIceMining();renderGasHuffing();if(doctrineMarket)renderDoctrineMarket();renderRanking();renderTimers();renderSelected();renderNotes();renderScanCharacters();renderCharacters();renderCalculator();renderMerIntel();}
 
   async function refreshMe(){const p=await api('/api/me');me=p.user;if(me){$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;syncDoctrineTabAccess()}return p.authenticated}
@@ -3772,6 +3832,10 @@
     saveFleet();
     toast(boosterId?'Miners cleared. Booster left enabled.':'All miners cleared.');
   });
+  $('ledgerPayoutCard')?.addEventListener('click',openLedgerAudit);
+  $('ledgerPayoutCard')?.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();openLedgerAudit();}});
+  $('ledgerAuditClose')?.addEventListener('click',closeLedgerAudit);
+  $('ledgerAuditPanel')?.addEventListener('click',event=>{if(event.target===event.currentTarget)closeLedgerAudit();});
   window.addEventListener('resize',updateUiScale,{passive:true});
   async function boot(){
     try{
