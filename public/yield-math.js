@@ -208,16 +208,45 @@
       });
     }
 
+    // Treat every Abyssal strip miner as a unique physical module. Saved EVE
+    // fittings can contain one row per high slot with the same mutated type ID;
+    // do not reuse the first roll for each row. Prefer the matching HiSlot flag,
+    // then fall back to the next unused module of that type.
     const dynamicByType=new Map();
+    const seenDynamicItemIds=new Set();
     for(const mod of Array.isArray(minerFit.abyssalLasers)?minerFit.abyssalLasers:[]){
+      const itemId=String(mod?.itemId||'');
+      if(itemId&&seenDynamicItemIds.has(itemId))continue;
+      if(itemId)seenDynamicItemIds.add(itemId);
       const key=String(mod.typeId);
       if(!dynamicByType.has(key))dynamicByType.set(key,[]);
       dynamicByType.get(key).push(mod);
     }
+    const slotNumber=flag=>{
+      const match=String(flag||'').match(/^HiSlot(\d+)$/i);
+      return match?Number(match[1]):Number.MAX_SAFE_INTEGER;
+    };
+    for(const mods of dynamicByType.values()){
+      mods.sort((a,b)=>slotNumber(a?.locationFlag)-slotNumber(b?.locationFlag)
+        ||String(a?.itemId||'').localeCompare(String(b?.itemId||''),undefined,{numeric:true}));
+    }
+    const usedDynamicModules=new Set();
+    function takeDynamicModule(typeId,preferredFlag=''){
+      const mods=dynamicByType.get(String(typeId))||[];
+      const available=mods.filter(mod=>!usedDynamicModules.has(mod));
+      const wanted=String(preferredFlag||'');
+      const chosen=(wanted?available.find(mod=>String(mod?.locationFlag||'')===wanted):null)||available[0]||null;
+      if(chosen)usedDynamicModules.add(chosen);
+      return chosen;
+    }
     for(const row of abyssalRows){
-      const needed=itemCount(row),mods=dynamicByType.get(String(row.typeId))||[];
-      if(mods.length<needed)throw new Error('Abyssal roll data is incomplete for this fit.');
-      for(const mod of mods.slice(0,needed)){
+      const needed=itemCount(row),selected=[];
+      for(let index=0;index<needed;index++){
+        const mod=takeDynamicModule(row.typeId,index===0?row.flag:'');
+        if(!mod)throw new Error('Abyssal roll data is incomplete for this fit.');
+        selected.push(mod);
+      }
+      for(const mod of selected){
         const sourceName=String(mod.sourceName||'');
         const base=data.lasers?.[sourceName];
         if(!base)throw new Error(`Abyssal source ${sourceName||mod.sourceTypeId||'unknown'} is not supported.`);
