@@ -1886,6 +1886,7 @@
   function defaultFleetFit(fits){return fits.find(isOreFit)||fits[0]||null}
   function abyssalFitBadge(fit){
     if(fit?.abyssalMatch==='matched'){
+      if(String(fit.abyssalMatchMethod||'').startsWith('persistent'))return' • ABYSSAL BOUND';
       return fit.abyssalMatchMethod==='ship-name'?' • ABYSSAL EXACT':' • ABYSSAL MATCHED';
     }
     if(fit?.abyssalMatch==='ambiguous')return' • ABYSSAL UNMATCHED';
