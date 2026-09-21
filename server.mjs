@@ -647,7 +647,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.23',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.24',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -4554,7 +4554,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.22',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.24',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -4576,6 +4576,24 @@ async function routeApi(req,res,url) {
     return json(res,200,await doctrineMarketSnapshot());
   }
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
+  if(req.method==='GET'&&url.pathname==='/api/ledger-audit'){
+    const date=dateUTC();
+    const priceByMineral=effectiveJitaMineralPrices();
+    const characterIds=[...new Set((user.characterIds||[]).map(String).filter(Boolean))];
+    const characters=characterIds.map(id=>{
+      const character=state.characters[id]||{};
+      const cachedRows=ledgerRowsByCharacter.get(id);
+      if(!Array.isArray(cachedRows)){
+        return {characterId:id,name:String(character.name||id),cacheReady:false,lastSyncAt:character.lastSyncAt||null,m3:0,jbv:0,unpricedM3:0,ores:{}};
+      }
+      const daily=aggregateTrackedT3Ledger({rows:cachedRows,typeById:state.esi.typeCache,systemById:state.esi.systemCache,systemOreByName:SYSTEM_ORE_BY_NAME,priceByMineral,refineYield:MAX_REFINE_YIELD});
+      const today=daily.find(row=>String(row.date)===date)||{m3:0,jbv:0,unpricedM3:0,ores:{}};
+      return {characterId:id,name:String(character.name||id),cacheReady:true,lastSyncAt:character.lastSyncAt||null,m3:Number(today.m3||0),jbv:Number(today.jbv||0),unpricedM3:Number(today.unpricedM3||0),ores:today.ores&&typeof today.ores==='object'?today.ores:{}};
+    }).sort((a,b)=>Number(b.cacheReady)-Number(a.cacheReady)||Number(b.jbv)-Number(a.jbv)||a.name.localeCompare(b.name));
+    const totals=characters.reduce((out,row)=>{out.m3+=Number(row.m3||0);out.jbv+=Number(row.jbv||0);out.unpricedM3+=Number(row.unpricedM3||0);return out;},{m3:0,jbv:0,unpricedM3:0});
+    const cachedCharacters=characters.filter(row=>row.cacheReady).length;
+    return json(res,200,{date,dayBasis:'UTC',linkedCharacters:characters.length,cachedCharacters,missingCharacters:characters.length-cachedCharacters,totals,characters,refineYield:MAX_REFINE_YIELD,jitaBuyBasis:state.market?.jitaBuyBasis||'unavailable',generatedAt:now()});
+  }
   if(req.method==='GET'&&url.pathname==='/api/zkill/lifetime-damage'){
     try{
       const {corporationId,corporation}=await pvpCorporationForUser(user);
@@ -4755,7 +4773,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.22 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.24 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setInterval(()=>resetExpired(true),15_000).unref();
 async function runAutomaticSyncLoop(){
   const startedAt=Date.now();
