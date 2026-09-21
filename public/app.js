@@ -634,7 +634,7 @@
     }
   }
   function applyTab(tab){
-    const valid=['fields','fleet','performance','ice','gas','pvp','threat','mer','toons'];
+    const valid=['fields','fleet','performance','ice','gas','pvp','tracker','threat','mer','toons'];
     if(doctrineAllowed())valid.splice(5,0,'doctrine');
     activeTab=valid.includes(tab)?tab:'fields';
     localStorage.setItem('jlrTab',activeTab);
@@ -667,6 +667,8 @@
     doctrine.id='doctrineMarketPanel';
     const pvp=makePanel('pvp');
     pvp.id='pvpIntelPanel';
+    const tracker=makePanel('tracker');
+    tracker.id='heavyFighterTrackerPanel';
     const threat=makePanel('threat');
     threat.id='threatScanPanel';
     const mer=makePanel('mer');
