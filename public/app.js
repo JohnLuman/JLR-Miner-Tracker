@@ -2710,13 +2710,38 @@
       el.innerHTML='<div class="visual-empty">Ore mix will appear after synced ledger rows include ore types.</div>';
       return;
     }
-    const grand=sorted.reduce((sum,[,value])=>sum+value,0),top=sorted.slice(0,8);
-    const other=sorted.slice(8).reduce((sum,[,value])=>sum+value,0);
-    if(other>0)top.push(['Other ores',other]);
-    el.innerHTML=top.map(([name,value],index)=>{
+
+    const grand=sorted.reduce((sum,[,value])=>sum+value,0);
+    const topThree=sorted.slice(0,3).reduce((sum,[,value])=>sum+value,0);
+    const topThreeShare=grand>0?topThree/grand*100:0;
+    const [topName,topValue]=sorted[0];
+    const topShare=grand>0?topValue/grand*100:0;
+
+    const segments=sorted.map(([name,value],index)=>{
       const share=grand>0?value/grand*100:0;
-      return `<div class="ore-mix-row"><div><strong>${esc(name)}</strong><small>${fmt(value,'m3')} m³ • ${share.toFixed(1)}%</small></div><div class="ore-mix-track"><span style="width:${share.toFixed(2)}%;--ore-index:${index}"></span></div></div>`;
+      return `<span class="ore-mix-segment" style="width:${share.toFixed(4)}%;--ore-index:${index}" title="${esc(name)} • ${fmt(value,'m3')} m³ • ${share.toFixed(1)}%"></span>`;
     }).join('');
+
+    const ranked=sorted.map(([name,value],index)=>{
+      const share=grand>0?value/grand*100:0;
+      return `
+        <div class="ore-mix-rank">
+          <span class="ore-mix-rank-no">#${index+1}</span>
+          <span class="ore-mix-swatch" style="--ore-index:${index}"></span>
+          <span class="ore-mix-name" title="${esc(name)}">${esc(name)}</span>
+          <strong>${fmt(value,'m3')} m³</strong>
+          <small>${share.toFixed(1)}%</small>
+        </div>`;
+    }).join('');
+
+    el.innerHTML=`
+      <div class="ore-mix-kpis">
+        <div><span>TOTAL MINED</span><strong>${fmt(grand,'m3')} m³</strong><small>${sorted.length} ore type${sorted.length===1?'':'s'}</small></div>
+        <div><span>TOP ORE</span><strong>${esc(topName)}</strong><small>${fmt(topValue,'m3')} m³ • ${topShare.toFixed(1)}%</small></div>
+        <div><span>TOP 3 SHARE</span><strong>${topThreeShare.toFixed(1)}%</strong><small>concentration of mined volume</small></div>
+      </div>
+      <div class="ore-mix-composition" aria-label="Ore composition for selected period">${segments}</div>
+      <div class="ore-mix-rank-list">${ranked}</div>`;
   }
   function renderFleetPerformance(){
     if(!state||!$('fleetActivityChart'))return;
