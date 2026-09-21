@@ -335,6 +335,7 @@ function buildCharacterFitCache(characterId,fittings=[],cachedAt=now()){
         verification:fit.abyssalVerification||null,
         verifiedAt:fit.abyssalVerifiedAt||null,
         retryAfter:fit.abyssalRetryAfter||null,
+        errorCode:fit.abyssalErrorCode||null,
       },
     };
   }
@@ -1890,6 +1891,23 @@ async function abyssalStripSnapshot(assets=[],context={}) {
   const characterId=context?.characterId;
   const access=context?.access;
   const parentIds=[...new Set(out.map(row=>row.parentItemId).filter(Boolean))];
+  const parentSet=new Set(parentIds.map(String));
+  const fittedFlag=flag=>/^(HiSlot|MedSlot|LoSlot|RigSlot|SubSystemSlot|ServiceSlot)\d+$/i.test(String(flag||''));
+  const fittedByShip=new Map();
+  for(const asset of assets){
+    const shipId=String(asset?.location_id||'');
+    if(!parentSet.has(shipId)||!fittedFlag(asset?.location_flag))continue;
+    if(!fittedByShip.has(shipId))fittedByShip.set(shipId,[]);
+    fittedByShip.get(shipId).push({
+      itemId:String(asset.item_id||''),
+      typeId:Number(asset.type_id||0),
+      flag:String(asset.location_flag||''),
+      quantity:Number(asset.quantity||1),
+    });
+  }
+  for(const row of out){
+    row.shipFittedItems=(fittedByShip.get(String(row.parentItemId||''))||[]).map(item=>({...item}));
+  }
   if(characterId&&access&&parentIds.length){
     try{
       const names=await characterAssetNames(characterId,parentIds,access);
@@ -1996,7 +2014,30 @@ async function miningFittingSnapshot(fittings=[],abyssalModules=[],previousFitti
     if(row.required.length){
       const candidates=[...physicalGroups.entries()]
         .filter(([,group])=>groupSatisfies(group,row))
-        .map(([shipItemId,group])=>({shipItemId,group,shipCustomName:String(group[0]?.shipCustomName||'').trim()}));
+        .map(([shipItemId,group])=>({
+          shipItemId,
+          group,
+          shipCustomName:String(group[0]?.shipCustomName||'').trim(),
+          fittedItems:Array.isArray(group[0]?.shipFittedItems)?group[0].shipFittedItems:[],
+        }));
+
+      const savedCounts=new Map();
+      for(const item of row.items){
+        const typeId=Number(item.typeId||0);
+        savedCounts.set(typeId,(savedCounts.get(typeId)||0)+Math.max(1,Number(item.quantity)||1));
+      }
+      const moduleFingerprintMatches=candidates.filter(candidate=>{
+        const fittedCounts=new Map();
+        for(const item of candidate.fittedItems){
+          const typeId=Number(item.typeId||0);
+          fittedCounts.set(typeId,(fittedCounts.get(typeId)||0)+Math.max(1,Number(item.quantity)||1));
+        }
+        if(!fittedCounts.size)return false;
+        for(const [typeId,count] of fittedCounts){
+          if((savedCounts.get(typeId)||0)<count)return false;
+        }
+        return true;
+      });
 
       const namedCandidates=row.normalizedFitName
         ?candidates.filter(candidate=>normalizeName(candidate.shipCustomName)===row.normalizedFitName)
@@ -2022,7 +2063,10 @@ async function miningFittingSnapshot(fittings=[],abyssalModules=[],previousFitti
         }
       }
 
-      if(!chosen&&row.normalizedFitName&&fitNameCounts.get(row.normalizedFitName)===1&&namedCandidates.length===1){
+      if(!chosen&&moduleFingerprintMatches.length===1){
+        chosen=moduleFingerprintMatches[0];
+        abyssalMatchMethod='fitted-modules';
+      }else if(!chosen&&row.normalizedFitName&&fitNameCounts.get(row.normalizedFitName)===1&&namedCandidates.length===1){
         chosen=namedCandidates[0];
         abyssalMatchMethod='ship-name';
       }else if(!chosen&&requirementCounts.get(row.requirementKey)===1&&candidates.length===1){
@@ -2423,7 +2467,7 @@ function laterIso(...values){
   }
   return best;
 }
-function preserveSavedAbyssalRolls(nextFittings,previousFittings,{refreshedAt=now(),fittingsCache=null,assetsCache=null,manualRequest=false}={}){
+function preserveSavedAbyssalRolls(nextFittings,previousFittings,{refreshedAt=now(),fittingsCache=null,assetsCache=null,manualRequest=false,currentAbyssalItemIds=[]}={}){
   const previous=Array.isArray(previousFittings)?previousFittings:[];
   const byId=new Map(previous.map(fit=>[String(fit?.fittingId||''),fit]).filter(([id])=>id));
   const normalize=value=>String(value||'').trim().replace(/\s+/g,' ').toLowerCase();
@@ -2436,6 +2480,7 @@ function preserveSavedAbyssalRolls(nextFittings,previousFittings,{refreshedAt=no
   }
 
   const retryAfter=laterIso(fittingsCache?.freshUntil,assetsCache?.freshUntil);
+  const currentItemIds=new Set((currentAbyssalItemIds||[]).map(String).filter(Boolean));
   const refreshedMs=Date.parse(String(refreshedAt||''));
   const assetSource=cacheSourceMs(assetsCache);
   const assetsWereCached=Boolean(
@@ -2454,6 +2499,7 @@ function preserveSavedAbyssalRolls(nextFittings,previousFittings,{refreshedAt=no
         abyssalVerifiedAt:null,
         abyssalRetryAfter:null,
         abyssalPendingReason:null,
+        abyssalErrorCode:null,
       };
     }
 
@@ -2464,8 +2510,18 @@ function preserveSavedAbyssalRolls(nextFittings,previousFittings,{refreshedAt=no
     const priorRolls=Array.isArray(prior?.abyssalLasers)?prior.abyssalLasers:[];
     const priorRequired=abyssalRequirementSignature(prior);
     const priorWasSaved=Boolean(prior&&prior.abyssalMatch==='matched'&&priorRolls.length&&priorRequired===required);
+    const priorItemIds=priorRolls.map(row=>String(row?.itemId||'')).filter(Boolean);
+    const priorItemsPresent=Boolean(priorItemIds.length&&priorItemIds.every(id=>currentItemIds.has(id)));
+    const priorVerifiedMs=Date.parse(String(prior?.abyssalVerifiedAt||prior?.localCache?.verifiedAt||prior?.localCache?.cachedAt||''));
+    const freshSnapshotProvesGone=Boolean(
+      priorWasSaved&&
+      priorItemIds.length&&
+      !priorItemsPresent&&
+      Number.isFinite(assetSource)&&
+      (!Number.isFinite(priorVerifiedMs)||assetSource>priorVerifiedMs+1000)
+    );
     const fitDefinitionChanged=Boolean(prior&&savedFitDefinitionSignature(prior)!==savedFitDefinitionSignature(next));
-    const shouldWaitForAssets=assetsWereCached&&Boolean(priorWasSaved||fitDefinitionChanged);
+    const shouldWaitForAssets=!freshSnapshotProvesGone&&assetsWereCached&&Boolean(priorWasSaved||fitDefinitionChanged);
 
     // If UPDATE FITS hit an older ESI asset snapshot, never replace this fit's
     // known-good Abyssal pair with data that may predate the user's in-game edit.
@@ -2481,6 +2537,7 @@ function preserveSavedAbyssalRolls(nextFittings,previousFittings,{refreshedAt=no
         abyssalVerifiedAt:prior.abyssalVerifiedAt||prior.localCache?.verifiedAt||prior.localCache?.cachedAt||null,
         abyssalRetryAfter:retryAfter,
         abyssalPendingReason:'esi-assets-cached',
+        abyssalErrorCode:'A01',
       };
     }
 
@@ -2491,12 +2548,14 @@ function preserveSavedAbyssalRolls(nextFittings,previousFittings,{refreshedAt=no
         abyssalVerifiedAt:assetsWereCached?(prior?.abyssalVerifiedAt||prior?.localCache?.verifiedAt||null):refreshedAt,
         abyssalRetryAfter:assetsWereCached?retryAfter:null,
         abyssalPendingReason:assetsWereCached?'esi-assets-cached':null,
+        abyssalErrorCode:assetsWereCached?'A01':null,
       };
     }
 
-    // An ambiguous/missing ESI response must not erase the pair already saved
-    // with this specific fit. Keep it until ESI can verify a replacement.
-    if(priorWasSaved){
+    // Keep a fit's own known-good pair only while ESI cannot yet disprove it.
+    // Once a newer asset snapshot proves those exact item IDs are gone, invalidate
+    // the old snapshot so sold/moved modules cannot live forever in local cache.
+    if(priorWasSaved&&!freshSnapshotProvesGone){
       return{
         ...next,
         abyssalMatch:'matched',
@@ -2508,15 +2567,18 @@ function preserveSavedAbyssalRolls(nextFittings,previousFittings,{refreshedAt=no
         abyssalVerifiedAt:prior.abyssalVerifiedAt||prior.localCache?.verifiedAt||prior.localCache?.cachedAt||null,
         abyssalRetryAfter:retryAfter,
         abyssalPendingReason:next.abyssalMatch||'unresolved',
+        abyssalErrorCode:'A01',
       };
     }
 
+    const unresolvedCode=next.abyssalMatch==='ambiguous'?'A02':'A03';
     return{
       ...next,
-      abyssalVerification:'unresolved',
+      abyssalVerification:freshSnapshotProvesGone?'invalid':'unresolved',
       abyssalVerifiedAt:null,
-      abyssalRetryAfter:retryAfter,
-      abyssalPendingReason:next.abyssalMatch||'unresolved',
+      abyssalRetryAfter:null,
+      abyssalPendingReason:freshSnapshotProvesGone?'saved-items-gone':(next.abyssalMatch||'unresolved'),
+      abyssalErrorCode:unresolvedCode,
     };
   });
 }
@@ -2556,6 +2618,7 @@ function bindCharacterAbyssalFit(ch,fittingId,shipItemId){
   fit.abyssalVerifiedAt=boundAt;
   fit.abyssalRetryAfter=null;
   fit.abyssalPendingReason=null;
+  fit.abyssalErrorCode=null;
   fit.localCache={
     ...(fit.localCache||{}),
     key:`${String(ch.characterId)}:${id}`,
@@ -2618,6 +2681,7 @@ async function refreshCharacterFittings(ch){
     fittingsCache:fitBundle.cache,
     assetsCache:assetBundle.cache,
     manualRequest:true,
+    currentAbyssalItemIds:abyssalModules.map(row=>row.itemId),
   });
   const cachedFittings=storeCharacterFitCache(ch,miningFits,fittingsUpdatedAt);
   ch.fittingsUpdatedAt=fittingsUpdatedAt;
@@ -2669,6 +2733,7 @@ async function syncCharacterOnce(ch,{forceMetadata=false}={}){
           refreshedAt:fittingsUpdatedAt,
           fittingsCache:fitBundle.cache,
           assetsCache:assetBundle?.cache||ch.assetsEsiCache||null,
+          currentAbyssalItemIds:abyssalModules.map(row=>row.itemId),
         });
         storeCharacterFitCache(ch,miningFits,fittingsUpdatedAt);
         ch.fittingsUpdatedAt=fittingsUpdatedAt;
@@ -4636,7 +4701,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.18 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.19 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setInterval(()=>resetExpired(true),15_000).unref();
 async function runAutomaticSyncLoop(){
   const startedAt=Date.now();
