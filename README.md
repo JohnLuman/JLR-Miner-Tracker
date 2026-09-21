@@ -101,6 +101,7 @@ The v2.2 expanded view adds a calculator that mirrors the supplied workbook's **
 - reads the booster hull, Industrial Core I/II, and Mining Foreman Burst I/II from the saved boost fit
 - allows crystal, Mining Foreman Mindlink, and Mining Laser Efficiency Charge to be selected when they are not reliably represented in a saved fit
 - applies the same base-yield, critical-success, duration, Mining Laser Optimization, and Mining Laser Efficiency formulas used by the original workbook
+- ranks each physical Abyssal strip miner worst to best by expected m³/s, identifies its fitted high slot and item ID, and compares its EVE-style yield/cycle line both without and with the active command buff
 - shows per-ship and fleet m³/hr
 
 The lookup values in `source-data.json` are copied from the workbook's Yield Calc tables. A regression test reproduces the workbook's selected Mackinaw result of **405,704.7772 m³/hr** and its **61.5234375%** Rorqual optimization value. This is intentionally workbook-faithful rather than a separate guessed fitting model.

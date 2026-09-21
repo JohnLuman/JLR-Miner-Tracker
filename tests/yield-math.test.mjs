@@ -95,5 +95,46 @@ const rangeResult=globalThis.JLRYieldMath.calculate({
 assert.ok(Math.abs(rangeResult.boost.rangeBonus-1.640625)<1e-12,`range bonus ${rangeResult.boost.rangeBonus}`);
 assert.ok(Math.abs(rangeResult.lasers[0].optimalRange-39609.375)<1e-9,`range ${rangeResult.lasers[0].optimalRange}`);
 
+const abyssalFit={
+  fittingId:5,
+  name:'Two Physical Abyssal Lasers',
+  shipName:'Hulk',
+  abyssalMatch:'matched',
+  items:[
+    {name:'Abyssal Modulated Strip Miner',typeId:90467,quantity:2},
+    {name:'Mining Laser Upgrade II',quantity:3},
+    {name:'Mining Survey Chipset II',quantity:1},
+    {name:'Coherent Asteroid Mining Crystal Type B II',quantity:2},
+  ],
+  abyssalLasers:[
+    {itemId:'900000000000002',typeId:90467,locationFlag:'HiSlot1',sourceName:'Modulated Strip Miner II',miningAmount:205,duration:59000,optimalRange:15500,criticalSuccessChance:0.012,criticalSuccessBonusYield:1.1},
+    {itemId:'900000000000001',typeId:90467,locationFlag:'HiSlot0',sourceName:'Modulated Strip Miner II',miningAmount:180,duration:62000,optimalRange:14500,criticalSuccessChance:0.009,criticalSuccessBonusYield:0.9},
+  ],
+};
+const abyssalResult=globalThis.JLRYieldMath.calculate({
+  data,
+  minerSkills:skills,
+  minerFit:abyssalFit,
+  crystalKey:'Auto',
+  boosterSkills:skills,
+  boosterFit,
+  mindlink:true,
+});
+assert.equal(abyssalResult.abyssalLasers.length,2);
+assert.equal(abyssalResult.abyssalLasers[0].itemId,'900000000000001','weakest Abyssal laser should be first');
+assert.equal(abyssalResult.abyssalLasers[0].locationFlag,'HiSlot0');
+for(const laser of abyssalResult.abyssalLasers){
+  assert.ok(laser.withoutBuff.totalYield>0);
+  assert.equal(laser.withoutBuff.baseM3s,laser.withoutBuff.baseYield/laser.withoutBuff.duration);
+  assert.equal(laser.withBuff.baseM3s,laser.withBuff.baseYield/laser.withBuff.duration);
+  assert.ok(laser.withBuff.m3s>laser.withBuff.baseM3s,'expected critical yield should be separate from the EVE-style base cycle line');
+  assert.ok(laser.withoutBuff.duration>laser.withBuff.duration,'buff should reduce cycle duration');
+  assert.ok(laser.withoutBuff.m3s<laser.withBuff.m3s,'buff should increase m3/s');
+  assert.equal(laser.totalYield,laser.withBuff.totalYield,'legacy totalYield should remain the active-buff value');
+  assert.equal(laser.duration,laser.withBuff.duration,'legacy duration should remain the active-buff value');
+  assert.equal(laser.m3s,laser.withBuff.m3s,'legacy m3s should remain the active-buff value');
+}
+
 console.log('Yield Calc regression passed:',result.m3PerHour.toFixed(4),'m3/hr');
 console.log('Outrider boost regression passed:',(outriderBoost.cycleReduction*100).toFixed(4)+'%');
+console.log('Abyssal per-laser buff comparison passed:',abyssalResult.abyssalLasers.map(row=>row.withBuff.m3s.toFixed(2)).join(' < '),'m3/s');

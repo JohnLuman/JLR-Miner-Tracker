@@ -154,7 +154,7 @@
     let totalM3s=0,totalBasePerCycle=0,totalBonusPerCycle=0;
     const lasers=[];
 
-    function addLaser({displayName,sourceName,quantity=1,miningAmount,duration,optimalRange,criticalSuccessChance,criticalSuccessBonusYield,abyssal=false}){
+    function addLaser({displayName,sourceName,quantity=1,miningAmount,duration,optimalRange,criticalSuccessChance,criticalSuccessBonusYield,abyssal=false,itemId='',typeId=0,locationFlag=''}){
       const modulated=/^Modulated (Deep Core )?Strip Miner II$/.test(sourceName);
       const crystal=modulated?(data.crystals?.[chosenCrystal]||data.crystals?.None):(data.crystals?.None||{yieldModifier:1,durationMultiplier:1});
       const baseYield=n(miningAmount)*n(crystal.yieldModifier,1)*
@@ -164,26 +164,36 @@
         (1+n(ship.miningBargeYieldPerLevel)*barge)*
         (1+n(ship.exhumerYieldPerLevel)*exhumers)*
         (1+upgradeBonus);
-      const critChance=n(criticalSuccessChance)*
+      const unboostedCritChance=n(criticalSuccessChance)*
         (1+n(sb.miningExploitationCritChancePerLevel)*exploitation)*
-        (1+n(chipset.criticalSuccessChanceBonus))*
-        (1+n(boost.efficiencyBoost));
+        (1+n(chipset.criticalSuccessChanceBonus));
+      const critChance=unboostedCritChance*(1+n(boost.efficiencyBoost));
       const critYield=n(criticalSuccessBonusYield)*
         (1+n(sb.miningPrecisionCritYieldPerLevel)*precision)*
         (1+n(chipset.criticalSuccessYieldBonus));
+      const unboostedBonusYield=baseYield*unboostedCritChance*critYield;
       const bonusYield=baseYield*critChance*critYield;
-      const finalDuration=n(duration)*
+      const unboostedDuration=n(duration)*
         n(crystal.durationMultiplier,1)*
         (1+n(ship.exhumerDurationPerLevel)*exhumers)*
-        (1+n(ship.roleDuration))*
-        Math.max(0.001,1-n(boost.cycleReduction));
+        (1+n(ship.roleDuration));
+      const finalDuration=unboostedDuration*Math.max(0.001,1-n(boost.cycleReduction));
       const m3s=(baseYield+bonusYield)/finalDuration;
+      const unboostedM3s=(baseYield+unboostedBonusYield)/unboostedDuration;
+      const baseM3s=baseYield/finalDuration;
+      const unboostedBaseM3s=baseYield/unboostedDuration;
       totalM3s+=m3s*quantity;
       totalBasePerCycle+=baseYield*quantity;
       totalBonusPerCycle+=bonusYield*quantity;
       const baseOptimalRange=n(optimalRange);
       const finalOptimalRange=baseOptimalRange>0?baseOptimalRange*(1+n(boost.rangeBonus)):0;
-      lasers.push({name:displayName,sourceName,quantity,baseYield,bonusYield,totalYield:baseYield+bonusYield,duration:finalDuration,m3s,baseOptimalRange,optimalRange:finalOptimalRange,crystal:modulated?chosenCrystal:'None',abyssal});
+      lasers.push({
+        name:displayName,sourceName,quantity,itemId:String(itemId||''),typeId:Number(typeId||0),locationFlag:String(locationFlag||''),
+        baseYield,bonusYield,totalYield:baseYield+bonusYield,duration:finalDuration,m3s,
+        baseOptimalRange,optimalRange:finalOptimalRange,crystal:modulated?chosenCrystal:'None',abyssal,
+        withoutBuff:{baseYield,bonusYield:unboostedBonusYield,totalYield:baseYield+unboostedBonusYield,duration:unboostedDuration,baseM3s:unboostedBaseM3s,m3s:unboostedM3s,optimalRange:baseOptimalRange},
+        withBuff:{baseYield,bonusYield,totalYield:baseYield+bonusYield,duration:finalDuration,baseM3s,m3s,optimalRange:finalOptimalRange},
+      });
     }
 
     for(const row of normalLaserRows){
@@ -215,6 +225,9 @@
           displayName:String(mod.name||row.name||'Abyssal Strip Miner'),
           sourceName,
           quantity:1,
+          itemId:mod.itemId,
+          typeId:mod.typeId,
+          locationFlag:mod.locationFlag,
           miningAmount:optionalNumber(mod.miningAmount,n(base.miningAmount)),
           duration:normalizeDuration(mod.duration,base.duration),
           optimalRange:optionalNumber(mod.optimalRange,n(base.optimalRange)),
@@ -238,7 +251,7 @@
       boost,
       skills:{mining,astrogeology:astro,miningBarge:barge,exhumers,miningExploitation:exploitation,miningPrecision:precision},
       lasers,
-      abyssalLasers:lasers.filter(x=>x.abyssal),
+      abyssalLasers:lasers.filter(x=>x.abyssal).sort((a,b)=>n(a.withBuff?.m3s)-n(b.withBuff?.m3s)||String(a.itemId).localeCompare(String(b.itemId),undefined,{numeric:true})),
       baseYieldPerCycle:totalBasePerCycle,
       expectedCriticalBonusPerCycle:totalBonusPerCycle,
       m3PerSecond:totalM3s,

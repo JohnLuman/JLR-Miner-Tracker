@@ -2224,6 +2224,38 @@
     }
     return{count,perLaser,rangeText};
   }
+  function abyssalCycleText(stats){
+    const yieldM3=Number(stats?.baseYield),duration=Number(stats?.duration),m3s=Number(stats?.baseM3s);
+    if(!Number.isFinite(yieldM3)||!Number.isFinite(duration)||!Number.isFinite(m3s)||duration<=0)return'—';
+    return`${Math.round(yieldM3).toLocaleString()} m³ per ${duration.toFixed(1)}s (${m3s.toFixed(1)} m³/s)`;
+  }
+  function abyssalLaserSlot(laser,fallback){
+    const match=String(laser?.locationFlag||'').match(/^HiSlot(\d+)$/i);
+    return match?`HIGH SLOT ${Number(match[1])+1}`:`LASER ${fallback}`;
+  }
+  function abyssalLaserComparison(entry,activeBoost){
+    const source=Array.isArray(entry?.result?.abyssalLasers)?entry.result.abyssalLasers:[];
+    if(!source.length)return'';
+    const metric=activeBoost?'withBuff':'withoutBuff';
+    const rows=[...source].sort((a,b)=>Number(a?.[metric]?.m3s||0)-Number(b?.[metric]?.m3s||0)||String(a?.itemId||'').localeCompare(String(b?.itemId||''),undefined,{numeric:true}));
+    const rates=rows.map(row=>Number(row?.[metric]?.m3s||0));
+    const minRate=Math.min(...rates),maxRate=Math.max(...rates),hasSpread=maxRate-minRate>Math.max(.0001,maxRate*.000001);
+    return`<div class="abyssal-laser-grid" aria-label="Abyssal lasers ranked worst to best by cubic metres per second">${rows.map((laser,index)=>{
+      const rate=rates[index];
+      const isWeakest=rows.length>1&&hasSpread&&Math.abs(rate-minRate)<.0001;
+      const isBest=rows.length>1&&hasSpread&&Math.abs(rate-maxRate)<.0001;
+      const rankLabel=!hasSpread&&rows.length>1?'TIED':isWeakest?'UPGRADE FIRST':isBest?'BEST ROLL':`#${index+1}`;
+      const rankClass=isWeakest?' upgrade-first':isBest?' best-roll':'';
+      const itemId=String(laser?.itemId||''),itemLabel=itemId?` • ITEM …${itemId.slice(-6)}`:'';
+      const title=`${abyssalLaserSlot(laser,index+1)}${itemId?` • item ${itemId}`:''} • ranked by ${activeBoost?'with-buff':'without-buff'} m³/s`;
+      return`<article class="abyssal-laser-card${rankClass}" title="${esc(title)}">
+        <div class="abyssal-laser-head"><span><strong>${esc(abyssalLaserSlot(laser,index+1))}</strong><small>${esc(String(laser?.sourceName||laser?.name||'Abyssal Strip Miner')+itemLabel)}</small></span><b>${esc(rankLabel)}</b></div>
+        <div class="abyssal-laser-state"><span>WITHOUT BUFF</span><strong>${esc(abyssalCycleText(laser?.withoutBuff))}</strong></div>
+        <div class="abyssal-laser-state with-buff${activeBoost?' active':' off'}"><span>WITH BUFF${activeBoost?'':' • OFF'}</span><strong>${activeBoost?esc(abyssalCycleText(laser?.withBuff)):'SELECT / ENABLE BOOSTER'}</strong></div>
+        <div class="abyssal-laser-expected"><span>EXPECTED + CRITS</span><strong>${esc(activeBoost?`${fmt(Number(laser?.withoutBuff?.m3s||0)*3600,'m3')} → ${fmt(Number(laser?.withBuff?.m3s||0)*3600,'m3')} m³/hr`:`${fmt(Number(laser?.withoutBuff?.m3s||0)*3600,'m3')} m³/hr • BUFF OFF`)}</strong></div>
+      </article>`;
+    }).join('')}</div>`;
+  }
   function fleetCharacterMatches(character){
     const id=String(character.characterId);
     const cfg=fleetSettings.members?.[id]||{};
@@ -2329,6 +2361,7 @@
         const isBooster=id===String(calcSettings.boosterCharacterId||'');
         const boosterFitText=isBooster?(boosterFit?`${boosterFit.shipName} — ${boosterFit.name}` :'No saved booster fit'):'';
         const laser=fleetLaserDetails(entry);
+        const abyssalComparison=!isBooster&&cfg.enabled&&entry?.result?abyssalLaserComparison(entry,activeBoost):'';
         let outputMain='EXCLUDED',outputSub='not counted',outputTitle='';
         let metricOne='—',metricOneLabel='M³/HR / LASER';
         let metricTwo='—',metricTwoLabel='LASER RANGE';
@@ -2365,11 +2398,14 @@
           ${fleetArrangeMode?'<span class="fleet-drag-grip" aria-hidden="true">⠿</span>':''}
           <label class="fleet-member-toggle"><input class="fleet-member-check" data-id="${id}" type="checkbox" ${cfg.enabled?'checked':''} ${!isBooster&&!fits.length?'disabled':''}><img src="${esc(character.portrait)}" alt=""><span><strong>${esc(character.name)}</strong><small>${isBooster?(cfg.enabled?'Selected booster • in fleet':'Selected booster • not in fleet'):fits.length?`${fits.length} mining fit${fits.length===1?'':'s'}`:'No mining fits'}</small></span></label>
           ${isBooster?`<div class="fleet-booster-fit-inline">${esc(boosterFitText)}</div>`:`<select class="fleet-fit-select" data-id="${id}" ${fits.length?'':'disabled'}>${fitOptions}</select>`}
-          <div class="fleet-member-metrics">
-            <span class="fleet-member-output" ${outputTitle?`title="${esc(outputTitle)}"`:''}><strong>${esc(outputMain)}</strong><small>${esc(outputSub)}</small></span>
-            <span><strong>${esc(metricOne)}</strong><small>${esc(metricOneLabel)}</small></span>
-            <span title="Strip-miner optimal range includes the detected Mining Laser Field Enhancement boost. Implant range bonuses are not modeled."><strong>${esc(metricTwo)}</strong><small>${esc(metricTwoLabel)}</small></span>
-            <span class="${activeBoost?'fleet-boost-live':''}"><strong>${esc(metricThree)}</strong><small>${esc(metricThreeLabel)}</small></span>
+          <div class="fleet-member-performance">
+            <div class="fleet-member-metrics">
+              <span class="fleet-member-output" ${outputTitle?`title="${esc(outputTitle)}"`:''}><strong>${esc(outputMain)}</strong><small>${esc(outputSub)}</small></span>
+              <span><strong>${esc(metricOne)}</strong><small>${esc(metricOneLabel)}</small></span>
+              <span title="Strip-miner optimal range includes the detected Mining Laser Field Enhancement boost. Implant range bonuses are not modeled."><strong>${esc(metricTwo)}</strong><small>${esc(metricTwoLabel)}</small></span>
+              <span class="${activeBoost?'fleet-boost-live':''}"><strong>${esc(metricThree)}</strong><small>${esc(metricThreeLabel)}</small></span>
+            </div>
+            ${abyssalComparison}
           </div>`;
         list.appendChild(row);
       }
