@@ -1721,7 +1721,7 @@ async function characterSkills(characterId,access) {
 }
 function esiCacheInfo(headers){
   const cacheControl=String(headers?.get?.('cache-control')||'');
-  const maxAgeMatch=cacheControl.match(/(?:^|[,\\s])max-age=(\\d+)/i);
+  const maxAgeMatch=cacheControl.match(/(?:^|[,\s])max-age=(\d+)/i);
   const maxAgeSeconds=maxAgeMatch?Number(maxAgeMatch[1]):null;
   const responseDateMs=Date.parse(String(headers?.get?.('date')||''));
   const expiresMs=Date.parse(String(headers?.get?.('expires')||''));
@@ -4203,7 +4203,7 @@ async function routeApi(req,res,url) {
       broadcast();
       return json(res,200,{ok:true,fitSync,user:myProfile(user)});
     }catch(err){
-      const status=err?.code==='FITTINGS_SCOPE_REQUIRED'?409:502;
+      const status=['FITTINGS_SCOPE_REQUIRED','ASSETS_SCOPE_REQUIRED'].includes(err?.code)?409:502;
       return json(res,status,{error:err?.code||'FIT_SYNC_FAILED',message:String(err.message||err)});
     }
   }
