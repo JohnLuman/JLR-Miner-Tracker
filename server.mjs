@@ -1957,6 +1957,29 @@ async function miningFittingSnapshot(fittings=[],abyssalModules=[],previousFitti
     for(const mod of group)have.set(Number(mod.typeId),(have.get(Number(mod.typeId))||0)+1);
     return [...row.needed].every(([typeId,count])=>(have.get(typeId)||0)>=count);
   }
+  function publicAbyssalCandidate(candidate){
+    return{
+      shipItemId:String(candidate.shipItemId),
+      shipName:candidate.shipCustomName||null,
+      hullName:String(candidate.group?.[0]?.shipName||''),
+      lasers:(candidate.group||[]).map(({parentItemId,...mod})=>({
+        itemId:String(mod.itemId||''),
+        typeId:Number(mod.typeId||0),
+        name:mod.name||null,
+        sourceTypeId:Number(mod.sourceTypeId||0),
+        sourceName:mod.sourceName||null,
+        miningAmount:mod.miningAmount,
+        duration:mod.duration,
+        optimalRange:mod.optimalRange,
+        criticalSuccessChance:mod.criticalSuccessChance,
+        criticalSuccessBonusYield:mod.criticalSuccessBonusYield,
+        locationFlag:mod.locationFlag||null,
+        shipTypeId:Number(mod.shipTypeId||0),
+        shipName:mod.shipName||null,
+        shipCustomName:mod.shipCustomName||null,
+      })),
+    };
+  }
 
   return prepared.map(row=>{
     let matched=[];
@@ -1964,6 +1987,7 @@ async function miningFittingSnapshot(fittings=[],abyssalModules=[],previousFitti
     let abyssalMatchMethod=null;
     let abyssalShipItemId=null;
     let abyssalShipName=null;
+    let abyssalCandidates=[];
 
     if(row.required.length){
       const candidates=[...physicalGroups.entries()]
@@ -2009,6 +2033,7 @@ async function miningFittingSnapshot(fittings=[],abyssalModules=[],previousFitti
         abyssalShipName=chosen.shipCustomName||null;
       }else if(candidates.length){
         abyssalMatch='ambiguous';
+        abyssalCandidates=candidates.map(publicAbyssalCandidate);
       }else{
         abyssalMatch='missing';
       }
@@ -2026,6 +2051,7 @@ async function miningFittingSnapshot(fittings=[],abyssalModules=[],previousFitti
       abyssalShipItemId,
       abyssalShipName,
       abyssalLasers:matched,
+      abyssalCandidates,
     };
   });
 }
@@ -2363,6 +2389,55 @@ async function probeScanPreview(ch,text){
   };
 }
 
+function bindCharacterAbyssalFit(ch,fittingId,shipItemId){
+  migrateCharacterFitCache(ch);
+  const id=String(fittingId||'');
+  const shipId=String(shipItemId||'');
+  const fit=ch.fitCache?.byFittingId?.[id];
+  if(!fit){
+    const error=new Error('That saved fit is no longer in the local fit cache. Use UPDATE FITS and try again.');
+    error.code='FIT_NOT_FOUND';
+    throw error;
+  }
+  const candidates=Array.isArray(fit.abyssalCandidates)?fit.abyssalCandidates:[];
+  const candidate=candidates.find(row=>String(row.shipItemId)===shipId);
+  if(!candidate){
+    const error=new Error('That physical ship is not a valid candidate for this saved fit. Use UPDATE FITS and try again.');
+    error.code='INVALID_ABYSSAL_BINDING';
+    throw error;
+  }
+  const lasers=Array.isArray(candidate.lasers)?candidate.lasers:[];
+  if(!lasers.length){
+    const error=new Error('The selected physical ship has no usable Abyssal roll data.');
+    error.code='INVALID_ABYSSAL_BINDING';
+    throw error;
+  }
+
+  const boundAt=now();
+  fit.abyssalMatch='matched';
+  fit.abyssalMatchMethod='manual-binding';
+  fit.abyssalShipItemId=shipId;
+  fit.abyssalShipName=candidate.shipName||null;
+  fit.abyssalLasers=lasers;
+  fit.abyssalCandidates=[];
+  fit.localCache={
+    ...(fit.localCache||{}),
+    key:`${String(ch.characterId)}:${id}`,
+    characterId:String(ch.characterId),
+    fittingId:id,
+    cachedAt:boundAt,
+    physicalShipItemId:shipId,
+    physicalShipName:candidate.shipName||null,
+    abyssalItemIds:lasers.map(row=>String(row.itemId||'')).filter(Boolean),
+    matchStatus:'matched',
+    matchMethod:'manual-binding',
+    manuallyBoundAt:boundAt,
+  };
+  ch.fitCache.updatedAt=boundAt;
+  ch.fitBindingUpdatedAt=boundAt;
+  return fit;
+}
+
 async function refreshCharacterFittings(ch){
   const key=String(ch.characterId);
   const fullSync=characterSyncPromises.get(key);
@@ -2639,6 +2714,7 @@ function myProfile(user) {
         assetsEsiCache:c.assetsEsiCache||null,
         fittings:characterCachedFittings(c),
         fitCacheUpdatedAt:c.fitCache?.updatedAt||null,
+        fitBindingUpdatedAt:c.fitBindingUpdatedAt||null,
         fittingsUpdatedAt:c.fittingsUpdatedAt||null,
         fittingsEsiCache:c.fittingsEsiCache||null,
         ledgerActivity:(()=>{
@@ -4356,6 +4432,25 @@ async function routeApi(req,res,url) {
   if(nm&&req.method==='POST'){const system=decodeURIComponent(nm[1]);const f=state.fields[system];if(!f)return json(res,404,{error:'UNKNOWN_SYSTEM'});const body=await readBody(req);const note=String(body.text||'').trim();if(!note||note.length>240)return json(res,400,{error:'BAD_NOTE',message:'Enter a note of 1 to 240 characters.'});f.notes.push({id:randomId(8),text:note,createdAt:now()});await save();broadcast();return json(res,201,{ok:true,field:f})}
   const cm=url.pathname.match(/^\/api\/fields\/([^/]+)\/cherry$/);
   if(cm&&req.method==='POST'){const system=decodeURIComponent(cm[1]);const f=state.fields[system];if(!f)return json(res,404,{error:'UNKNOWN_SYSTEM'});f.cherryPicked=true;f.updatedAt=now();await save();broadcast();return json(res,200,{ok:true,field:f})}
+  const fitBindMatch=url.pathname.match(/^\/api\/esi\/fittings\/(\d+)\/([^/]+)\/bind$/);
+  if(fitBindMatch&&req.method==='POST'){
+    const characterId=String(fitBindMatch[1]);
+    const fittingId=decodeURIComponent(fitBindMatch[2]);
+    if(!user.characterIds.map(String).includes(characterId))return json(res,404,{error:'CHARACTER_NOT_LINKED',message:'That toon is not linked to your JLR account.'});
+    const ch=state.characters[characterId];
+    if(!ch)return json(res,404,{error:'CHARACTER_NOT_LINKED',message:'That toon is not linked to your JLR account.'});
+    try{
+      const body=await readBody(req);
+      const fit=bindCharacterAbyssalFit(ch,fittingId,body.shipItemId);
+      await save();
+      broadcast();
+      return json(res,200,{ok:true,fit,user:myProfile(user)});
+    }catch(err){
+      const status=['FIT_NOT_FOUND','INVALID_ABYSSAL_BINDING'].includes(err?.code)?409:500;
+      return json(res,status,{error:err?.code||'ABYSSAL_BIND_FAILED',message:String(err.message||err)});
+    }
+  }
+
   const fitSyncMatch=url.pathname.match(/^\/api\/esi\/fittings\/(\d+)$/);
   if(fitSyncMatch&&req.method==='POST'){
     const characterId=String(fitSyncMatch[1]);
@@ -4386,7 +4481,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.15 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.16 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setInterval(()=>resetExpired(true),15_000).unref();
 async function runAutomaticSyncLoop(){
   const startedAt=Date.now();
