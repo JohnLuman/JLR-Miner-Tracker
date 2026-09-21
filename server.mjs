@@ -5094,8 +5094,8 @@ async function routeApi(req,res,url) {
       'Connection':'keep-alive',
       'X-Accel-Buffering':'no',
     });
-    res.write('retry: 3000\\n');
-    res.write(`event: ready\\ndata: ${JSON.stringify({...trackerLiveStatus(),corporationName:access.corporationName})}\\n\\n`);
+    res.write('retry: 3000\n');
+    res.write(`event: ready\ndata: ${JSON.stringify({...trackerLiveStatus(),corporationName:access.corporationName})}\n\n`);
     trackerLiveClients.add(res);
     req.on('close',()=>trackerLiveClients.delete(res));
     return;
@@ -5255,7 +5255,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
 server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.32 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
-setInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': tracker-heartbeat\\n\\n')}catch{trackerLiveClients.delete(res)}}},20_000).unref();
+setInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': tracker-heartbeat\n\n')}catch{trackerLiveClients.delete(res)}}},20_000).unref();
 setInterval(()=>resetExpired(true),15_000).unref();
 async function runAutomaticSyncLoop(){
   const startedAt=Date.now();
