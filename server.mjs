@@ -2402,6 +2402,19 @@ function abyssalRequirementSignature(fit){
   }
   return [...counts.entries()].sort((a,b)=>a[0]-b[0]).map(([typeId,count])=>`${typeId}:${count}`).join(',');
 }
+function savedFitDefinitionSignature(fit){
+  const items=(Array.isArray(fit?.items)?fit.items:[])
+    .map(row=>`${Number(row?.typeId||0)}:${String(row?.flag||'')}:${Math.max(1,Number(row?.quantity)||1)}`)
+    .sort();
+  return `${Number(fit?.shipTypeId||0)}|${items.join(',')}`;
+}
+function cacheSourceMs(cache){
+  for(const value of [cache?.lastModified,cache?.responseDate]){
+    const ms=Date.parse(String(value||''));
+    if(Number.isFinite(ms))return ms;
+  }
+  return NaN;
+}
 function laterIso(...values){
   let best=null,bestMs=-Infinity;
   for(const value of values){
@@ -2410,7 +2423,7 @@ function laterIso(...values){
   }
   return best;
 }
-function preserveSavedAbyssalRolls(nextFittings,previousFittings,{refreshedAt=now(),fittingsCache=null,assetsCache=null}={}){
+function preserveSavedAbyssalRolls(nextFittings,previousFittings,{refreshedAt=now(),fittingsCache=null,assetsCache=null,manualRequest=false}={}){
   const previous=Array.isArray(previousFittings)?previousFittings:[];
   const byId=new Map(previous.map(fit=>[String(fit?.fittingId||''),fit]).filter(([id])=>id));
   const normalize=value=>String(value||'').trim().replace(/\s+/g,' ').toLowerCase();
@@ -2421,7 +2434,16 @@ function preserveSavedAbyssalRolls(nextFittings,previousFittings,{refreshedAt=no
     if(!byName.has(key))byName.set(key,[]);
     byName.get(key).push(fit);
   }
+
   const retryAfter=laterIso(fittingsCache?.freshUntil,assetsCache?.freshUntil);
+  const refreshedMs=Date.parse(String(refreshedAt||''));
+  const assetSource=cacheSourceMs(assetsCache);
+  const assetsWereCached=Boolean(
+    manualRequest&&
+    Number.isFinite(refreshedMs)&&
+    Number.isFinite(assetSource)&&
+    refreshedMs-assetSource>30_000
+  );
 
   return (Array.isArray(nextFittings)?nextFittings:[]).map(next=>{
     const required=abyssalRequirementSignature(next);
@@ -2435,26 +2457,19 @@ function preserveSavedAbyssalRolls(nextFittings,previousFittings,{refreshedAt=no
       };
     }
 
-    if(next.abyssalMatch==='matched'&&Array.isArray(next.abyssalLasers)&&next.abyssalLasers.length){
-      return{
-        ...next,
-        abyssalVerification:'verified',
-        abyssalVerifiedAt:refreshedAt,
-        abyssalRetryAfter:null,
-        abyssalPendingReason:null,
-      };
-    }
-
     const exact=byId.get(String(next?.fittingId||''))||null;
     const nameKey=`${Number(next?.shipTypeId||0)}|${normalize(next?.name)}`;
     const sameName=normalize(next?.name)?(byName.get(nameKey)||[]):[];
     const prior=exact||(sameName.length===1?sameName[0]:null);
     const priorRolls=Array.isArray(prior?.abyssalLasers)?prior.abyssalLasers:[];
     const priorRequired=abyssalRequirementSignature(prior);
-    const priorWasSaved=prior&&prior.abyssalMatch==='matched'&&priorRolls.length&&priorRequired===required;
+    const priorWasSaved=Boolean(prior&&prior.abyssalMatch==='matched'&&priorRolls.length&&priorRequired===required);
+    const fitDefinitionChanged=Boolean(prior&&savedFitDefinitionSignature(prior)!==savedFitDefinitionSignature(next));
+    const shouldWaitForAssets=assetsWereCached&&Boolean(priorWasSaved||fitDefinitionChanged);
 
-    if(priorWasSaved){
-      const pendingReason=next.abyssalMatch||'unresolved';
+    // If UPDATE FITS hit an older ESI asset snapshot, never replace this fit's
+    // known-good Abyssal pair with data that may predate the user's in-game edit.
+    if(shouldWaitForAssets&&priorWasSaved){
       return{
         ...next,
         abyssalMatch:'matched',
@@ -2465,7 +2480,34 @@ function preserveSavedAbyssalRolls(nextFittings,previousFittings,{refreshedAt=no
         abyssalVerification:'pending',
         abyssalVerifiedAt:prior.abyssalVerifiedAt||prior.localCache?.verifiedAt||prior.localCache?.cachedAt||null,
         abyssalRetryAfter:retryAfter,
-        abyssalPendingReason:pendingReason,
+        abyssalPendingReason:'esi-assets-cached',
+      };
+    }
+
+    if(next.abyssalMatch==='matched'&&Array.isArray(next.abyssalLasers)&&next.abyssalLasers.length){
+      return{
+        ...next,
+        abyssalVerification:assetsWereCached?'pending':'verified',
+        abyssalVerifiedAt:assetsWereCached?(prior?.abyssalVerifiedAt||prior?.localCache?.verifiedAt||null):refreshedAt,
+        abyssalRetryAfter:assetsWereCached?retryAfter:null,
+        abyssalPendingReason:assetsWereCached?'esi-assets-cached':null,
+      };
+    }
+
+    // An ambiguous/missing ESI response must not erase the pair already saved
+    // with this specific fit. Keep it until ESI can verify a replacement.
+    if(priorWasSaved){
+      return{
+        ...next,
+        abyssalMatch:'matched',
+        abyssalMatchMethod:'saved-fit-cache',
+        abyssalShipItemId:prior.abyssalShipItemId||prior.localCache?.physicalShipItemId||null,
+        abyssalShipName:prior.abyssalShipName||prior.localCache?.physicalShipName||null,
+        abyssalLasers:priorRolls.map(row=>({...row})),
+        abyssalVerification:'pending',
+        abyssalVerifiedAt:prior.abyssalVerifiedAt||prior.localCache?.verifiedAt||prior.localCache?.cachedAt||null,
+        abyssalRetryAfter:retryAfter,
+        abyssalPendingReason:next.abyssalMatch||'unresolved',
       };
     }
 
@@ -2575,6 +2617,7 @@ async function refreshCharacterFittings(ch){
     refreshedAt:fittingsUpdatedAt,
     fittingsCache:fitBundle.cache,
     assetsCache:assetBundle.cache,
+    manualRequest:true,
   });
   const cachedFittings=storeCharacterFitCache(ch,miningFits,fittingsUpdatedAt);
   ch.fittingsUpdatedAt=fittingsUpdatedAt;
@@ -4593,7 +4636,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.17 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.18 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setInterval(()=>resetExpired(true),15_000).unref();
 async function runAutomaticSyncLoop(){
   const startedAt=Date.now();
