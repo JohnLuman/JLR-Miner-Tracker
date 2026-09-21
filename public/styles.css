@@ -1466,3 +1466,22 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
     grid-template-columns:1fr!important;
   }
 }
+
+
+/* v2.9.10 compact Ice Fleet Output */
+.ice-fit-status{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:46px;border:1px solid #345064;border-radius:8px;background:#101720;padding:9px 11px}
+.ice-fit-status strong{font-size:11px;letter-spacing:.055em;color:#a9d7f2}
+.ice-fit-status small{font-size:9px;line-height:1.35;color:var(--muted);text-align:right}
+.ice-fit-status.empty{border-style:dashed}
+.ice-fit-hidden{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid #2d4658;border-radius:7px;background:#0f141b;padding:6px 8px}
+.ice-fit-hidden strong{font-size:8px;letter-spacing:.06em;color:#8db8d0}
+.ice-fit-hidden span{font-size:8px;color:var(--muted);text-align:right}
+.ice-fit-issue{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #6d3b42;border-radius:7px;background:#1b1114;padding:7px 9px}
+.ice-fit-issue>div{min-width:0}
+.ice-fit-issue strong{display:block;font-size:10px;color:#ffb1b7}
+.ice-fit-issue small{display:block;margin-top:2px;font-size:8px;color:var(--muted)}
+.ice-fit-issue>span{font-size:9px;color:#ff9aa2;text-align:right}
+@media(max-width:700px){
+  .ice-fit-status,.ice-fit-hidden,.ice-fit-issue{align-items:flex-start;flex-direction:column}
+  .ice-fit-status small,.ice-fit-hidden span,.ice-fit-issue>span{text-align:left}
+}
