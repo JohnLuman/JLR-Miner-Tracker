@@ -22,7 +22,7 @@ The Tracker must be **restricted to the user's corporation only**.
 
 `JohnLuman/JLR-Miner-Tracker`
 
-Current target version was bumped from **2.9.29** to **2.9.30**.
+Current target version is now **2.9.31**.
 
 ## Work already pushed
 
@@ -119,23 +119,17 @@ Version bumped to **2.9.30**.
 - `8a19b21e5a8ae9caae215ca851e4a339d8fa03e7` — Style Heavy Fighter Tracker
 - `92da874ad09ab71c25946571035524f2b4ce0c44` — Load Tracker styles
 
-## IMPORTANT unfinished checks / likely issue
+## Current status / remaining checks
 
-### 1. Fix Tracker client initialization race
-`public/tracker.js` currently does this in `bind()`:
+### 1. Tracker client initialization race — FIXED
+`public/tracker.js` now retries binding every ~250 ms while the corporation-gated Tracker tab is still hidden, so async `/api/me` access verification can finish before Tracker initializes.
 
-- waits for tab/panel to exist
-- if the Tracker tab is still `.hidden`, it clears the panel and **returns**
+Fixed in commit `0ab607ed171f6f9a3c3b934c6a9f4994a2455cba`.
 
-Because `tracker.js` is a deferred script and the async auth/access check may still be running, this can cause the tracker client to stop binding before `syncTrackerTabAccess()` reveals the tab.
+### 2. Exact corporation — PINNED
+Default Tracker corporation is now pinned in code to **TEMPLAR. [TMP.]** corporation ID **1831383486**. Railway can still override it with `TRACKER_CORPORATION_ID` if needed.
 
-**Fix:** if the tab is hidden, retry `bind()` after ~250 ms instead of permanently returning, or dispatch an access-ready event from app.js.
-
-### 2. Verify exact corporation
-Set Railway:
-`TRACKER_CORPORATION_ID=<exact corp ID>`
-
-Do not rely permanently on `MARKET_CHARACTER_NAME` fallback unless that is intentional.
+Pinned in commit `84b400945b544f29324614b8ab01023bb0abba1d`.
 
 ### 3. Validate zKill endpoint response
 Confirm:
