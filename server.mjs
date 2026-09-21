@@ -1754,6 +1754,19 @@ async function characterAssetsBundle(characterId,access) {
 async function characterAssets(characterId,access) {
   return (await characterAssetsBundle(characterId,access)).rows;
 }
+async function characterAssetNames(characterId,itemIds,access) {
+  const ids=[...new Set((itemIds||[]).map(id=>Number(id)).filter(Number.isSafeInteger))];
+  const names=new Map();
+  for(let i=0;i<ids.length;i+=1000){
+    const batch=ids.slice(i,i+1000);
+    if(!batch.length)continue;
+    const {data}=await esiPost(`https://esi.evetech.net/latest/characters/${characterId}/assets/names/?datasource=tranquility`,batch,access);
+    for(const row of Array.isArray(data)?data:[]){
+      if(row?.item_id!==undefined)names.set(String(row.item_id),String(row.name||'').trim());
+    }
+  }
+  return names;
+}
 async function dogmaAttributeName(attributeId) {
   const key=String(attributeId);
   if(dogmaAttributeCache.has(key))return dogmaAttributeCache.get(key);
@@ -1783,7 +1796,7 @@ function pickDogmaValue(attributes,...needles) {
   }
   return null;
 }
-async function abyssalStripSnapshot(assets=[]) {
+async function abyssalStripSnapshot(assets=[],context={}) {
   const assetById=new Map(assets.map(a=>[String(a.item_id),a]));
   const rows=assets.filter(a=>ABYSSAL_STRIP_TYPES.has(Number(a.type_id)));
   const out=[];
@@ -1804,15 +1817,29 @@ async function abyssalStripSnapshot(assets=[]) {
         parentItemId:parent?String(parent.item_id):null,
         shipTypeId:parent?Number(parent.type_id):null,
         shipName:parent?(state.esi.typeCache[String(parent.type_id)]?.name||null):null,
+        shipCustomName:null,
         sourceTypeId,
         sourceName:sourceTypeId?(state.esi.typeCache[String(sourceTypeId)]?.name||null):null,
         miningAmount:pickDogmaValue(attributes,'miningAmount'),
         duration:pickDogmaValue(attributes,'duration'),
+        optimalRange:pickDogmaValue(attributes,'maxRange','optimalRange'),
         criticalSuccessChance:pickDogmaValue(attributes,'criticalSuccessChance'),
         criticalSuccessBonusYield:pickDogmaValue(attributes,'criticalSuccessBonusYield'),
       });
     }catch(err){
       console.warn('Abyssal strip lookup failed',asset.item_id,String(err.message||err));
+    }
+  }
+
+  const characterId=context?.characterId;
+  const access=context?.access;
+  const parentIds=[...new Set(out.map(row=>row.parentItemId).filter(Boolean))];
+  if(characterId&&access&&parentIds.length){
+    try{
+      const names=await characterAssetNames(characterId,parentIds,access);
+      for(const row of out)row.shipCustomName=row.parentItemId?(names.get(String(row.parentItemId))||null):null;
+    }catch(err){
+      console.warn('Abyssal ship-name lookup failed',String(err.message||err));
     }
   }
   return out;
@@ -1829,7 +1856,9 @@ async function miningFittingSnapshot(fittings=[],abyssalModules=[]) {
   await ensureType(fittings.map(f=>f.ship_type_id));
   const mine=fittings.filter(f=>MINING_HULLS.has(state.esi.typeCache[String(f.ship_type_id)]?.name));
   await ensureType(mine.flatMap(f=>(f.items||[]).map(i=>i.type_id)));
-  return mine.map(f=>{
+
+  const normalizeName=value=>String(value||'').trim().replace(/\s+/g,' ').toLowerCase();
+  const prepared=mine.map(f=>{
     const shipName=state.esi.typeCache[String(f.ship_type_id)]?.name||`Type ${f.ship_type_id}`;
     const items=(f.items||[]).map(i=>({
       typeId:i.type_id,
@@ -1838,35 +1867,82 @@ async function miningFittingSnapshot(fittings=[],abyssalModules=[]) {
       quantity:Number(i.quantity||1),
     }));
     const required=items.filter(i=>ABYSSAL_STRIP_TYPES.has(Number(i.typeId)));
+    const needed=new Map();
+    for(const row of required)needed.set(Number(row.typeId),(needed.get(Number(row.typeId))||0)+Number(row.quantity||1));
+    const requirementKey=`${Number(f.ship_type_id)}|${[...needed.entries()].sort((a,b)=>a[0]-b[0]).map(([typeId,count])=>`${typeId}:${count}`).join(',')}`;
+    return{f,shipName,items,required,needed,requirementKey,normalizedFitName:normalizeName(f.name)};
+  });
+
+  const physicalGroups=new Map();
+  for(const mod of abyssalModules.filter(row=>row.parentItemId)){
+    if(!physicalGroups.has(mod.parentItemId))physicalGroups.set(mod.parentItemId,[]);
+    physicalGroups.get(mod.parentItemId).push(mod);
+  }
+
+  const fitNameCounts=new Map();
+  const requirementCounts=new Map();
+  for(const row of prepared.filter(row=>row.required.length)){
+    if(row.normalizedFitName)fitNameCounts.set(row.normalizedFitName,(fitNameCounts.get(row.normalizedFitName)||0)+1);
+    requirementCounts.set(row.requirementKey,(requirementCounts.get(row.requirementKey)||0)+1);
+  }
+
+  function groupSatisfies(group,row){
+    if(!group.length)return false;
+    const first=group[0];
+    if(Number(first.shipTypeId||0)!==Number(row.f.ship_type_id||0))return false;
+    const have=new Map();
+    for(const mod of group)have.set(Number(mod.typeId),(have.get(Number(mod.typeId))||0)+1);
+    return [...row.needed].every(([typeId,count])=>(have.get(typeId)||0)>=count);
+  }
+
+  return prepared.map(row=>{
     let matched=[];
     let abyssalMatch='none';
-    if(required.length){
-      const groups=new Map();
-      for(const mod of abyssalModules.filter(x=>x.shipName===shipName&&x.parentItemId)){
-        if(!groups.has(mod.parentItemId))groups.set(mod.parentItemId,[]);
-        groups.get(mod.parentItemId).push(mod);
+    let abyssalMatchMethod=null;
+    let abyssalShipItemId=null;
+    let abyssalShipName=null;
+
+    if(row.required.length){
+      const candidates=[...physicalGroups.entries()]
+        .filter(([,group])=>groupSatisfies(group,row))
+        .map(([shipItemId,group])=>({shipItemId,group,shipCustomName:String(group[0]?.shipCustomName||'').trim()}));
+
+      const namedCandidates=row.normalizedFitName
+        ?candidates.filter(candidate=>normalizeName(candidate.shipCustomName)===row.normalizedFitName)
+        :[];
+
+      let chosen=null;
+      if(row.normalizedFitName&&fitNameCounts.get(row.normalizedFitName)===1&&namedCandidates.length===1){
+        chosen=namedCandidates[0];
+        abyssalMatchMethod='ship-name';
+      }else if(requirementCounts.get(row.requirementKey)===1&&candidates.length===1){
+        chosen=candidates[0];
+        abyssalMatchMethod='unique-candidate';
       }
-      const needed=new Map();
-      for(const row of required)needed.set(Number(row.typeId),(needed.get(Number(row.typeId))||0)+Number(row.quantity||1));
-      const candidates=[...groups.values()].filter(group=>{
-        const have=new Map();
-        for(const mod of group)have.set(Number(mod.typeId),(have.get(Number(mod.typeId))||0)+1);
-        return [...needed].every(([typeId,count])=>(have.get(typeId)||0)>=count);
-      });
-      if(candidates.length===1){
-        matched=candidates[0].map(({parentItemId,...safe})=>safe);
+
+      if(chosen){
+        matched=chosen.group.map(({parentItemId,...safe})=>safe);
         abyssalMatch='matched';
-      }else if(candidates.length>1)abyssalMatch='ambiguous';
-      else abyssalMatch='missing';
+        abyssalShipItemId=chosen.shipItemId;
+        abyssalShipName=chosen.shipCustomName||null;
+      }else if(candidates.length){
+        abyssalMatch='ambiguous';
+      }else{
+        abyssalMatch='missing';
+      }
     }
+
     return {
-      fittingId:f.fitting_id,
-      name:f.name||'Unnamed fit',
-      description:f.description||'',
-      shipTypeId:f.ship_type_id,
-      shipName,
-      items,
+      fittingId:row.f.fitting_id,
+      name:row.f.name||'Unnamed fit',
+      description:row.f.description||'',
+      shipTypeId:row.f.ship_type_id,
+      shipName:row.shipName,
+      items:row.items,
       abyssalMatch,
+      abyssalMatchMethod,
+      abyssalShipItemId,
+      abyssalShipName,
       abyssalLasers:matched,
     };
   });
@@ -2231,7 +2307,7 @@ async function refreshCharacterFittings(ch){
   ]);
   const fits=fitBundle.rows;
   const assets=assetBundle.rows;
-  const abyssalModules=await abyssalStripSnapshot(assets);
+  const abyssalModules=await abyssalStripSnapshot(assets,{characterId:ch.characterId,access});
 
   ch.abyssalStripCount=abyssalModules.length;
   ch.assetsUpdatedAt=now();
@@ -2270,7 +2346,7 @@ async function syncCharacterOnce(ch,{forceMetadata=false}={}){
       let abyssalModules=[];
       if(id.scopes.includes(ASSETS_SCOPE)){
         const assets=await characterAssets(ch.characterId,access);
-        abyssalModules=await abyssalStripSnapshot(assets);
+        abyssalModules=await abyssalStripSnapshot(assets,{characterId:ch.characterId,access});
         ch.abyssalStripCount=abyssalModules.length;
         ch.assetsUpdatedAt=now();
       }
@@ -4221,7 +4297,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.12 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.13 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setInterval(()=>resetExpired(true),15_000).unref();
 async function runAutomaticSyncLoop(){
   const startedAt=Date.now();
