@@ -114,10 +114,15 @@
     const abyssalRows=fitItems.filter(row=>/Abyssal.*Strip Miner/i.test(String(row.name||'')));
     if(!normalLaserRows.length&&!abyssalRows.length)throw new Error('No supported strip miner was found in this saved fit.');
     if(abyssalRows.length&&minerFit.abyssalMatch!=='matched'){
-      if(minerFit.abyssalMatch==='ambiguous'){
-        throw new Error(`Abyssal rolls are ambiguous for "${minerFit.name||'this fit'}". Name the physical ${shipName} exactly the same as the saved fit, then use UPDATE FITS.`);
+      const retryMs=Date.parse(String(minerFit.abyssalRetryAfter||''))-Date.now();
+      if(Number.isFinite(retryMs)&&retryMs>0){
+        const mins=Math.max(1,Math.ceil(retryMs/60000));
+        throw new Error(`Waiting for ESI to refresh Abyssal data for "${minerFit.name||'this fit'}" (~${mins}m). The saved fit data will not be replaced until ESI is current.`);
       }
-      throw new Error(`Abyssal rolls for "${minerFit.name||'this fit'}" could not be matched to a fitted physical ${shipName}. JLR will not guess.`);
+      if(minerFit.abyssalMatch==='ambiguous'){
+        throw new Error(`Fresh ESI data still has multiple possible Abyssal ships for "${minerFit.name||'this fit'}". JLR will not guess or mix another fit's rolls.`);
+      }
+      throw new Error(`Fresh ESI data could not verify Abyssal rolls for "${minerFit.name||'this fit'}". JLR will not guess or mix another fit's rolls.`);
     }
 
     const ids=data.skillIds||{}, sb=data.skillBonuses||{};
