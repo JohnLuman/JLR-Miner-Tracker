@@ -109,8 +109,10 @@
     const abyssalRows=fitItems.filter(row=>/Abyssal.*Strip Miner/i.test(String(row.name||'')));
     if(!normalLaserRows.length&&!abyssalRows.length)throw new Error('No supported strip miner was found in this saved fit.');
     if(abyssalRows.length&&minerFit.abyssalMatch!=='matched'){
-      if(minerFit.abyssalMatch==='ambiguous')throw new Error('More than one matching Abyssal-fitted ship was found. Leave only the intended ship fitted, then Refresh.');
-      throw new Error('Abyssal strip miner found, but its exact rolled module could not be matched from this character’s fitted assets.');
+      if(minerFit.abyssalMatch==='ambiguous'){
+        throw new Error(`Abyssal rolls are ambiguous for "${minerFit.name||'this fit'}". Name the physical ${shipName} exactly the same as the saved fit, then use UPDATE FITS.`);
+      }
+      throw new Error(`Abyssal rolls for "${minerFit.name||'this fit'}" could not be matched to a fitted physical ${shipName}. JLR will not guess.`);
     }
 
     const ids=data.skillIds||{}, sb=data.skillBonuses||{};
@@ -204,7 +206,7 @@
           quantity:1,
           miningAmount:Number.isFinite(Number(mod.miningAmount))?Number(mod.miningAmount):n(base.miningAmount),
           duration:normalizeDuration(mod.duration,base.duration),
-          optimalRange:n(base.optimalRange),
+          optimalRange:Number.isFinite(Number(mod.optimalRange))?Number(mod.optimalRange):n(base.optimalRange),
           criticalSuccessChance:normalizeChance(mod.criticalSuccessChance,base.criticalSuccessChance),
           criticalSuccessBonusYield:normalizeBonusYield(mod.criticalSuccessBonusYield,base.criticalSuccessBonusYield),
           abyssal:true,
