@@ -211,8 +211,8 @@
   }
   function notifyLosses(losses){
     if(!trackerArmed||!losses.length)return;
-    if(typeof window.jlrPlayFighterAlarm==='function')window.jlrPlayFighterAlarm();
     const newest=losses[0]||{};
+    if(typeof window.jlrPlayFighterAlarm==='function')window.jlrPlayFighterAlarm(newest);
     const count=losses.length;
     const fighter=newest.shipTypeName||'Heavy Fighter';
     const system=newest.systemName||'unknown system';
@@ -311,7 +311,7 @@
   async function testSiren(){
     if(typeof window.jlrUnlockFighterAlarm==='function')await window.jlrUnlockFighterAlarm();
     const played=typeof window.jlrPlayFighterAlarm==='function'
-      ?await window.jlrPlayFighterAlarm()
+      ?await window.jlrPlayFighterAlarm({test:true})
       :false;
     if(!played)toast('Browser audio is blocked. Click ARM LOUD ALERTS, then test again.');
   }
@@ -388,7 +388,7 @@
           '</div>'+
           '<div class="tracker-actions">'+
             '<button id="trackerArm" class="tracker-arm '+(trackerArmed?'armed':'off')+'" type="button" aria-pressed="'+String(trackerArmed)+'">'+(trackerArmed?'LOUD ALERTS ARMED':'ARM LOUD ALERTS')+'</button>'+
-            '<button id="trackerTest" class="orb red" type="button">▶ TEST WHO LOST THE FIGHTER</button>'+
+            '<button id="trackerTest" class="orb red" type="button">▶ TEST JLR CUSTOM VOICE</button>'+
             '<button id="trackerStop" class="orb silver" type="button">■ STOP ALARM</button>'+
             '<button id="trackerRefresh" class="orb silver" type="button" '+(trackerLoading?'disabled':'')+'>'+(trackerLoading?'CHECKING…':'REFRESH NOW')+'</button>'+
           '</div>'+
