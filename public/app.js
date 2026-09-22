@@ -52,7 +52,7 @@
   let ledgerAuditLoading=false;
   let startupGreetingQueued=false;
   let brainRecognition=null;
-  let brainMicWanted=false;
+  let brainMicWanted=true;
   let brainConversationUntil=0;
   let brainLastSystem='';
   let brainSpeechHistory=[];
@@ -181,7 +181,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.78');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.79');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -309,8 +309,7 @@
     recognition.onerror=event=>{
       const code=String(event?.error||'microphone error');
       if(code==='not-allowed'||code==='service-not-allowed'){
-        brainMicWanted=false;
-        localStorage.setItem('jlrBrainMicArmed','false');
+        brainMicWanted=true;
         brainSetListen('MIC PERMISSION REQUIRED','Click TALK TO TRACKER and allow microphone access.');
         return;
       }
@@ -338,16 +337,15 @@
     recognition.onend=()=>{
       brainRecognition=null;
       if(brainMicWanted)setTimeout(()=>startBrainListening(),700);
-      else brainSetListen('MIC OFF','Click TALK TO TRACKER to arm the wake word.');
     };
     try{recognition.start()}catch(error){brainRecognition=null;brainSetListen('MIC WAITING','Click TALK TO TRACKER again.')}
   }
-  function stopBrainListening(){
-    brainMicWanted=false;
-    localStorage.setItem('jlrBrainMicArmed','false');
+  function restartBrainListening(){
+    brainMicWanted=true;
     try{brainRecognition?.stop()}catch{}
     brainRecognition=null;
-    brainSetListen('MIC OFF','Click TALK TO TRACKER to arm the wake word.');
+    brainSetListen('MIC STARTING','Re-arming microphone.');
+    setTimeout(()=>startBrainListening(),250);
   }
 
   function renderTrackerBrain(){
@@ -361,10 +359,8 @@
     if($('brainVoiceEnabled'))$('brainVoiceEnabled').value=soundEnabled?'on':'off';
     if($('brainStartupBriefing'))$('brainStartupBriefing').value=localStorage.getItem('jlrBrainStartupBriefing')==='false'?'off':'on';
     if($('brainConversationWindow'))$('brainConversationWindow').value=localStorage.getItem('jlrBrainConversationWindow')||'30';
-    if($('brainAutoListen'))$('brainAutoListen').value=localStorage.getItem('jlrBrainAutoListen')==='true'?'on':'off';
-    if(!brainMicWanted&&!brainRecognition){
-      const remembered=localStorage.getItem('jlrBrainMicArmed')==='true';
-      brainSetListen(remembered?'MIC STARTING':'MIC OFF',remembered?'Restoring wake-word listening.':'Click TALK TO TRACKER once to grant microphone access.');
+    if(brainMicWanted&&!brainRecognition){
+      brainSetListen('MIC STARTING','Tracker is arming the microphone and waiting for “Tracker”.');
     }
     renderBrainSpeechHistory();
     const decisions=$('brainDecisionList');
@@ -826,7 +822,7 @@
   // Native <select> popups are drawn by the browser/OS, so moving over their
   // options does not produce page events. Use an app-owned popup for the fit
   // and booster selectors while retaining their existing change handlers.
-  const audibleSelects='#calcBoosterCharacter,#calcBoosterFitting,.fleet-fit-select,#doctrineClass,#doctrineCategory,#themeSelect';
+  const audibleSelects='#calcBoosterCharacter,#calcBoosterFitting,.fleet-fit-select,#doctrineClass,#doctrineCategory,#themeSelect,#brainVoiceEnabled,#brainStartupBriefing,#brainConversationWindow';
   let soundMenu=null, soundMenuSerial=0;
   function closeSoundMenu(refocus=false){
     if(!soundMenu)return;
@@ -993,7 +989,6 @@
     if(activeTab==='performance')refreshFleetPerformanceData(false);
     if(activeTab==='pvp'&&!pvpIntel&&!pvpIntelLoading)loadPvpIntel();
     if(activeTab==='threat')renderThreatScan();
-    if(activeTab==='brain'&&localStorage.getItem('jlrBrainAutoListen')==='true'&&!brainMicWanted)startBrainListening();
   }
   function initTabs(){
     const host=$('tabHost');
@@ -1052,7 +1047,6 @@
             <label class="brain-setting"><span>VOICE</span><select id="brainVoiceEnabled"><option value="on">ON</option><option value="off">OFF</option></select></label>
             <label class="brain-setting"><span>STARTUP BRIEFING</span><select id="brainStartupBriefing"><option value="on">ON</option><option value="off">OFF</option></select></label>
             <label class="brain-setting"><span>CONVERSATION WINDOW</span><select id="brainConversationWindow"><option value="15">15 SECONDS</option><option value="30">30 SECONDS</option><option value="60">60 SECONDS</option></select></label>
-            <label class="brain-setting"><span>AUTO ARM MIC</span><select id="brainAutoListen"><option value="off">OFF</option><option value="on">ON</option></select></label>
           </div>
         </section>
 
@@ -1060,7 +1054,7 @@
           <div class="brain-card-head"><strong>TALK TO TRACKER</strong><small>Natural voice interaction</small></div>
           <div id="brainListenPanel" class="brain-listen-panel">
             <span class="brain-listen-orb">●</span>
-            <div><strong id="brainListenStatus">MIC OFF</strong><small id="brainListenHint">Click TALK TO TRACKER once to grant microphone access.</small></div>
+            <div><strong id="brainListenStatus">MIC STARTING</strong><small id="brainListenHint">Tracker is arming the microphone and waiting for the wake word.</small></div>
           </div>
           <div id="brainHeard" class="brain-heard">Standby.</div>
           <div id="brainReply" class="brain-reply">Tracker ready.</div>
@@ -4157,10 +4151,6 @@
       localStorage.setItem('jlrBrainStartupBriefing',String(target.value==='on'));
     }else if(target?.id==='brainConversationWindow'){
       localStorage.setItem('jlrBrainConversationWindow',String(target.value));
-    }else if(target?.id==='brainAutoListen'){
-      const on=target.value==='on';
-      localStorage.setItem('jlrBrainAutoListen',String(on));
-      if(on)startBrainListening();else stopBrainListening();
     }
   });
 
@@ -4174,7 +4164,7 @@
       return;
     }
     if(target.closest('#trackerMicToggle')){
-      if(brainMicWanted)stopBrainListening();else startBrainListening();
+      restartBrainListening();
       return;
     }
     const repeatRow=target.closest('.brain-repeat-row');
@@ -4192,7 +4182,7 @@
       const type=document.querySelector('.brain-feedback-type.active')?.dataset.feedbackType||'suggestion';
       const message=String($('brainFeedbackText')?.value||'').trim();
       if(!message){toast('Add a short description first.');return}
-      await api('/api/tracker/brain/feedback',{method:'POST',body:JSON.stringify({type,message,context:{version:state?.app?.version||'2.9.78',tab:activeTab,lastSpeech:brainSpeechHistory[0]?.text||''}})});
+      await api('/api/tracker/brain/feedback',{method:'POST',body:JSON.stringify({type,message,context:{version:state?.app?.version||'2.9.79',tab:activeTab,lastSpeech:brainSpeechHistory[0]?.text||''}})});
       $('brainFeedbackText').value='';
       toast('Tracker feedback submitted.');
       return;
@@ -4616,9 +4606,7 @@
       const auth=await fetch('/api/me',{credentials:'same-origin'}).then(r=>r.json());
       if(!auth.authenticated){showLogin();return}
       me=auth.user;syncDoctrineTabAccess();syncTrackerTabAccess();initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');queueStartupGreeting();await loadMerIntel();await loadState();connectSse();startScoutLocationWatch();
-      if(localStorage.getItem('jlrBrainMicArmed')==='true'){
-        setTimeout(()=>startBrainListening(),1200);
-      }
+      setTimeout(()=>startBrainListening(),1200);
       const params=new URLSearchParams(location.search);if(params.get('linked'))toast('Mining toon connected.');if(params.get('login'))toast('Logged in.');if(params.get('market')==='authorized')toast('John market access authorized.');if(params.get('error'))toast(decodeURIComponent(params.get('error')));if(params.toString())history.replaceState({},'',location.pathname);
     }catch(e){console.error(e);showLogin();$('setupWarning').classList.remove('hidden');$('setupWarning').textContent=`JLR could not load: ${e.message}`}
   }
