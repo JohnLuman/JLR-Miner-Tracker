@@ -70,6 +70,15 @@
   let brainLocalProcessor=null;
   let brainLocalMute=null;
   let brainLocalSession=0;
+  let brainMicAudioFrames=0;
+  let brainMicCurrentRms=0;
+  let brainMicPeakRms=0;
+  let brainMicLastSignalAt=0;
+  let brainMicLastMeterPaint=0;
+  let brainMicLastPartial='';
+  let brainMicLastFinal='';
+  let brainMicWakeDebounceUntil=0;
+  let brainMicSuppressedTranscripts=0;
   let brainMicLastError=null;
   let brainMicDiagTrail=[];
   try{brainMicDiagTrail=JSON.parse(localStorage.getItem('jlrBrainMicDiagTrail')||'[]')}catch{}
@@ -204,7 +213,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.98');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.99');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -294,7 +303,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR TRACKER MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.98'),
+      'Version: '+String(state?.app?.version||'2.9.99'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -305,6 +314,14 @@
       'Last code: '+String(last?.code||'none'),
       'Last stage: '+String(last?.stage||'none'),
       'Last detail: '+String(last?.detail||'none'),
+      'Audio frames: '+String(brainMicAudioFrames),
+      'Current RMS: '+Number(brainMicCurrentRms||0).toFixed(6),
+      'Peak RMS: '+Number(brainMicPeakRms||0).toFixed(6),
+      'Last signal age ms: '+String(brainMicLastSignalAt?Date.now()-brainMicLastSignalAt:'none'),
+      'Last partial: '+String(brainMicLastPartial||'none'),
+      'Last final: '+String(brainMicLastFinal||'none'),
+      'Voice active now: '+String(brainVoiceActive()),
+      'Suppressed transcripts: '+String(brainMicSuppressedTranscripts),
     ];
     if(serverDiag){
       lines.push('Server speech model cached: '+String(Boolean(serverDiag.modelCached)));
@@ -484,10 +501,46 @@
     await refreshBrainMicrophones();
     return track;
   }
+  function brainVoiceActive(){
+    try{return Boolean(typeof window.jlrVoiceIsActive==='function'&&window.jlrVoiceIsActive())}
+    catch{return false}
+  }
+  function paintBrainMicLevel(rms){
+    const bar=$('brainMicLevelFill');
+    const text=$('brainMicLevelText');
+    if(!bar&&!text)return;
+    const normalized=Math.max(0,Math.min(1,Number(rms||0)*18));
+    if(bar)bar.style.width=Math.max(2,Math.round(normalized*100))+'%';
+    if(text){
+      if(normalized>.12)text.textContent='VOICE';
+      else if(normalized>.025)text.textContent='SIGNAL';
+      else text.textContent='QUIET';
+    }
+  }
+  function handleBrainPartialTranscript(partial){
+    const heard=String(partial||'').trim();
+    if(!heard)return;
+    brainMicLastPartial=heard;
+    if($('brainHeard'))$('brainHeard').textContent='HEARING: “'+heard+'”';
+    const lower=heard.toLowerCase();
+    const wake=lower.indexOf('tracker');
+    if(wake<0||Date.now()<brainMicWakeDebounceUntil||brainVoiceActive())return;
+    brainMicWakeDebounceUntil=Date.now()+1500;
+    brainConversationUntil=Date.now()+brainConversationMs();
+    brainRecordMicDiag('MIC-I501','WAKE_PARTIAL','Wake word heard in partial transcript: '+heard);
+    brainSetListen('TRACKER AWAKE','Wake word detected. Ask your question.');
+    if($('brainReply'))$('brainReply').textContent='Listening…';
+  }
   function handleBrainTranscript(transcript){
-    if(typeof window.jlrVoiceIsActive==='function'&&window.jlrVoiceIsActive())return;
     const heard=String(transcript||'').trim();
     if(!heard)return;
+    brainMicLastFinal=heard;
+    brainRecordMicDiag('MIC-I502','FINAL_TRANSCRIPT',heard);
+    if(brainVoiceActive()){
+      brainMicSuppressedTranscripts++;
+      brainRecordMicDiag('MIC-I503','VOICE_SUPPRESS','Ignored transcript while Tracker voice was active: '+heard);
+      return;
+    }
     if($('brainHeard'))$('brainHeard').textContent='HEARD: “'+heard+'”';
     const lower=heard.toLowerCase();
     const wake=lower.indexOf('tracker');
@@ -674,16 +727,44 @@
       recognizer.on('partialresult',message=>{
         if(session!==brainLocalSession)return;
         const partial=String(message?.result?.partial||'').trim();
-        if(partial&&$('brainHeard'))$('brainHeard').textContent='HEARING: “'+partial+'”';
+        if(partial)handleBrainPartialTranscript(partial);
       });
       const source=context.createMediaStreamSource(stream);
       const processor=context.createScriptProcessor(4096,1,1);
       const mute=context.createGain();
       mute.gain.value=0;
+      brainMicAudioFrames=0;
+      brainMicCurrentRms=0;
+      brainMicPeakRms=0;
+      brainMicLastSignalAt=0;
+      brainMicLastPartial='';
+      brainMicLastFinal='';
+      brainMicSuppressedTranscripts=0;
+      paintBrainMicLevel(0);
       processor.onaudioprocess=event=>{
         if(session!==brainLocalSession||brainLocalRecognizer!==recognizer)return;
-        if(typeof window.jlrVoiceIsActive==='function'&&window.jlrVoiceIsActive())return;
-        try{recognizer.acceptWaveform(event.inputBuffer)}catch(error){console.debug('JLR local speech frame skipped.',error)}
+        const buffer=event.inputBuffer;
+        try{
+          const data=buffer.getChannelData(0);
+          let sum=0;
+          for(let i=0;i<data.length;i++)sum+=data[i]*data[i];
+          const rms=Math.sqrt(sum/Math.max(1,data.length));
+          brainMicAudioFrames++;
+          brainMicCurrentRms=rms;
+          if(rms>brainMicPeakRms)brainMicPeakRms=rms;
+          if(rms>0.002)brainMicLastSignalAt=Date.now();
+          if(performance.now()-brainMicLastMeterPaint>120){
+            brainMicLastMeterPaint=performance.now();
+            paintBrainMicLevel(rms);
+          }
+        }catch(error){}
+        // Keep feeding the recognizer even while Tracker is speaking. Transcript
+        // handling is suppressed instead; this prevents a stale voice-active flag
+        // from making the microphone silently stop processing audio.
+        try{recognizer.acceptWaveform(buffer)}catch(error){
+          console.debug('JLR local speech frame skipped.',error);
+          brainRecordMicDiag('MIC-E403','AUDIO_FRAME',String(error?.message||error).slice(0,220));
+        }
       };
       source.connect(processor);
       processor.connect(mute);
@@ -694,8 +775,14 @@
       brainNetworkFailures=0;
       brainSpeechStartHangs=0;
       brainClearMicError();
-      brainRecordMicDiag('MIC-OK','LISTENING',reason+' • '+brainMicLabel());
+      brainRecordMicDiag('MIC-OK','LISTENING',reason+' • '+brainMicLabel()+' • '+context.sampleRate+' Hz');
       brainSetListen('MIC ON','MIC-OK • '+reason+' • '+brainMicLabel()+' • Say “Tracker” to wake the assistant.');
+      setTimeout(()=>{
+        if(session!==brainLocalSession||brainLocalRecognizer!==recognizer)return;
+        if(brainMicAudioFrames===0){
+          brainSetMicError(brainMicCodeError('MIC-E204','AUDIO_PIPELINE','Microphone track is live, but no Web Audio frames are arriving.'),'Choose another microphone or click TALK TO TRACKER to reopen it.');
+        }
+      },5000);
     }catch(error){
       if(session!==brainLocalSession)return;
       stopBrainLocalCapture(false);
@@ -722,7 +809,7 @@
     const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
     const ua=String(navigator.userAgent||'');
     const isOpera=ua.includes('OPR/')||ua.includes('Opera/');
-    if(!Recognition){
+    if(isOpera||!Recognition){
       brainMicWanted=true;
       localStorage.setItem('jlrBrainMicArmed','true');
       await startBrainLocalListening(isOpera?'JLR LOCAL AI • OPERA GX':'JLR LOCAL AI');
@@ -1679,6 +1766,11 @@
           <div id="brainListenPanel" class="brain-listen-panel">
             <span class="brain-listen-orb">●</span>
             <div><strong id="brainListenStatus">MIC STARTING</strong><small id="brainListenHint">Tracker is arming the microphone and waiting for the wake word.</small></div>
+          </div>
+          <div class="brain-mic-level-row">
+            <span>MIC SIGNAL</span>
+            <div class="brain-mic-level"><i id="brainMicLevelFill"></i></div>
+            <b id="brainMicLevelText">QUIET</b>
           </div>
           <div id="brainHeard" class="brain-heard">Standby.</div>
           <div id="brainReply" class="brain-reply">Tracker ready.</div>
@@ -4950,7 +5042,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.98',
+          version:state?.app?.version||'2.9.99',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
