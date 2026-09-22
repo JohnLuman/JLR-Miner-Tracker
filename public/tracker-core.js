@@ -211,7 +211,7 @@
   }
   function notifyLosses(losses){
     if(!trackerArmed||!losses.length)return;
-    siren();
+    if(typeof window.jlrPlayFighterAlarm==='function')window.jlrPlayFighterAlarm();
     const newest=losses[0]||{};
     const count=losses.length;
     const fighter=newest.shipTypeName||'Heavy Fighter';
@@ -286,7 +286,9 @@
     trackerArmed=Boolean(next);
     localStorage.setItem(ALERT_PREF,String(trackerArmed));
     if(trackerArmed){
-      const unlocked=await unlockAudio();
+      const unlocked=typeof window.jlrUnlockFighterAlarm==='function'
+        ?await window.jlrUnlockFighterAlarm()
+        :false;
       syncTrackerStream();
       if('Notification' in window&&Notification.permission==='default'){
         try{await Notification.requestPermission();}catch(e){}
@@ -295,6 +297,7 @@
       else schedule(5000);
       toast(unlocked?'Heavy Fighter alerts armed.':'Alerts armed. Browser audio may need another click before it can sound.');
     }else{
+      if(typeof window.jlrStopFighterAlarm==='function')window.jlrStopFighterAlarm();
       if(trackerPoll){
         clearTimeout(trackerPoll);
         trackerPoll=null;
@@ -306,8 +309,17 @@
     render();
   }
   async function testSiren(){
-    const ready=await unlockAudio();
-    if(!ready||!siren())toast('Browser audio is blocked. Click the ARM button, then test again.');
+    if(typeof window.jlrUnlockFighterAlarm==='function')await window.jlrUnlockFighterAlarm();
+    const played=typeof window.jlrPlayFighterAlarm==='function'
+      ?await window.jlrPlayFighterAlarm()
+      :false;
+    if(!played)toast('Browser audio is blocked. Click ARM LOUD ALERTS, then test again.');
+  }
+  function stopAlarm(){
+    const stopped=typeof window.jlrStopFighterAlarm==='function'
+      ?window.jlrStopFighterAlarm()
+      :false;
+    toast(stopped?'Tracker alarm stopped.':'No Tracker alarm is currently playing.');
   }
   function lossCard(row){
     const victim=row&&row.victim||{};
@@ -376,7 +388,8 @@
           '</div>'+
           '<div class="tracker-actions">'+
             '<button id="trackerArm" class="tracker-arm '+(trackerArmed?'armed':'off')+'" type="button" aria-pressed="'+String(trackerArmed)+'">'+(trackerArmed?'LOUD ALERTS ARMED':'ARM LOUD ALERTS')+'</button>'+
-            '<button id="trackerTest" class="orb red" type="button">🔊 TEST SIREN</button>'+
+            '<button id="trackerTest" class="orb red" type="button">▶ TEST WHO LOST THE FIGHTER</button>'+
+            '<button id="trackerStop" class="orb silver" type="button">■ STOP ALARM</button>'+
             '<button id="trackerRefresh" class="orb silver" type="button" '+(trackerLoading?'disabled':'')+'>'+(trackerLoading?'CHECKING…':'REFRESH NOW')+'</button>'+
           '</div>'+
         '</section>'+
@@ -399,9 +412,11 @@
 
     const arm=document.getElementById('trackerArm');
     const test=document.getElementById('trackerTest');
+    const stop=document.getElementById('trackerStop');
     const refresh=document.getElementById('trackerRefresh');
     if(arm)arm.addEventListener('click',function(){setArmed(!trackerArmed);});
     if(test)test.addEventListener('click',testSiren);
+    if(stop)stop.addEventListener('click',stopAlarm);
     if(refresh)refresh.addEventListener('click',function(){loadTracker(true,false);});
   }
   function bind(){
