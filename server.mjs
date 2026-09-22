@@ -784,7 +784,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.75',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.76',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -3156,52 +3156,7 @@ function trackerBrainBriefing(user,{force=false}={}){
     trackerBrainRemember(user,source.slice(0,8));
   }
   return{text:parts.join(' '),snapshot,candidates};
-}={}){
-  const snapshot=trackerBrainSnapshot();
-  const candidates=force?snapshot.issues:snapshot.issues.filter(issue=>!trackerBrainRecentlyAnnounced(user,issue));
-  const parts=['Tracker is online.'];
-  const connected=snapshot.connectedCharacters;
-
-  if(!snapshot.issues.length){
-    parts.push('Everything looks normal.');
-  }else if(!candidates.length){
-    parts.push('There are no new priority changes.');
-  }else{
-    const attention=candidates.filter(issue=>issue.rank>=2);
-    const source=attention.length?attention:candidates;
-    if(attention.length){
-      parts.push(`I have ${attention.length} item${attention.length===1?'':'s'} that need attention.`);
-    }else{
-      parts.push(`I have ${source.length} status update${source.length===1?'':'s'}.`);
-    }
-
-    const spoken=[];
-    const staleScans=source.filter(issue=>issue.type==='scan-stale');
-    const specific=source.filter(issue=>issue.type!=='scan-stale').slice(0,2);
-    spoken.push(...specific);
-
-    if(spoken.length<2&&staleScans.length){
-      spoken.push(staleScans[0]);
-    }
-
-    for(const issue of spoken)parts.push(issue.voice);
-
-    const spokenIds=new Set(spoken.map(issue=>issue.id));
-    const remaining=source.filter(issue=>!spokenIds.has(issue.id));
-    const remainingStale=remaining.filter(issue=>issue.type==='scan-stale').length;
-    if(remainingStale>0){
-      parts.push(`${remainingStale} additional system${remainingStale===1?'':'s'} need scan updates.`);
-    }else if(remaining.length>0){
-      parts.push(`${remaining.length} additional item${remaining.length===1?' is':'s are'} listed in Tracker Assist.`);
-    }
-
-    trackerBrainRemember(user,source.slice(0,8));
-  }
-
-  if(connected>0)parts.push(`${connected} connected character${connected===1?' is':'s are'} being monitored.`);
-  return{text:parts.join(' '),snapshot,candidates};
 }
-
 
 function recordBoardScan({system,text,a0,t3Scan=null,definition=null}){
   const parsed=parseA0Scan(text);
@@ -6035,7 +5990,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.75',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.76',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -6519,7 +6474,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.75 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.76 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
 setInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': tracker-heartbeat\n\n')}catch{trackerLiveClients.delete(res)}}},20_000).unref();
 setInterval(()=>resetExpired(true),15_000).unref();
