@@ -26,6 +26,10 @@ assert.equal(
   parseProbeScan('ABC-123\tCosmic Anomaly\tOre Site\tLarge Hezormine Deposit\t100.0%\t2 AU', 'Hezorime').detected,
   true,
 );
+assert.equal(
+  parseProbeScan('ABC-123\tCosmic Anomaly\tOre Site\tLarge Griemeer Deposit\t100.0%\t2 AU', 'Griemeer').detected,
+  true,
+);
 assert.equal(parseProbeScan('random clipboard text', 'Kylixium').valid, false);
 assert.equal(parseProbeScan('ID\tGroup\tType\tName\tSignal Strength\tDistance', 'Kylixium').valid, false);
 
