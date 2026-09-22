@@ -199,7 +199,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.86');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.87');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -431,34 +431,18 @@
   async function loadBrainLocalModel(){
     if(brainLocalModel)return brainLocalModel;
     if(brainLocalModelPromise)return brainLocalModelPromise;
-    brainSetListen('MIC AI LOADING','Loading the JLR local speech engine, then downloading the offline English model (~40 MB). First load may take a minute; later loads use browser storage.');
+    brainSetListen('MIC AI LOADING','Loading JLR local speech recognition. First load downloads the offline English model (~40 MB); later loads use browser storage.');
     const actual=(async()=>{
-      const dist='https://cdn.jsdelivr.net/npm/@lichess-org/vosk-browser@0.0.3/dist/';
-      const module=await import(dist+'vosk.wasm.js');
-      if(typeof module.createModel!=='function')throw new Error('JLR speech engine is missing createModel().');
-      brainSetListen('MIC AI LOADING','Speech engine loaded. Preparing the offline English model (~40 MB)…');
-      const workerResponse=await fetch(dist+'vosk.worker.js',{mode:'cors',cache:'force-cache'});
-      if(!workerResponse.ok)throw new Error('Speech worker download failed (HTTP '+workerResponse.status+').');
-      const workerSource=await workerResponse.text();
-      const workerUrl=URL.createObjectURL(new Blob([workerSource],{type:'text/javascript'}));
-      try{
-        const resolver=asset=>{
-          const name=String(asset||'');
-          if(name.endsWith('vosk.worker.js'))return workerUrl;
-          if(name.endsWith('vosk.wasm'))return dist+'vosk.wasm';
-          return dist+name.split('/').pop();
-        };
-        const model=await module.createModel(
-          'https://fiddle-app.github.io/voice-models/vosk-model-small-en-us-0.15.tar.gz',
-          resolver,
-          -1
-        );
-        try{model.setLogLevel?.(-1)}catch{}
-        brainLocalModel=model;
-        return model;
-      }finally{
-        setTimeout(()=>URL.revokeObjectURL(workerUrl),5000);
+      const started=Date.now();
+      while(!(window.Vosk&&typeof window.Vosk.createModel==='function')){
+        if(Date.now()-started>10000)throw new Error('JLR speech library did not load.');
+        await new Promise(resolve=>setTimeout(resolve,100));
       }
+      brainSetListen('MIC AI LOADING','Speech engine ready. Preparing the offline English model (~40 MB)…');
+      const model=await window.Vosk.createModel('https://ccoreilly.github.io/vosk-browser/models/vosk-model-small-en-us-0.15.tar.gz');
+      try{model.setLogLevel?.(-1)}catch{}
+      brainLocalModel=model;
+      return model;
     })();
     const timeout=new Promise((_,reject)=>setTimeout(()=>reject(new Error('Offline speech model did not finish loading within 90 seconds.')),90000));
     brainLocalModelPromise=Promise.race([actual,timeout]).catch(error=>{
@@ -4606,7 +4590,7 @@
       const type=document.querySelector('.brain-feedback-type.active')?.dataset.feedbackType||'suggestion';
       const message=String($('brainFeedbackText')?.value||'').trim();
       if(!message){toast('Add a short description first.');return}
-      await api('/api/tracker/brain/feedback',{method:'POST',body:JSON.stringify({type,message,context:{version:state?.app?.version||'2.9.86',tab:activeTab,lastSpeech:brainSpeechHistory[0]?.text||''}})});
+      await api('/api/tracker/brain/feedback',{method:'POST',body:JSON.stringify({type,message,context:{version:state?.app?.version||'2.9.87',tab:activeTab,lastSpeech:brainSpeechHistory[0]?.text||''}})});
       $('brainFeedbackText').value='';
       toast('Tracker feedback submitted.');
       return;
