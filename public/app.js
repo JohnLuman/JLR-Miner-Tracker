@@ -199,7 +199,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.91');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.92');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -742,6 +742,55 @@
     brainSetListen('MIC STARTING','Opening '+brainMicLabel()+'…');
     if(immediate)void startBrainListening();
     else scheduleBrainMicRestart(250);
+  }
+
+  function feedbackTypeLabel(type){
+    return {bug:'BUG',suggestion:'FEATURE IDEA',speech:'SPEECH / VOICE',data:'DATA / ESI',ui:'UI / UX',other:'OTHER'}[String(type||'')]||'FEEDBACK';
+  }
+  function feedbackAreaLabel(area){
+    return {general:'GENERAL',fields:'FIELDS',brain:'BRAIN',fleet:'FLEET & FITS',performance:'FLEET PERFORMANCE',ice:'ICE',gas:'GAS',doctrine:'DOCTRINE MARKET',pvp:'INIT PVP',tracker:'TRACKER',threat:'THREAT SCAN',mer:'MER INTEL',toons:'TOONS'}[String(area||'')]||String(area||'GENERAL').toUpperCase();
+  }
+  function renderFeedbackHub(){
+    const source=$('feedbackDraftSource');
+    if(source)source.textContent='FROM '+String(feedbackOpenedFrom||'general').replace(/-/g,' ').toUpperCase();
+    const area=$('feedbackArea');
+    if(area&&area.dataset.seeded!=='1'){
+      const seed=[...area.options].some(option=>option.value===feedbackOpenedFrom)?feedbackOpenedFrom:'general';
+      area.value=seed;
+      area.dataset.seeded='1';
+    }
+    const recent=$('feedbackRecent');
+    if(!recent)return;
+    if(feedbackHistoryLoading){
+      recent.innerHTML='<div class="visual-empty">Loading your submissions…</div>';
+      return;
+    }
+    if(!feedbackHistory.length){
+      recent.innerHTML='<div class="visual-empty">No feedback submitted from this account yet.</div>';
+      return;
+    }
+    recent.innerHTML=feedbackHistory.slice(0,15).map(row=>`<article class="feedback-history-row">
+      <div class="feedback-history-top"><span class="feedback-kind ${esc(row.type||'other')}">${esc(feedbackTypeLabel(row.type))}</span><span class="feedback-status">${esc(String(row.status||'received').toUpperCase())}</span></div>
+      <strong>${esc(row.title||row.message||'Feedback')}</strong>
+      <p>${esc(row.message||'')}</p>
+      <small>${esc(feedbackAreaLabel(row.area))} • ${esc(String(row.impact||'normal').toUpperCase())} • ${esc(new Date(row.at).toLocaleString())}</small>
+    </article>`).join('');
+  }
+  async function loadFeedbackHistory(force=false){
+    if(feedbackHistoryLoading)return;
+    if(feedbackHistory.length&&!force){renderFeedbackHub();return}
+    feedbackHistoryLoading=true;
+    renderFeedbackHub();
+    try{
+      const payload=await api('/api/tracker/feedback');
+      feedbackHistory=Array.isArray(payload?.rows)?payload.rows:[];
+    }catch(error){
+      console.warn('Feedback history load failed',error);
+      if(force)toast('Could not refresh feedback history.');
+    }finally{
+      feedbackHistoryLoading=false;
+      renderFeedbackHub();
+    }
   }
 
   function renderTrackerBrain(){
@@ -1335,6 +1384,9 @@
   function showLogin(){$('app').classList.add('hidden');$('loginView').classList.remove('hidden');}
   function showApp(){$('loginView').classList.add('hidden');$('app').classList.remove('hidden');}
   let activeTab=localStorage.getItem('jlrTab')||'fields';
+  let feedbackOpenedFrom=activeTab;
+  let feedbackHistory=[];
+  let feedbackHistoryLoading=false;
   function doctrineAllowed(){return Boolean(me?.doctrineMarketAccess?.allowed)}
   function trackerAllowed(){return Boolean(me?.trackerAccess?.allowed)}
   function syncTrackerTabAccess(){
@@ -1368,13 +1420,15 @@
     }
   }
   function applyTab(tab){
-    const valid=['fields','brain','fleet','performance','ice','gas','pvp','threat','mer','toons'];
+    const valid=['fields','brain','fleet','performance','ice','gas','pvp','threat','mer','toons','feedback'];
     if(doctrineAllowed())valid.splice(5,0,'doctrine');
     if(trackerAllowed()){
       const pvpIndex=valid.indexOf('pvp');
       valid.splice(pvpIndex+1,0,'tracker');
     }
-    activeTab=valid.includes(tab)?tab:'fields';
+    const nextTab=valid.includes(tab)?tab:'fields';
+    if(nextTab==='feedback'&&activeTab!=='feedback')feedbackOpenedFrom=activeTab;
+    activeTab=nextTab;
     localStorage.setItem('jlrTab',activeTab);
     document.querySelectorAll('.app-tab').forEach(button=>button.classList.toggle('active',button.dataset.tab===activeTab));
     document.querySelectorAll('.tab-panel').forEach(panel=>panel.classList.toggle('active',panel.dataset.tab===activeTab));
@@ -1383,6 +1437,10 @@
     if(activeTab==='performance')refreshFleetPerformanceData(false);
     if(activeTab==='pvp'&&!pvpIntel&&!pvpIntelLoading)loadPvpIntel();
     if(activeTab==='threat')renderThreatScan();
+    if(activeTab==='feedback'){
+      renderFeedbackHub();
+      loadFeedbackHistory(false);
+    }
   }
   function initTabs(){
     const host=$('tabHost');
@@ -1413,6 +1471,8 @@
     const mer=makePanel('mer');
     mer.id='merIntelPanel';
     const toons=makePanel('toons');
+    const feedback=makePanel('feedback');
+    feedback.id='feedbackPanel';
 
     const quick=document.querySelector('.quick-update');
     let assistant=document.querySelector('.tracker-assistant-panel');
@@ -1473,21 +1533,96 @@
         </section>
 
         <section class="brain-card">
-          <div class="brain-card-head"><strong>FEEDBACK</strong><small>Bug, suggestion, or speech issue</small></div>
-          <div class="brain-feedback-types">
-            <button class="board-tool brain-feedback-type active" data-feedback-type="bug" type="button">REPORT BUG</button>
-            <button class="board-tool brain-feedback-type" data-feedback-type="suggestion" type="button">SUGGEST FEATURE</button>
-            <button class="board-tool brain-feedback-type" data-feedback-type="speech" type="button">SPEECH ISSUE</button>
-          </div>
-          <textarea id="brainFeedbackText" class="brain-feedback-text" maxlength="1200" placeholder="Tell Tracker what happened or what you want changed."></textarea>
-          <button id="brainFeedbackSubmit" class="board-tool" type="button">SUBMIT TO TRACKER</button>
-        </section>
-
-        <section class="brain-card">
           <div class="brain-card-head"><strong>CURRENT BRAIN DECISIONS</strong><small>What Tracker is acting on</small></div>
           <div id="brainDecisionList" class="brain-decision-list"></div>
         </section>
       </div>`;
+    feedback.innerHTML=`
+      <section class="feedback-shell">
+        <header class="glass feedback-hero">
+          <div>
+            <span class="eyebrow">JLR DEVELOPMENT // USER INPUT</span>
+            <h2>FEEDBACK HUB</h2>
+            <p>Report a problem, pitch an idea, flag bad data, or tell us where Tracker feels awkward. Useful app context can be attached automatically so you do not have to explain the technical details.</p>
+          </div>
+          <div class="feedback-hero-note">
+            <strong>WHAT HELPS MOST</strong>
+            <span>What happened • where it happened • what you expected • whether it blocks you</span>
+          </div>
+        </header>
+
+        <div class="feedback-layout">
+          <section class="glass feedback-compose">
+            <div class="feedback-section-head"><div><strong>NEW SUBMISSION</strong><small>Choose the closest category</small></div><span id="feedbackDraftSource" class="status-pill">FROM FIELDS</span></div>
+
+            <div class="feedback-type-grid" role="group" aria-label="Feedback type">
+              <button class="feedback-type active" data-feedback-type="bug" type="button"><b>BUG</b><span>Something is broken</span></button>
+              <button class="feedback-type" data-feedback-type="suggestion" type="button"><b>FEATURE IDEA</b><span>Something JLR should add</span></button>
+              <button class="feedback-type" data-feedback-type="speech" type="button"><b>SPEECH / VOICE</b><span>Mic, wake word, or spoken reply</span></button>
+              <button class="feedback-type" data-feedback-type="data" type="button"><b>DATA / ESI</b><span>Wrong, stale, or missing data</span></button>
+              <button class="feedback-type" data-feedback-type="ui" type="button"><b>UI / UX</b><span>Layout, readability, or controls</span></button>
+              <button class="feedback-type" data-feedback-type="other" type="button"><b>OTHER</b><span>Anything else</span></button>
+            </div>
+
+            <div class="feedback-meta-grid">
+              <label><span>AREA</span><select id="feedbackArea">
+                <option value="general">GENERAL</option>
+                <option value="fields">FIELDS</option>
+                <option value="brain">BRAIN</option>
+                <option value="fleet">FLEET & FITS</option>
+                <option value="performance">FLEET PERFORMANCE</option>
+                <option value="ice">ICE</option>
+                <option value="gas">GAS</option>
+                <option value="doctrine">DOCTRINE MARKET</option>
+                <option value="pvp">INIT PVP</option>
+                <option value="tracker">TRACKER</option>
+                <option value="threat">THREAT SCAN</option>
+                <option value="mer">MER INTEL</option>
+                <option value="toons">TOONS</option>
+              </select></label>
+              <label><span>IMPACT</span><select id="feedbackImpact">
+                <option value="normal">NORMAL</option>
+                <option value="low">LOW / MINOR</option>
+                <option value="high">HIGH / IMPORTANT</option>
+                <option value="critical">BLOCKING / CRITICAL</option>
+              </select></label>
+            </div>
+
+            <label class="feedback-field"><span>SHORT TITLE</span><input id="feedbackTitle" maxlength="120" placeholder="Example: Selected mic keeps resetting"></label>
+            <label class="feedback-field"><span>DETAILS</span><textarea id="feedbackMessage" maxlength="2000" placeholder="Tell us what happened, what you want changed, or how the idea should work."></textarea></label>
+
+            <div class="feedback-detail-grid">
+              <label class="feedback-field"><span>STEPS TO REPRODUCE <small>optional</small></span><textarea id="feedbackSteps" maxlength="1500" placeholder="1. Open Brain&#10;2. Select microphone&#10;3. ..."></textarea></label>
+              <label class="feedback-field"><span>EXPECTED RESULT <small>optional</small></span><textarea id="feedbackExpected" maxlength="1000" placeholder="What should have happened instead?"></textarea></label>
+            </div>
+
+            <label class="feedback-diagnostics"><input id="feedbackDiagnostics" type="checkbox" checked><span><strong>ATTACH DIAGNOSTIC CONTEXT</strong><small>JLR version, source tab, selected system, browser info, and the last Tracker speech event. No passwords or EVE tokens are included.</small></span></label>
+
+            <div class="feedback-submit-row">
+              <button id="feedbackSubmit" class="orb green" type="button">SUBMIT TO JLR</button>
+              <span id="feedbackSubmitHint">Your submission is stored with JLR for review.</span>
+            </div>
+          </section>
+
+          <aside class="feedback-side">
+            <section class="glass feedback-guide">
+              <div class="feedback-section-head"><div><strong>QUICK GUIDE</strong><small>Pick the category that gets us closest</small></div></div>
+              <div class="feedback-guide-list">
+                <div><b>BUG</b><span>Something worked differently than intended.</span></div>
+                <div><b>FEATURE IDEA</b><span>A new tool, metric, alert, or workflow.</span></div>
+                <div><b>SPEECH / VOICE</b><span>Wake word, microphone, recognition, or voice output.</span></div>
+                <div><b>DATA / ESI</b><span>Values do not match EVE, zKill, market data, or another source.</span></div>
+                <div><b>UI / UX</b><span>Hard to read, clipped, confusing, or too many clicks.</span></div>
+              </div>
+            </section>
+            <section class="glass feedback-recent-card">
+              <div class="feedback-section-head"><div><strong>MY RECENT SUBMISSIONS</strong><small>Newest first</small></div><button id="feedbackRefresh" class="board-tool subtle" type="button">REFRESH</button></div>
+              <div id="feedbackRecent" class="feedback-recent"><div class="visual-empty">No submissions loaded yet.</div></div>
+            </section>
+          </aside>
+        </div>
+      </section>`;
+
     const calculator=document.querySelector('.shared-calculator');
     const timers=document.querySelector('.timers-panel');
     const board=document.querySelector('.board-panel');
@@ -4604,18 +4739,49 @@
       if(row)await speakJlr('repeat',{text:row.text},row.text);
       return;
     }
-    const feedbackType=target.closest('.brain-feedback-type');
+    const feedbackType=target.closest('.feedback-type');
     if(feedbackType){
-      document.querySelectorAll('.brain-feedback-type').forEach(button=>button.classList.toggle('active',button===feedbackType));
+      document.querySelectorAll('.feedback-type').forEach(button=>button.classList.toggle('active',button===feedbackType));
       return;
     }
-    if(target.closest('#brainFeedbackSubmit')){
-      const type=document.querySelector('.brain-feedback-type.active')?.dataset.feedbackType||'suggestion';
-      const message=String($('brainFeedbackText')?.value||'').trim();
-      if(!message){toast('Add a short description first.');return}
-      await api('/api/tracker/brain/feedback',{method:'POST',body:JSON.stringify({type,message,context:{version:state?.app?.version||'2.9.91',tab:activeTab,lastSpeech:brainSpeechHistory[0]?.text||''}})});
-      $('brainFeedbackText').value='';
-      toast('Tracker feedback submitted.');
+    if(target.closest('#feedbackRefresh')){
+      await loadFeedbackHistory(true);
+      return;
+    }
+    if(target.closest('#feedbackSubmit')){
+      const submit=$('feedbackSubmit');
+      const type=document.querySelector('.feedback-type.active')?.dataset.feedbackType||'suggestion';
+      const title=String($('feedbackTitle')?.value||'').trim();
+      const message=String($('feedbackMessage')?.value||'').trim();
+      const area=String($('feedbackArea')?.value||'general');
+      const impact=String($('feedbackImpact')?.value||'normal');
+      const steps=String($('feedbackSteps')?.value||'').trim();
+      const expected=String($('feedbackExpected')?.value||'').trim();
+      const diagnostics=Boolean($('feedbackDiagnostics')?.checked);
+      if(!title){toast('Add a short title first.');$('feedbackTitle')?.focus();return}
+      if(!message){toast('Add some details first.');$('feedbackMessage')?.focus();return}
+      if(submit)submit.disabled=true;
+      try{
+        const context=diagnostics?{
+          version:state?.app?.version||'2.9.92',
+          sourceTab:feedbackOpenedFrom||'unknown',
+          selectedSystem:selectedSystem||$('systemSelect')?.value||'',
+          userAgent:String(navigator.userAgent||'').slice(0,500),
+          lastSpeech:brainSpeechHistory[0]?.text||''
+        }:{sourceTab:feedbackOpenedFrom||'unknown'};
+        await api('/api/tracker/feedback',{method:'POST',body:JSON.stringify({type,title,message,area,impact,steps,expected,context})});
+        $('feedbackTitle').value='';
+        $('feedbackMessage').value='';
+        $('feedbackSteps').value='';
+        $('feedbackExpected').value='';
+        feedbackHistory=[];
+        await loadFeedbackHistory(true);
+        toast('Feedback submitted to JLR. Thank you.');
+      }catch(error){
+        toast(error?.message||'Feedback could not be submitted.');
+      }finally{
+        if(submit)submit.disabled=false;
+      }
       return;
     }
     const decision=target.closest('.brain-decision-row[data-system]');
