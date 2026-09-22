@@ -1,7 +1,7 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.46';
-  const CORE_URL='/tracker-core.js?v=2.9.46';
+  const ALARM_VERSION='2.9.47';
+  const CORE_URL='/tracker-core.js?v=2.9.47';
 
   let alarmContext=null;
   let alarmSource=null;
@@ -237,7 +237,8 @@
       if(system)endpoint='/api/voice/stream/scan?system='+encodeURIComponent(system);
     }else if(kind==='scout'){
       const system=String(payload&&payload.system||'').trim();
-      if(system)endpoint='/api/voice/stream/scout?system='+encodeURIComponent(system);
+      const characterId=String(payload&&payload.characterId||'').trim();
+      if(system&&characterId)endpoint='/api/voice/stream/scout?system='+encodeURIComponent(system)+'&characterId='+encodeURIComponent(characterId);
     }
 
     unlockAlarm();
@@ -269,6 +270,7 @@
 
   function watchTrackerUi(){
     const firstGestureUnlock=function(){
+      window.jlrVoiceUserActivated=true;
       unlockAlarm();
       document.removeEventListener('pointerdown',firstGestureUnlock,true);
       document.removeEventListener('keydown',firstGestureUnlock,true);
