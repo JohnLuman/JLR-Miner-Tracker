@@ -896,12 +896,30 @@
     const toons=makePanel('toons');
 
     const quick=document.querySelector('.quick-update');
-    const assistant=document.querySelector('.tracker-assistant-panel');
+    let assistant=document.querySelector('.tracker-assistant-panel');
+    if(!assistant){
+      assistant=document.createElement('section');
+      assistant.className='glass tracker-assistant-panel';
+      assistant.innerHTML=`
+        <div class="tracker-assist-head">
+          <div>
+            <span class="eyebrow">TRACKER BRAIN</span>
+            <strong>ASSISTANT</strong>
+            <span id="trackerBrainStatus" class="status-pill">● ANALYZING</span>
+          </div>
+          <div class="tracker-assist-actions">
+            <button id="trackerBriefMe" class="orb purple" type="button" title="Ask Tracker for a spoken operations briefing">▶ BRIEF ME</button>
+            <button id="trackerWhySystem" class="orb blue" type="button" title="Ask Tracker why the selected field has its current status">WHY THIS SYSTEM?</button>
+          </div>
+        </div>
+        <div id="trackerBrainSummary" class="tracker-assist-summary">Tracker is analyzing the current operation.</div>
+        <div id="trackerBrainList" class="tracker-assist-list" aria-live="polite"></div>`;
+    }
     const calculator=document.querySelector('.shared-calculator');
     const timers=document.querySelector('.timers-panel');
     const board=document.querySelector('.board-panel');
     const hits=document.querySelector('.hit-panel');
-    if(assistant)fields.appendChild(assistant);
+    fields.appendChild(assistant);
     const fieldSidebar=document.createElement('div');
     fieldSidebar.className='field-sidebar';
     [quick,timers].filter(Boolean).forEach(el=>fieldSidebar.appendChild(el));
@@ -3945,32 +3963,38 @@
     eventSource.onerror=()=>{$('liveBadge').textContent='⚠ DATA CONNECTION LOST';$('liveBadge').title='Live dashboard updates disconnected; the page is attempting to reconnect.'};
   }
 
-  $('trackerBriefMe')?.addEventListener('click',async()=>{
-    const button=$('trackerBriefMe');
-    if(button)button.disabled=true;
-    try{
-      const played=await speakJlr('briefing',{},'Tracker briefing ready.');
-      if(!played)toast('Tracker briefing could not be played.');
-    }finally{
-      if(button)button.disabled=false;
-    }
-  });
+  document.addEventListener('click',async event=>{
+    const target=event.target instanceof Element?event.target:null;
+    if(!target)return;
 
-  $('trackerWhySystem')?.addEventListener('click',async()=>{
-    const system=selectedSystem||$('systemSelect')?.value||'';
-    if(!system){toast('Select a T3 system first.');return}
-    const button=$('trackerWhySystem');
-    if(button)button.disabled=true;
-    try{
-      const explanation=await api('/api/tracker/brain/why?system='+encodeURIComponent(system));
-      const summary=$('trackerBrainSummary');
-      if(summary&&explanation?.facts?.length)summary.textContent=system+': '+explanation.facts.join(' ');
-      const played=await speakJlr('why',{system},explanation?.voice||('Tracker explanation for '+system+'.'));
-      if(!played)toast('Tracker explanation could not be played.');
-    }catch(error){
-      toast(error.message||String(error));
-    }finally{
-      if(button)button.disabled=false;
+    const briefButton=target.closest('#trackerBriefMe');
+    if(briefButton){
+      briefButton.disabled=true;
+      try{
+        const played=await speakJlr('briefing',{},'Tracker briefing ready.');
+        if(!played)toast('Tracker briefing could not be played.');
+      }finally{
+        briefButton.disabled=false;
+      }
+      return;
+    }
+
+    const whyButton=target.closest('#trackerWhySystem');
+    if(whyButton){
+      const system=selectedSystem||$('systemSelect')?.value||'';
+      if(!system){toast('Select a T3 system first.');return}
+      whyButton.disabled=true;
+      try{
+        const explanation=await api('/api/tracker/brain/why?system='+encodeURIComponent(system));
+        const summary=$('trackerBrainSummary');
+        if(summary&&explanation?.facts?.length)summary.textContent=system+': '+explanation.facts.join(' ');
+        const played=await speakJlr('why',{system},explanation?.voice||('Tracker explanation for '+system+'.'));
+        if(!played)toast('Tracker explanation could not be played.');
+      }catch(error){
+        toast(error.message||String(error));
+      }finally{
+        whyButton.disabled=false;
+      }
     }
   });
 
