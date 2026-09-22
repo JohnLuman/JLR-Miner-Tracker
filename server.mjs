@@ -784,7 +784,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.91',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.92',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -6054,7 +6054,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.91',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.92',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -6103,14 +6103,38 @@ async function routeApi(req,res,url) {
     const force=url.searchParams.get('force')==='1';
     return json(res,200,trackerBrainBriefing(user,{force}));
   }
-  if(req.method==='POST'&&url.pathname==='/api/tracker/brain/feedback'){
+  if(req.method==='GET'&&url.pathname==='/api/tracker/feedback'){
+    const userId=String(user?.id||'');
+    const rows=(state.feedback||[])
+      .filter(row=>String(row?.userId||'')===userId)
+      .slice(0,25)
+      .map(row=>({
+        id:String(row?.id||''),
+        at:row?.at||null,
+        type:String(row?.type||'other'),
+        title:String(row?.title||''),
+        message:String(row?.message||''),
+        area:String(row?.area||'general'),
+        impact:String(row?.impact||'normal'),
+        status:String(row?.status||'received'),
+      }));
+    return json(res,200,{rows});
+  }
+  if(req.method==='POST'&&(url.pathname==='/api/tracker/feedback'||url.pathname==='/api/tracker/brain/feedback')){
     if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
     let body;
-    try{body=await readBody(req,8_000)}
+    try{body=await readBody(req,16_000)}
     catch(err){return json(res,400,{error:'BAD_FEEDBACK',message:String(err.message||err)})}
-    const type=['bug','suggestion','speech'].includes(String(body?.type||''))?String(body.type):'suggestion';
-    const message=trackerSpeechSafe(body?.message,1200);
-    if(!message)return json(res,400,{error:'FEEDBACK_REQUIRED',message:'Add a short description first.'});
+    const rawType=String(body?.type||'');
+    const type=['bug','suggestion','speech','data','ui','other'].includes(rawType)?rawType:'suggestion';
+    const title=trackerSpeechSafe(body?.title,120);
+    const message=trackerSpeechSafe(body?.message,2000);
+    const area=trackerSpeechSafe(body?.area,80)||'general';
+    const rawImpact=String(body?.impact||'normal');
+    const impact=['low','normal','high','critical'].includes(rawImpact)?rawImpact:'normal';
+    const steps=trackerSpeechSafe(body?.steps,1500);
+    const expected=trackerSpeechSafe(body?.expected,1000);
+    if(!message)return json(res,400,{error:'FEEDBACK_REQUIRED',message:'Add some details first.'});
     state.feedback ||= [];
     const row={
       id:crypto.randomUUID(),
@@ -6118,13 +6142,19 @@ async function routeApi(req,res,url) {
       userId:String(user?.id||''),
       displayName:String(user?.displayName||''),
       type,
+      title:title||message.slice(0,90),
       message,
+      area,
+      impact,
+      steps,
+      expected,
+      status:'received',
       context:body?.context&&typeof body.context==='object'?body.context:{},
     };
     state.feedback.unshift(row);
-    state.feedback=state.feedback.slice(0,250);
+    state.feedback=state.feedback.slice(0,500);
     await save();
-    return json(res,201,{ok:true,id:row.id,at:row.at});
+    return json(res,201,{ok:true,id:row.id,at:row.at,status:row.status});
   }
   if(req.method==='GET'&&url.pathname==='/api/voice/stream/briefing'){
     const force=url.searchParams.get('force')==='1';
@@ -6539,7 +6569,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.91 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.92 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>loadVoskModelArchive().catch(err=>console.warn('Tracker speech model warmup deferred:',String(err?.message||err))),1_500).unref();
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
 setInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': tracker-heartbeat\n\n')}catch{trackerLiveClients.delete(res)}}},20_000).unref();
