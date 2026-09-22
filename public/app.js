@@ -213,7 +213,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.104');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.105');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -303,7 +303,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR TRACKER MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.104'),
+      'Version: '+String(state?.app?.version||'2.9.105'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -344,6 +344,7 @@
       brainRecordMicDiag('MIC-D901','SERVER_DIAGNOSTIC',String(error?.message||error));
     }
     const text=brainMicDiagnosticsText(serverDiag);
+    window.jlrLastMicDiagnostics=text;
     if(copy){
       try{
         await navigator.clipboard.writeText(text);
@@ -354,6 +355,29 @@
       }
     }
     return text;
+  }
+  function showBrainDiagnostics(report){
+    const text=String(report||'No diagnostics available.');
+    const reply=$('brainReply');
+    if(reply){
+      reply.textContent=text;
+      reply.classList.add('diagnostic-report');
+    }
+    const panel=$('brainMicDiagnostic');
+    panel?.classList.remove('hidden');
+    panel?.classList.add('info');
+    if($('brainMicErrorCode'))$('brainMicErrorCode').textContent='DIAGNOSTICS';
+    if($('brainMicErrorStage'))$('brainMicErrorStage').textContent='LIVE REPORT';
+    if($('brainMicErrorDetail'))$('brainMicErrorDetail').textContent='Live Tracker microphone and custom-voice diagnostics are shown below. Use COPY DIAGNOSTICS to copy the full report.';
+  }
+  function brainDiagnosticsVoiceSummary(){
+    const mic=brainMicTrack?.readyState||'none';
+    const model=brainLocalModel?'ready':'not ready';
+    const mode=String(window.jlrVoiceMode||'unknown');
+    const profile=String(window.jlrVoiceProfile||'unknown');
+    const error=String(window.jlrVoiceLastError||'none');
+    const shortError=error==='none'?'No custom voice error is currently recorded.':'The last custom voice error is '+error.slice(0,180)+'.';
+    return 'Diagnostics are displayed. Microphone track is '+mic+'. Local speech model is '+model+'. Custom voice mode is '+mode+', profile '+profile+'. '+shortError;
   }
   function brainSetListen(status,hint=''){
     if($('brainListenStatus'))$('brainListenStatus').textContent=status;
@@ -378,6 +402,14 @@
     }
     brainConversationUntil=Date.now()+brainConversationMs();
     try{
+      if(/\b(diagnostic|diagnostics|diag|voice report|mic report|microphone report|speech report|system report|troubleshoot|troubleshooting)\b/.test(command)){
+        brainSetListen('TRACKER DIAGNOSTICS','Collecting microphone and custom-voice status…');
+        const report=await runBrainMicDiagnostic(false);
+        showBrainDiagnostics(report);
+        const summary=brainDiagnosticsVoiceSummary();
+        await speakBrainAnswer(summary,'brain',{text:summary});
+        return;
+      }
       if(/\b(stop|cancel|quiet)\b/.test(command)){
         if(typeof window.jlrStopFighterAlarm==='function')window.jlrStopFighterAlarm();
         const answer='Stopped.';
@@ -431,7 +463,10 @@
         body:JSON.stringify({question:command}),
       });
       const answer=String(response?.text||'I do not have an answer for that yet.');
-      if($('brainReply'))$('brainReply').textContent=answer;
+      if($('brainReply')){
+        $('brainReply').classList.remove('diagnostic-report');
+        $('brainReply').textContent=answer;
+      }
       brainConversationUntil=Date.now()+brainConversationMs();
       await speakBrainAnswer(answer,'brain',{text:answer});
     }catch(error){
@@ -5132,7 +5167,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.104',
+          version:state?.app?.version||'2.9.105',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
