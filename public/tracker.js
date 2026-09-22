@@ -1,7 +1,7 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.70';
-  const CORE_URL='/tracker-core.js?v=2.9.70';
+  const ALARM_VERSION='2.9.71';
+  const CORE_URL='/tracker-core.js?v=2.9.71';
 
   let alarmContext=null;
   let alarmSource=null;
@@ -242,14 +242,42 @@
     });
   }
 
-  function enqueueVoiceTask(run,label){
+  function voicePriorityRank(priority){
+    return priority==='critical'?4:priority==='high'?3:priority==='attention'?2:priority==='normal'?1:0;
+  }
+
+  function enqueueVoiceTask(run,label,options){
+    const opts=options&&typeof options==='object'?options:{};
+    const priority=String(opts.priority||'normal');
+    const rank=voicePriorityRank(priority);
+    const dedupeKey=String(opts.dedupeKey||'');
     return new Promise(function(resolve){
+      if(dedupeKey&&voiceQueue.some(function(item){return item.dedupeKey===dedupeKey;})){
+        resolve(false);
+        return;
+      }
+
       // Avoid an unbounded backlog if a browser tab wakes from suspension.
+      // Drop the oldest lowest-priority queued item first.
       if(voiceQueue.length>=8){
-        const dropped=voiceQueue.shift();
+        let dropIndex=0;
+        for(let i=1;i<voiceQueue.length;i++){
+          if(voiceQueue[i].rank<voiceQueue[dropIndex].rank)dropIndex=i;
+        }
+        const dropped=voiceQueue.splice(dropIndex,1)[0];
         try{dropped.resolve(false);}catch(error){}
       }
-      voiceQueue.push({run:run,resolve:resolve,label:String(label||'JLR voice')});
+
+      voiceQueue.push({
+        run:run,
+        resolve:resolve,
+        label:String(label||'JLR voice'),
+        priority:priority,
+        rank:rank,
+        dedupeKey:dedupeKey,
+        queuedAt:Date.now()
+      });
+      voiceQueue.sort(function(a,b){return b.rank-a.rank||a.queuedAt-b.queuedAt;});
       processVoiceQueue();
     });
   }
@@ -380,7 +408,11 @@
     const kind=String(type||'');
     let endpoint='';
     if(kind==='startup')endpoint='/api/voice/stream/startup';
-    else if(kind==='scan'){
+    else if(kind==='briefing')endpoint='/api/voice/stream/briefing?force=1';
+    else if(kind==='why'){
+      const system=String(payload&&payload.system||'').trim();
+      if(system)endpoint='/api/voice/stream/why?system='+encodeURIComponent(system);
+    }else if(kind==='scan'){
       const system=String(payload&&payload.system||'').trim();
       if(system)endpoint='/api/voice/stream/scan?system='+encodeURIComponent(system);
     }else if(kind==='scout'){
@@ -429,7 +461,10 @@
         console.error('JLR '+kind+' voice failed.',error);
         return false;
       }
-    },'JLR '+kind+' voice');
+    },'JLR '+kind+' voice',{
+      priority:kind==='scout'||kind==='field'?'attention':kind==='why'?'high':kind==='startup'||kind==='briefing'?'info':'normal',
+      dedupeKey:kind+':'+String(payload&&payload.system||'global')
+    });
   }
 
   function watchTrackerUi(){
