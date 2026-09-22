@@ -1,7 +1,7 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.50';
-  const CORE_URL='/tracker-core.js?v=2.9.50';
+  const ALARM_VERSION='2.9.51';
+  const CORE_URL='/tracker-core.js?v=2.9.51';
 
   let alarmContext=null;
   let alarmSource=null;
@@ -271,15 +271,63 @@
     }
   }
 
+  async function playStrictCustomTest(generation){
+    window.jlrVoiceLastError='';
+    const controller=new AbortController();
+    activeFetch=controller;
+    try{
+      // Strict diagnostic path: fetch the real streaming endpoint, but buffer it
+      // before playback so HTTP/auth/worker errors are visible instead of silently
+      // becoming browser speechSynthesis. The nonce also defeats intermediary caches.
+      const response=await fetch('/api/tracker/heavy-fighters/voice/test?stream=1&strict=1&nonce='+Date.now(),{
+        method:'GET',
+        credentials:'same-origin',
+        cache:'no-store',
+        headers:{'Accept':'audio/*, application/json'},
+        signal:controller.signal
+      });
+      if(activeFetch===controller)activeFetch=null;
+      if(generation!==alarmGeneration)return false;
+      if(!response.ok){
+        const type=String(response.headers.get('content-type')||'');
+        let detail='';
+        try{
+          if(type.includes('application/json')){
+            const body=await response.json();
+            detail=String(body&&body.message||body&&body.error||'');
+          }else{
+            detail=String(await response.text());
+          }
+        }catch(error){}
+        throw new Error('Custom voice test HTTP '+response.status+(detail?': '+detail.slice(0,220):''));
+      }
+      const played=await playAudioResponse(response,generation,'STRICT JLR GPT-SoVITS TEST');
+      if(!played)throw new Error('Custom voice test returned audio but playback did not start.');
+      window.jlrVoiceLastError='';
+      return true;
+    }catch(error){
+      if(activeFetch===controller)activeFetch=null;
+      if(generation!==alarmGeneration)return false;
+      const message=String(error&&error.message||error||'Custom voice test failed.');
+      window.jlrVoiceLastError=message;
+      reportVoiceMode('error',message);
+      console.error('STRICT JLR custom voice test failed.',error);
+      return false;
+    }
+  }
+
   async function playVoiceAlert(loss){
     stopVoiceAlert();
     const generation=alarmGeneration;
     const isTest=Boolean(loss&&loss.test);
     const killId=String(loss&&loss.killmailId||'').replace(/\D/g,'');
-    const endpoint=isTest?'/api/tracker/heavy-fighters/voice/test?stream=1':(killId?'/api/tracker/heavy-fighters/voice/'+killId+'?stream=1':'');
+    if(isTest){
+      unlockAlarm();
+      return playStrictCustomTest(generation);
+    }
+    const endpoint=killId?'/api/tracker/heavy-fighters/voice/'+killId+'?stream=1':'';
     if(!endpoint)return playFallbackSpeech(loss,generation);
-    // Do not await this here: invoking resume + audio.play inside the same user
-    // gesture gives browsers the best chance to preserve autoplay permission.
+    // Live alerts retain the emergency fallback; the TEST button above never does.
     unlockAlarm();
     return playStreamUrl(endpoint,generation,fallbackText(loss),'Streaming GPT-SoVITS voice');
   }
