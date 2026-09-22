@@ -395,6 +395,7 @@
     const voiceDetail=voice.reachable
       ?((voice.referencePack?'JLR VOICE V3':'GPT-SoVITS '+(voice.streaming?'STREAMING':'BUFFERED'))+
         (voice.workerVersion?' • worker v'+esc(voice.workerVersion):'')+
+        (voice.cacheVersion?' • '+esc(voice.cacheVersion):'')+
         (voice.systemPronunciations?' • '+fmt(voice.systemPronunciations)+' system refs':'')+
         (voice.stableStreaming?' • stable mode':'')+
         (Number.isFinite(Number(voice.latencyMs))?' • '+fmt(voice.latencyMs)+' ms health':''))
