@@ -124,6 +124,7 @@ const TRACKER_LIVE_RETENTION_MS = 24 * 60 * 60 * 1000;
 const TRACKER_R2Z2_ENABLED = String(process.env.TRACKER_R2Z2_ENABLED || 'true').trim().toLowerCase() !== 'false';
 const TRACKER_TTS_WORKER_URL = String(process.env.TRACKER_TTS_WORKER_URL || '').trim().replace(/\/$/,'');
 const TRACKER_TTS_WORKER_TOKEN = String(process.env.TRACKER_TTS_WORKER_TOKEN || '').trim();
+const TRACKER_VOICE_CACHE_VERSION = String(process.env.TRACKER_VOICE_CACHE_VERSION || 'v3-speaker-20260922-1').trim() || 'v3-speaker-20260922-1';
 const TRACKER_TTS_TIMEOUT_MS = clamp(process.env.TRACKER_TTS_TIMEOUT_MS,3_000,60_000,20_000);
 const TRACKER_TTS_CACHE_DIR = path.join(DATA_DIR,'tracker-voice-cache');
 const ZKILL_LIFETIME_DAMAGE_CACHE_MS = 24 * 60 * 60 * 1000;
@@ -716,7 +717,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.48',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.49',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -3470,6 +3471,7 @@ async function trackerVoiceHealth(){
       referenceReady:payload?.reference_exists!==false,
       referencePack:Boolean(payload?.reference_pack),
       referencePackVersion:trackerSpeechSafe(payload?.reference_pack_version||'',24)||null,
+      cacheVersion:TRACKER_VOICE_CACHE_VERSION,
       voiceProfiles:Array.isArray(payload?.voice_profiles)?payload.voice_profiles.map(v=>trackerSpeechSafe(v,24)).filter(Boolean).slice(0,8):[],
       systemPronunciations:Math.max(0,Number(payload?.system_pronunciations)||0),
       message:healthy?(payload?.reference_pack?'JLR Voice v3 reference pack and stable streaming are online.':payload?.streaming?'Custom GPT-SoVITS streaming voice is online.':'Custom GPT-SoVITS voice is online; streaming upgrade is available.'):'Voice worker responded but is not ready.',
@@ -3540,7 +3542,10 @@ async function trackerVoiceWorkerAudio(text,cacheKey='alert'){
   }
   const cleanText=String(text||'').trim().slice(0,600);
   if(!cleanText)throw new Error('Tracker voice text was empty.');
-  const hash=crypto.createHash('sha256').update(`v1|${cacheKey}|${cleanText}`).digest('hex');
+  // Speaker/reference changes must never reuse audio synthesized by an older voice.
+  // Bump TRACKER_VOICE_CACHE_VERSION (or override it in Railway) whenever the speaker changes.
+  const versionedCacheKey=`${TRACKER_VOICE_CACHE_VERSION}|${String(cacheKey||'alert')}`;
+  const hash=crypto.createHash('sha256').update(`${versionedCacheKey}|${cleanText}`).digest('hex');
   const audioPath=path.join(TRACKER_TTS_CACHE_DIR,`${hash}.audio`);
   const metaPath=path.join(TRACKER_TTS_CACHE_DIR,`${hash}.json`);
   try{
@@ -3558,7 +3563,7 @@ async function trackerVoiceWorkerAudio(text,cacheKey='alert'){
         'Content-Type':'application/json',
         'Accept':'audio/wav, audio/ogg, audio/mpeg, application/octet-stream',
       },
-      body:JSON.stringify({text:cleanText,cache_key:String(cacheKey||hash),voice:'jlr-alert'}),
+      body:JSON.stringify({text:cleanText,cache_key:versionedCacheKey,voice:'jlr-alert'}),
       signal:AbortSignal.timeout(TRACKER_TTS_TIMEOUT_MS),
     });
     if(!response.ok){
@@ -3571,7 +3576,7 @@ async function trackerVoiceWorkerAudio(text,cacheKey='alert'){
     if(!bytes.length||bytes.length>8_000_000)throw new Error(`JLR voice worker returned an invalid audio size (${bytes.length} bytes).`);
     await Promise.all([
       fsp.writeFile(audioPath,bytes),
-      fsp.writeFile(metaPath,JSON.stringify({mime,text:cleanText,cacheKey,createdAt:now(),bytes:bytes.length}),'utf8'),
+      fsp.writeFile(metaPath,JSON.stringify({mime,text:cleanText,cacheKey:versionedCacheKey,cacheVersion:TRACKER_VOICE_CACHE_VERSION,createdAt:now(),bytes:bytes.length}),'utf8'),
     ]);
     return{bytes,mime,cached:false,text:cleanText};
   })().finally(()=>trackerVoiceJobs.delete(hash));
@@ -3598,6 +3603,7 @@ function sendTrackerAudio(res,audio){
     'Cache-Control':'private, max-age=86400',
     'Content-Length':audio.bytes.length,
     'X-JLR-Voice-Cache':audio.cached?'HIT':'MISS',
+    'X-JLR-Voice-Cache-Version':TRACKER_VOICE_CACHE_VERSION,
   });
   res.end(audio.bytes);
 }
@@ -3610,9 +3616,10 @@ async function streamTrackerVoiceToResponse(res,text,cacheKey,{priority='normal'
   }
   const cleanText=String(text||'').trim().slice(0,600);
   if(!cleanText)throw new Error('Tracker voice text was empty.');
+  const versionedCacheKey=`${TRACKER_VOICE_CACHE_VERSION}|${String(cacheKey||'stream')}`;
   const workerPayload={
     text:cleanText,
-    cache_key:String(cacheKey||'stream'),
+    cache_key:versionedCacheKey,
     voice:'jlr-alert',
     priority:priority==='urgent'?'urgent':'normal',
     // v3 keeps even urgent speech on mode 2. The tiny first-byte gain from
@@ -3655,6 +3662,7 @@ async function streamTrackerVoiceToResponse(res,text,cacheKey,{priority='normal'
     'X-Accel-Buffering':'no',
     'X-JLR-Voice-Stream':'1',
     'X-JLR-Voice-Priority':priority==='urgent'?'urgent':'normal',
+    'X-JLR-Voice-Cache-Version':TRACKER_VOICE_CACHE_VERSION,
   });
   res.flushHeaders?.();
   res.socket?.setNoDelay?.(true);
@@ -5482,7 +5490,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.48',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.49',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -5642,7 +5650,7 @@ async function routeApi(req,res,url) {
     catch(err){return json(res,503,{error:'TRACKER_ACCESS_CHECK_FAILED',message:'Tracker access could not be verified with EVE right now.'})}
     if(!access.allowed)return json(res,403,{error:'TRACKER_CORPORATION_REQUIRED',message:'Tracker is restricted to the configured corporation.'});
     try{
-      const text='Attention. J. L. R. custom voice systems are online. Heavy Fighter tracking is standing by.';
+      const text='Attention. J. L. R. Voice Version Three speaker verification. The new speaker profile is active. Heavy Fighter tracking is standing by.';
       if(url.searchParams.get('stream')==='1')return await streamTrackerVoiceToResponse(res,text,'test',{priority:'normal'});
       const audio=await trackerVoiceWorkerAudio(text,'test');
       return sendTrackerAudio(res,audio);
@@ -5861,7 +5869,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.48 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.49 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
 setInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': tracker-heartbeat\n\n')}catch{trackerLiveClients.delete(res)}}},20_000).unref();
 setInterval(()=>resetExpired(true),15_000).unref();
