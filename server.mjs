@@ -784,7 +784,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.99',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.100',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -3156,6 +3156,165 @@ function trackerBrainBriefing(user,{force=false}={}){
     trackerBrainRemember(user,source.slice(0,8));
   }
   return{text:parts.join(' '),snapshot,candidates};
+}
+
+
+function trackerBrainPrimaryName(user){
+  const primaryId=String(user?.primaryCharacterId||'');
+  const primary=primaryId?state.characters?.[primaryId]:null;
+  return trackerSpeechSafe(primary?.name||user?.displayName||'pilot',80)||'pilot';
+}
+
+function trackerBrainAnswer(user,question){
+  const raw=trackerSpeechSafe(question,900);
+  const q=raw.toLowerCase().replace(/[^a-z0-9%+\-/. ]+/g,' ').replace(/\s+/g,' ').trim();
+  const snapshot=trackerBrainSnapshot();
+  const linked=(user?.characterIds||[]).map(String).filter(Boolean);
+  const primaryName=trackerBrainPrimaryName(user);
+  const appVersion='2.9.100';
+
+  const answer=(topic,text,extra={})=>({
+    handled:true,
+    topic,
+    text:trackerSpeechSafe(text,1200),
+    generatedAt:now(),
+    ...extra,
+  });
+
+  if(!q)return answer('help','Ask me a question about JLR Miner Tracker.');
+
+  if(/\b(what can you do|what do you do|help me|help|capabilities|commands|what can i ask|what should i ask)\b/.test(q)){
+    return answer('capabilities',
+      'I can explain every major part of JLR Miner Tracker, brief you on field and scan status, explain respawn timers and priorities, answer questions about Fleet and Fits, mining performance, ledgers and payouts, market data, ice, gas, doctrine market, PVP, Heavy Fighter Tracker, Threat Scan, MER intel, linked toons, ESI, voice controls, and feedback. You can also ask follow-up questions without repeating Tracker for a short time.'
+    );
+  }
+
+  if(/\b(who am i|my main|main toon|primary toon|primary character|my name)\b/.test(q)){
+    return answer('identity','Your current primary JLR character is '+primaryName+'. You have '+linked.length+' linked character'+(linked.length===1?'':'s')+' on this account.');
+  }
+
+  if(/\b(version|build|release)\b/.test(q)){
+    return answer('version','JLR Miner Tracker is running version '+appVersion+'.');
+  }
+
+  if(/\b(field|fields|t3|respawn|cherry|cherry picked|ore site)\b/.test(q)){
+    const needs=snapshot.issues.filter(row=>row.type==='scan-stale').length;
+    return answer('fields',
+      'The Fields board tracks T3 mining systems, whether a field is ready, picked, cleared, or waiting on its respawn timer. It also combines scan information with ledger activity so JLR can flag fields that may need another scan. Right now '+needs+' tracked system'+(needs===1?'':'s')+' need'+(needs===1?'s':'')+' a scan update.'
+    );
+  }
+
+  if(/\b(scan|probe scanner|scanner|needs scan|scan update)\b/.test(q)){
+    return answer('scanning',
+      'Probe Scanner imports update the systems JLR tracks. A scan can confirm T3 ore, ice fields, or A0 sites, correct a field that reposted early, and reset stale scan warnings. Tracker can also tell you when a system needs another scan.'
+    );
+  }
+
+  if(/\b(fleet|fit|fits|hulk|mackinaw|abyssal|laser|strip miner|boost|booster|rorqual|porpoise|commander burst)\b/.test(q)){
+    return answer('fleet',
+      'Fleet and Fits is where you select miners, ships, saved EVE fits, abyssal mining lasers, and booster configuration. JLR stores each fit separately, calculates unboosted and boosted mining performance, and uses the selected fleet setup for projected cubic meters and ISK per hour.'
+    );
+  }
+
+  if(/\b(performance|fleet performance|uptime|isk per hour|isk\/hr|m3|cubic|mining rate)\b/.test(q)){
+    return answer('performance',
+      'Fleet Performance is the live mining analytics view. It uses ESI ledger activity and your configured fleet to show actual mining output, uptime, cubic meters, value, and trends. Projected rates come from the selected fits and boosts; actual results come from ledger data.'
+    );
+  }
+
+  if(/\b(app ledger|my toons|ledger|payout|payouts)\b/.test(q)){
+    return answer('ledger',
+      'App Ledger is the combined mining activity JLR can see across participating app users. My Toons Payout is limited to the characters linked to your account. Keeping them separate lets you compare the whole operation with only your own mining and payout.'
+    );
+  }
+
+  if(/\b(market|price|prices|jita|c-n|local price|refine|refined value)\b/.test(q)){
+    return answer('market',
+      'JLR compares Jita values with local C-N market data, tracks raw and refined ore value, and uses the configured refine assumptions for mining estimates. Market data is shared across the app so users should see the same published values after refresh.'
+    );
+  }
+
+  if(/\b(ice|ice field|ice mining)\b/.test(q)){
+    return answer('ice',
+      'The Ice tab tracks known ice fields, their scan status, location and value information, and the ice systems useful to your operation. Ice is kept separate from T3 ore so its fields and valuation do not clutter the main mining board.'
+    );
+  }
+
+  if(/\b(gas|gas site|gas mining)\b/.test(q)){
+    return answer('gas',
+      'The Gas tab is the dedicated gas view. It keeps gas locations, availability and value information separate from ore and ice so miners can quickly compare the gas opportunities JLR knows about.'
+    );
+  }
+
+  if(/\b(doctrine|doctrine market|doctrine stock)\b/.test(q)){
+    return answer('doctrine',
+      'Doctrine Market compares local doctrine availability with Jita reference data so you can see what is stocked locally, what may be missing, and how local pricing compares with the trade hub.'
+    );
+  }
+
+  if(/\b(init pvp|pvp|killboard|zkill|killmail|final blow|damage leaderboard)\b/.test(q)){
+    return answer('pvp',
+      'INIT PVP uses JLR cached kill data to show alliance and corporation activity without making every screen load depend directly on zKill. It includes recent rankings, final blows, damage views, and links back to killboard details where available.'
+    );
+  }
+
+  if(/\b(heavy fighter|heavy fighters|fighter loss|tracker tab|fighter tracker)\b/.test(q)){
+    return answer('heavy-fighter-tracker',
+      'Heavy Fighter Tracker watches the live zKill R2Z2 feed for Heavy Fighter losses. When a qualifying loss appears, JLR can alert with the fighter type, system, estimated value and kill details. Access is restricted to the configured corporation.'
+    );
+  }
+
+  if(/\b(threat|threat scan|dscan|d-scan|local scan|hostile|neutral|neut|cyno)\b/.test(q)){
+    return answer('threat-scan',
+      'Threat Scan analyzes pasted Local or D-scan information, removes known friendly characters, and summarizes useful hostile information such as character age, ships, kill history and Fountain activity. JLR weighs relevant Fountain and cyno activity more heavily when presenting the threat.'
+    );
+  }
+
+  if(/\b(mer|mer intel|monthly economic|economic report)\b/.test(q)){
+    return answer('mer',
+      'MER Intel turns Monthly Economic Report data into mining and economic context inside JLR, so you can compare activity and trends without leaving the app.'
+    );
+  }
+
+  if(/\b(toon|toons|character|characters|esi|eve sso|sso|link character|add character)\b/.test(q)){
+    return answer('toons',
+      'The Toons tab manages EVE characters linked through EVE SSO. JLR uses the granted ESI scopes for features such as fits, assets, mining ledger and location where required. Your account currently has '+linked.length+' linked character'+(linked.length===1?'':'s')+'.'
+    );
+  }
+
+  if(/\b(mic|microphone|voice|speech|wake word|say tracker|talk to tracker|not hearing|error code)\b/.test(q)){
+    return answer('voice',
+      'Talk to Tracker listens locally for the wake word Tracker, then keeps a short conversation window open for follow-up questions. The microphone selector chooses the input device, the signal meter shows whether audio is arriving, and Copy Diagnostics records the speech engine, model, audio and error-code state without including EVE tokens.'
+    );
+  }
+
+  if(/\b(feedback|report bug|bug report|suggestion|feature idea|submit idea)\b/.test(q)){
+    return answer('feedback',
+      'The Feedback tab lets you report bugs, feature ideas, speech problems, data issues and UI problems. You can add impact, steps to reproduce and expected behavior, and optionally attach JLR diagnostic context. Your recent submissions stay visible there.'
+    );
+  }
+
+  if(/\b(theme|themes|compact|expanded|layout|display|ui)\b/.test(q)){
+    return answer('interface',
+      'JLR supports multiple visual themes plus compact and expanded views. Compact mode reduces secondary detail for monitoring, while expanded mode keeps the richer fit, mining and operational information visible.'
+    );
+  }
+
+  if(/\b(safe|security|secure|token|tokens|privacy|credentials)\b/.test(q)){
+    return answer('security',
+      'JLR uses EVE SSO and stores the access needed for enabled ESI features on the server side. Tracker diagnostics are designed not to include EVE access tokens or passwords. Corporation-restricted features also check the linked EVE identity before returning protected data.'
+    );
+  }
+
+  if(/\b(status|health|anything wrong|need attention|what needs attention)\b/.test(q)){
+    if(!snapshot.issues.length)return answer('status','All tracked JLR systems are currently normal.');
+    return answer('status',snapshot.attentionCount+' item'+(snapshot.attentionCount===1?'':'s')+' currently require attention. Ask me for a briefing and I will read the priority items.');
+  }
+
+  return answer('general',
+    'I can answer questions about JLR Miner Tracker and what its data means. I do not have a general internet knowledge engine built into Tracker yet. Ask me about a tab, feature, field status, mining metric, ESI data, voice control, threat scan, PVP, market data, or how to use something in the app.',
+    {handled:false}
+  );
 }
 
 function recordBoardScan({system,text,a0,t3Scan=null,definition=null}){
@@ -6120,7 +6279,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.99',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.100',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -6147,7 +6306,7 @@ async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
   if(req.method==='GET'&&url.pathname==='/api/tracker/speech/diagnostics'){
     return json(res,200,{
-      version:'2.9.99',
+      version:'2.9.100',
       modelCached:Boolean(voskModelArchive),
       modelBytes:voskModelArchive?.length||0,
       modelSource:voskModelSource||null,
@@ -6182,6 +6341,15 @@ async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname==='/api/tracker/brain/briefing'){
     const force=url.searchParams.get('force')==='1';
     return json(res,200,trackerBrainBriefing(user,{force}));
+  }
+  if(req.method==='POST'&&url.pathname==='/api/tracker/brain/ask'){
+    if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
+    let body;
+    try{body=await readBody(req,8_000)}
+    catch(err){return json(res,400,{error:'BAD_BRAIN_QUESTION',message:String(err.message||err)})}
+    const question=trackerSpeechSafe(body?.question,900);
+    if(!question)return json(res,400,{error:'QUESTION_REQUIRED',message:'Ask Tracker a question first.'});
+    return json(res,200,trackerBrainAnswer(user,question));
   }
   if(req.method==='GET'&&url.pathname==='/api/tracker/feedback'){
     const userId=String(user?.id||'');
@@ -6649,7 +6817,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.99 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.100 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>{
   Promise.all([
     loadVoskRuntimeAsset(VOSK_RUNTIME_FILES['/vendor/vosk/vosk-0.0.8.js']),
