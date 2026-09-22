@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700&family=Rajdhani:wght@600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=2.9.42">
-  <link rel="stylesheet" href="/tracker.css?v=2.9.41">
+  <link rel="stylesheet" href="/styles.css?v=2.9.71">
+  <link rel="stylesheet" href="/tracker.css?v=2.9.71">
 </head>
 <body>
   <main id="loginView" class="login-shell hidden">
@@ -80,6 +80,22 @@
       <button class="app-tab" data-tab="toons" type="button">TOONS</button>
     </nav>
     <div id="tabHost" class="tab-host"></div>
+
+    <section class="glass tracker-assistant-panel">
+      <div class="tracker-assist-head">
+        <div>
+          <span class="eyebrow">TRACKER BRAIN</span>
+          <strong>ASSISTANT</strong>
+          <span id="trackerBrainStatus" class="status-pill">● ANALYZING</span>
+        </div>
+        <div class="tracker-assist-actions">
+          <button id="trackerBriefMe" class="orb purple" type="button" title="Ask Tracker for a spoken operations briefing">▶ BRIEF ME</button>
+          <button id="trackerWhySystem" class="orb blue" type="button" title="Ask Tracker why the selected field has its current status">WHY THIS SYSTEM?</button>
+        </div>
+      </div>
+      <div id="trackerBrainSummary" class="tracker-assist-summary">Tracker is analyzing the current operation.</div>
+      <div id="trackerBrainList" class="tracker-assist-list" aria-live="polite"></div>
+    </section>
 
     <section class="compact-row">
       <details class="glass setup-drawer fleet-and-fits" open>
@@ -409,7 +425,7 @@
     <div id="toast" class="toast hidden" role="status"></div>
   </main>
   <script src="/yield-math.js?v=2.9.37" defer></script>
-  <script src="/app.js?v=2.9.70" defer></script>
-  <script src="/tracker.js?v=2.9.70" defer></script>
+  <script src="/app.js?v=2.9.71" defer></script>
+  <script src="/tracker.js?v=2.9.71" defer></script>
 </body>
 </html>
