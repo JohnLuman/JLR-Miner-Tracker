@@ -393,7 +393,7 @@
     const voice=trackerVoiceStatus||{};
     const voiceLabel=trackerVoiceChecking&&!voice.checkedAt?'CHECKING':(voice.reachable?'ONLINE':(voice.configured?'OFFLINE':'NOT SET'));
     const voiceDetail=voice.reachable
-      ?('Custom GPT-SoVITS ready'+(Number.isFinite(Number(voice.latencyMs))?' • '+fmt(voice.latencyMs)+' ms':''))
+      ?((voice.streaming?'GPT-SoVITS STREAMING':'GPT-SoVITS BUFFERED')+(voice.workerVersion?' • worker v'+esc(voice.workerVersion):'')+(Number.isFinite(Number(voice.latencyMs))?' • '+fmt(voice.latencyMs)+' ms health':''))
       :(voice.configured?'Browser fallback active':'Voice worker not configured');
     const voiceClass=voice.reachable?' voice-online':(voice.configured?' voice-offline':'');
     const status=trackerError
