@@ -20,6 +20,10 @@
   let trackerStreamConnected=false;
   let trackerStreamState='offline';
   let trackerStreamStatus=null;
+  let trackerVoiceStatus={configured:false,reachable:false,checkedAt:null,latencyMs:null,message:'Checking custom voice…'};
+  let trackerVoiceChecking=false;
+  let trackerVoiceTimer=null;
+  let trackerVoiceLastMode=String(window.jlrVoiceMode||'unknown');
 
   function esc(value){
     return String(value==null?'':value).replace(/[&<>'"]/g,function(ch){
@@ -71,6 +75,26 @@
     const payload=type.includes('application/json')?await response.json():await response.text();
     if(!response.ok)throw new Error((payload&&payload.message)||(payload&&payload.error)||payload||('Request failed '+response.status));
     return payload;
+  }
+  async function loadVoiceStatus(){
+    if(trackerVoiceChecking)return;
+    trackerVoiceChecking=true;
+    try{
+      trackerVoiceStatus=await api('/api/tracker/heavy-fighters/voice/status');
+    }catch(error){
+      trackerVoiceStatus={configured:true,reachable:false,checkedAt:new Date().toISOString(),latencyMs:null,message:String(error&&error.message||error||'Custom voice unavailable.')};
+    }finally{
+      trackerVoiceChecking=false;
+      render();
+    }
+  }
+  function scheduleVoiceStatus(delayMs){
+    if(trackerVoiceTimer){clearTimeout(trackerVoiceTimer);trackerVoiceTimer=null;}
+    if(!trackerArmed&&!isActive())return;
+    trackerVoiceTimer=setTimeout(async function(){
+      await loadVoiceStatus();
+      scheduleVoiceStatus(30000);
+    },delayMs==null?30000:Math.max(1000,Number(delayMs)||30000));
   }
   function mergeClientLosses(rows){
     const merged=new Map();
@@ -290,6 +314,8 @@
         ?await window.jlrUnlockFighterAlarm()
         :false;
       syncTrackerStream();
+      loadVoiceStatus();
+      scheduleVoiceStatus(30000);
       if('Notification' in window&&Notification.permission==='default'){
         try{await Notification.requestPermission();}catch(e){}
       }
@@ -304,6 +330,7 @@
       }
       syncTrackerStream();
       schedule();
+      scheduleVoiceStatus();
       toast('Heavy Fighter alerts disarmed.');
     }
     render();
@@ -363,6 +390,12 @@
     const liveDetail=live.caughtUp
       ?'R2Z2 at live edge • '+fmt(live.edgeWaitSeconds||6)+'s edge checks'
       :(live.lastError?String(live.lastError).slice(0,90):'connecting to R2Z2 live sequence');
+    const voice=trackerVoiceStatus||{};
+    const voiceLabel=trackerVoiceChecking&&!voice.checkedAt?'CHECKING':(voice.reachable?'ONLINE':(voice.configured?'OFFLINE':'NOT SET'));
+    const voiceDetail=voice.reachable
+      ?('Custom GPT-SoVITS ready'+(Number.isFinite(Number(voice.latencyMs))?' • '+fmt(voice.latencyMs)+' ms':''))
+      :(voice.configured?'Browser fallback active':'Voice worker not configured');
+    const voiceClass=voice.reachable?' voice-online':(voice.configured?' voice-offline':'');
     const status=trackerError
       ?trackerError
       :trackerLoading
@@ -384,7 +417,7 @@
           '<div>'+
             '<span class="tracker-eyebrow">zKILLBOARD R2Z2 LIVE • GROUP 1653</span>'+
             '<h2>TRACKER</h2>'+
-            '<p>Near-live Heavy Fighter loss watch. R2Z2 pushes new losses while the regular zKill API backs up the 24-hour history.</p>'+
+            '<p>Near-live Heavy Fighter loss watch with dynamic JLR custom-voice announcements and automatic browser fallback.</p>'+
           '</div>'+
           '<div class="tracker-actions">'+
             '<button id="trackerArm" class="tracker-arm '+(trackerArmed?'armed':'off')+'" type="button" aria-pressed="'+String(trackerArmed)+'">'+(trackerArmed?'LOUD ALERTS ARMED':'ARM LOUD ALERTS')+'</button>'+
@@ -398,6 +431,7 @@
           '<article class="glass"><span>24H FEED</span><strong>'+fmt(losses.length)+'</strong><small>latest Heavy Fighter losses returned</small></article>'+
           '<article class="glass"><span>LATEST LOSS</span><strong>'+(latest?esc(ago(latest.killmailTime).toUpperCase()):'—')+'</strong><small>'+(latest?esc(latest.systemName||'Unknown system'):'waiting for a loss')+'</small></article>'+
           '<article class="glass"><span>LIVE INGEST</span><strong>'+esc(liveLabel)+'</strong><small>'+esc(liveDetail)+'</small></article>'+
+          '<article class="glass'+voiceClass+'"><span>CUSTOM VOICE</span><strong>'+esc(voiceLabel)+'</strong><small>'+esc(voiceDetail)+(trackerVoiceLastMode==='fallback'?' • last alert used fallback':trackerVoiceLastMode==='custom'?' • last alert custom':'')+'</small></article>'+
         '</section>'+
         '<section class="glass tracker-feed-head">'+
           '<div><strong>HEAVY FIGHTER LOSSES</strong><span>'+esc(status)+'</span></div>'+
@@ -406,7 +440,7 @@
         '<section class="tracker-feed">'+body+'</section>'+
         '<section class="tracker-source-note">'+
           '<strong>HOW ALERTS WORK</strong>'+
-          '<span>JLR follows zKillboard\'s R2Z2 live sequence on the server and filters it locally for Heavy Fighter group 1653. Matching losses are pushed to this browser over a corporation-authorized live stream, normally within seconds of reaching zKillboard. The regular search API remains the 24-hour history and fallback and can be about five minutes delayed. Keep JLR open and alerts armed for sound alerts.</span>'+
+          '<span>JLR follows zKillboard\'s R2Z2 live sequence for Heavy Fighter group 1653. When CUSTOM VOICE is ONLINE, Railway requests one GPT-SoVITS announcement per killmail and caches it for authorized users. If the worker is OFFLINE, JLR automatically uses the browser fallback voice so the alarm still fires.</span>'+
         '</section>'+
       '</div>';
 
@@ -442,6 +476,8 @@
       setTimeout(function(){
         render();
         syncTrackerStream();
+        loadVoiceStatus();
+        scheduleVoiceStatus(30000);
         if(!trackerData&&!trackerLoading)loadTracker(false,false);
         else schedule();
       },0);
@@ -452,13 +488,25 @@
         trackerUnread=0;
         setBadge();
         if(!trackerData&&!trackerLoading)loadTracker(false,false);
+        loadVoiceStatus();
       }
       syncTrackerStream();
       schedule();
+      scheduleVoiceStatus(30000);
     });
     observer.observe(trackerPanel,{attributes:true,attributeFilter:['class']});
 
+    window.addEventListener('jlr-voice-mode',function(event){
+      trackerVoiceLastMode=String(event&&event.detail&&event.detail.mode||'unknown');
+      if(trackerVoiceLastMode==='custom')trackerVoiceStatus={...trackerVoiceStatus,configured:true,reachable:true,checkedAt:new Date().toISOString(),message:'Custom GPT-SoVITS voice played successfully.'};
+      render();
+    });
+
     syncTrackerStream();
+    if(trackerArmed||isActive()){
+      setTimeout(function(){loadVoiceStatus();},500);
+      scheduleVoiceStatus(30000);
+    }
     if(trackerArmed)setTimeout(function(){loadTracker(false,true);},1200);
   }
 
