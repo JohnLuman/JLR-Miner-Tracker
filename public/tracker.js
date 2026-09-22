@@ -1,7 +1,7 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.47';
-  const CORE_URL='/tracker-core.js?v=2.9.47';
+  const ALARM_VERSION='2.9.48';
+  const CORE_URL='/tracker-core.js?v=2.9.48';
 
   let alarmContext=null;
   let alarmSource=null;
@@ -10,6 +10,8 @@
   let activeMediaElement=null;
   let alarmGeneration=0;
   let lastVoiceMode='unknown';
+  let voiceQueue=[];
+  let voiceQueueRunning=false;
 
   function reportVoiceMode(mode,detail){
     lastVoiceMode=mode;
@@ -42,6 +44,10 @@
   function stopVoiceAlert(){
     alarmGeneration++;
     let stopped=false;
+    const pending=voiceQueue.splice(0);
+    for(const item of pending){
+      try{item.resolve(false);}catch(error){}
+    }
     if(activeFetch){
       try{activeFetch.abort();stopped=true;}catch(error){}
       activeFetch=null;
@@ -212,6 +218,59 @@
     });
   }
 
+  function voiceIsActive(){
+    const synth='speechSynthesis' in window?window.speechSynthesis:null;
+    return Boolean(activeMediaElement||alarmSource||activeUtterance||(synth&&(synth.speaking||synth.pending)));
+  }
+
+  function waitForVoiceIdle(generation){
+    return new Promise(function(resolve){
+      const started=Date.now();
+      const tick=function(){
+        if(generation!==alarmGeneration||!voiceIsActive()||Date.now()-started>120000){resolve();return}
+        setTimeout(tick,100);
+      };
+      tick();
+    });
+  }
+
+  function enqueueVoiceTask(run,label){
+    return new Promise(function(resolve){
+      // Avoid an unbounded backlog if a browser tab wakes from suspension.
+      if(voiceQueue.length>=8){
+        const dropped=voiceQueue.shift();
+        try{dropped.resolve(false);}catch(error){}
+      }
+      voiceQueue.push({run:run,resolve:resolve,label:String(label||'JLR voice')});
+      processVoiceQueue();
+    });
+  }
+
+  async function processVoiceQueue(){
+    if(voiceQueueRunning)return;
+    voiceQueueRunning=true;
+    try{
+      while(voiceQueue.length){
+        const item=voiceQueue.shift();
+        const generation=alarmGeneration;
+        let started=false;
+        try{
+          started=Boolean(await item.run(generation));
+        }catch(error){
+          console.warn(item.label+' failed.',error);
+          started=false;
+        }
+        try{item.resolve(started);}catch(error){}
+        // playStreamUrl resolves as soon as speech starts. Keep this queue slot
+        // until the actual audio/utterance ends so the next event cannot cut it off.
+        if(started)await waitForVoiceIdle(generation);
+      }
+    }finally{
+      voiceQueueRunning=false;
+      if(voiceQueue.length)processVoiceQueue();
+    }
+  }
+
   async function playVoiceAlert(loss){
     stopVoiceAlert();
     const generation=alarmGeneration;
@@ -226,8 +285,6 @@
   }
 
   async function speakEvent(type,payload,localFallback){
-    stopVoiceAlert();
-    const generation=alarmGeneration;
     const fallback=String(localFallback||'J. L. R. voice notification.');
     const kind=String(type||'');
     let endpoint='';
@@ -241,31 +298,34 @@
       if(system&&characterId)endpoint='/api/voice/stream/scout?system='+encodeURIComponent(system)+'&characterId='+encodeURIComponent(characterId);
     }
 
+    // Unlock immediately if this call came from the user's first gesture, but
+    // queue normal announcements instead of stopping the sentence already playing.
     unlockAlarm();
-    if(endpoint)return playStreamUrl(endpoint,generation,fallback,'JLR '+kind+' streaming voice');
+    return enqueueVoiceTask(async function(generation){
+      if(endpoint)return playStreamUrl(endpoint,generation,fallback,'JLR '+kind+' streaming voice');
 
-    // Compatibility path for future event types that do not have GET streaming
-    // routes yet.
-    try{
-      const controller=new AbortController();
-      activeFetch=controller;
-      const body={type:kind,...(payload&&typeof payload==='object'?payload:{})};
-      const response=await fetch('/api/voice/event',{
-        method:'POST',
-        credentials:'same-origin',
-        cache:'no-store',
-        headers:{'Content-Type':'application/json','Accept':'audio/*, application/json'},
-        body:JSON.stringify(body),
-        signal:controller.signal
-      });
-      if(activeFetch===controller)activeFetch=null;
-      if(generation!==alarmGeneration)return false;
-      if(!response.ok)return playFallbackText(fallback,generation);
-      return await playAudioResponse(response,generation,'JLR '+kind+' custom voice');
-    }catch(error){
-      if(generation!==alarmGeneration)return false;
-      return playFallbackText(fallback,generation);
-    }
+      // Compatibility path for future event types without a dedicated GET stream.
+      try{
+        const controller=new AbortController();
+        activeFetch=controller;
+        const body={type:kind,...(payload&&typeof payload==='object'?payload:{})};
+        const response=await fetch('/api/voice/event',{
+          method:'POST',
+          credentials:'same-origin',
+          cache:'no-store',
+          headers:{'Content-Type':'application/json','Accept':'audio/*, application/json'},
+          body:JSON.stringify(body),
+          signal:controller.signal
+        });
+        if(activeFetch===controller)activeFetch=null;
+        if(generation!==alarmGeneration)return false;
+        if(!response.ok)return playFallbackText(fallback,generation);
+        return await playAudioResponse(response,generation,'JLR '+kind+' custom voice');
+      }catch(error){
+        if(generation!==alarmGeneration)return false;
+        return playFallbackText(fallback,generation);
+      }
+    },'JLR '+kind+' voice');
   }
 
   function watchTrackerUi(){
