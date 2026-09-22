@@ -1,7 +1,7 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.51';
-  const CORE_URL='/tracker-core.js?v=2.9.51';
+  const ALARM_VERSION='2.9.52';
+  const CORE_URL='/tracker-core.js?v=2.9.52';
 
   let alarmContext=null;
   let alarmSource=null;
@@ -316,6 +316,42 @@
     }
   }
 
+  async function playCustomEndpoint(url,generation,detail){
+    const controller=new AbortController();
+    activeFetch=controller;
+    try{
+      const response=await fetch(url,{
+        method:'GET',
+        credentials:'same-origin',
+        cache:'no-store',
+        headers:{'Accept':'audio/*, application/json'},
+        signal:controller.signal
+      });
+      if(activeFetch===controller)activeFetch=null;
+      if(generation!==alarmGeneration)return false;
+      if(!response.ok){
+        const type=String(response.headers.get('content-type')||'');
+        let message='';
+        try{
+          if(type.includes('application/json')){
+            const body=await response.json();
+            message=String(body&&body.message||body&&body.error||'');
+          }else message=String(await response.text());
+        }catch(error){}
+        throw new Error('JLR custom voice HTTP '+response.status+(message?': '+message.slice(0,220):''));
+      }
+      return await playAudioResponse(response,generation,detail||'JLR custom voice');
+    }catch(error){
+      if(activeFetch===controller)activeFetch=null;
+      if(generation!==alarmGeneration)return false;
+      const message=String(error&&error.message||error||'JLR custom voice failed.');
+      window.jlrVoiceLastError=message;
+      reportVoiceMode('error',message);
+      console.error((detail||'JLR custom voice')+' failed.',error);
+      return false;
+    }
+  }
+
   async function playVoiceAlert(loss){
     stopVoiceAlert();
     const generation=alarmGeneration;
@@ -326,10 +362,9 @@
       return playStrictCustomTest(generation);
     }
     const endpoint=killId?'/api/tracker/heavy-fighters/voice/'+killId+'?stream=1':'';
-    if(!endpoint)return playFallbackSpeech(loss,generation);
-    // Live alerts retain the emergency fallback; the TEST button above never does.
+    if(!endpoint)return false;
     unlockAlarm();
-    return playStreamUrl(endpoint,generation,fallbackText(loss),'Streaming GPT-SoVITS voice');
+    return playCustomEndpoint(endpoint+'&nonce='+Date.now(),generation,'JLR Heavy Fighter custom voice');
   }
 
   async function speakEvent(type,payload,localFallback){
@@ -344,13 +379,19 @@
       const system=String(payload&&payload.system||'').trim();
       const characterId=String(payload&&payload.characterId||'').trim();
       if(system&&characterId)endpoint='/api/voice/stream/scout?system='+encodeURIComponent(system)+'&characterId='+encodeURIComponent(characterId);
+    }else if(kind==='field'){
+      const system=String(payload&&payload.system||'').trim();
+      if(system)endpoint='/api/voice/stream/field?system='+encodeURIComponent(system);
     }
 
     // Unlock immediately if this call came from the user's first gesture, but
     // queue normal announcements instead of stopping the sentence already playing.
     unlockAlarm();
     return enqueueVoiceTask(async function(generation){
-      if(endpoint)return playStreamUrl(endpoint,generation,fallback,'JLR '+kind+' streaming voice');
+      if(endpoint){
+        const joiner=endpoint.includes('?')?'&':'?';
+        return playCustomEndpoint(endpoint+joiner+'nonce='+Date.now(),generation,'JLR '+kind+' custom voice');
+      }
 
       // Compatibility path for future event types without a dedicated GET stream.
       try{
@@ -367,11 +408,18 @@
         });
         if(activeFetch===controller)activeFetch=null;
         if(generation!==alarmGeneration)return false;
-        if(!response.ok)return playFallbackText(fallback,generation);
+        if(!response.ok){
+          const detail=await response.text().catch(()=>'');
+          throw new Error('JLR voice event HTTP '+response.status+(detail?': '+detail.slice(0,180):''));
+        }
         return await playAudioResponse(response,generation,'JLR '+kind+' custom voice');
       }catch(error){
         if(generation!==alarmGeneration)return false;
-        return playFallbackText(fallback,generation);
+        const message=String(error&&error.message||error||'JLR voice event failed.');
+        window.jlrVoiceLastError=message;
+        reportVoiceMode('error',message);
+        console.error('JLR '+kind+' voice failed.',error);
+        return false;
       }
     },'JLR '+kind+' voice');
   }
