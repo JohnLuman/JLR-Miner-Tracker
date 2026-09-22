@@ -1,7 +1,7 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.109';
-  const CORE_URL='/tracker-core.js?v=2.9.109';
+  const ALARM_VERSION='2.9.110';
+  const CORE_URL='/tracker-core.js?v=2.9.110';
 
   let alarmContext=null;
   let alarmSource=null;
@@ -485,7 +485,7 @@
       activeMediaElement=audio;
       audio.preload='auto';
       audio.volume=1;
-      audio.playbackRate=1.08;
+      audio.playbackRate=1.12;
       try{audio.preservesPitch=true}catch(error){}
       try{audio.webkitPreservesPitch=true}catch(error){}
       audio.src='/api/voice/stream/brain?text='+encodeURIComponent(String(text||''))+'&nonce='+Date.now();
@@ -511,6 +511,7 @@
         }
         started=true;
         const latency=Math.max(0,Math.round(performance.now()-startedAt));
+        window.jlrVoiceFirstAudioMs=latency;
         window.jlrVoiceTransport='live-stream';
         window.jlrVoiceProfile='core';
         window.jlrVoiceLastError='';
@@ -557,7 +558,7 @@
   async function playCustomBrainText(text,generation,detail){
     if(generation!==alarmGeneration)return false;
     window.jlrVoiceLastError='';
-    const chunks=splitBrainVoiceText(text,260);
+    const chunks=splitBrainVoiceText(text,180);
     if(!chunks.length)return false;
 
     for(let i=0;i<chunks.length;i++){
