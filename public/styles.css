@@ -1967,3 +1967,10 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .brain-mic-diagnostic-head span{font-size:7px;color:var(--muted)}
 .brain-mic-diagnostic p{margin:6px 0;font-size:8px;line-height:1.4;color:var(--muted);overflow-wrap:anywhere}
 .brain-mic-diagnostic-actions{display:flex;gap:6px;flex-wrap:wrap}
+
+/* v2.9.99 — live Tracker microphone signal */
+.brain-mic-level-row{display:grid;grid-template-columns:auto minmax(90px,1fr) 48px;align-items:center;gap:8px;margin:7px 0 6px}
+.brain-mic-level-row>span,.brain-mic-level-row>b{font-size:7px;letter-spacing:.06em;color:var(--muted)}
+.brain-mic-level-row>b{text-align:right;color:var(--theme-accent,var(--green))}
+.brain-mic-level{height:7px;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--input-bg,#071710)}
+.brain-mic-level>i{display:block;height:100%;width:2%;border-radius:999px;background:var(--theme-accent,var(--green));transition:width .09s linear}
