@@ -201,10 +201,17 @@
   }
 
   function watchTrackerUi(){
+    const firstGestureUnlock=function(){
+      unlockAlarm();
+      document.removeEventListener('pointerdown',firstGestureUnlock,true);
+      document.removeEventListener('keydown',firstGestureUnlock,true);
+    };
+    document.addEventListener('pointerdown',firstGestureUnlock,true);
+    document.addEventListener('keydown',firstGestureUnlock,true);
     document.addEventListener('click',function(event){
       const target=event.target instanceof Element?event.target:null;
       if(!target)return;
-      if(target.closest('#trackerArm')||target.closest('#trackerTest'))unlockAlarm();
+      if(target.closest('#trackerArm')||target.closest('#trackerTest')||target.closest('#pasteScan')||target.closest('#scanPasteCheck'))unlockAlarm();
     },true);
 
     const relabel=function(){
