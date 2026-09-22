@@ -784,7 +784,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.89',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.90',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -3791,6 +3791,70 @@ function myProfile(user) {
   };
 }
 
+
+const VOSK_MODEL_PATH='/vendor/vosk/model-en-us-0.15.tar.gz';
+const VOSK_MODEL_UPSTREAMS=[
+  'https://fiddle-app.github.io/voice-models/vosk-model-small-en-us-0.15.tar.gz',
+  'https://ccoreilly.github.io/vosk-browser/models/vosk-model-small-en-us-0.15.tar.gz',
+];
+let voskModelArchive=null;
+let voskModelLoadPromise=null;
+
+async function loadVoskModelArchive(){
+  if(voskModelArchive)return voskModelArchive;
+  if(voskModelLoadPromise)return voskModelLoadPromise;
+  voskModelLoadPromise=(async()=>{
+    let lastError=null;
+    for(const upstreamUrl of VOSK_MODEL_UPSTREAMS){
+      const controller=new AbortController();
+      const timer=setTimeout(()=>controller.abort(),120000);
+      try{
+        const response=await fetch(upstreamUrl,{
+          cache:'no-store',
+          redirect:'follow',
+          headers:{'User-Agent':ESI_USER_AGENT,'Accept':'application/gzip, application/octet-stream;q=0.9, */*;q=0.1'},
+          signal:controller.signal,
+        });
+        if(!response.ok)throw new Error('HTTP '+response.status);
+        const body=Buffer.from(await response.arrayBuffer());
+        if(body.length<10_000_000)throw new Error('archive was unexpectedly small ('+body.length+' bytes)');
+        voskModelArchive=body;
+        console.log('Tracker speech model cached from '+upstreamUrl+' ('+Math.round(body.length/1024/1024)+' MB)');
+        return body;
+      }catch(error){
+        lastError=error;
+        console.warn('Tracker speech model upstream failed:',upstreamUrl,String(error?.message||error));
+      }finally{
+        clearTimeout(timer);
+      }
+    }
+    throw lastError||new Error('No Tracker speech model upstream was reachable.');
+  })().catch(error=>{
+    voskModelLoadPromise=null;
+    throw error;
+  });
+  return voskModelLoadPromise;
+}
+
+async function serveVoskModel(req,res,pathname){
+  if(req.method!=='GET'||pathname!==VOSK_MODEL_PATH)return false;
+  try{
+    const body=await loadVoskModelArchive();
+    securityHeaders(res);
+    res.writeHead(200,{
+      'Content-Type':'application/gzip',
+      'Content-Length':body.length,
+      'Cache-Control':'public, max-age=31536000, immutable',
+      'Cross-Origin-Resource-Policy':'same-origin',
+    });
+    res.end(body);
+  }catch(error){
+    console.error('Tracker speech model route failed',error);
+    if(!res.headersSent)text(res,502,'Tracker speech model is temporarily unavailable');
+  }
+  return true;
+}
+
 async function serveStatic(req,res,pathname) {
   const rel=pathname==='/'?'index.html':pathname.slice(1);const file=path.resolve(PUBLIC_DIR,rel);if(!file.startsWith(path.resolve(PUBLIC_DIR)+path.sep)&&file!==path.join(PUBLIC_DIR,'index.html'))return false;
   try{const st=await fsp.stat(file);if(!st.isFile())return false;const ext=path.extname(file).toLowerCase();const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.png':'image/png','.svg':'image/svg+xml'};securityHeaders(res);res.writeHead(200,{'Content-Type':types[ext]||'application/octet-stream','Cache-Control':ext==='.html'?'no-cache':'public, max-age=60'});fs.createReadStream(file).pipe(res);return true}catch{return false}
@@ -5990,7 +6054,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.89',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.90',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -6471,10 +6535,12 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&url.pathname==='/auth/eve/callback')return await handleCallback(req,res,url);
   if(req.method==='POST'&&url.pathname==='/auth/logout'){clearSessionCookie(res,req);return json(res,200,{ok:true})}
   if(url.pathname.startsWith('/api/'))return await routeApi(req,res,url);
+  if(await serveVoskModel(req,res,url.pathname))return;
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.89 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.90 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+setTimeout(()=>loadVoskModelArchive().catch(err=>console.warn('Tracker speech model warmup deferred:',String(err?.message||err))),1_500).unref();
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
 setInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': tracker-heartbeat\n\n')}catch{trackerLiveClients.delete(res)}}},20_000).unref();
 setInterval(()=>resetExpired(true),15_000).unref();
