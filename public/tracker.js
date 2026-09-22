@@ -1,7 +1,7 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.103';
-  const CORE_URL='/tracker-core.js?v=2.9.103';
+  const ALARM_VERSION='2.9.104';
+  const CORE_URL='/tracker-core.js?v=2.9.104';
 
   let alarmContext=null;
   let alarmSource=null;
@@ -460,8 +460,11 @@
         }catch(error){}
         throw new Error('JLR conversational voice HTTP '+response.status+(message?': '+message.slice(0,220):''));
       }
-      const played=await playAudioResponse(response,generation,detail||'JLR conversational custom voice');
+      const profile=String(response.headers.get('x-jlr-voice-profile')||'custom');
+      const played=await playAudioResponse(response,generation,(detail||'JLR conversational custom voice')+' • '+profile);
       if(!played)throw new Error('Custom voice returned audio but playback did not start.');
+      window.jlrVoiceProfile=profile;
+      window.jlrVoiceLastError='';
       return true;
     }catch(error){
       if(activeFetch===controller)activeFetch=null;
@@ -575,7 +578,7 @@
     document.addEventListener('click',function(event){
       const target=event.target instanceof Element?event.target:null;
       if(!target)return;
-      if(target.closest('#trackerArm')||target.closest('#trackerTest')||target.closest('#pasteScan')||target.closest('#scanPasteCheck'))unlockAlarm();
+      if(target.closest('#trackerArm')||target.closest('#trackerTest')||target.closest('#trackerMicToggle')||target.closest('#pasteScan')||target.closest('#scanPasteCheck'))unlockAlarm();
     },true);
 
     const relabel=function(){
