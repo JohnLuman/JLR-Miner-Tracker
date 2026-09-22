@@ -784,7 +784,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.105',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.106',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -3171,7 +3171,7 @@ function trackerBrainAnswer(user,question){
   const snapshot=trackerBrainSnapshot();
   const linked=(user?.characterIds||[]).map(String).filter(Boolean);
   const primaryName=trackerBrainPrimaryName(user);
-  const appVersion='2.9.105';
+  const appVersion='2.9.106';
 
   const answer=(topic,text,extra={})=>({
     handled:true,
@@ -3318,14 +3318,36 @@ function trackerBrainAnswer(user,question){
 }
 
 function recordBoardScan({system,text,a0,t3Scan=null,definition=null}){
-  const parsed=parseA0Scan(text);
+  const a0Parsed=parseA0Scan(text);
   const iceParsed=parseIceScan(text);
   const kinds=[];
   if(SYSTEM_MAP.has(system))kinds.push('t3');
   const iceField=(state.market?.iceFields||[]).find(row=>row.system===system)||null;
   if(iceField)kinds.push('ice');
-  if((state.market?.a0Fields||[]).some(row=>row.system===system)||a0?.tracked)kinds.push('a0');
-  if(!parsed.valid||!kinds.length)return {recorded:false,valid:parsed.valid,boardTracked:Boolean(kinds.length),kinds};
+  const a0Tracked=(state.market?.a0Fields||[]).some(row=>row.system===system)||Boolean(a0?.tracked);
+  if(a0Tracked)kinds.push('a0');
+
+  // A board scan is valid when the parser relevant to that board accepted the
+  // clipboard. Do not make T3/ICE timestamps depend on the A0 parser.
+  const t3Valid=Boolean(definition&&t3Scan?.valid);
+  const iceValid=Boolean(iceField&&iceParsed?.valid);
+  const a0Valid=Boolean(a0Tracked&&a0Parsed?.valid);
+  const valid=Boolean(t3Valid||iceValid||a0Valid);
+  const scannerRowCount=Math.max(
+    0,
+    Number(t3Scan?.scannerRowCount)||0,
+    Number(iceParsed?.scannerRowCount)||0,
+    Number(a0Parsed?.scannerRowCount)||0,
+  );
+  if(!valid||!kinds.length)return {
+    recorded:false,
+    valid,
+    boardTracked:Boolean(kinds.length),
+    kinds,
+    scannerRowCount,
+    parserStatus:{t3:t3Valid,ice:iceValid,a0:a0Valid},
+  };
+
   state.scans ||= {};
   const lastScanAt=now();
   const expectedIce=iceField?Math.max(1,Number(iceField.iceBelts)||1):0;
@@ -3333,8 +3355,9 @@ function recordBoardScan({system,text,a0,t3Scan=null,definition=null}){
   const ice=expectedIce?{expected:expectedIce,seen:seenIce,missing:Math.max(0,expectedIce-seenIce)}:null;
   const t3=definition&&t3Scan?.valid?{ore:String(definition.ore||''),detected:Boolean(t3Scan.detected)}:null;
   state.scans[system]={
+    ...(state.scans[system]||{}),
     lastScanAt,
-    scannerRowCount:Number(parsed.scannerRowCount)||0,
+    scannerRowCount,
     kinds:[...new Set(kinds)],
     ice,
     t3,
@@ -3367,9 +3390,10 @@ function recordBoardScan({system,text,a0,t3Scan=null,definition=null}){
     kinds:state.scans[system].kinds,
     ice,
     t3,
-    scannerRowCount:Number(parsed.scannerRowCount)||0,
+    scannerRowCount,
     lastScanAt,
     nextUpdateAt:new Date(Date.parse(lastScanAt)+A0_REPORT_TTL).toISOString(),
+    parserStatus:{t3:t3Valid,ice:iceValid,a0:a0Valid},
   };
 }
 
@@ -3423,6 +3447,7 @@ async function probeScanPreview(ch,text){
     correction,
     a0,
     boardScan,
+    serverScan:scanActivityPublic()[system]||null,
   };
 }
 
@@ -6295,7 +6320,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.105',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.106',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -6322,7 +6347,7 @@ async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
   if(req.method==='GET'&&url.pathname==='/api/tracker/speech/diagnostics'){
     return json(res,200,{
-      version:'2.9.105',
+      version:'2.9.106',
       modelCached:Boolean(voskModelArchive),
       modelBytes:voskModelArchive?.length||0,
       modelSource:voskModelSource||null,
@@ -6854,7 +6879,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.105 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.106 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>{
   Promise.all([
     loadVoskRuntimeAsset(VOSK_RUNTIME_FILES['/vendor/vosk/vosk-0.0.8.js']),
