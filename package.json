@@ -1,6 +1,6 @@
 {
   "name": "jlr-miner-tracker-web",
-  "version": "2.9.66",
+  "version": "2.9.67",
   "private": true,
   "type": "module",
   "description": "Shared EVE Online mining tracker with website SSO, fleet ESI actuals, T3 field timers, and compact/expanded UI.",
