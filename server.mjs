@@ -716,7 +716,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.47',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.48',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -3465,9 +3465,14 @@ async function trackerVoiceHealth(){
       service:trackerSpeechSafe(payload?.service||'JLR Voice Worker',80),
       workerVersion:trackerSpeechSafe(payload?.version||'',24)||null,
       streaming:Boolean(payload?.streaming),
-      streamingModes:Array.isArray(payload?.streaming_modes)?payload.streaming_modes.filter(v=>[2,3].includes(Number(v))).map(Number):[],
+      streamingModes:Array.isArray(payload?.streaming_modes)?payload.streaming_modes.filter(v=>[1,2,3].includes(Number(v))).map(Number):[],
+      stableStreaming:Boolean(payload?.stable_streaming),
       referenceReady:payload?.reference_exists!==false,
-      message:healthy?(payload?.streaming?'Custom GPT-SoVITS streaming voice is online.':'Custom GPT-SoVITS voice is online; worker v2 streaming upgrade is available.'):'Voice worker responded but is not ready.',
+      referencePack:Boolean(payload?.reference_pack),
+      referencePackVersion:trackerSpeechSafe(payload?.reference_pack_version||'',24)||null,
+      voiceProfiles:Array.isArray(payload?.voice_profiles)?payload.voice_profiles.map(v=>trackerSpeechSafe(v,24)).filter(Boolean).slice(0,8):[],
+      systemPronunciations:Math.max(0,Number(payload?.system_pronunciations)||0),
+      message:healthy?(payload?.reference_pack?'JLR Voice v3 reference pack and stable streaming are online.':payload?.streaming?'Custom GPT-SoVITS streaming voice is online.':'Custom GPT-SoVITS voice is online; streaming upgrade is available.'):'Voice worker responded but is not ready.',
     };
   }catch(err){
     return{configured:true,reachable:false,checkedAt,latencyMs:Date.now()-started,message:String(err?.message||err||'Voice worker unreachable.').slice(0,160)};
@@ -3610,7 +3615,9 @@ async function streamTrackerVoiceToResponse(res,text,cacheKey,{priority='normal'
     cache_key:String(cacheKey||'stream'),
     voice:'jlr-alert',
     priority:priority==='urgent'?'urgent':'normal',
-    streaming_mode:priority==='urgent'?3:2,
+    // v3 keeps even urgent speech on mode 2. The tiny first-byte gain from
+    // mode 3 was not worth the cadence/fragment quality loss.
+    streaming_mode:2,
   };
   let response;
   try{
@@ -3791,9 +3798,9 @@ async function processR2z2TrackerPayload(payload,sequence){
   trackerR2z2State.lastHeavyFighterAt=liveLoss.receivedAt;
 
   if(trackerR2z2State.caughtUp){
-    if(trackerVoiceConfigured()){
-      trackerVoiceForLoss(liveLoss).catch(err=>console.warn('Tracker voice pre-generation failed',String(err.message||err)));
-    }
+    // Do not pre-generate a second copy here. The live streaming request now
+    // fills the worker cache as it speaks, avoiding two GPT-SoVITS jobs fighting
+    // over the user's GPU at the exact moment an urgent alert arrives.
     sendTrackerEvent('loss',liveLoss);
   }
 }
@@ -5475,7 +5482,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.47',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.48',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -5854,7 +5861,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.47 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.48 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
 setInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': tracker-heartbeat\n\n')}catch{trackerLiveClients.delete(res)}}},20_000).unref();
 setInterval(()=>resetExpired(true),15_000).unref();
