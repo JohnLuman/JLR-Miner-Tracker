@@ -565,7 +565,7 @@ function resetExpired(broadcastIt=true) {
       f.autoReopenedAt=null; f.autoReopenReason=null; f.autoReopenM3=null;
       state.esi.fieldInference ||= {};
       const inference=state.esi.fieldInference[system];
-      if(inference)state.esi.fieldInference[system]={...inference,baselineAt:null,baselineDetected:false,minedM3SinceBaseline:0,depletionPct:null,needsScan:true,likelyDepleted:false,respawnCompletedAt:f.updatedAt};
+      if(inference)state.esi.fieldInference[system]={...inference,baselineAt:null,baselineDetected:false,minedM3SinceBaseline:0,minedM3SinceSite:0,activityStartedAt:null,depletionPct:null,needsScan:true,likelyDepleted:false,respawnCompletedAt:f.updatedAt};
       changed=true;
     }
   }
@@ -614,6 +614,8 @@ function scanActivityPublic() {
       active,
       lastDeltaM3:Math.max(0,Number(row.lastDeltaM3)||0),
       minedM3SinceBaseline:Math.max(0,Number(row.minedM3SinceBaseline)||0),
+      minedM3SinceSite:Math.max(0,Number(row.minedM3SinceSite)||0),
+      activityStartedAt:row.activityStartedAt||null,
       siteM3:Math.max(0,Number(row.siteM3)||0),
       depletionPct,
       needsScan:Boolean(row.needsScan),
@@ -713,7 +715,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.45',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.46',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -2402,7 +2404,7 @@ function updateFieldLedgerActivity(characterId,rows,sampleAt=now()){
 
   const previousSampleAt=prev.lastSampleAt;
   const previousSampleMs=Date.parse(previousSampleAt||'');
-  const reopened=[];
+  const changedSystems=[];
   for(const [system,total] of Object.entries(totals)){
     const previous=Math.max(0,Number(prev.totals?.[system])||0);
     const delta=Math.max(0,Number(total||0)-previous);
@@ -2413,18 +2415,24 @@ function updateFieldLedgerActivity(characterId,rows,sampleAt=now()){
     const scanAt=state.scans?.[system]?.lastScanAt||null;
     const scanMs=Date.parse(scanAt||'');
     let inference=state.esi.fieldInference[system]||{
-      baselineAt:null,baselineDetected:false,minedM3SinceBaseline:0,lastLedgerAt:null,lastDeltaM3:0,
-      depletionPct:null,needsScan:false,likelyDepleted:false,siteM3:Number(definition.siteM3)||0,
+      baselineAt:null,baselineDetected:false,minedM3SinceBaseline:0,minedM3SinceSite:0,
+      activityStartedAt:null,lastLedgerAt:null,lastDeltaM3:0,depletionPct:null,
+      needsScan:false,likelyDepleted:false,siteM3:Number(definition.siteM3)||0,
     };
 
-    // A newer Probe Scanner report becomes the new depletion baseline.
+    // A newer Probe Scanner report becomes the depletion baseline. If a scan
+    // occurs while the field is already PICKED, keep JLR's observed site total
+    // so the board does not forget mining already proven by ESI.
     const baselineMs=Date.parse(inference.baselineAt||'');
     if(Number.isFinite(scanMs)&&(!Number.isFinite(baselineMs)||scanMs>baselineMs)){
+      const keepObserved=Boolean(state.fields?.[system]?.status==='picked'&&state.scans?.[system]?.t3?.detected);
       inference={
         ...inference,
         baselineAt:scanAt,
         baselineDetected:Boolean(state.scans?.[system]?.t3?.detected),
         minedM3SinceBaseline:0,
+        minedM3SinceSite:keepObserved?Math.max(0,Number(inference.minedM3SinceSite)||0):0,
+        activityStartedAt:keepObserved?(inference.activityStartedAt||null):null,
         depletionPct:0,
         needsScan:false,
         likelyDepleted:false,
@@ -2436,10 +2444,20 @@ function updateFieldLedgerActivity(characterId,rows,sampleAt=now()){
     if(inference.baselineDetected&&deltaIsAfterBaseline){
       inference.minedM3SinceBaseline=Math.max(0,Number(inference.minedM3SinceBaseline)||0)+delta;
     }
+
+    // This is the board-facing total: all T3 m³ JLR has directly observed from
+    // all linked ESI ledgers during the current site/activity cycle.
+    const scanBoundaryOk=!Number.isFinite(scanMs)||(Number.isFinite(previousSampleMs)&&previousSampleMs>=scanMs);
+    if(scanBoundaryOk){
+      inference.minedM3SinceSite=Math.max(0,Number(inference.minedM3SinceSite)||0)+delta;
+      inference.activityStartedAt=inference.activityStartedAt||sampleAt;
+    }
+
     const siteM3=Math.max(0,Number(definition.siteM3)||Number(inference.siteM3)||0);
-    const depletionPct=inference.baselineDetected&&siteM3>0
-      ?Math.min(100,(Math.max(0,Number(inference.minedM3SinceBaseline)||0)/siteM3)*100)
-      :null;
+    const depletionBase=inference.baselineDetected
+      ?Math.max(0,Number(inference.minedM3SinceBaseline)||0)
+      :Math.max(0,Number(inference.minedM3SinceSite)||0);
+    const depletionPct=siteM3>0&&depletionBase>0?Math.min(100,(depletionBase/siteM3)*100):null;
     inference={
       ...inference,
       siteM3,
@@ -2452,7 +2470,27 @@ function updateFieldLedgerActivity(characterId,rows,sampleAt=now()){
     state.esi.fieldInference[system]=inference;
 
     const field=state.fields[system];
-    if(!field||field.status!=='cleared')continue;
+    if(!field)continue;
+    field.ledgerLastActivityAt=sampleAt;
+    field.ledgerMinedM3=Math.max(0,Number(inference.minedM3SinceSite)||0);
+
+    if(field.status==='ready'){
+      // ESI proves somebody is mining this site's T3 ore. GREEN can no longer
+      // be accurate, so automatically move it to YELLOW.
+      field.status='picked';
+      field.timerEndsAt=null;
+      field.updatedAt=sampleAt;
+      field.ledgerPickedAt=field.ledgerPickedAt||sampleAt;
+      changedSystems.push(system);
+      continue;
+    }
+
+    if(field.status==='picked'){
+      changedSystems.push(system);
+      continue;
+    }
+
+    if(field.status!=='cleared')continue;
 
     // The ledger is daily/cumulative, not timestamped per mining cycle. Only
     // override RED when it was already RED at the previous sample, proving this
@@ -2466,11 +2504,12 @@ function updateFieldLedgerActivity(characterId,rows,sampleAt=now()){
     field.autoReopenedAt=sampleAt;
     field.autoReopenReason='esi-ledger-mining';
     field.autoReopenM3=delta;
-    reopened.push(system);
+    field.ledgerPickedAt=field.ledgerPickedAt||sampleAt;
+    changedSystems.push(system);
   }
 
   state.esi.ledgerFieldSnapshots[key]={date:day,lastSampleAt:sampleAt,totals};
-  return reopened;
+  return changedSystems;
 }
 function timestampStale(value,maxAgeMs){
   const parsed=Date.parse(value||'');
@@ -2589,14 +2628,19 @@ function recordBoardScan({system,text,a0,t3Scan=null,definition=null}){
   if(definition&&t3Scan?.valid){
     state.esi.fieldInference ||= {};
     const prior=state.esi.fieldInference[system]||{};
+    const keepObserved=Boolean(t3Scan.detected&&state.fields?.[system]?.status==='picked');
     state.esi.fieldInference[system]={
       ...prior,
       baselineAt:lastScanAt,
       baselineDetected:Boolean(t3Scan.detected),
       minedM3SinceBaseline:0,
+      minedM3SinceSite:keepObserved?Math.max(0,Number(prior.minedM3SinceSite)||0):0,
+      activityStartedAt:keepObserved?(prior.activityStartedAt||null):null,
       lastScanAt,
       siteM3:Number(definition.siteM3)||0,
-      depletionPct:t3Scan.detected?0:null,
+      depletionPct:t3Scan.detected&&keepObserved&&Number(definition.siteM3)>0
+        ?Math.min(100,(Math.max(0,Number(prior.minedM3SinceSite)||0)/Number(definition.siteM3))*100)
+        :(t3Scan.detected?0:null),
       needsScan:false,
       likelyDepleted:false,
     };
@@ -3062,7 +3106,7 @@ async function applyLedgerResults(results,{fullCycle=false}={}){
     }
     updateLedgerActivity(ledger.characterId,totalM3,sampleAt);
     const reopened=updateFieldLedgerActivity(ledger.characterId,ledger.rows,sampleAt);
-    if(reopened.length)console.log('ESI mining reopened RED fields as YELLOW:',reopened.join(', '));
+    if(reopened.length)console.log('ESI mining updated T3 fields to/within YELLOW:',reopened.join(', '));
   }
   // Only full automatic cycles become fleet-wide chart points. A single user's
   // manual refresh may cover only part of the fleet and would create a false dip.
@@ -5365,7 +5409,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.45',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.46',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -5660,7 +5704,7 @@ async function routeApi(req,res,url) {
     }
   }
   const fm=url.pathname.match(/^\/api\/fields\/([^/]+)$/);
-  if(fm&&req.method==='PUT'){const system=decodeURIComponent(fm[1]);const f=state.fields[system];if(!f)return json(res,404,{error:'UNKNOWN_SYSTEM'});const body=await readBody(req);const status=String(body.status||'');if(!['ready','picked','cleared'].includes(status))return json(res,400,{error:'BAD_STATUS'});if(f.status==='cleared'&&f.timerEndsAt&&Date.parse(f.timerEndsAt)>Date.now())return json(res,409,{error:'TIMER_ACTIVE',message:'The 10-hour timer is already running and cannot be restarted or changed.'});if(status==='cleared'&&body.confirm!==true)return json(res,409,{error:'CONFIRM_REQUIRED'});f.status=status;f.updatedAt=now();f.timerEndsAt=status==='cleared'?new Date(Date.now()+TEN_HOURS).toISOString():null;f.autoReopenedAt=null;f.autoReopenReason=null;f.autoReopenM3=null;if(status==='cleared'){state.scans||={};state.scans[system]={lastScanAt:f.updatedAt,scannerRowCount:Number(state.scans[system]?.scannerRowCount)||0,kinds:['t3'],source:'clear-report'}}await save();broadcast();return json(res,200,{ok:true,field:f})}
+  if(fm&&req.method==='PUT'){const system=decodeURIComponent(fm[1]);const f=state.fields[system];if(!f)return json(res,404,{error:'UNKNOWN_SYSTEM'});const body=await readBody(req);const status=String(body.status||'');if(!['ready','picked','cleared'].includes(status))return json(res,400,{error:'BAD_STATUS'});if(f.status==='cleared'&&f.timerEndsAt&&Date.parse(f.timerEndsAt)>Date.now())return json(res,409,{error:'TIMER_ACTIVE',message:'The 10-hour timer is already running and cannot be restarted or changed.'});if(status==='cleared'&&body.confirm!==true)return json(res,409,{error:'CONFIRM_REQUIRED'});f.status=status;f.updatedAt=now();f.timerEndsAt=status==='cleared'?new Date(Date.now()+TEN_HOURS).toISOString():null;f.autoReopenedAt=null;f.autoReopenReason=null;f.autoReopenM3=null;if(status==='ready'||status==='cleared'){state.esi.fieldInference||={};const inf=state.esi.fieldInference[system];if(inf)state.esi.fieldInference[system]={...inf,minedM3SinceBaseline:0,minedM3SinceSite:0,activityStartedAt:null,depletionPct:null,needsScan:false,likelyDepleted:false};f.ledgerMinedM3=0;f.ledgerPickedAt=null;f.ledgerLastActivityAt=null;}if(status==='cleared'){state.scans||={};state.scans[system]={lastScanAt:f.updatedAt,scannerRowCount:Number(state.scans[system]?.scannerRowCount)||0,kinds:['t3'],source:'clear-report'}}await save();broadcast();return json(res,200,{ok:true,field:f})}
   const nm=url.pathname.match(/^\/api\/fields\/([^/]+)\/notes$/);
   if(nm&&req.method==='POST'){const system=decodeURIComponent(nm[1]);const f=state.fields[system];if(!f)return json(res,404,{error:'UNKNOWN_SYSTEM'});const body=await readBody(req);const note=String(body.text||'').trim();if(!note||note.length>240)return json(res,400,{error:'BAD_NOTE',message:'Enter a note of 1 to 240 characters.'});f.notes.push({id:randomId(8),text:note,createdAt:now()});await save();broadcast();return json(res,201,{ok:true,field:f})}
   const cm=url.pathname.match(/^\/api\/fields\/([^/]+)\/cherry$/);
@@ -5714,7 +5758,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.45 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.46 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
 setInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': tracker-heartbeat\n\n')}catch{trackerLiveClients.delete(res)}}},20_000).unref();
 setInterval(()=>resetExpired(true),15_000).unref();
