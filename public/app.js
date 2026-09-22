@@ -213,7 +213,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.101');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.102');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -303,7 +303,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR TRACKER MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.101'),
+      'Version: '+String(state?.app?.version||'2.9.102'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -1158,19 +1158,25 @@
   async function speakBrainAnswer(text,type='brain',payload={}){
     const spoken=String(text||'').trim();
     if(!spoken)return false;
-    brainSetListen('TRACKER SPEAKING','Responding by voice…');
+    brainSetListen('TRACKER SPEAKING','Generating JLR custom voice…');
     let played=false;
     if(typeof window.jlrSpeakEvent==='function'){
       try{
         played=Boolean(await window.jlrSpeakEvent(type,payload||{},spoken));
       }catch(error){
-        console.warn('Tracker conversational voice failed',error);
+        console.warn('Tracker conversational custom voice failed',error);
       }
     }
-    if(!played)played=browserSpeakTracker(spoken);
-    if(played&&type!=='repeat')recordBrainSpeech(type,spoken);
-    restoreBrainListenAfterVoice();
-    return played;
+    if(played){
+      if(type!=='repeat')recordBrainSpeech(type,spoken);
+      restoreBrainListenAfterVoice();
+      return true;
+    }
+    const detail=String(window.jlrVoiceLastError||'The JLR custom voice worker did not return audio.');
+    brainRecordMicDiag('VOICE-E501','CUSTOM_VOICE',detail);
+    brainSetListen('CUSTOM VOICE ERROR • VOICE-E501',detail);
+    if($('brainReply'))$('brainReply').textContent=spoken+'\n\nCUSTOM VOICE ERROR: '+detail;
+    return false;
   }
 
   function scanVoiceFallback(preview){
@@ -5120,7 +5126,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.101',
+          version:state?.app?.version||'2.9.102',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
