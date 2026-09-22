@@ -1977,3 +1977,8 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 
 /* v2.9.100 — conversational Tracker question hint */
 .brain-question-hint{margin:-2px 0 8px;padding:7px 9px;border-left:2px solid var(--theme-accent,var(--green));background:color-mix(in srgb,var(--theme-accent,var(--green)) 4%,transparent);font-size:8px;line-height:1.45;color:var(--muted)}
+
+/* v2.9.105 — visible diagnostics report */
+.brain-reply.diagnostic-report{white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;font-size:8px;max-height:320px;overflow:auto}
+.brain-mic-diagnostic.info{border-color:color-mix(in srgb,var(--theme-accent,var(--green)) 65%,var(--line));background:color-mix(in srgb,var(--theme-accent,var(--green)) 5%,var(--input-bg,#071710))}
+.brain-mic-diagnostic.info .brain-mic-diagnostic-head strong{color:var(--theme-accent,var(--green))}
