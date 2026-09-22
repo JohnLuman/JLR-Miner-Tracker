@@ -60,6 +60,7 @@
   let brainMicStartToken=0;
   let brainPreferBrowserSpeechInput=false;
   let brainNetworkFailures=0;
+  let brainSpeechStartHangs=0;
   let brainMicWanted=true;
   let brainConversationUntil=0;
   let brainLastSystem='';
@@ -189,7 +190,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.81');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.82');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -401,9 +402,15 @@
       clearTimeout(brainMicRestartTimer);
       brainMicRestartTimer=null;
     }
+    const wantsDirectTrack=brainMicDeviceId!=='default'&&!brainPreferBrowserSpeechInput;
     let track=null;
     try{
-      track=await ensureBrainMicTrack(false);
+      if(wantsDirectTrack){
+        track=await ensureBrainMicTrack(false);
+      }else{
+        stopBrainMicStream();
+        brainSetListen('MIC STARTING','Starting browser speech recognition…');
+      }
     }catch(error){
       if(startToken!==brainMicStartToken)return;
       const name=String(error?.name||'');
@@ -450,13 +457,16 @@
     recognition.__jlrRetry=true;
     recognition.__jlrStarted=false;
     recognition.onstart=()=>{
+      if(recognition.__jlrStartWatchdog)clearTimeout(recognition.__jlrStartWatchdog);
       recognition.__jlrStarted=true;
       brainNetworkFailures=0;
+      brainSpeechStartHangs=0;
       const input=trackBound?brainMicLabel():'Browser default microphone';
       const engine=localSpeech?'ON-DEVICE • ':'';
       brainSetListen('MIC ON',engine+input+' • Say “Tracker” to wake the assistant. Follow-up questions work briefly without repeating it.');
     };
     recognition.onerror=event=>{
+      if(recognition.__jlrStartWatchdog)clearTimeout(recognition.__jlrStartWatchdog);
       const code=String(event?.error||'microphone error');
       if(code==='not-allowed'||code==='service-not-allowed'){
         recognition.__jlrRetry=false;
@@ -507,6 +517,7 @@
       }
     };
     recognition.onend=()=>{
+      if(recognition.__jlrStartWatchdog)clearTimeout(recognition.__jlrStartWatchdog);
       if(brainRecognition===recognition)brainRecognition=null;
       if(brainMicWanted&&recognition.__jlrRetry!==false)scheduleBrainMicRestart(700);
     };
@@ -524,12 +535,28 @@
         trackBound=false;
         recognition.start();
       }
-      setTimeout(()=>{
-        if(brainRecognition===recognition&&!recognition.__jlrStarted){
-          brainSetListen('MIC WAITING',trackBound
-            ?brainMicLabel()+' is open, but the browser speech service has not started.'
-            :'Browser microphone is open, but the speech service has not started.');
+      recognition.__jlrStartWatchdog=setTimeout(()=>{
+        if(brainRecognition!==recognition||recognition.__jlrStarted)return;
+        recognition.__jlrRetry=false;
+        brainSpeechStartHangs+=1;
+        if(brainRecognition===recognition)brainRecognition=null;
+        try{recognition.abort()}catch{try{recognition.stop()}catch{}}
+
+        const ua=String(navigator.userAgent||'');
+        if(/\bOPR\/|\bOpera\//.test(ua)){
+          brainSetListen('MIC BROWSER LIMIT','Opera GX can open the microphone, but its browser speech-recognition service is not available. Open JLR in Chrome for the always-on “Tracker” wake word.');
+          return;
         }
+
+        if(trackBound){
+          brainPreferBrowserSpeechInput=true;
+        }else if(brainMicDeviceId!=='default'&&brainSpeechStartHangs%2===0){
+          brainPreferBrowserSpeechInput=false;
+        }
+        brainSetListen('MIC RETRYING',trackBound
+          ?brainMicLabel()+' opened, but speech recognition did not start. Retrying with browser-managed input.'
+          :'Browser speech recognition did not start. Tracker is resetting the speech engine and retrying.');
+        scheduleBrainMicRestart(Math.min(5000,800+brainSpeechStartHangs*700));
       },6000);
     }catch(error){
       if(brainRecognition===recognition)brainRecognition=null;
@@ -537,7 +564,7 @@
       scheduleBrainMicRestart(1200);
     }
   }
-  function restartBrainListening(reopenMic=true){
+  function restartBrainListening(reopenMic=true,immediate=false){
     brainMicWanted=true;
     brainMicStartToken++;
     if(brainMicRestartTimer){
@@ -552,7 +579,8 @@
     brainRecognition=null;
     if(reopenMic)stopBrainMicStream();
     brainSetListen('MIC STARTING','Opening '+brainMicLabel()+'…');
-    scheduleBrainMicRestart(250);
+    if(immediate)void startBrainListening();
+    else scheduleBrainMicRestart(250);
   }
 
   function renderTrackerBrain(){
@@ -4380,7 +4408,7 @@
       return;
     }
     if(target.closest('#trackerMicToggle')){
-      restartBrainListening();
+      restartBrainListening(true,true);
       return;
     }
     const repeatRow=target.closest('.brain-repeat-row');
@@ -4398,7 +4426,7 @@
       const type=document.querySelector('.brain-feedback-type.active')?.dataset.feedbackType||'suggestion';
       const message=String($('brainFeedbackText')?.value||'').trim();
       if(!message){toast('Add a short description first.');return}
-      await api('/api/tracker/brain/feedback',{method:'POST',body:JSON.stringify({type,message,context:{version:state?.app?.version||'2.9.81',tab:activeTab,lastSpeech:brainSpeechHistory[0]?.text||''}})});
+      await api('/api/tracker/brain/feedback',{method:'POST',body:JSON.stringify({type,message,context:{version:state?.app?.version||'2.9.82',tab:activeTab,lastSpeech:brainSpeechHistory[0]?.text||''}})});
       $('brainFeedbackText').value='';
       toast('Tracker feedback submitted.');
       return;
