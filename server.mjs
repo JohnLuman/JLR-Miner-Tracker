@@ -415,7 +415,7 @@ function freshState() {
       autoReopenedAt: null, autoReopenReason: null, autoReopenM3: null,
     }])),
     esi: {
-      typeCache: {}, systemCache: {}, dailyFleet: [], dailyFleetValuationVersion: LEDGER_VALUATION_VERSION, performanceSamples: [], ledgerActivity: {}, ledgerFieldSnapshots: {}, lastSyncAt: null, lastError: null,
+      typeCache: {}, systemCache: {}, dailyFleet: [], dailyFleetValuationVersion: LEDGER_VALUATION_VERSION, performanceSamples: [], ledgerActivity: {}, ledgerFieldSnapshots: {}, fieldInference: {}, lastSyncAt: null, lastError: null,
     },
     market: {
       prices: {}, minerals: {}, icePrices: {}, iceProducts: {}, gasPrices: {}, iceFields: [], a0Fields: [], a0Reports: {}, a0ScannedAt: null, t3Distances: {}, history: { ore:{}, ice:{} },
@@ -449,7 +449,7 @@ async function loadState() {
     if(!Array.isArray(parsed.esi.dailyFleet))parsed.esi.dailyFleet=[];
     if(storedDailyFleetValuationVersion!==LEDGER_VALUATION_VERSION)parsed.esi.dailyFleet=[];
     if(!Array.isArray(parsed.esi.performanceSamples))parsed.esi.performanceSamples=[];
-    parsed.esi.ledgerActivity ||= {}; parsed.esi.ledgerFieldSnapshots ||= {};
+    parsed.esi.ledgerActivity ||= {}; parsed.esi.ledgerFieldSnapshots ||= {}; parsed.esi.fieldInference ||= {};
     parsed.market = { ...base.market, ...(parsed.market || {}) };
     parsed.market.prices ||= {};
     parsed.market.minerals ||= {};
@@ -562,7 +562,11 @@ function resetExpired(broadcastIt=true) {
   for (const [system,f] of Object.entries(state.fields)) {
     if (f.status==='cleared' && f.timerEndsAt && Date.parse(f.timerEndsAt)<=t) {
       f.status='ready'; f.cherryPicked=false; f.timerEndsAt=null; f.notes=[]; f.updatedAt=now();
-      f.autoReopenedAt=null; f.autoReopenReason=null; f.autoReopenM3=null; changed=true;
+      f.autoReopenedAt=null; f.autoReopenReason=null; f.autoReopenM3=null;
+      state.esi.fieldInference ||= {};
+      const inference=state.esi.fieldInference[system];
+      if(inference)state.esi.fieldInference[system]={...inference,baselineAt:null,baselineDetected:false,minedM3SinceBaseline:0,depletionPct:null,needsScan:true,likelyDepleted:false,respawnCompletedAt:f.updatedAt};
+      changed=true;
     }
   }
   if (changed) { save(); if (broadcastIt) broadcast(); }
@@ -599,21 +603,43 @@ function effectiveSystems(ores=effectiveOres()) {
 function scanActivityPublic() {
   const out={};
   const at=Date.now();
-  const add=(system,row)=>{
+  const ledgerPublic=(system)=>{
+    const row=state.esi.fieldInference?.[system]||null;
+    if(!row?.lastLedgerAt)return null;
+    const lastMs=Date.parse(row.lastLedgerAt||'');
+    const active=Number.isFinite(lastMs)&&at-lastMs<=45*60*1000;
+    const depletionPct=Number.isFinite(Number(row.depletionPct))?Math.max(0,Math.min(100,Number(row.depletionPct))):null;
+    return{
+      lastActivityAt:row.lastLedgerAt,
+      active,
+      lastDeltaM3:Math.max(0,Number(row.lastDeltaM3)||0),
+      minedM3SinceBaseline:Math.max(0,Number(row.minedM3SinceBaseline)||0),
+      siteM3:Math.max(0,Number(row.siteM3)||0),
+      depletionPct,
+      needsScan:Boolean(row.needsScan),
+      likelyDepleted:Boolean(row.likelyDepleted),
+      baselineAt:row.baselineAt||null,
+      baselineDetected:Boolean(row.baselineDetected),
+      confidence:row.likelyDepleted?'inferred-depletion':active?'ledger-confirmed-active':'ledger-history',
+    };
+  };
+  const add=(system,row={})=>{
     const lastScanAt=row?.lastScanAt||row?.lastCheckedAt||null;
-    if(!lastScanAt)return;
-    const ms=Date.parse(lastScanAt);
+    const ms=Date.parse(lastScanAt||'');
     out[system]={
       lastScanAt,
       due:!Number.isFinite(ms)||at-ms>=A0_REPORT_TTL,
       nextUpdateAt:Number.isFinite(ms)?new Date(ms+A0_REPORT_TTL).toISOString():null,
       scannerRowCount:Number(row?.scannerRowCount)||0,
       kinds:Array.isArray(row?.kinds)?row.kinds:[],
+      source:row?.source||null,
+      t3:row?.t3&&typeof row.t3==='object'?{ore:String(row.t3.ore||''),detected:Boolean(row.t3.detected)}:null,
       ice:row?.ice&&Number(row.ice.expected)>0?{
         expected:Number(row.ice.expected),
         seen:Math.max(0,Number(row.ice.seen)||0),
         missing:Math.max(0,Number(row.ice.missing)||0),
       }:null,
+      ledger:ledgerPublic(system),
     };
   };
   for(const [system,row] of Object.entries(state.scans||{}))add(system,row);
@@ -628,12 +654,16 @@ function scanActivityPublic() {
     if(!Number.isFinite(clearedMs))continue;
     const existingMs=Date.parse(out[system]?.lastScanAt||'');
     if(!Number.isFinite(existingMs)||clearedMs>existingMs){
-      add(system,{lastScanAt:field.updatedAt,scannerRowCount:0,kinds:['t3'],source:'clear-report'});
+      add(system,{lastScanAt:field.updatedAt,scannerRowCount:0,kinds:['t3'],source:'clear-report',t3:{ore:SYSTEM_MAP.get(system)?.ore||'',detected:false}});
     }
+  }
+  // Ledger evidence can exist before the first Probe Scanner import.
+  for(const system of Object.keys(state.esi.fieldInference||{})){
+    if(!out[system])add(system,{});
+    else out[system].ledger=ledgerPublic(system);
   }
   return out;
 }
-
 function a0PublicFields() {
   const rows=new Map((state.market?.a0Fields||[]).map(row=>[row.system,{...row}]));
   for(const [system,report] of Object.entries(state.market?.a0Reports||{})){
@@ -683,7 +713,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.41',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.42',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -2322,6 +2352,7 @@ function trackedFieldLedgerTotals(rows,day){
 
 function updateFieldLedgerActivity(characterId,rows,sampleAt=now()){
   state.esi.ledgerFieldSnapshots ||= {};
+  state.esi.fieldInference ||= {};
   const key=String(characterId);
   const day=dateUTC(new Date(sampleAt));
   const totals=trackedFieldLedgerTotals(rows,day);
@@ -2338,6 +2369,50 @@ function updateFieldLedgerActivity(characterId,rows,sampleAt=now()){
     const previous=Math.max(0,Number(prev.totals?.[system])||0);
     const delta=Math.max(0,Number(total||0)-previous);
     if(delta<=0)continue;
+
+    const definition=SYSTEM_MAP.get(system);
+    if(!definition)continue;
+    const scanAt=state.scans?.[system]?.lastScanAt||null;
+    const scanMs=Date.parse(scanAt||'');
+    let inference=state.esi.fieldInference[system]||{
+      baselineAt:null,baselineDetected:false,minedM3SinceBaseline:0,lastLedgerAt:null,lastDeltaM3:0,
+      depletionPct:null,needsScan:false,likelyDepleted:false,siteM3:Number(definition.siteM3)||0,
+    };
+
+    // A newer Probe Scanner report becomes the new depletion baseline.
+    const baselineMs=Date.parse(inference.baselineAt||'');
+    if(Number.isFinite(scanMs)&&(!Number.isFinite(baselineMs)||scanMs>baselineMs)){
+      inference={
+        ...inference,
+        baselineAt:scanAt,
+        baselineDetected:Boolean(state.scans?.[system]?.t3?.detected),
+        minedM3SinceBaseline:0,
+        depletionPct:0,
+        needsScan:false,
+        likelyDepleted:false,
+      };
+    }
+
+    const currentBaselineMs=Date.parse(inference.baselineAt||'');
+    const deltaIsAfterBaseline=Number.isFinite(currentBaselineMs)&&Number.isFinite(previousSampleMs)&&previousSampleMs>=currentBaselineMs;
+    if(inference.baselineDetected&&deltaIsAfterBaseline){
+      inference.minedM3SinceBaseline=Math.max(0,Number(inference.minedM3SinceBaseline)||0)+delta;
+    }
+    const siteM3=Math.max(0,Number(definition.siteM3)||Number(inference.siteM3)||0);
+    const depletionPct=inference.baselineDetected&&siteM3>0
+      ?Math.min(100,(Math.max(0,Number(inference.minedM3SinceBaseline)||0)/siteM3)*100)
+      :null;
+    inference={
+      ...inference,
+      siteM3,
+      lastLedgerAt:sampleAt,
+      lastDeltaM3:delta,
+      depletionPct,
+      needsScan:Number.isFinite(depletionPct)&&depletionPct>=80,
+      likelyDepleted:Number.isFinite(depletionPct)&&depletionPct>=95,
+    };
+    state.esi.fieldInference[system]=inference;
+
     const field=state.fields[system];
     if(!field||field.status!=='cleared')continue;
 
@@ -2359,7 +2434,6 @@ function updateFieldLedgerActivity(characterId,rows,sampleAt=now()){
   state.esi.ledgerFieldSnapshots[key]={date:day,lastSampleAt:sampleAt,totals};
   return reopened;
 }
-
 function timestampStale(value,maxAgeMs){
   const parsed=Date.parse(value||'');
   return !Number.isFinite(parsed)||Date.now()-parsed>=maxAgeMs;
@@ -2451,7 +2525,7 @@ async function recordA0ProbeScan({characterName,systemId,system,text}){
   };
 }
 
-function recordBoardScan({system,text,a0}){
+function recordBoardScan({system,text,a0,t3Scan=null,definition=null}){
   const parsed=parseA0Scan(text);
   const iceParsed=parseIceScan(text);
   const kinds=[];
@@ -2465,18 +2539,37 @@ function recordBoardScan({system,text,a0}){
   const expectedIce=iceField?Math.max(1,Number(iceField.iceBelts)||1):0;
   const seenIce=expectedIce?Math.min(expectedIce,Math.max(0,Number(iceParsed.detectedCount)||0)):0;
   const ice=expectedIce?{expected:expectedIce,seen:seenIce,missing:Math.max(0,expectedIce-seenIce)}:null;
+  const t3=definition&&t3Scan?.valid?{ore:String(definition.ore||''),detected:Boolean(t3Scan.detected)}:null;
   state.scans[system]={
     lastScanAt,
     scannerRowCount:Number(parsed.scannerRowCount)||0,
     kinds:[...new Set(kinds)],
     ice,
+    t3,
+    source:'probe-scan',
   };
+  if(definition&&t3Scan?.valid){
+    state.esi.fieldInference ||= {};
+    const prior=state.esi.fieldInference[system]||{};
+    state.esi.fieldInference[system]={
+      ...prior,
+      baselineAt:lastScanAt,
+      baselineDetected:Boolean(t3Scan.detected),
+      minedM3SinceBaseline:0,
+      lastScanAt,
+      siteM3:Number(definition.siteM3)||0,
+      depletionPct:t3Scan.detected?0:null,
+      needsScan:false,
+      likelyDepleted:false,
+    };
+  }
   return {
     recorded:true,
     valid:true,
     boardTracked:true,
     kinds:state.scans[system].kinds,
     ice,
+    t3,
     scannerRowCount:Number(parsed.scannerRowCount)||0,
     lastScanAt,
     nextUpdateAt:new Date(Date.parse(lastScanAt)+A0_REPORT_TTL).toISOString(),
@@ -2520,7 +2613,7 @@ async function probeScanPreview(ch,text){
     }
   }
   const a0=await recordA0ProbeScan({characterName:ch.name,systemId,system,text});
-  const boardScan=recordBoardScan({system,text,a0});
+  const boardScan=recordBoardScan({system,text,a0,t3Scan:scan,definition});
   return{
     characterId:String(ch.characterId),
     characterName:ch.name,
@@ -3249,6 +3342,38 @@ function trackerVoiceText(loss){
   const value=Number(loss?.totalValue)||0;
   const valueText=value>0?` Estimated loss value, ${trackerSpokenIsk(value)} ISK.`:'';
   return `Attention. A ${fighter} has been lost in ${system}.${valueText} Please check J. L. R. Tracker for pilot and kill information.`;
+}
+
+function jlrStartupVoiceText(user){
+  const linked=(user?.characterIds||[]).length;
+  const tracker=trackerLiveStatus();
+  const trackerText=tracker.caughtUp?'Tracker connected.':'Tracker is connecting.';
+  const marketMs=Date.parse(state.market?.lastUpdatedAt||'');
+  const marketText=Number.isFinite(marketMs)&&Date.now()-marketMs<36*60*60*1000?'Market data current.':'Market data requires an update.';
+  const esiText=state.esi.lastError?'EVE synchronization has a warning.':state.esi.lastSyncAt?'EVE data synchronized.':'EVE data synchronization pending.';
+  return `J. L. R. systems online. ${trackerText} ${marketText} ${esiText} ${linked} character${linked===1?'':'s'} linked. Welcome back.`;
+}
+
+function jlrScanVoiceText(system){
+  const safeSystem=trackerSpeechSafe(system,48);
+  const definition=SYSTEM_MAP.get(system)||null;
+  const scan=state.scans?.[system]||null;
+  const parts=[`${safeSystem||'System'} scan synchronized.`];
+  if(definition){
+    const detected=scan?.t3?.detected;
+    if(detected===true)parts.push(`${trackerSpeechSafe(definition.ore,48)} deposit detected.`);
+    else if(detected===false)parts.push(`${trackerSpeechSafe(definition.ore,48)} deposit not detected. Confirmation is recommended before clearing the field.`);
+  }
+  if(scan?.ice){
+    const seen=Math.max(0,Number(scan.ice.seen)||0),expected=Math.max(1,Number(scan.ice.expected)||1);
+    parts.push(`${seen} of ${expected} ice fields detected.`);
+  }
+  const a0=state.market?.a0Reports?.[system];
+  if(a0)parts.push(a0.detected?'A zero rare asteroid site detected.':'No active A zero rare asteroid site detected.');
+  const ledger=state.esi.fieldInference?.[system];
+  const pct=Number(ledger?.depletionPct);
+  if(Number.isFinite(pct)&&pct>=80)parts.push(`Ledger inference estimates ${Math.round(pct)} percent of the tracked site mined. Another scan is recommended soon.`);
+  return parts.join(' ');
 }
 
 async function trackerVoiceWorkerAudio(text,cacheKey='alert'){
@@ -5121,7 +5246,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.41',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.42',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -5146,6 +5271,33 @@ async function routeApi(req,res,url) {
     return json(res,200,await doctrineMarketSnapshot());
   }
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
+  if(req.method==='POST'&&url.pathname==='/api/voice/event'){
+    if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
+    let body;
+    try{body=await readBody(req,8_000)}
+    catch(err){return json(res,400,{error:'BAD_VOICE_EVENT',message:String(err.message||err)})}
+    const type=String(body?.type||'');
+    let voiceText='',cacheKey='';
+    if(type==='startup'){
+      voiceText=jlrStartupVoiceText(user);
+      cacheKey='startup';
+    }else if(type==='scan'){
+      const system=String(body?.system||'').trim();
+      const scanAt=Date.parse(state.scans?.[system]?.lastScanAt||state.market?.a0Reports?.[system]?.lastCheckedAt||'');
+      if(!system||!Number.isFinite(scanAt)||Date.now()-scanAt>10*60*1000){
+        return json(res,409,{error:'RECENT_SCAN_REQUIRED',message:'A recent Probe Scanner update is required before announcing a scan result.'});
+      }
+      voiceText=jlrScanVoiceText(system);
+      cacheKey=`scan-${system}-${new Date(scanAt).toISOString()}`;
+    }else{
+      return json(res,400,{error:'UNSUPPORTED_VOICE_EVENT',message:'That JLR voice event is not supported.'});
+    }
+    try{return sendTrackerAudio(res,await trackerVoiceWorkerAudio(voiceText,cacheKey))}
+    catch(err){
+      console.warn('JLR voice event failed',type,String(err.message||err));
+      return json(res,503,{error:err?.code||'JLR_VOICE_UNAVAILABLE',message:String(err.message||err),fallbackText:voiceText});
+    }
+  }
   if(req.method==='GET'&&url.pathname==='/api/ledger-audit'){
     const date=dateUTC();
     const priceByMineral=effectiveJitaMineralPrices();
@@ -5417,7 +5569,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.41 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.42 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
 setInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': tracker-heartbeat\n\n')}catch{trackerLiveClients.delete(res)}}},20_000).unref();
 setInterval(()=>resetExpired(true),15_000).unref();
