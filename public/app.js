@@ -213,7 +213,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.107');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.108');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -303,7 +303,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR TRACKER MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.107'),
+      'Version: '+String(state?.app?.version||'2.9.108'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -463,12 +463,13 @@
         body:JSON.stringify({question:command}),
       });
       const answer=String(response?.text||'I do not have an answer for that yet.');
+      const spokenAnswer=String(response?.voiceText||answer);
       if($('brainReply')){
         $('brainReply').classList.remove('diagnostic-report');
         $('brainReply').textContent=answer;
       }
       brainConversationUntil=Date.now()+brainConversationMs();
-      await speakBrainAnswer(answer,'brain',{text:answer});
+      await speakBrainAnswer(spokenAnswer,'brain',{text:spokenAnswer});
     }catch(error){
       const answer=String(error?.message||error||'Tracker could not answer that.');
       if($('brainReply'))$('brainReply').textContent=answer;
@@ -5167,7 +5168,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.107',
+          version:state?.app?.version||'2.9.108',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
