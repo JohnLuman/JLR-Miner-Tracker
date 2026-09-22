@@ -784,7 +784,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.103',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.104',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -3171,7 +3171,7 @@ function trackerBrainAnswer(user,question){
   const snapshot=trackerBrainSnapshot();
   const linked=(user?.characterIds||[]).map(String).filter(Boolean);
   const primaryName=trackerBrainPrimaryName(user);
-  const appVersion='2.9.103';
+  const appVersion='2.9.104';
 
   const answer=(topic,text,extra={})=>({
     handled:true,
@@ -4370,6 +4370,22 @@ async function trackerVoiceWorkerAudio(text,cacheKey='tracker',voiceProfile='cor
   })().finally(()=>trackerVoiceJobs.delete(hash));
   trackerVoiceJobs.set(hash,job);
   return job;
+}
+
+
+async function trackerConversationalVoiceAudio(text,cacheKey='brain'){
+  const attempts=[];
+  for(const profile of ['core','alert']){
+    try{
+      const audio=await trackerVoiceWorkerAudio(text,cacheKey+'-'+profile,profile,60_000);
+      return {...audio,voiceProfile:profile};
+    }catch(error){
+      attempts.push(profile+': '+String(error?.message||error));
+    }
+  }
+  const err=new Error('All JLR custom voice profiles failed. '+attempts.join(' | '));
+  err.code='JLR_CUSTOM_VOICE_FAILED';
+  throw err;
 }
 
 async function trackerVoiceForLoss(loss){
@@ -6279,7 +6295,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.103',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.104',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -6306,7 +6322,7 @@ async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
   if(req.method==='GET'&&url.pathname==='/api/tracker/speech/diagnostics'){
     return json(res,200,{
-      version:'2.9.103',
+      version:'2.9.104',
       modelCached:Boolean(voskModelArchive),
       modelBytes:voskModelArchive?.length||0,
       modelSource:voskModelSource||null,
@@ -6516,9 +6532,14 @@ async function routeApi(req,res,url) {
     }else{
       return json(res,400,{error:'UNSUPPORTED_VOICE_EVENT',message:'That JLR voice event is not supported.'});
     }
-    const voiceProfile='core';
-    const timeoutMs=(type==='brain'||type==='repeat')?60_000:TRACKER_TTS_TIMEOUT_MS;
-    try{return sendTrackerAudio(res,await trackerVoiceWorkerAudio(voiceText,cacheKey,voiceProfile,timeoutMs))}
+    try{
+      if(type==='brain'||type==='repeat'){
+        const audio=await trackerConversationalVoiceAudio(voiceText,cacheKey);
+        res.setHeader('X-JLR-Voice-Profile',audio.voiceProfile||'unknown');
+        return sendTrackerAudio(res,audio);
+      }
+      return sendTrackerAudio(res,await trackerVoiceWorkerAudio(voiceText,cacheKey,'core',TRACKER_TTS_TIMEOUT_MS));
+    }
     catch(err){
       console.warn('JLR voice event failed',type,String(err.message||err));
       return json(res,503,{error:err?.code||'JLR_VOICE_UNAVAILABLE',message:String(err.message||err),fallbackText:voiceText});
@@ -6833,7 +6854,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.103 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.104 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>{
   Promise.all([
     loadVoskRuntimeAsset(VOSK_RUNTIME_FILES['/vendor/vosk/vosk-0.0.8.js']),
