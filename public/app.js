@@ -204,7 +204,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.96');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.97');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -294,7 +294,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR TRACKER MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.96'),
+      'Version: '+String(state?.app?.version||'2.9.97'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -516,7 +516,7 @@
     if(stopStream)stopBrainMicStream();
   }
   async function resetBrainVoskStorageOnce(){
-    const marker='lichess-vosk-0.0.3-jlr1';
+    const marker='classic-vosk-0.0.8-official-zip-jlr1';
     if(localStorage.getItem('jlrVoskStorageVersion')===marker)return;
     if(!('indexedDB' in window))throw brainMicCodeError('MIC-E102','INDEXEDDB','IndexedDB is unavailable in this browser session.');
 
@@ -532,16 +532,8 @@
           });
           brainRecordMicDiag('MIC-I103','INDEXEDDB_RESET','Cleared old Vosk database: '+name);
         }
-      }else{
-        for(const name of ['/vosk','EM_FS_/vosk']){
-          await new Promise(resolve=>{
-            const request=indexedDB.deleteDatabase(name);
-            request.onsuccess=request.onerror=request.onblocked=()=>resolve();
-          });
-        }
       }
 
-      // Confirm the browser can actually create/write/delete IndexedDB data.
       await new Promise((resolve,reject)=>{
         const request=indexedDB.open('jlr-vosk-storage-probe',1);
         request.onupgradeneeded=()=>{try{request.result.createObjectStore('probe')}catch{}};
@@ -575,46 +567,40 @@
       await resetBrainVoskStorageOnce();
 
       brainSetListen('MIC AI LOADING • MIC-I110','Loading JLR speech runtime…');
-      brainRecordMicDiag('MIC-I110','VOSK_RUNTIME','Loading same-origin Lichess Vosk runtime.');
-      let module;
-      try{
-        module=await import('/vendor/vosk/vosk.wasm.js?v=0.0.3-jlr1');
-      }catch(error){
-        throw brainMicCodeError('MIC-E104','VOSK_RUNTIME_IMPORT',String(error?.message||error||'Could not import Vosk runtime.'));
+      const started=Date.now();
+      while(!(window.Vosk&&typeof window.Vosk.Model==='function')){
+        if(Date.now()-started>15000){
+          throw brainMicCodeError('MIC-E104','VOSK_RUNTIME','vosk-browser 0.0.8 did not expose the Model API.');
+        }
+        await new Promise(resolve=>setTimeout(resolve,100));
       }
-      if(typeof module?.Model!=='function'){
-        throw brainMicCodeError('MIC-E105','VOSK_RUNTIME_API','Vosk runtime loaded without the Model API.');
-      }
+      brainRecordMicDiag('MIC-I110','VOSK_RUNTIME','vosk-browser 0.0.8 runtime ready.');
 
-      const resolver=asset=>{
-        const name=String(asset||'').split('/').pop();
-        if(name==='vosk.worker.js')return location.origin+'/vendor/vosk/vosk.worker.js?v=0.0.3-jlr1';
-        if(name==='vosk.wasm')return location.origin+'/vendor/vosk/vosk.wasm?v=0.0.3-jlr1';
-        return location.origin+'/vendor/vosk/'+name;
-      };
-
-      const modelUrl=location.origin+'/vendor/vosk/model-en-us-0.15.tar.gz?v=5';
-      brainSetListen('MIC AI LOADING • MIC-I120','Loading offline English model with the new speech runtime…');
-      brainRecordMicDiag('MIC-I120','VOSK_MODEL','Starting model load through JLR: '+modelUrl);
+      // Important: use the original Vosk ZIP. The old repacked .tar.gz model
+      // can hang during browser extraction/IDBFS even when the download succeeds.
+      const modelUrl=location.origin+'/vendor/vosk/model-en-us-0.15.zip?v=1';
+      brainSetListen('MIC AI LOADING • MIC-I120','Loading the official offline English model…');
+      brainRecordMicDiag('MIC-I120','VOSK_MODEL','Starting official ZIP model load through JLR: '+modelUrl);
 
       const model=await new Promise((resolve,reject)=>{
         let settled=false;
         let instance=null;
+        let timer=null;
         const finish=(ok,value)=>{
           if(settled)return;
           settled=true;
-          clearTimeout(timer);
+          if(timer)clearTimeout(timer);
           if(ok){
-            brainRecordMicDiag('MIC-I129','VOSK_MODEL','Offline English model loaded successfully.');
+            brainRecordMicDiag('MIC-I129','VOSK_MODEL','Official ZIP model loaded successfully.');
             resolve(value);
           }else{
             try{instance?.terminate?.()}catch{}
             reject(value instanceof Error?value:brainMicCodeError('MIC-E129','VOSK_MODEL',String(value||'Model failed.')));
           }
         };
-        const timer=setTimeout(()=>finish(false,brainMicCodeError('MIC-E121','VOSK_MODEL_TIMEOUT','New Vosk runtime did not finish loading the model within 3 minutes.')),180000);
+
         try{
-          instance=new module.Model(modelUrl,resolver,-1);
+          instance=new window.Vosk.Model(modelUrl,-1);
           const worker=instance?.worker||instance?._worker||null;
           if(worker&&typeof worker.addEventListener==='function'){
             worker.addEventListener('error',event=>{
@@ -630,10 +616,12 @@
           });
           instance.on('error',message=>{
             const detail=String(message?.error||message?.message||'Unknown Vosk worker error.');
-            const code=/sync file system|indexeddb|idb/i.test(detail)?'MIC-E125':'MIC-E126';
-            const stage=code==='MIC-E125'?'VOSK_INDEXEDDB':'VOSK_MODEL_ERROR';
+            let code='MIC-E126',stage='VOSK_MODEL_ERROR';
+            if(/sync file system|indexeddb|idb|fs error/i.test(detail)){code='MIC-E125';stage='VOSK_INDEXEDDB'}
+            else if(/archive|extract|zip|tar/i.test(detail)){code='MIC-E128';stage='VOSK_ARCHIVE'}
             finish(false,brainMicCodeError(code,stage,detail));
           });
+          timer=setTimeout(()=>finish(false,brainMicCodeError('MIC-E121','VOSK_MODEL_TIMEOUT','Official ZIP model did not finish loading within 3 minutes.')),180000);
         }catch(error){
           finish(false,brainMicCodeError('MIC-E127','VOSK_MODEL_CONSTRUCTOR',String(error?.message||error||'Could not create Vosk model.')));
         }
@@ -4961,7 +4949,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.96',
+          version:state?.app?.version||'2.9.97',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
