@@ -1,7 +1,7 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.45';
-  const CORE_URL='/tracker-core.js?v=2.9.45';
+  const ALARM_VERSION='2.9.46';
+  const CORE_URL='/tracker-core.js?v=2.9.46';
 
   let alarmContext=null;
   let alarmSource=null;
@@ -235,6 +235,9 @@
     else if(kind==='scan'){
       const system=String(payload&&payload.system||'').trim();
       if(system)endpoint='/api/voice/stream/scan?system='+encodeURIComponent(system);
+    }else if(kind==='scout'){
+      const system=String(payload&&payload.system||'').trim();
+      if(system)endpoint='/api/voice/stream/scout?system='+encodeURIComponent(system);
     }
 
     unlockAlarm();
