@@ -2806,11 +2806,20 @@
     const evidence=boardEvidenceLine(d.system);
     const esiToday=Math.max(0,Number(state?.scans?.[d.system]?.esiTodayM3)||0);
     const ledgerDebug=state?.esi?.ledgerDebug||null;
+    const cachedCount=Number(ledgerDebug?.cachedCharacters||0);
+    const linkedCount=Number(ledgerDebug?.linkedCharacters||state?.esi?.linkedCharacters||0);
     const ledgerReady=Boolean(ledgerDebug?.cacheComplete);
-    const esiTodayText=ledgerReady?`ESI TODAY • ${fmt(esiToday,'m3')} m³`:'ESI TODAY • SYNCING';
+    const ledgerSyncing=Boolean(state?.esi?.syncing);
+    let esiTodayText=`ESI TODAY • ${fmt(esiToday,'m3')} m³`;
+    if(!ledgerReady){
+      const progress=`${cachedCount}/${linkedCount}`;
+      esiTodayText=esiToday>0
+        ?`${esiTodayText} • ${ledgerSyncing?'SYNC':'PARTIAL'} ${progress}`
+        :`ESI TODAY • ${ledgerSyncing?'SYNC':'PARTIAL'} ${progress}`;
+    }
     const esiTodayTitle=ledgerReady
       ?'Raw linked ESI mining ledger total matched to this T3 system for the current Eve day. This diagnostic is independent of GREEN/YELLOW status.'
-      :`Mining ledger cache is still rebuilding: ${Number(ledgerDebug?.cachedCharacters||0)} of ${Number(ledgerDebug?.linkedCharacters||state?.esi?.linkedCharacters||0)} linked characters cached.`;
+      :`Mining-ledger cache has ${cachedCount} of ${linkedCount} linked characters. ${ledgerSyncing?'The current ESI refresh is still running.':'The refresh is not running, so any missing characters likely failed or have not completed a ledger refresh.'}`;
     const esiTodayHtml=`<span class="sys-evidence ${esiToday>0?'active':''}" title="${esc(esiTodayTitle)}">${esc(esiTodayText)}</span>`;
     const evidenceHtml=evidence?`<span class="sys-evidence ${esc(evidence.tone||'')}">${esc(evidence.text)}</span>`:'';
     b.innerHTML=`${f.cherryPicked?'<span class="cherry-pin">🍒</span>':''}<button class="favorite-toggle" type="button" aria-pressed="${favorite}" title="${favorite?'Remove from favorites':'Favorite this system'}">${favorite?'★':'☆'}</button>${boardArrangeMode?'<span class="drag-grip" aria-hidden="true">⠿</span>':''}<span class="sys-name">${esc(d.system)}</span><span class="sys-ore">#${d.rank} ${esc(d.ore)}</span>${includeTimer?`<span class="sys-state">${line}${distanceText}</span>`:''}<span class="sys-scan${scanLine.stale?' stale':''}">${esc(scanLine.text)}</span>${esiTodayHtml}${evidenceHtml}`;
