@@ -1,7 +1,7 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.108';
-  const CORE_URL='/tracker-core.js?v=2.9.108';
+  const ALARM_VERSION='2.9.109';
+  const CORE_URL='/tracker-core.js?v=2.9.109';
 
   let alarmContext=null;
   let alarmSource=null;
@@ -462,7 +462,7 @@
         throw new Error('JLR conversational voice HTTP '+response.status+(message?': '+message.slice(0,220):''));
       }
       const profile=String(response.headers.get('x-jlr-voice-profile')||'custom');
-      const played=await playAudioResponse(response,generation,(detail||'JLR conversational custom voice')+' • '+profile,1.12);
+      const played=await playAudioResponse(response,generation,(detail||'JLR conversational custom voice')+' • '+profile,1);
       if(!played)throw new Error('Custom voice returned audio but playback did not start.');
       window.jlrVoiceProfile=profile;
       window.jlrVoiceLastError='';
@@ -478,23 +478,103 @@
     }
   }
 
+  function playBrainStreamChunk(text,generation,detail){
+    if(generation!==alarmGeneration)return Promise.resolve(false);
+    return new Promise(function(resolve){
+      const audio=new Audio();
+      activeMediaElement=audio;
+      audio.preload='auto';
+      audio.volume=1;
+      audio.playbackRate=1.08;
+      try{audio.preservesPitch=true}catch(error){}
+      try{audio.webkitPreservesPitch=true}catch(error){}
+      audio.src='/api/voice/stream/brain?text='+encodeURIComponent(String(text||''))+'&nonce='+Date.now();
+      let settled=false;
+      let started=false;
+      const startedAt=performance.now();
+
+      const cleanup=()=>{
+        if(activeMediaElement===audio)activeMediaElement=null;
+      };
+      const finish=value=>{
+        if(settled)return;
+        settled=true;
+        clearTimeout(timer);
+        resolve(Boolean(value));
+      };
+      audio.addEventListener('playing',function(){
+        if(generation!==alarmGeneration){
+          try{audio.pause()}catch(error){}
+          cleanup();
+          finish(false);
+          return;
+        }
+        started=true;
+        const latency=Math.max(0,Math.round(performance.now()-startedAt));
+        window.jlrVoiceTransport='live-stream';
+        window.jlrVoiceProfile='core';
+        window.jlrVoiceLastError='';
+        reportVoiceMode('custom',(detail||'JLR conversational live voice')+' • '+latency+' ms to audio');
+        finish(true);
+      },{once:true});
+      audio.addEventListener('ended',cleanup,{once:true});
+      audio.addEventListener('error',function(){
+        cleanup();
+        const message='Live core voice stream failed before playback.';
+        window.jlrVoiceLastError=message;
+        reportVoiceMode('error',message);
+        finish(false);
+      },{once:true});
+      const timer=setTimeout(function(){
+        if(started)return;
+        try{audio.pause();audio.removeAttribute('src');audio.load()}catch(error){}
+        cleanup();
+        window.jlrVoiceLastError='Live core voice did not begin within 30 seconds.';
+        reportVoiceMode('error',window.jlrVoiceLastError);
+        finish(false);
+      },30000);
+
+      try{
+        const playPromise=audio.play();
+        if(playPromise&&typeof playPromise.catch==='function'){
+          playPromise.catch(function(error){
+            if(started)return;
+            cleanup();
+            window.jlrVoiceLastError=String(error?.message||error||'Live core voice playback was blocked.');
+            reportVoiceMode('error',window.jlrVoiceLastError);
+            finish(false);
+          });
+        }
+      }catch(error){
+        cleanup();
+        window.jlrVoiceLastError=String(error?.message||error||'Live core voice playback failed.');
+        reportVoiceMode('error',window.jlrVoiceLastError);
+        finish(false);
+      }
+    });
+  }
+
   async function playCustomBrainText(text,generation,detail){
     if(generation!==alarmGeneration)return false;
     window.jlrVoiceLastError='';
-    const chunks=splitBrainVoiceText(text,360);
+    const chunks=splitBrainVoiceText(text,260);
     if(!chunks.length)return false;
 
     for(let i=0;i<chunks.length;i++){
       if(generation!==alarmGeneration)return false;
-      const ok=await fetchBufferedBrainAudio(chunks[i],generation,(detail||'JLR conversational custom voice')+' • '+(i+1)+'/'+chunks.length);
+      const label=(detail||'JLR brain custom voice')+' • '+(i+1)+'/'+chunks.length;
+      let ok=await playBrainStreamChunk(chunks[i],generation,label);
+      if(!ok){
+        // Reliability fallback stays on the exact same CORE custom voice.
+        ok=await fetchBufferedBrainAudio(chunks[i],generation,label+' buffered fallback');
+      }
       if(!ok)return false;
-      // playAudioResponse starts the buffer immediately; wait until that chunk
-      // finishes before generating/playing the next one so sentences never overlap.
       await waitForVoiceIdle(generation);
     }
 
     window.jlrVoiceLastError='';
-    reportVoiceMode('custom',detail||'JLR conversational custom voice');
+    window.jlrVoiceProfile='core';
+    reportVoiceMode('custom',detail||'JLR conversational core voice');
     return true;
   }
 
