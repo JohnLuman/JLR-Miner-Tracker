@@ -235,7 +235,7 @@
     const ledger=snapshot?.ledger||null;
     const mined=Math.max(0,Number(ledger?.minedM3SinceSite)||0);
     const site=Math.max(0,Number(ledger?.siteM3)||0);
-    let text=name+", I noticed you're in system "+system+". Please send a scan to J. L. R. We are in desperate need of an update for that system.";
+    let text=name+", I noticed you're in system "+system+". Please send a scan to Tracker. We are in desperate need of an update for that system.";
     if(mined>0&&site>0)text+=' Linked mining ledgers report '+fmt(mined,'m3')+' of '+fmt(site,'m3')+' cubic meters mined.';
     return text;
   }
@@ -310,7 +310,7 @@
       try{
         if(typeof window.jlrUnlockFighterAlarm==='function')window.jlrUnlockFighterAlarm();
       }catch(error){}
-      const played=await speakJlr('startup',{},'J. L. R. systems online. Welcome back.');
+      const played=await speakJlr('startup',{},'Tracker systems online. Welcome back.');
       if(played){
         const mode=String(window.jlrVoiceMode||'unknown');
         toast(mode==='custom'?'🔊 JLR CUSTOM VOICE ONLINE.':mode==='fallback'?'⚠ Custom voice unavailable — browser fallback used.':'🔊 JLR voice played.');
@@ -3811,7 +3811,7 @@
       const ledger=nextState.scans?.[system]?.ledger||{};
       const mined=Math.max(0,Number(ledger.minedM3SinceSite)||0);
       const pct=Number(ledger.depletionPct);
-      let fallback='J. L. R. mining update. Mining activity detected in '+system+'.';
+      let fallback='Tracker mining update. Mining activity detected in '+system+'.';
       if(mined>0)fallback+=' '+Math.round(mined).toLocaleString()+' cubic meters reported mined.';
       if(Number.isFinite(pct)&&pct>=80)fallback+=' Estimated depletion '+Math.round(pct)+' percent. Scan recommended.';
       speakJlr('field',{system},fallback);
