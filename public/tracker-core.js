@@ -340,7 +340,7 @@
     const played=typeof window.jlrPlayFighterAlarm==='function'
       ?await window.jlrPlayFighterAlarm({test:true})
       :false;
-    if(!played)toast('Browser audio is blocked. Click ARM LOUD ALERTS, then test again.');
+    if(!played)toast(window.jlrVoiceLastError?'CUSTOM VOICE TEST FAILED: '+window.jlrVoiceLastError:'Custom voice test did not play. Check the worker and Railway logs.');
   }
   function stopAlarm(){
     const stopped=typeof window.jlrStopFighterAlarm==='function'
