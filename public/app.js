@@ -50,6 +50,7 @@
   let threatShareUrl='';
   let threatShareError='';
   let ledgerAuditLoading=false;
+  let myLedgerSummary=null;
   let startupGreetingQueued=false;
   let brainRecognition=null;
   let brainMicStream=null;
@@ -198,7 +199,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.84');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.85');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -3047,8 +3048,21 @@
     const payoutPriceBasis=state.market?.jitaBuyBasis==='janice-immediate-buy'?'Janice Jita buy':'ESI Jita buy fallback';
     const unpricedM3=Number(state.esi.actual.today.unpricedM3||0);
     $('actualTodayIskSub').textContent=unpricedM3>0
-      ?`${payoutPriceBasis} refined • ${fmt(unpricedM3,'m3')} m³ awaiting price`
-      :`${payoutPriceBasis} refined • exact grade • ${(payout*100).toFixed(1)}% payout`;
+      ?payoutPriceBasis+' refined • '+fmt(unpricedM3,'m3')+' m³ awaiting price • ALL JLR-LINKED TOONS'
+      :payoutPriceBasis+' refined • exact grade • '+(payout*100).toFixed(1)+'% payout • ALL JLR-LINKED TOONS';
+    const myTotals=myLedgerSummary?.totals||null;
+    const myRawValue=Number(myTotals?.jbv||0);
+    const myUnpricedM3=Number(myTotals?.unpricedM3||0);
+    if($('actualMyTodayIsk'))$('actualMyTodayIsk').textContent=myLedgerSummary?fmt(myRawValue*payout):'—';
+    if($('actualMyTodayIskSub')){
+      const myCached=Number(myLedgerSummary?.cachedCharacters||0);
+      const myLinked=Number(myLedgerSummary?.linkedCharacters||0);
+      $('actualMyTodayIskSub').textContent=myLedgerSummary
+        ?(myUnpricedM3>0
+          ?myCached+'/'+myLinked+' YOUR TOONS • '+fmt(myUnpricedM3,'m3')+' m³ awaiting price • click for audit'
+          :myCached+'/'+myLinked+' YOUR TOONS • exact grade • '+(payout*100).toFixed(1)+'% payout • click for audit')
+        :'Loading your toon ledger…';
+    }
     $('actualExpTodayM3').textContent=`${fmt(state.esi.actual.today.m3,'m3')} m³`;
     $('actualExpTodayValue').textContent=`${fmt(actualValue(state.esi.actual.today.jbv))} ISK`;
     $('actualWeekM3').textContent=`${fmt(state.esi.actual.week.m3,'m3')} m³`;
@@ -4373,7 +4387,9 @@
     if(panel)panel.classList.add('hidden');
   }
   function renderLedgerAudit(data){
+    myLedgerSummary=data||null;
     const payout=Math.min(100,Math.max(1,Number(fleetSettings.payout)||95))/100;
+    if(state)renderTop();
     const rows=Array.isArray(data&&data.characters)?data.characters:[];
     const linked=Number(data&&data.linkedCharacters||0);
     const cached=Number(data&&data.cachedCharacters||0);
@@ -4412,7 +4428,10 @@
     if($('ledgerAuditSummary'))$('ledgerAuditSummary').textContent='Checking every toon linked to this account…';
     if($('ledgerAuditBody'))$('ledgerAuditBody').innerHTML='<div class="visual-empty">Loading per-toon ledger totals…</div>';
     ledgerAuditLoading=true;
-    try{renderLedgerAudit(await api('/api/ledger-audit'));}
+    try{
+      if(myLedgerSummary)renderLedgerAudit(myLedgerSummary);
+      renderLedgerAudit(await api('/api/ledger-audit'));
+    }
     catch(error){
       if($('ledgerAuditSummary'))$('ledgerAuditSummary').textContent='Could not load the ledger audit.';
       if($('ledgerAuditBody'))$('ledgerAuditBody').innerHTML='<div class="visual-empty">'+esc(error.message||error)+'</div>';
@@ -4422,15 +4441,25 @@
   function renderAll(){if(!state)return;renderFleet();renderTop();renderTrackerBrain();renderSelect();renderBoards();renderHits();renderFleetPerformance();renderMiningVisuals();renderIceMining();renderGasHuffing();if(doctrineMarket)renderDoctrineMarket();renderRanking();renderTimers();renderSelected();renderNotes();renderScanCharacters();renderCharacters();renderCalculator();renderMerIntel();}
 
   async function refreshMe(){const p=await api('/api/me');me=p.user;if(me){$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;syncDoctrineTabAccess();syncTrackerTabAccess()}return p.authenticated}
-  async function loadState(){state=await api('/api/state');renderAll()}
+  async function loadState(){
+    const [nextState,myLedger]=await Promise.all([
+      api('/api/state'),
+      api('/api/ledger-audit').catch(error=>{console.warn('My ledger summary load failed',error);return null}),
+    ]);
+    state=nextState;
+    if(myLedger)myLedgerSummary=myLedger;
+    renderAll();
+  }
   async function refreshFleetPerformanceData(showStatus=false){
     if(fleetPerformanceRefreshPromise)return fleetPerformanceRefreshPromise;
     const pending=(async()=>{
-      const [nextState]=await Promise.all([
+      const [nextState,,myLedger]=await Promise.all([
         api('/api/state'),
         refreshMe(),
+        api('/api/ledger-audit').catch(error=>{console.warn('My ledger summary refresh failed',error);return null}),
       ]);
       state=nextState;
+      if(myLedger)myLedgerSummary=myLedger;
       renderAll();
       renderDataStatus();
       if(showStatus&&activeTab==='performance')toast('Fleet Performance updated.');
@@ -4560,7 +4589,7 @@
       const type=document.querySelector('.brain-feedback-type.active')?.dataset.feedbackType||'suggestion';
       const message=String($('brainFeedbackText')?.value||'').trim();
       if(!message){toast('Add a short description first.');return}
-      await api('/api/tracker/brain/feedback',{method:'POST',body:JSON.stringify({type,message,context:{version:state?.app?.version||'2.9.84',tab:activeTab,lastSpeech:brainSpeechHistory[0]?.text||''}})});
+      await api('/api/tracker/brain/feedback',{method:'POST',body:JSON.stringify({type,message,context:{version:state?.app?.version||'2.9.85',tab:activeTab,lastSpeech:brainSpeechHistory[0]?.text||''}})});
       $('brainFeedbackText').value='';
       toast('Tracker feedback submitted.');
       return;
@@ -4965,8 +4994,8 @@
     saveFleet();
     toast(boosterId?'Miners cleared. Booster left enabled.':'All miners cleared.');
   });
-  $('ledgerPayoutCard')?.addEventListener('click',openLedgerAudit);
-  $('ledgerPayoutCard')?.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();openLedgerAudit();}});
+  $('myLedgerPayoutCard')?.addEventListener('click',openLedgerAudit);
+  $('myLedgerPayoutCard')?.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();openLedgerAudit();}});
   $('ledgerAuditClose')?.addEventListener('click',closeLedgerAudit);
   $('ledgerAuditPanel')?.addEventListener('click',event=>{if(event.target===event.currentTarget)closeLedgerAudit();});
   $('fleetUpgradeMode')?.addEventListener('click',()=>{
