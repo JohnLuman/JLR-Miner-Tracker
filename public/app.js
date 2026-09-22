@@ -193,6 +193,64 @@
       el.title='No successful EVE character-data sync has completed yet.';
     }
   }
+  function renderTrackerBrain(){
+    const status=$('trackerBrainStatus');
+    const summary=$('trackerBrainSummary');
+    const list=$('trackerBrainList');
+    if(!status||!summary||!list)return;
+
+    const brain=state?.trackerBrain||null;
+    if(!brain){
+      status.textContent='● ANALYZING';
+      summary.textContent='Tracker is analyzing the current operation.';
+      list.innerHTML='';
+      return;
+    }
+
+    const issues=Array.isArray(brain.issues)?brain.issues:[];
+    const attention=Number(brain.attentionCount||0);
+    if(attention>0){
+      const high=Number(brain.counts?.critical||0)+Number(brain.counts?.high||0);
+      status.textContent=high>0?'⚠ PRIORITY '+high:'● ATTENTION '+attention;
+    }else{
+      status.textContent='● ALL CLEAR';
+    }
+
+    const connected=Number(brain.connectedCharacters||0);
+    const cache=brain.ledgerCache||{};
+    const cacheText=cache.complete
+      ?`${connected} connected characters monitored`
+      :`${Number(cache.cached||0)}/${Number(cache.linked||connected)} mining ledgers ready`;
+
+    summary.textContent=brain.healthy
+      ?`No active priority issues. ${cacheText}.`
+      :`${attention} item${attention===1?'':'s'} need attention. ${cacheText}.`;
+
+    if(!issues.length){
+      list.innerHTML='<div class="tracker-assist-clear"><strong>Everything looks normal.</strong><span>Tracker will surface field, scan, ESI, timer, market, and Heavy Fighter issues here.</span></div>';
+      return;
+    }
+
+    list.innerHTML=issues.slice(0,6).map(issue=>{
+      const system=String(issue.system||'');
+      const priority=String(issue.priority||'info');
+      return `<button class="tracker-assist-item ${esc(priority)}" type="button" data-system="${esc(system)}" title="${esc(issue.reason||issue.title||'Tracker status')}">
+        <span class="tracker-assist-priority">${esc(priority.toUpperCase())}</span>
+        <span class="tracker-assist-copy"><strong>${esc(issue.title||'Tracker update')}</strong><small>${esc(issue.reason||'')}</small></span>
+      </button>`;
+    }).join('');
+
+    list.querySelectorAll('.tracker-assist-item[data-system]').forEach(button=>{
+      button.addEventListener('click',()=>{
+        const system=String(button.dataset.system||'');
+        if(system&&definitions().some(row=>row.system===system)){
+          chooseSystem(system);
+          toast('Tracker selected '+system+'. Ask “Why this system?” for the explanation.');
+        }
+      });
+    });
+  }
+
   function esc(s){return String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
   function toast(msg){$('toast').textContent=msg;$('toast').classList.remove('hidden');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.add('hidden'),3000)}
   function setScanStatus(message,tone=''){
@@ -838,10 +896,12 @@
     const toons=makePanel('toons');
 
     const quick=document.querySelector('.quick-update');
+    const assistant=document.querySelector('.tracker-assistant-panel');
     const calculator=document.querySelector('.shared-calculator');
     const timers=document.querySelector('.timers-panel');
     const board=document.querySelector('.board-panel');
     const hits=document.querySelector('.hit-panel');
+    if(assistant)fields.appendChild(assistant);
     const fieldSidebar=document.createElement('div');
     fieldSidebar.className='field-sidebar';
     [quick,timers].filter(Boolean).forEach(el=>fieldSidebar.appendChild(el));
@@ -3795,7 +3855,7 @@
     }finally{ledgerAuditLoading=false;}
   }
 
-  function renderAll(){if(!state)return;renderFleet();renderTop();renderSelect();renderBoards();renderHits();renderFleetPerformance();renderMiningVisuals();renderIceMining();renderGasHuffing();if(doctrineMarket)renderDoctrineMarket();renderRanking();renderTimers();renderSelected();renderNotes();renderScanCharacters();renderCharacters();renderCalculator();renderMerIntel();}
+  function renderAll(){if(!state)return;renderFleet();renderTop();renderTrackerBrain();renderSelect();renderBoards();renderHits();renderFleetPerformance();renderMiningVisuals();renderIceMining();renderGasHuffing();if(doctrineMarket)renderDoctrineMarket();renderRanking();renderTimers();renderSelected();renderNotes();renderScanCharacters();renderCharacters();renderCalculator();renderMerIntel();}
 
   async function refreshMe(){const p=await api('/api/me');me=p.user;if(me){$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;syncDoctrineTabAccess();syncTrackerTabAccess()}return p.authenticated}
   async function loadState(){state=await api('/api/state');renderAll()}
@@ -3843,7 +3903,12 @@
 
       if(firstMining||esiPicked||depletionAlert||scanAlert)queued.add(system);
     }
-    for(const system of [...queued].slice(0,4)){
+    const systems=[...queued];
+    if(systems.length>1){
+      speakJlr('briefing',{},'Tracker has multiple mining updates that need attention.');
+      return;
+    }
+    for(const system of systems){
       const ledger=nextState.scans?.[system]?.ledger||{};
       const mined=Math.max(0,Number(ledger.minedM3SinceSite)||0);
       const pct=Number(ledger.depletionPct);
@@ -3879,6 +3944,35 @@
     });
     eventSource.onerror=()=>{$('liveBadge').textContent='⚠ DATA CONNECTION LOST';$('liveBadge').title='Live dashboard updates disconnected; the page is attempting to reconnect.'};
   }
+
+  $('trackerBriefMe')?.addEventListener('click',async()=>{
+    const button=$('trackerBriefMe');
+    if(button)button.disabled=true;
+    try{
+      const played=await speakJlr('briefing',{},'Tracker briefing ready.');
+      if(!played)toast('Tracker briefing could not be played.');
+    }finally{
+      if(button)button.disabled=false;
+    }
+  });
+
+  $('trackerWhySystem')?.addEventListener('click',async()=>{
+    const system=selectedSystem||$('systemSelect')?.value||'';
+    if(!system){toast('Select a T3 system first.');return}
+    const button=$('trackerWhySystem');
+    if(button)button.disabled=true;
+    try{
+      const explanation=await api('/api/tracker/brain/why?system='+encodeURIComponent(system));
+      const summary=$('trackerBrainSummary');
+      if(summary&&explanation?.facts?.length)summary.textContent=system+': '+explanation.facts.join(' ');
+      const played=await speakJlr('why',{system},explanation?.voice||('Tracker explanation for '+system+'.'));
+      if(!played)toast('Tracker explanation could not be played.');
+    }catch(error){
+      toast(error.message||String(error));
+    }finally{
+      if(button)button.disabled=false;
+    }
+  });
 
   function addToon(){location.href='/auth/eve/start?intent=link'}
   $('addToon').addEventListener('click',addToon);$('addToonTop').addEventListener('click',addToon);
