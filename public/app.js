@@ -46,7 +46,7 @@
   let threatShareUrl='';
   let threatShareError='';
   let ledgerAuditLoading=false;
-  const STARTUP_GREETING_KEY='jlrStartupGreetingV1';
+  const STARTUP_GREETING_KEY='jlrStartupGreetingV2';
   let startupGreetingQueued=false;
 
   const DEFAULT_FLEET = { members:{}, uptime:100, payout:95, order:[] };
@@ -193,11 +193,18 @@
     el.className=tone;
   }
 
-  function speakJlr(type,payload,fallbackText){
-    if(!soundEnabled||typeof window.jlrSpeakEvent!=='function')return false;
-    Promise.resolve(window.jlrSpeakEvent(type,payload||{},fallbackText||'J. L. R. notification.'))
-      .catch(error=>console.warn('JLR voice event failed',error));
-    return true;
+  async function speakJlr(type,payload,fallbackText){
+    if(!soundEnabled)return false;
+    if(typeof window.jlrSpeakEvent!=='function'){
+      console.warn('JLR voice wrapper is not ready yet.');
+      return false;
+    }
+    try{
+      return Boolean(await window.jlrSpeakEvent(type,payload||{},fallbackText||'J. L. R. notification.'));
+    }catch(error){
+      console.warn('JLR voice event failed',error);
+      return false;
+    }
   }
 
   function scanVoiceFallback(preview){
@@ -221,17 +228,28 @@
   function queueStartupGreeting(){
     if(startupGreetingQueued||sessionStorage.getItem(STARTUP_GREETING_KEY)==='1')return;
     startupGreetingQueued=true;
-    if(soundEnabled)toast('🔊 JLR custom voice ready — click anywhere once to activate.');
-    const trigger=()=>{
+    if(soundEnabled)toast('🔊 JLR voice ready — click once to activate.');
+    const trigger=async()=>{
       window.removeEventListener('pointerdown',trigger,true);
       window.removeEventListener('keydown',trigger,true);
-      sessionStorage.setItem(STARTUP_GREETING_KEY,'1');
-      if(!soundEnabled)return;
+      if(!soundEnabled){startupGreetingQueued=false;return;}
       try{
-        if(typeof window.jlrUnlockFighterAlarm==='function')window.jlrUnlockFighterAlarm();
+        if(typeof window.jlrUnlockFighterAlarm==='function')await window.jlrUnlockFighterAlarm();
       }catch(error){}
-      toast('🔊 JLR voice activated.');
-      setTimeout(()=>speakJlr('startup',{},'J. L. R. systems online. Welcome back.'),120);
+      // Give tracker.js a moment if app.js finished booting first.
+      for(let attempt=0;attempt<12&&typeof window.jlrSpeakEvent!=='function';attempt++){
+        await new Promise(resolve=>setTimeout(resolve,100));
+      }
+      const played=await speakJlr('startup',{},'J. L. R. systems online. Welcome back.');
+      if(played){
+        sessionStorage.setItem(STARTUP_GREETING_KEY,'1');
+        const mode=String(window.jlrVoiceMode||'unknown');
+        toast(mode==='custom'?'🔊 JLR CUSTOM VOICE ONLINE.':mode==='fallback'?'⚠ Custom voice unavailable — browser fallback used.':'🔊 JLR voice played.');
+      }else{
+        startupGreetingQueued=false;
+        toast('⚠ JLR voice did not start. Click again or use the Tracker voice test.');
+        setTimeout(queueStartupGreeting,700);
+      }
     };
     window.addEventListener('pointerdown',trigger,true);
     window.addEventListener('keydown',trigger,true);
