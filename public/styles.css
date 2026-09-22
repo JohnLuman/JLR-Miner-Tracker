@@ -1897,6 +1897,7 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .brain-card-head strong{font:700 12px Oxanium,Inter,sans-serif;letter-spacing:.05em}
 .brain-card-head small{font-size:8px;color:var(--muted);text-align:right}
 .brain-setting-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+.brain-mic-setting{grid-column:1/-1}
 .brain-setting{display:block;border:1px solid var(--line);border-radius:6px;padding:7px;background:color-mix(in srgb,var(--theme-panel-hi,var(--card)) 92%,black 8%)}
 .brain-setting>span{display:block;font-size:7px;font-weight:950;color:var(--muted);margin-bottom:5px}
 .brain-setting select{
