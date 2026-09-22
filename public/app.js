@@ -235,7 +235,7 @@
     const ledger=snapshot?.ledger||null;
     const mined=Math.max(0,Number(ledger?.minedM3SinceSite)||0);
     const site=Math.max(0,Number(ledger?.siteM3)||0);
-    let text='Scan update needed in '+system+'. Open Probe Scanner and send the results to Tracker.';
+    let text='Tracker needs an updated scan for system '+system+'. Open your Probe Scanner and paste the results into Tracker for the needed update. Thank you.';
     if(mined>0&&site>0)text+=' Linked Eve mining ledgers report '+fmt(mined,'m3')+' of '+fmt(site,'m3')+' cubic meters mined.';
     return text;
   }
