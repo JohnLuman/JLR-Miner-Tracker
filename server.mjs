@@ -723,7 +723,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.52',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.53',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -2668,10 +2668,10 @@ async function scoutLocationSnapshot(ch){
 
 function jlrScoutVoiceText(characterName,system){
   const safeName=trackerSpeechSafe(characterName,64)||'Scout';
-  const safeSystem=trackerSpeechSafe(system,48)||'current system';
+  const safeSystem=trackerSpokenSystem(system)||'current system';
   const scan=scanActivityPublic()[system]||null;
   const ledger=scan?.ledger||null;
-  const parts=[`${safeName}, I noticed you're in system ${safeSystem}. Please send a scan to J. L. R. We are in desperate need of an update for that system.`];
+  const parts=[`${safeName}, I noticed you're in system ${safeSystem}. Please send a scan to Tracker. We are in desperate need of an update for that system.`];
   const scanMs=Date.parse(scan?.lastScanAt||'');
   if(Number.isFinite(scanMs)){
     const hours=Math.max(0,Math.floor((Date.now()-scanMs)/3600000));
@@ -2755,14 +2755,14 @@ async function recordA0ProbeScan({characterName,systemId,system,text}){
 
 
 function jlrFieldVoiceText(system){
-  const safeSystem=trackerSpeechSafe(system,48)||'tracked system';
+  const safeSystem=trackerSpokenSystem(system)||'tracked system';
   const scan=scanActivityPublic()[system]||null;
   const ledger=scan?.ledger||null;
   const field=state.fields?.[system]||null;
   const mined=Math.max(0,Number(ledger?.minedM3SinceSite)||Number(field?.ledgerMinedM3)||0);
   const site=Math.max(0,Number(ledger?.siteM3)||Number(SYSTEM_MAP.get(system)?.siteM3)||0);
   const pct=Number(ledger?.depletionPct);
-  const parts=[`J. L. R. mining update. Mining activity has been detected in ${safeSystem}. The field is marked picked.`];
+  const parts=[`Tracker mining update. Mining activity has been detected in ${safeSystem}. The field is marked picked.`];
   if(mined>0)parts.push(`Linked ESI ledgers report ${Math.round(mined).toLocaleString('en-US')} cubic meters mined from the current tracked cycle.`);
   if(Number.isFinite(pct)&&pct>=95)parts.push(`Estimated depletion is ${Math.round(pct)} percent. Please send a Probe Scanner update now.`);
   else if(Number.isFinite(pct)&&pct>=80)parts.push(`Estimated depletion is ${Math.round(pct)} percent. A Probe Scanner update is recommended.`);
@@ -3596,12 +3596,32 @@ function trackerSpokenIsk(value){
   return Math.round(n).toLocaleString('en-US');
 }
 
+function trackerSpokenSystem(system){
+  const raw=trackerSpeechSafe(system,48);
+  if(!raw)return 'an unknown system';
+  // Named systems should be spoken normally.
+  if(!/^[A-Z0-9-]+$/.test(raw))return raw;
+  const digits={
+    '0':'zero','1':'one','2':'two','3':'three','4':'four',
+    '5':'five','6':'six','7':'seven','8':'eight','9':'nine',
+  };
+  const groups=raw.split('-').filter(Boolean).map(group=>{
+    const tokens=[];
+    for(const ch of group){
+      if(/[A-Z]/.test(ch))tokens.push(ch);
+      else if(/[0-9]/.test(ch))tokens.push(digits[ch]||ch);
+    }
+    return tokens.join(', ');
+  }).filter(Boolean);
+  return groups.join(', ');
+}
+
 function trackerVoiceText(loss){
   const fighter=trackerSpeechSafe(loss?.shipTypeName||'Heavy Fighter',64)||'Heavy Fighter';
-  const system=trackerSpeechSafe(loss?.systemName||'an unknown system',48)||'an unknown system';
+  const system=trackerSpokenSystem(loss?.systemName||'an unknown system');
   const value=Number(loss?.totalValue)||0;
   const valueText=value>0?` Estimated loss value, ${trackerSpokenIsk(value)} ISK.`:'';
-  return `Attention. A ${fighter} has been lost in ${system}.${valueText} Please check J. L. R. Tracker for pilot and kill information.`;
+  return `Attention. A ${fighter} has been lost in ${system}.${valueText} Please check Tracker for pilot and kill information.`;
 }
 
 function jlrStartupVoiceText(user){
@@ -3611,11 +3631,11 @@ function jlrStartupVoiceText(user){
   const marketMs=Date.parse(state.market?.lastUpdatedAt||'');
   const marketText=Number.isFinite(marketMs)&&Date.now()-marketMs<36*60*60*1000?'Market data current.':'Market data requires an update.';
   const esiText=state.esi.lastError?'EVE synchronization has a warning.':state.esi.lastSyncAt?'EVE data synchronized.':'EVE data synchronization pending.';
-  return `J. L. R. systems online. ${trackerText} ${marketText} ${esiText} ${linked} character${linked===1?'':'s'} linked. Welcome back.`;
+  return `Tracker systems online. ${trackerText} ${marketText} ${esiText} ${linked} character${linked===1?'':'s'} linked. Welcome back.`;
 }
 
 function jlrScanVoiceText(system){
-  const safeSystem=trackerSpeechSafe(system,48);
+  const safeSystem=trackerSpokenSystem(system);
   const definition=SYSTEM_MAP.get(system)||null;
   const scan=state.scans?.[system]||null;
   const parts=[`${safeSystem||'System'} scan synchronized.`];
@@ -5594,7 +5614,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.52',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.53',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -5768,7 +5788,7 @@ async function routeApi(req,res,url) {
     catch(err){return json(res,503,{error:'TRACKER_ACCESS_CHECK_FAILED',message:'Tracker access could not be verified with EVE right now.'})}
     if(!access.allowed)return json(res,403,{error:'TRACKER_CORPORATION_REQUIRED',message:'Tracker is restricted to the configured corporation.'});
     try{
-      const text='Attention. J. L. R. Voice Version Three speaker verification. The new speaker profile is active. Heavy Fighter tracking is standing by.';
+      const text='Attention. Tracker Voice Version Three speaker verification. The new speaker profile is active. Heavy Fighter tracking is standing by.';
       if(url.searchParams.get('stream')==='1')return await streamTrackerVoiceToResponse(res,text,'test',{priority:'normal',voice:'alert'});
       const audio=await trackerVoiceWorkerAudio(text,'test','alert');
       return sendTrackerAudio(res,audio);
@@ -5987,7 +6007,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.52 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.53 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
 setInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': tracker-heartbeat\n\n')}catch{trackerLiveClients.delete(res)}}},20_000).unref();
 setInterval(()=>resetExpired(true),15_000).unref();
