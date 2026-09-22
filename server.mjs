@@ -6049,6 +6049,34 @@ async function routeApi(req,res,url) {
       return json(res,502,{error:'SCOUT_LOCATION_FAILED',message:String(err.message||err)});
     }
   }
+  if(req.method==='GET'&&url.pathname==='/api/tracker/brain'){
+    return json(res,200,trackerBrainSnapshot());
+  }
+  if(req.method==='GET'&&url.pathname==='/api/tracker/brain/why'){
+    const system=String(url.searchParams.get('system')||'').trim();
+    const explanation=trackerBrainWhySystem(system);
+    if(!explanation)return json(res,404,{error:'UNTRACKED_SYSTEM',message:'That system is not a tracked T3 field.'});
+    return json(res,200,explanation);
+  }
+  if(req.method==='GET'&&url.pathname==='/api/voice/stream/briefing'){
+    const force=url.searchParams.get('force')==='1';
+    const briefing=trackerBrainBriefing(user,{force});
+    try{return await streamTrackerVoiceToResponse(res,briefing.text,`brain-briefing-${crypto.createHash('sha1').update(briefing.text).digest('hex').slice(0,16)}`,{priority:'normal',voice:'core'})}
+    catch(err){
+      console.warn('Tracker Brain briefing voice failed',String(err.message||err));
+      return json(res,503,{error:err?.code||'JLR_VOICE_UNAVAILABLE',message:String(err.message||err)});
+    }
+  }
+  if(req.method==='GET'&&url.pathname==='/api/voice/stream/why'){
+    const system=String(url.searchParams.get('system')||'').trim();
+    const explanation=trackerBrainWhySystem(system);
+    if(!explanation)return json(res,404,{error:'UNTRACKED_SYSTEM',message:'That system is not a tracked T3 field.'});
+    try{return await streamTrackerVoiceToResponse(res,explanation.voice,`brain-why-${system}-${crypto.createHash('sha1').update(explanation.voice).digest('hex').slice(0,16)}`,{priority:'normal',voice:'core'})}
+    catch(err){
+      console.warn('Tracker Brain why voice failed',system,String(err.message||err));
+      return json(res,503,{error:err?.code||'JLR_VOICE_UNAVAILABLE',message:String(err.message||err)});
+    }
+  }
   if(req.method==='GET'&&url.pathname==='/api/voice/stream/scout'){
     const system=String(url.searchParams.get('system')||'').trim();
     const characterId=String(url.searchParams.get('characterId')||'').trim();
@@ -6082,8 +6110,9 @@ async function routeApi(req,res,url) {
     }
   }
   if(req.method==='GET'&&url.pathname==='/api/voice/stream/startup'){
-    const voiceText=jlrStartupVoiceText(user);
-    try{return await streamTrackerVoiceToResponse(res,voiceText,'startup',{priority:'normal',voice:'core'})}
+    const briefing=trackerBrainBriefing(user,{force:false});
+    const voiceText=briefing.text;
+    try{return await streamTrackerVoiceToResponse(res,voiceText,`startup-${crypto.createHash('sha1').update(voiceText).digest('hex').slice(0,16)}`,{priority:'normal',voice:'core'})}
     catch(err){
       console.warn('JLR startup voice stream failed',String(err.message||err));
       return json(res,503,{error:err?.code||'JLR_VOICE_UNAVAILABLE',message:String(err.message||err)});
