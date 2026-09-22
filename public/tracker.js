@@ -1,6 +1,6 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.34';
+  const ALARM_VERSION='2.9.36';
   const ALARM_CHUNKS=6;
   const CORE_URL='/tracker-core.js?v=2.9.32';
 
@@ -24,7 +24,7 @@
     const requests=[];
     for(let index=0;index<ALARM_CHUNKS;index++){
       const part=String(index).padStart(2,'0');
-      requests.push(fetch('/audio/who-lost-the-fighter-'+part+'.b64?v='+ALARM_VERSION,{cache:'force-cache'}).then(function(response){
+      requests.push(fetch('/audio/who-lost-the-fighter-'+part+'.b64?v='+ALARM_VERSION,{cache:'no-store'}).then(function(response){
         if(!response.ok)throw new Error('Alarm audio part '+part+' failed: '+response.status);
         return response.text();
       }));
@@ -33,7 +33,7 @@
     const raw=atob(chunks.join('').replace(/\s+/g,''));
     const bytes=new Uint8Array(raw.length);
     for(let index=0;index<raw.length;index++)bytes[index]=raw.charCodeAt(index);
-    if(bytes.length<60000)throw new Error('Alarm audio was incomplete.');
+    if(bytes.length!==70317)throw new Error('Alarm audio was incomplete: '+bytes.length+' bytes.');
     return bytes;
   }
 
