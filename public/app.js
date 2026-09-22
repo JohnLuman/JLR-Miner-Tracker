@@ -213,7 +213,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.99');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.100');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -303,7 +303,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR TRACKER MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.99'),
+      'Version: '+String(state?.app?.version||'2.9.100'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -407,7 +407,17 @@
         await brainSpeakBriefing();
         return;
       }
-      if($('brainReply'))$('brainReply').textContent='Command not available yet: “'+heard+'”';
+
+      brainSetListen('TRACKER THINKING','Answering your JLR question…');
+      const response=await api('/api/tracker/brain/ask',{
+        method:'POST',
+        body:JSON.stringify({question:command}),
+      });
+      const answer=String(response?.text||'I do not have an answer for that yet.');
+      if($('brainReply'))$('brainReply').textContent=answer;
+      brainConversationUntil=Date.now()+brainConversationMs();
+      await speakJlr('brain',{text:answer},answer);
+      if(brainMicWanted)brainSetListen('MIC ON','Follow-up ready. You can keep talking briefly without saying “Tracker” again.');
     }catch(error){
       if($('brainReply'))$('brainReply').textContent=String(error?.message||error);
     }
@@ -1763,6 +1773,7 @@
 
         <section class="brain-card brain-talk-card">
           <div class="brain-card-head"><strong>TALK TO TRACKER</strong><small>Natural voice interaction</small></div>
+          <div class="brain-question-hint">Try: “Tracker, what can you do for me?” • “What does Fleet Performance show?” • “How does Threat Scan work?”</div>
           <div id="brainListenPanel" class="brain-listen-panel">
             <span class="brain-listen-orb">●</span>
             <div><strong id="brainListenStatus">MIC STARTING</strong><small id="brainListenHint">Tracker is arming the microphone and waiting for the wake word.</small></div>
@@ -5042,7 +5053,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.99',
+          version:state?.app?.version||'2.9.100',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
