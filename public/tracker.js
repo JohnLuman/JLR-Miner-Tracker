@@ -1,6 +1,6 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.36';
+  const ALARM_VERSION='2.9.37';
   const ALARM_CHUNKS=6;
   const CORE_URL='/tracker-core.js?v=2.9.32';
 
@@ -117,6 +117,23 @@
     }
   }
 
+
+  function stopSongAlarm(){
+    let stopped=false;
+    if(alarmSource){
+      try{alarmSource.stop();stopped=true;}catch(error){}
+      alarmSource=null;
+    }
+    if(alarmHtmlPlayer){
+      try{
+        alarmHtmlPlayer.pause();
+        alarmHtmlPlayer.currentTime=0;
+        stopped=true;
+      }catch(error){}
+    }
+    return stopped;
+  }
+
   function isFighterAlert(text){
     const value=String(text||'').trim();
     return /\bDOWN in\b/i.test(value)||/Heavy Fighters DOWN/i.test(value);
@@ -135,21 +152,10 @@
   }
 
   function watchTrackerUi(){
-    const bindToast=function(){
-      const toast=document.getElementById('toast');
-      if(!toast){setTimeout(bindToast,250);return;}
-      const observer=new MutationObserver(handleToast);
-      observer.observe(toast,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['class']});
-    };
-    bindToast();
-
     document.addEventListener('click',function(event){
       const target=event.target instanceof Element?event.target:null;
       if(!target)return;
-      if(target.closest('#trackerArm'))unlockAlarm();
-      if(target.closest('#trackerTest')){
-        unlockAlarm().then(function(){playSongAlarm();});
-      }
+      if(target.closest('#trackerArm')||target.closest('#trackerTest'))unlockAlarm();
     },true);
 
     const relabel=function(){
@@ -164,7 +170,11 @@
     relabel();
   }
 
-  watchTrackerUi();
+  window.jlrPlayFighterAlarm=playSongAlarm;
+  window.jlrStopFighterAlarm=stopSongAlarm;
+  window.jlrUnlockFighterAlarm=unlockAlarm;
+
+    watchTrackerUi();
   loadAlarmBuffer().catch(function(){});
 
   const core=document.createElement('script');
