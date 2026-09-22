@@ -235,8 +235,8 @@
     const ledger=snapshot?.ledger||null;
     const mined=Math.max(0,Number(ledger?.minedM3SinceSite)||0);
     const site=Math.max(0,Number(ledger?.siteM3)||0);
-    let text=name+", I noticed you're in system "+system+". Please send a scan to Tracker. We are in desperate need of an update for that system.";
-    if(mined>0&&site>0)text+=' Linked mining ledgers report '+fmt(mined,'m3')+' of '+fmt(site,'m3')+' cubic meters mined.';
+    let text='Tracker scan request. You entered '+system+'. This system needs a scan update. Please copy your Probe Scanner results and send them to Tracker.';
+    if(mined>0&&site>0)text+=' Linked Eve mining ledgers report '+fmt(mined,'m3')+' of '+fmt(site,'m3')+' cubic meters mined.';
     return text;
   }
 
@@ -265,7 +265,7 @@
           const site=Math.max(0,Number(snapshot?.ledger?.siteM3)||0);
           const ledgerText=mined>0&&site>0?' • '+fmt(mined,'m3')+' / '+fmt(site,'m3')+' m³ reported mined':'';
           if(!scanBusy)setScanStatus(snapshot.system+': SCAN UPDATE NEEDED'+ledgerText,'warning');
-          if(scoutShouldSpeak(snapshot,entered||force)&&window.jlrVoiceUserActivated===true){
+          if(scoutShouldSpeak(snapshot,entered)&&window.jlrVoiceUserActivated===true){
             const played=await speakJlr('scout',{system:snapshot.system,characterId:selected.characterId},scoutFallbackText(snapshot));
             if(played){
               scoutVoiceCooldown.set(String(snapshot.system),Date.now());
@@ -294,7 +294,7 @@
   function queueStartupGreeting(){
     if(startupGreetingQueued)return;
     startupGreetingQueued=true;
-    if(soundEnabled)toast('🔊 JLR voice ready — click once to activate.');
+    if(soundEnabled)toast('🔊 Tracker voice ready — click once to activate.');
     const trigger=async()=>{
       window.removeEventListener('pointerdown',trigger,true);
       window.removeEventListener('keydown',trigger,true);
@@ -313,13 +313,13 @@
       const played=await speakJlr('startup',{},'Tracker systems online. Welcome back.');
       if(played){
         const mode=String(window.jlrVoiceMode||'unknown');
-        toast(mode==='custom'?'🔊 JLR CUSTOM VOICE ONLINE.':mode==='fallback'?'⚠ Custom voice unavailable — browser fallback used.':'🔊 JLR voice played.');
+        toast(mode==='custom'?'🔊 TRACKER CUSTOM VOICE ONLINE.':mode==='fallback'?'⚠ Custom voice unavailable.':'🔊 Tracker voice played.');
         // Give the startup line room to finish, then immediately re-check
         // whether the Scout's current system needs a spoken update.
         setTimeout(()=>pollScoutLocation(true),9000);
       }else{
         startupGreetingQueued=false;
-        toast('⚠ JLR voice did not start. Click again or use the Tracker voice test.');
+        toast('⚠ Tracker voice did not start. Click again or use the Tracker voice test.');
         setTimeout(queueStartupGreeting,700);
       }
     };
@@ -3789,7 +3789,7 @@
   }
   function announceFieldEsiChanges(previousState,nextState){
     if(!previousState||!nextState||!soundEnabled||window.jlrVoiceUserActivated!==true)return;
-    const queued=[];
+    const queued=new Set();
     for(const d of (nextState.source?.systems||[])){
       const system=String(d.system||'');
       if(!system)continue;
@@ -3799,20 +3799,23 @@
       const afterLedger=nextState.scans?.[system]?.ledger||null;
       if(!afterField||!afterLedger)continue;
 
+      const beforeMined=Math.max(0,Number(beforeLedger?.minedM3SinceSite)||0);
+      const afterMined=Math.max(0,Number(afterLedger.minedM3SinceSite)||0);
+      const firstMining=afterMined>0&&beforeMined<=0;
       const esiPicked=afterField.status==='picked'
         && beforeField?.status!=='picked'
         && Boolean(afterField.ledgerPickedAt||afterField.autoReopenedAt);
       const depletionAlert=Boolean(afterLedger.likelyDepleted&&!beforeLedger?.likelyDepleted);
       const scanAlert=Boolean(afterLedger.needsScan&&!beforeLedger?.needsScan);
 
-      if(esiPicked||depletionAlert||scanAlert)queued.push(system);
+      if(firstMining||esiPicked||depletionAlert||scanAlert)queued.add(system);
     }
-    for(const system of queued.slice(0,8)){
+    for(const system of [...queued].slice(0,4)){
       const ledger=nextState.scans?.[system]?.ledger||{};
       const mined=Math.max(0,Number(ledger.minedM3SinceSite)||0);
       const pct=Number(ledger.depletionPct);
-      let fallback='Tracker mining update. Mining activity detected in '+system+'.';
-      if(mined>0)fallback+=' '+Math.round(mined).toLocaleString()+' cubic meters reported mined.';
+      let fallback='Tracker mining update. Mining detected in '+system+'.';
+      if(mined>0)fallback+=' About '+Math.round(mined).toLocaleString()+' cubic meters reported mined.';
       if(Number.isFinite(pct)&&pct>=80)fallback+=' Estimated depletion '+Math.round(pct)+' percent. Scan recommended.';
       speakJlr('field',{system},fallback);
     }
