@@ -784,7 +784,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.107',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.108',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -3171,21 +3171,42 @@ function trackerBrainAnswer(user,question){
   const snapshot=trackerBrainSnapshot();
   const linked=(user?.characterIds||[]).map(String).filter(Boolean);
   const primaryName=trackerBrainPrimaryName(user);
-  const appVersion='2.9.107';
+  const appVersion='2.9.108';
 
-  const answer=(topic,text,extra={})=>({
-    handled:true,
-    topic,
-    text:trackerSpeechSafe(text,1200),
-    generatedAt:now(),
-    ...extra,
-  });
+  const voiceSummary=(text,max=300)=>{
+    const clean=trackerSpeechSafe(text,1200).replace(/\s+/g,' ').trim();
+    if(clean.length<=max)return clean;
+    const sentences=clean.match(/[^.!?]+[.!?]+|[^.!?]+$/g)||[clean];
+    let out='';
+    for(const sentenceRaw of sentences){
+      const sentence=String(sentenceRaw||'').trim();
+      if(!sentence)continue;
+      if(!out&&sentence.length>max)return sentence.slice(0,max).replace(/\s+\S*$/,'').trim()+'.';
+      if((out?out+' ':'')+sentence.length>max)break;
+      out+=(out?' ':'')+sentence;
+    }
+    return out||clean.slice(0,max).replace(/\s+\S*$/,'').trim()+'.';
+  };
+  const answer=(topic,text,extra={})=>{
+    const safeText=trackerSpeechSafe(text,1200);
+    const requestedVoice=extra&&typeof extra.voiceText==='string'?extra.voiceText:'';
+    const voiceText=trackerSpeechSafe(requestedVoice||voiceSummary(safeText),360);
+    return{
+      handled:true,
+      topic,
+      text:safeText,
+      generatedAt:now(),
+      ...extra,
+      voiceText,
+    };
+  };
 
   if(!q)return answer('help','Ask me a question about JLR Miner Tracker.');
 
   if(/\b(what can you do|what do you do|help me|help|capabilities|commands|what can i ask|what should i ask)\b/.test(q)){
     return answer('capabilities',
-      'I can explain every major part of JLR Miner Tracker, brief you on field and scan status, explain respawn timers and priorities, answer questions about Fleet and Fits, mining performance, ledgers and payouts, market data, ice, gas, doctrine market, PVP, Heavy Fighter Tracker, Threat Scan, MER intel, linked toons, ESI, voice controls, and feedback. You can also ask follow-up questions without repeating Tracker for a short time.'
+      'I can explain every major part of JLR Miner Tracker, brief you on field and scan status, explain respawn timers and priorities, answer questions about Fleet and Fits, mining performance, ledgers and payouts, market data, ice, gas, doctrine market, PVP, Heavy Fighter Tracker, Threat Scan, MER intel, linked toons, ESI, voice controls, and feedback. You can also ask follow-up questions without repeating Tracker for a short time.',
+      {voiceText:'I can brief you on fields and scans, explain fleet performance and payouts, check ESI and market data, walk you through threat scan and PVP tools, and answer questions about any JLR feature.'}
     );
   }
 
@@ -6387,7 +6408,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.107',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.108',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -6414,7 +6435,7 @@ async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
   if(req.method==='GET'&&url.pathname==='/api/tracker/speech/diagnostics'){
     return json(res,200,{
-      version:'2.9.107',
+      version:'2.9.108',
       modelCached:Boolean(voskModelArchive),
       modelBytes:voskModelArchive?.length||0,
       modelSource:voskModelSource||null,
@@ -6946,7 +6967,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.107 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.108 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>{
   Promise.all([
     loadVoskRuntimeAsset(VOSK_RUNTIME_FILES['/vendor/vosk/vosk-0.0.8.js']),
