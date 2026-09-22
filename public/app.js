@@ -2255,24 +2255,36 @@
     if(!ledger)return null;
     const pct=Number(ledger.depletionPct);
     const pctKnown=Number.isFinite(pct);
+    const mined=Math.max(0,Number(ledger.minedM3SinceSite)||0);
+    const site=Math.max(0,Number(ledger.siteM3)||0);
+    const minedText=mined>0&&site>0
+      ?`LEDGER • ${fmt(mined,'m3')} / ${fmt(site,'m3')} m³ REPORTED MINED`
+      :null;
+
     if(ledger.likelyDepleted&&pctKnown){
       return{
-        text:`INFERRED • ${Math.round(pct)}% MINED • SCAN NOW`,
+        text:`${minedText||'LEDGER • '+Math.round(pct)+'% REPORTED MINED'} • SCAN NOW`,
         tone:'danger',
-        title:`Ledger inference estimates about ${Math.round(pct)}% of the last scan-confirmed site has been mined. This does not clear the field; a Probe Scanner confirmation is still required.`,
+        title:`Linked ESI mining ledgers report ${Math.round(mined).toLocaleString()} m³ mined from this site cycle, about ${Math.round(pct)}% of the ${Math.round(site).toLocaleString()} m³ site. Probe Scanner confirmation is still required before clearing it.`,
       };
     }
     if(ledger.needsScan&&pctKnown){
       return{
-        text:`INFERRED • ${Math.round(pct)}% MINED • SCAN`,
+        text:`${minedText||'LEDGER • '+Math.round(pct)+'% REPORTED MINED'} • SCAN`,
         tone:'warning',
-        title:`Ledger inference estimates about ${Math.round(pct)}% of the last scan-confirmed site has been mined. Scan recommended.`,
+        title:`Linked ESI mining ledgers report ${Math.round(mined).toLocaleString()} m³ mined from this site cycle, about ${Math.round(pct)}% of the ${Math.round(site).toLocaleString()} m³ site. Scan recommended.`,
+      };
+    }
+    if(minedText){
+      return{
+        text:minedText,
+        tone:ledger.active?'active':'',
+        title:`Linked ESI mining ledgers report ${Math.round(mined).toLocaleString()} m³ mined from this site's tracked activity cycle${site>0?' out of '+Math.round(site).toLocaleString()+' m³ total':''}. Last activity ${ago(ledger.lastActivityAt)}.`,
       };
     }
     if(ledger.active){
-      const delta=Math.max(0,Number(ledger.lastDeltaM3)||0);
       return{
-        text:`LEDGER • MINING ACTIVE${delta>0?' • +'+Math.round(delta).toLocaleString()+' M³':''}`,
+        text:'LEDGER • MINING ACTIVE',
         tone:'active',
         title:`ESI mining-ledger activity detected ${ago(ledger.lastActivityAt)}. This confirms mining activity, not field depletion.`,
       };
