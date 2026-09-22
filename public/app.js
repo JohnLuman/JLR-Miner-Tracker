@@ -199,7 +199,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.89');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.90');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -431,7 +431,7 @@
   async function loadBrainLocalModel(){
     if(brainLocalModel)return brainLocalModel;
     if(brainLocalModelPromise)return brainLocalModelPromise;
-    brainSetListen('MIC AI LOADING','Loading JLR local speech recognition. First load downloads the offline English model (~40 MB); later loads use browser storage.');
+    brainSetListen('MIC AI LOADING','Loading JLR local speech recognition. First load prepares the offline English model (~40 MB) through JLR; later loads use browser storage.');
     const actual=(async()=>{
       const started=Date.now();
       while(!(window.Vosk&&typeof window.Vosk.createModel==='function')){
@@ -439,12 +439,12 @@
         await new Promise(resolve=>setTimeout(resolve,100));
       }
       brainSetListen('MIC AI LOADING','Speech engine ready. Preparing the offline English model (~40 MB)…');
-      const model=await window.Vosk.createModel('https://ccoreilly.github.io/vosk-browser/models/vosk-model-small-en-us-0.15.tar.gz');
+      const model=await window.Vosk.createModel('/vendor/vosk/model-en-us-0.15.tar.gz?v=1');
       try{model.setLogLevel?.(-1)}catch{}
       brainLocalModel=model;
       return model;
     })();
-    const timeout=new Promise((_,reject)=>setTimeout(()=>reject(new Error('Offline speech model did not finish loading within 90 seconds.')),90000));
+    const timeout=new Promise((_,reject)=>setTimeout(()=>reject(new Error('Offline speech model did not finish loading within 5 minutes.')),300000));
     brainLocalModelPromise=Promise.race([actual,timeout]).catch(error=>{
       brainLocalModelPromise=null;
       throw error;
@@ -4588,7 +4588,7 @@
       const type=document.querySelector('.brain-feedback-type.active')?.dataset.feedbackType||'suggestion';
       const message=String($('brainFeedbackText')?.value||'').trim();
       if(!message){toast('Add a short description first.');return}
-      await api('/api/tracker/brain/feedback',{method:'POST',body:JSON.stringify({type,message,context:{version:state?.app?.version||'2.9.89',tab:activeTab,lastSpeech:brainSpeechHistory[0]?.text||''}})});
+      await api('/api/tracker/brain/feedback',{method:'POST',body:JSON.stringify({type,message,context:{version:state?.app?.version||'2.9.90',tab:activeTab,lastSpeech:brainSpeechHistory[0]?.text||''}})});
       $('brainFeedbackText').value='';
       toast('Tracker feedback submitted.');
       return;
