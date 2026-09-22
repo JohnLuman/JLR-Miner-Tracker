@@ -204,7 +204,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.94');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.95');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -294,7 +294,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR TRACKER MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.94'),
+      'Version: '+String(state?.app?.version||'2.9.95'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -1081,7 +1081,9 @@
       try{
         if(typeof window.jlrUnlockFighterAlarm==='function')window.jlrUnlockFighterAlarm();
       }catch(error){}
-      const played=await speakJlr('startup',{},'Tracker systems online. Welcome back.');
+      const primary=(me?.characters||[]).find(character=>String(character.characterId)===String(me?.primaryCharacterId));
+      const mainName=String(primary?.name||me?.displayName||'pilot');
+      const played=await speakJlr('startup',{},'Welcome back, '+mainName+'. Tracker is online.');
       if(played){
         const mode=String(window.jlrVoiceMode||'unknown');
         toast(mode==='custom'?'🔊 TRACKER CUSTOM VOICE ONLINE.':mode==='fallback'?'⚠ Custom voice unavailable.':'🔊 Tracker voice played.');
@@ -4921,7 +4923,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.94',
+          version:state?.app?.version||'2.9.95',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
