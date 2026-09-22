@@ -881,6 +881,7 @@
       return panel;
     };
     const fields=makePanel('fields');
+    const brain=makePanel('brain');
     const fleet=makePanel('fleet');
     const performance=makePanel('performance');
     const ice=makePanel('ice');
@@ -921,7 +922,7 @@
     const timers=document.querySelector('.timers-panel');
     const board=document.querySelector('.board-panel');
     const hits=document.querySelector('.hit-panel');
-    fields.appendChild(assistant);
+    brain.appendChild(assistant);
     const fieldSidebar=document.createElement('div');
     fieldSidebar.className='field-sidebar';
     [quick,timers].filter(Boolean).forEach(el=>fieldSidebar.appendChild(el));
