@@ -1,7 +1,7 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.52';
-  const CORE_URL='/tracker-core.js?v=2.9.52';
+  const ALARM_VERSION='2.9.53';
+  const CORE_URL='/tracker-core.js?v=2.9.53';
 
   let alarmContext=null;
   let alarmSource=null;
@@ -30,7 +30,7 @@
   }
 
   function fallbackText(loss){
-    if(loss&&loss.test)return 'Attention. J. L. R. custom voice systems are being tested. Heavy Fighter tracking is standing by.';
+    if(loss&&loss.test)return 'Attention. Tracker custom voice systems are being tested. Heavy Fighter tracking is standing by.';
     const fighter=String(loss&&loss.shipTypeName||'Heavy Fighter').replace(/[^\w .,&()\-]/g,'').trim()||'Heavy Fighter';
     const system=String(loss&&loss.systemName||'an unknown system').replace(/[^\w .,&()\-]/g,'').trim()||'an unknown system';
     const value=Number(loss&&loss.totalValue)||0;
@@ -38,7 +38,7 @@
     if(value>=1e9)valueText=' Estimated loss value, '+(value/1e9).toFixed(value>=1e10?0:1)+' billion ISK.';
     else if(value>=1e6)valueText=' Estimated loss value, '+(value/1e6).toFixed(value>=1e7?0:1)+' million ISK.';
     else if(value>=1e3)valueText=' Estimated loss value, '+Math.round(value/1e3)+' thousand ISK.';
-    return 'Attention. A '+fighter+' has been lost in '+system+'.'+valueText+' Please check J. L. R. Tracker for pilot and kill information.';
+    return 'Attention. A '+fighter+' has been lost in '+system+'.'+valueText+' Please check Tracker for pilot and kill information.';
   }
 
   function stopVoiceAlert(){
@@ -106,7 +106,7 @@
       reportVoiceMode('fallback','Browser voice fallback');
       const synth=window.speechSynthesis;
       synth.cancel();
-      const utterance=new SpeechSynthesisUtterance(String(text||'J. L. R. voice notification.'));
+      const utterance=new SpeechSynthesisUtterance(String(text||'Tracker voice notification.'));
       const voice=preferredFallbackVoice();
       if(voice)utterance.voice=voice;
       utterance.lang=voice&&voice.lang?voice.lang:'en-US';
@@ -368,7 +368,7 @@
   }
 
   async function speakEvent(type,payload,localFallback){
-    const fallback=String(localFallback||'J. L. R. voice notification.');
+    const fallback=String(localFallback||'Tracker voice notification.');
     const kind=String(type||'');
     let endpoint='';
     if(kind==='startup')endpoint='/api/voice/stream/startup';
