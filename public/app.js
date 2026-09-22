@@ -18,6 +18,10 @@
   let fleetPerformanceRefreshPromise = null;
   let scanCharacterId = localStorage.getItem('jlrScanCharacter') || '';
   let scanBusy = false;
+  let scoutLocationTimer = null;
+  let scoutLocationBusy = false;
+  let scoutLastSystem = '';
+  const scoutVoiceCooldown = new Map();
   let merIntel = null;
   let merIntelError = '';
   let pvpIntel = null;
@@ -223,6 +227,65 @@
       parts.push(preview?.a0?.scan?.detected?'A zero rare asteroid site detected.':'No active A zero rare asteroid site detected.');
     }
     return parts.join(' ');
+  }
+
+  function scoutFallbackText(snapshot){
+    const system=String(snapshot?.system||'current system');
+    const ledger=snapshot?.ledger||null;
+    const mined=Math.max(0,Number(ledger?.minedM3SinceSite)||0);
+    const site=Math.max(0,Number(ledger?.siteM3)||0);
+    let text='Scout update. '+system+' requires a Probe Scanner update.';
+    if(mined>0&&site>0)text+=' Linked mining ledgers report '+fmt(mined,'m3')+' of '+fmt(site,'m3')+' cubic meters mined.';
+    return text;
+  }
+
+  function scoutShouldSpeak(snapshot,entered){
+    if(!snapshot?.tracked||!snapshot?.needsScan)return false;
+    const key=String(snapshot.system||'');
+    const last=Number(scoutVoiceCooldown.get(key)||0);
+    const cooldown=30*60*1000;
+    if(entered)return Date.now()-last>60*1000;
+    return Date.now()-last>cooldown;
+  }
+
+  async function pollScoutLocation(force=false){
+    if(scoutLocationBusy||scanBusy||!me)return;
+    const selected=(me.characters||[]).find(c=>String(c.characterId)===String(scanCharacterId));
+    if(!selected?.locationAccess)return;
+    scoutLocationBusy=true;
+    try{
+      const snapshot=await api('/api/scout/location?characterId='+encodeURIComponent(selected.characterId));
+      const entered=Boolean(snapshot?.system&&snapshot.system!==scoutLastSystem);
+      if(snapshot?.system)scoutLastSystem=snapshot.system;
+
+      if(snapshot?.tracked){
+        if(snapshot.needsScan){
+          const mined=Math.max(0,Number(snapshot?.ledger?.minedM3SinceSite)||0);
+          const site=Math.max(0,Number(snapshot?.ledger?.siteM3)||0);
+          const ledgerText=mined>0&&site>0?' • '+fmt(mined,'m3')+' / '+fmt(site,'m3')+' m³ reported mined':'';
+          if(!scanBusy)setScanStatus(snapshot.system+': SCAN UPDATE NEEDED'+ledgerText,'warning');
+          if(scoutShouldSpeak(snapshot,entered||force)){
+            scoutVoiceCooldown.set(String(snapshot.system),Date.now());
+            speakJlr('scout',{system:snapshot.system},scoutFallbackText(snapshot));
+            toast('🛰 '+snapshot.system+' needs a scan update.');
+          }
+        }else if(entered&&!scanBusy){
+          setScanStatus(snapshot.system+': scan status current.','success');
+        }
+      }else if(entered&&!scanBusy){
+        setScanStatus(selected.name+' is in '+snapshot.system+' — not on a tracked mining board.');
+      }
+    }catch(error){
+      if(force)console.warn('Scout location check failed',error);
+    }finally{
+      scoutLocationBusy=false;
+    }
+  }
+
+  function startScoutLocationWatch(){
+    if(scoutLocationTimer)clearInterval(scoutLocationTimer);
+    pollScoutLocation(true);
+    scoutLocationTimer=setInterval(()=>pollScoutLocation(false),30*1000);
   }
 
   function queueStartupGreeting(){
@@ -3775,7 +3838,7 @@
   });
   syncBoardControls();
   $('systemSelect').addEventListener('change',()=>chooseSystem($('systemSelect').value));
-  $('scanCharacter').addEventListener('change',()=>{scanCharacterId=$('scanCharacter').value;localStorage.setItem('jlrScanCharacter',scanCharacterId);renderScanCharacters()});
+  $('scanCharacter').addEventListener('change',()=>{scanCharacterId=$('scanCharacter').value;localStorage.setItem('jlrScanCharacter',scanCharacterId);scoutLastSystem='';renderScanCharacters();pollScoutLocation(true)});
   document.querySelectorAll('.filter').forEach(b=>b.addEventListener('click',()=>{filter=b.dataset.filter;document.querySelectorAll('.filter').forEach(x=>x.classList.toggle('active',x===b));renderBoards()}));
 
   function applyFieldUpdate(system,updatedField){state.fields[system]=updatedField;renderAll()}
@@ -3848,6 +3911,14 @@
           setScanStatus(`${preview.system}: ${preview.definition.ore} detected on repost — false RED corrected to GREEN.`,'success');
           $('fieldMessage').textContent=`${preview.system} scan found ${preview.definition.ore}; the previous clear report was corrected and the respawn timer was cancelled.`;
           toast(`${preview.system}: repost corrected the previous clear report.`);
+          sfx('systemSelect');
+          return;
+        }
+        const ledgerMined=Math.max(0,Number(state?.scans?.[preview.system]?.ledger?.minedM3SinceSite)||0);
+        if(preview.field?.status==='picked'&&ledgerMined>0){
+          setScanStatus(`${preview.system}: ${preview.definition.ore} detected — remains YELLOW • ${fmt(ledgerMined,'m3')} m³ reported mined.`,'success');
+          $('fieldMessage').textContent=`${preview.system} scan confirmed the deposit still exists; linked ESI ledgers have already reported ${fmt(ledgerMined,'m3')} m³ mined from this site cycle.`;
+          renderBoards();
           sfx('systemSelect');
           return;
         }
@@ -4105,7 +4176,7 @@
       if(!config.ssoConfigured){$('setupWarning').classList.remove('hidden');$('setupWarning').textContent='Login is not configured yet.';}
       const auth=await fetch('/api/me',{credentials:'same-origin'}).then(r=>r.json());
       if(!auth.authenticated){showLogin();return}
-      me=auth.user;syncDoctrineTabAccess();syncTrackerTabAccess();initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');await loadMerIntel();await loadState();connectSse();queueStartupGreeting();
+      me=auth.user;syncDoctrineTabAccess();syncTrackerTabAccess();initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');await loadMerIntel();await loadState();connectSse();queueStartupGreeting();startScoutLocationWatch();
       const params=new URLSearchParams(location.search);if(params.get('linked'))toast('Mining toon connected.');if(params.get('login'))toast('Logged in.');if(params.get('market')==='authorized')toast('John market access authorized.');if(params.get('error'))toast(decodeURIComponent(params.get('error')));if(params.toString())history.replaceState({},'',location.pathname);
     }catch(e){console.error(e);showLogin();$('setupWarning').classList.remove('hidden');$('setupWarning').textContent=`JLR could not load: ${e.message}`}
   }
