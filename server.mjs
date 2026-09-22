@@ -2698,18 +2698,18 @@ async function scoutLocationSnapshot(ch){
   };
 }
 
+
 function trackerSpokenSystem(system){
   const raw=trackerSpeechSafe(system,48);
   if(!raw)return 'current system';
   if(!/^[A-Z0-9]+(?:-[A-Z0-9]+)+$/.test(raw))return raw;
 
-  // Feed GPT-SoVITS pronounceable words instead of isolated capitals.
-  // "C-N4OD" becomes "cee tack en four oh dee", which the model says as
-  // one phrase instead of pausing heavily between single-letter tokens.
+  // Use ordinary English words so GPT-SoVITS can say the code fluidly.
+  // C-N4OD -> "see tack en four oh dee"
   const letters={
-    A:'ay',B:'bee',C:'cee',D:'dee',E:'ee',F:'eff',G:'gee',H:'aitch',
+    A:'ay',B:'bee',C:'see',D:'dee',E:'ee',F:'eff',G:'gee',H:'aitch',
     I:'eye',J:'jay',K:'kay',L:'el',M:'em',N:'en',O:'oh',P:'pee',
-    Q:'cue',R:'ar',S:'ess',T:'tee',U:'you',V:'vee',W:'double you',
+    Q:'queue',R:'are',S:'ess',T:'tee',U:'you',V:'vee',W:'double you',
     X:'ex',Y:'why',Z:'zee',
   };
   const digits={
@@ -2720,21 +2720,21 @@ function trackerSpokenSystem(system){
 }
 
 
-
 function jlrScoutVoiceText(characterName,system){
   const safeSystem=trackerSpokenSystem(system);
   const scan=scanActivityPublic()[system]||null;
   const scanMs=Date.parse(scan?.lastScanAt||'');
-  const parts=[`Scan update needed in ${safeSystem}.`];
+  const parts=[`System ${safeSystem} needs a scan update.`];
 
   if(Number.isFinite(scanMs)){
     const minutes=Math.max(0,Math.floor((Date.now()-scanMs)/60000));
-    if(minutes>=120)parts.push(`Last scan is about ${Math.floor(minutes/60)} hours old.`);
-    else if(minutes>=60)parts.push('Last scan is about one hour old.');
+    if(minutes>=120)parts.push(`The last confirmed scan was about ${Math.floor(minutes/60)} hours ago.`);
+    else if(minutes>=60)parts.push('The last confirmed scan was about one hour ago.');
   }else{
-    parts.push('No confirmed scan is recorded.');
+    parts.push('No confirmed scan is recorded for this system.');
   }
-  parts.push('Open Probe Scanner and send the results to Tracker.');
+
+  parts.push('Open your Probe Scanner, then send the results to Tracker for instructions.');
   return parts.join(' ');
 }
 
@@ -2745,11 +2745,20 @@ function jlrFieldVoiceText(system){
   const ledger=scan?.ledger||null;
   const field=state.fields?.[system]||null;
   const pct=Number(ledger?.depletionPct);
-  const parts=[`Mining detected in ${safeSystem}.`, 'Field marked picked.'];
+  const parts=[];
 
-  if(field?.autoReopenedAt)parts.push('Respawn timer cancelled.');
-  if(Number.isFinite(pct)&&pct>=95)parts.push(`Estimated depletion ${Math.round(pct)} percent. Scan needed now.`);
-  else if(Number.isFinite(pct)&&pct>=80)parts.push(`Estimated depletion ${Math.round(pct)} percent. Scan recommended.`);
+  if(field?.autoReopenedAt){
+    parts.push(`Mining has been detected in system ${safeSystem}, so Tracker marked the field as picked and cancelled the respawn timer.`);
+  }else{
+    parts.push(`Mining has been detected in system ${safeSystem}. Tracker marked the field as picked.`);
+  }
+
+  if(Number.isFinite(pct)&&pct>=95){
+    parts.push(`The field is estimated to be ${Math.round(pct)} percent mined. A new scan is needed.`);
+  }else if(Number.isFinite(pct)&&pct>=80){
+    parts.push(`The field is estimated to be ${Math.round(pct)} percent mined. A new scan is recommended.`);
+  }
+
   return parts.join(' ');
 }
 
@@ -3584,26 +3593,46 @@ function trackerSpokenIsk(value){
 
 
 
+
 function trackerVoiceText(loss){
   const fighter=trackerSpeechSafe(loss?.shipTypeName||'Heavy Fighter',64)||'Heavy Fighter';
   const system=trackerSpokenSystem(loss?.systemName||'an unknown system');
   const value=Number(loss?.totalValue)||0;
-  const parts=[`${fighter} lost in ${system}.`];
-  if(value>0)parts.push(`Estimated value ${trackerSpokenIsk(value)} ISK.`);
-  parts.push('Check Tracker for details.');
+  const parts=[`A ${fighter} was lost in system ${system}.`];
+
+  if(value>0)parts.push(`The estimated loss is ${trackerSpokenIsk(value)} isk.`);
+  parts.push('Check Tracker for the full report.');
+
   return parts.join(' ');
 }
-
 
 function jlrStartupVoiceText(user){
   const linked=(user?.characterIds||[]).length;
   const tracker=trackerLiveStatus();
-  const parts=['Tracker online.'];
-  parts.push(state.esi.lastError?'Eve sync warning.':state.esi.lastSyncAt?'Eve data synchronized.':'Eve sync pending.');
+  const parts=['Tracker is online.'];
+
+  parts.push(
+    state.esi.lastError
+      ? 'Eve synchronization has a warning.'
+      : state.esi.lastSyncAt
+        ? 'Eve data is synchronized.'
+        : 'Eve synchronization is pending.'
+  );
+
   const marketMs=Date.parse(state.market?.lastUpdatedAt||'');
-  parts.push(Number.isFinite(marketMs)&&Date.now()-marketMs<36*60*60*1000?'Market data current.':'Market data needs an update.');
-  parts.push(tracker.caughtUp?'Heavy Fighter feed connected.':'Heavy Fighter feed connecting.');
-  parts.push(`${linked} linked character${linked===1?'':'s'}.`);
+  parts.push(
+    Number.isFinite(marketMs)&&Date.now()-marketMs<36*60*60*1000
+      ? 'Market data is current.'
+      : 'Market data needs an update.'
+  );
+
+  parts.push(
+    tracker.caughtUp
+      ? 'Heavy Fighter tracking is connected.'
+      : 'Heavy Fighter tracking is connecting.'
+  );
+
+  parts.push(`${linked} linked character${linked===1?' is':'s are'} ready.`);
   return parts.join(' ');
 }
 
@@ -3612,20 +3641,30 @@ function jlrScanVoiceText(system){
   const safeSystem=trackerSpokenSystem(system);
   const definition=SYSTEM_MAP.get(system)||null;
   const scan=state.scans?.[system]||null;
-  const parts=[`Scan received for ${safeSystem}.`];
+  const parts=[`Tracker received the scan for system ${safeSystem}.`];
 
   if(definition){
     const ore=trackerSpeechSafe(definition.ore,48)||'T three ore';
     const detected=scan?.t3?.detected;
-    if(detected===true)parts.push(`${ore} confirmed.`);
-    else if(detected===false)parts.push(`${ore} not detected. Confirm before starting the timer.`);
+    if(detected===true)parts.push(`${ore} has been confirmed in the field.`);
+    else if(detected===false)parts.push(`${ore} was not detected. Confirm the field before starting its timer.`);
   }
+
   if(scan?.ice){
-    const seen=Math.max(0,Number(scan.ice.seen)||0),expected=Math.max(1,Number(scan.ice.expected)||1);
-    parts.push(`${seen} of ${expected} ice fields detected.`);
+    const seen=Math.max(0,Number(scan.ice.seen)||0);
+    const expected=Math.max(1,Number(scan.ice.expected)||1);
+    parts.push(`${seen} of ${expected} ice fields were detected.`);
   }
+
   const a0=state.market?.a0Reports?.[system];
-  if(a0)parts.push(a0.detected?'A zero site confirmed.':'No active A zero site detected.');
+  if(a0){
+    parts.push(
+      a0.detected
+        ? 'An A zero rare asteroid site has been confirmed.'
+        : 'No active A zero rare asteroid site was detected.'
+    );
+  }
+
   return parts.join(' ');
 }
 
