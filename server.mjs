@@ -784,7 +784,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.96',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.97',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -3797,13 +3797,17 @@ const VOSK_RUNTIME_FILES={
   '/vendor/vosk/vosk.wasm.js':{name:'vosk.wasm.js',type:'text/javascript; charset=utf-8'},
   '/vendor/vosk/vosk.worker.js':{name:'vosk.worker.js',type:'text/javascript; charset=utf-8'},
   '/vendor/vosk/vosk.wasm':{name:'vosk.wasm',type:'application/wasm'},
+  '/vendor/vosk/vosk-0.0.8.js':{name:'__classic__',type:'text/javascript; charset=utf-8'},
 };
 const voskRuntimeCache=new Map();
 const voskRuntimeErrors=new Map();
 
 async function loadVoskRuntimeAsset(spec){
   if(voskRuntimeCache.has(spec.name))return voskRuntimeCache.get(spec.name);
-  const response=await fetch(VOSK_RUNTIME_BASE+spec.name,{
+  const assetUrl=spec.name==='__classic__'
+    ?'https://cdn.jsdelivr.net/npm/vosk-browser@0.0.8/dist/vosk.js'
+    :VOSK_RUNTIME_BASE+spec.name;
+  const response=await fetch(assetUrl,{
     cache:'no-store',
     redirect:'follow',
     headers:{'User-Agent':ESI_USER_AGENT,'Accept':'*/*'},
@@ -3840,10 +3844,9 @@ async function serveVoskRuntime(req,res,pathname){
   return true;
 }
 
-const VOSK_MODEL_PATH='/vendor/vosk/model-en-us-0.15.tar.gz';
+const VOSK_MODEL_PATH='/vendor/vosk/model-en-us-0.15.zip';
 const VOSK_MODEL_UPSTREAMS=[
-  'https://fiddle-app.github.io/voice-models/vosk-model-small-en-us-0.15.tar.gz',
-  'https://ccoreilly.github.io/vosk-browser/models/vosk-model-small-en-us-0.15.tar.gz',
+  'https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip',
 ];
 let voskModelArchive=null;
 let voskModelLoadPromise=null;
@@ -3897,7 +3900,7 @@ async function serveVoskModel(req,res,pathname){
     const body=await loadVoskModelArchive();
     securityHeaders(res);
     res.writeHead(200,{
-      'Content-Type':'application/gzip',
+      'Content-Type':'application/zip',
       'Content-Length':body.length,
       'Cache-Control':'public, max-age=31536000, immutable',
       'Cross-Origin-Resource-Policy':'same-origin',
@@ -6117,7 +6120,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.96',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.97',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -6144,7 +6147,7 @@ async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
   if(req.method==='GET'&&url.pathname==='/api/tracker/speech/diagnostics'){
     return json(res,200,{
-      version:'2.9.96',
+      version:'2.9.97',
       modelCached:Boolean(voskModelArchive),
       modelBytes:voskModelArchive?.length||0,
       modelSource:voskModelSource||null,
@@ -6646,10 +6649,10 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.96 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.97 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>{
   Promise.all([
-    ...Object.values(VOSK_RUNTIME_FILES).map(spec=>loadVoskRuntimeAsset(spec)),
+    loadVoskRuntimeAsset(VOSK_RUNTIME_FILES['/vendor/vosk/vosk-0.0.8.js']),
     loadVoskModelArchive(),
   ]).catch(err=>console.warn('Tracker speech runtime warmup deferred:',String(err?.message||err)));
 },1_500).unref();
