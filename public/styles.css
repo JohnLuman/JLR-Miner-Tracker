@@ -475,11 +475,16 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .field-board .system-node{min-height:54px}
 .system-node .sys-scan{display:block;margin-top:2px;font-size:6px;font-weight:900;letter-spacing:.035em;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .system-node .sys-scan.stale{color:#e9aa4c}
+.system-node .sys-evidence{display:block;margin-top:2px;font-size:6px;font-weight:1000;letter-spacing:.035em;color:#9aa4ad;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.system-node .sys-evidence.active{color:#83efad}
+.system-node .sys-evidence.warning{color:#ffd071}
+.system-node .sys-evidence.danger{color:#ff8a94;text-shadow:0 0 7px #ff334455}
 @media(min-width:761px){
   .field-board.board-size-small .system-node{min-height:48px}
   .field-board.board-size-medium .system-node{min-height:56px}
   .field-board.board-size-large .system-node{min-height:68px}
   .field-board.board-size-large .sys-scan{font-size:7px}
+  .field-board.board-size-large .sys-evidence{font-size:7px}
 }
 
 
