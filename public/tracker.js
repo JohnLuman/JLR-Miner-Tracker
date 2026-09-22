@@ -1,7 +1,7 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.74';
-  const CORE_URL='/tracker-core.js?v=2.9.74';
+  const ALARM_VERSION='2.9.75';
+  const CORE_URL='/tracker-core.js?v=2.9.75';
 
   let alarmContext=null;
   let alarmSource=null;
@@ -498,6 +498,7 @@
   window.jlrStopFighterAlarm=stopVoiceAlert;
   window.jlrUnlockFighterAlarm=unlockAlarm;
   window.jlrSpeakEvent=speakEvent;
+  window.jlrVoiceIsActive=voiceIsActive;
 
   if('speechSynthesis' in window){
     window.speechSynthesis.onvoiceschanged=function(){window.speechSynthesis.getVoices();};

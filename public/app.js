@@ -51,6 +51,14 @@
   let threatShareError='';
   let ledgerAuditLoading=false;
   let startupGreetingQueued=false;
+  let brainRecognition=null;
+  let brainMicWanted=false;
+  let brainConversationUntil=0;
+  let brainLastSystem='';
+  let brainSpeechHistory=[];
+  try{brainSpeechHistory=JSON.parse(localStorage.getItem('jlrBrainSpeechHistory')||'[]')}catch{}
+  if(!Array.isArray(brainSpeechHistory))brainSpeechHistory=[];
+  brainSpeechHistory=brainSpeechHistory.slice(0,20);
 
   const DEFAULT_FLEET = { members:{}, uptime:100, payout:95, order:[] };
   function loadFleet() {
@@ -173,7 +181,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.73');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.75');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -195,62 +203,168 @@
       el.title='No successful EVE character-data sync has completed yet.';
     }
   }
+  function recordBrainSpeech(kind,text){
+    const message=String(text||'').trim();
+    if(!message)return;
+    brainSpeechHistory.unshift({at:new Date().toISOString(),kind:String(kind||'voice'),text:message});
+    brainSpeechHistory=brainSpeechHistory.slice(0,20);
+    localStorage.setItem('jlrBrainSpeechHistory',JSON.stringify(brainSpeechHistory));
+    renderBrainSpeechHistory();
+  }
+  function renderBrainSpeechHistory(){
+    const el=$('brainSpeechHistory');
+    if(!el)return;
+    if(!brainSpeechHistory.length){
+      el.innerHTML='<div class="visual-empty">No Tracker speech recorded in this browser yet.</div>';
+      return;
+    }
+    el.innerHTML=brainSpeechHistory.slice(0,10).map((row,index)=>`<div class="brain-speech-row">
+      <span>${esc(new Date(row.at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}))}</span>
+      <b>${esc(String(row.kind||'voice').toUpperCase())}</b>
+      <p>${esc(row.text)}</p>
+      <button class="board-tool brain-repeat-row" type="button" data-history-index="${index}">REPEAT</button>
+    </div>`).join('');
+  }
+  function brainConversationMs(){
+    const seconds=Math.max(15,Math.min(60,Number(localStorage.getItem('jlrBrainConversationWindow')||30)||30));
+    return seconds*1000;
+  }
+  function brainSetListen(status,hint=''){
+    if($('brainListenStatus'))$('brainListenStatus').textContent=status;
+    if($('brainListenHint')&&hint)$('brainListenHint').textContent=hint;
+    $('brainListenPanel')?.classList.toggle('active',brainMicWanted);
+  }
+  async function brainSpeakBriefing(){
+    const briefing=await api('/api/tracker/brain/briefing?force=1');
+    const text=String(briefing?.text||'Tracker briefing ready.');
+    if($('brainReply'))$('brainReply').textContent=text;
+    await speakJlr('briefing',{},text);
+  }
+  async function handleBrainCommand(transcript){
+    const heard=String(transcript||'').trim();
+    if(!heard)return;
+    if($('brainHeard'))$('brainHeard').textContent='HEARD: “'+heard+'”';
+    const command=heard.toLowerCase().replace(/^tracker[\s,.:;-]*/,'').trim();
+    if(!command){
+      brainConversationUntil=Date.now()+brainConversationMs();
+      brainSetListen('LISTENING','Ask your question.');
+      return;
+    }
+    brainConversationUntil=Date.now()+brainConversationMs();
+    try{
+      if(/\b(stop|cancel|quiet)\b/.test(command)){
+        if(typeof window.jlrStopFighterAlarm==='function')window.jlrStopFighterAlarm();
+        if($('brainReply'))$('brainReply').textContent='Stopped.';
+        return;
+      }
+      if(/\b(repeat|say that again)\b/.test(command)){
+        const row=brainSpeechHistory[0];
+        if(!row){if($('brainReply'))$('brainReply').textContent='Nothing to repeat yet.';return}
+        if($('brainReply'))$('brainReply').textContent=row.text;
+        await speakJlr('repeat',{text:row.text},row.text);
+        return;
+      }
+      if(/\bwhy\b/.test(command)){
+        const system=brainLastSystem||selectedSystem;
+        if(!system){if($('brainReply'))$('brainReply').textContent='No system context yet.';return}
+        const explanation=await api('/api/tracker/brain/why?system='+encodeURIComponent(system));
+        brainLastSystem=system;
+        if($('brainReply'))$('brainReply').textContent=String(explanation?.summary||explanation?.voice||'');
+        await speakJlr('why',{system},explanation?.voice||'');
+        return;
+      }
+      if(/\b(which|where|highest|priority|first)\b/.test(command)&&state?.trackerBrain?.issues?.length){
+        const issue=state.trackerBrain.issues.find(row=>row.system)||state.trackerBrain.issues[0];
+        if(issue?.system)brainLastSystem=String(issue.system);
+        const answer=String(issue?.voice||issue?.reason||issue?.title||'No priority issue.');
+        if($('brainReply'))$('brainReply').textContent=answer;
+        await speakJlr('brain',{text:answer},answer);
+        return;
+      }
+      if(/\b(status|brief|attention|changed|anything else|update)\b/.test(command)){
+        await brainSpeakBriefing();
+        return;
+      }
+      if($('brainReply'))$('brainReply').textContent='Command not available yet: “'+heard+'”';
+    }catch(error){
+      if($('brainReply'))$('brainReply').textContent=String(error?.message||error);
+    }
+  }
+  function startBrainListening(){
+    const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!Recognition){
+      brainMicWanted=false;
+      brainSetListen('MIC NOT SUPPORTED','This browser does not expose speech recognition.');
+      return;
+    }
+    brainMicWanted=true;
+    localStorage.setItem('jlrBrainMicArmed','true');
+    if(brainRecognition)return;
+    const recognition=new Recognition();
+    brainRecognition=recognition;
+    recognition.continuous=true;
+    recognition.interimResults=false;
+    recognition.lang='en-US';
+    recognition.onstart=()=>brainSetListen('SAY “TRACKER”','Wake word armed. Follow-up questions work briefly without repeating it.');
+    recognition.onerror=event=>{
+      const code=String(event?.error||'microphone error');
+      if(code==='not-allowed'||code==='service-not-allowed'){
+        brainMicWanted=false;
+        localStorage.setItem('jlrBrainMicArmed','false');
+      }
+      brainSetListen('MIC '+code.toUpperCase(),'Click TALK TO TRACKER to try again.');
+    };
+    recognition.onresult=event=>{
+      if(typeof window.jlrVoiceIsActive==='function'&&window.jlrVoiceIsActive())return;
+      for(let i=event.resultIndex;i<event.results.length;i++){
+        if(!event.results[i].isFinal)continue;
+        const transcript=String(event.results[i][0]?.transcript||'').trim();
+        const lower=transcript.toLowerCase();
+        const wake=lower.indexOf('tracker');
+        if(wake>=0){
+          handleBrainCommand(transcript.slice(wake));
+        }else if(Date.now()<brainConversationUntil){
+          handleBrainCommand(transcript);
+        }
+      }
+    };
+    recognition.onend=()=>{
+      brainRecognition=null;
+      if(brainMicWanted)setTimeout(()=>startBrainListening(),700);
+      else brainSetListen('MIC OFF','Click TALK TO TRACKER to arm the wake word.');
+    };
+    try{recognition.start()}catch(error){brainRecognition=null;brainSetListen('MIC WAITING','Click TALK TO TRACKER again.')}
+  }
+  function stopBrainListening(){
+    brainMicWanted=false;
+    localStorage.setItem('jlrBrainMicArmed','false');
+    try{brainRecognition?.stop()}catch{}
+    brainRecognition=null;
+    brainSetListen('MIC OFF','Click TALK TO TRACKER to arm the wake word.');
+  }
+
   function renderTrackerBrain(){
     const status=$('trackerBrainStatus');
-    const summary=$('trackerBrainSummary');
-    const list=$('trackerBrainList');
-    if(!status||!summary||!list)return;
-
     const brain=state?.trackerBrain||null;
-    if(!brain){
-      status.textContent='● ANALYZING';
-      summary.textContent='Tracker is analyzing the current operation.';
-      list.innerHTML='';
-      return;
+    if(status){
+      const attention=Number(brain?.attentionCount||0);
+      const high=Number(brain?.counts?.critical||0)+Number(brain?.counts?.high||0);
+      status.textContent=high>0?'⚠ PRIORITY '+high:attention>0?'● ATTENTION '+attention:'● ONLINE';
     }
-
-    const issues=Array.isArray(brain.issues)?brain.issues:[];
-    const attention=Number(brain.attentionCount||0);
-    if(attention>0){
-      const high=Number(brain.counts?.critical||0)+Number(brain.counts?.high||0);
-      status.textContent=high>0?'⚠ PRIORITY '+high:'● ATTENTION '+attention;
-    }else{
-      status.textContent='● ALL CLEAR';
+    if($('brainVoiceEnabled'))$('brainVoiceEnabled').value=soundEnabled?'on':'off';
+    if($('brainStartupBriefing'))$('brainStartupBriefing').value=localStorage.getItem('jlrBrainStartupBriefing')==='false'?'off':'on';
+    if($('brainConversationWindow'))$('brainConversationWindow').value=localStorage.getItem('jlrBrainConversationWindow')||'30';
+    if($('brainAutoListen'))$('brainAutoListen').value=localStorage.getItem('jlrBrainAutoListen')==='true'?'on':'off';
+    renderBrainSpeechHistory();
+    const decisions=$('brainDecisionList');
+    const issues=Array.isArray(brain?.issues)?brain.issues:[];
+    if(decisions){
+      decisions.innerHTML=issues.length?issues.slice(0,8).map(issue=>`<button class="brain-decision-row" type="button" data-system="${esc(issue.system||'')}">
+        <span class="tracker-assist-priority ${esc(issue.priority||'info')}">${esc(String(issue.priority||'info').toUpperCase())}</span>
+        <strong>${esc(issue.title||'Tracker update')}</strong>
+        <small>${esc(issue.reason||'')}</small>
+      </button>`).join(''):'<div class="visual-empty">No active Brain decisions require attention.</div>';
     }
-
-    const connected=Number(brain.connectedCharacters||0);
-    const cache=brain.ledgerCache||{};
-    const cacheText=cache.complete
-      ?`${connected} connected characters monitored`
-      :`${Number(cache.cached||0)}/${Number(cache.linked||connected)} mining ledgers ready`;
-
-    summary.textContent=brain.healthy
-      ?`No active priority issues. ${cacheText}.`
-      :`${attention} item${attention===1?'':'s'} need attention. ${cacheText}.`;
-
-    if(!issues.length){
-      list.innerHTML='<div class="tracker-assist-clear"><strong>Everything looks normal.</strong><span>Tracker will surface field, scan, ESI, timer, market, and Heavy Fighter issues here.</span></div>';
-      return;
-    }
-
-    list.innerHTML=issues.slice(0,6).map(issue=>{
-      const system=String(issue.system||'');
-      const priority=String(issue.priority||'info');
-      return `<button class="tracker-assist-item ${esc(priority)}" type="button" data-system="${esc(system)}" title="${esc(issue.reason||issue.title||'Tracker status')}">
-        <span class="tracker-assist-priority">${esc(priority.toUpperCase())}</span>
-        <span class="tracker-assist-copy"><strong>${esc(issue.title||'Tracker update')}</strong><small>${esc(issue.reason||'')}</small></span>
-      </button>`;
-    }).join('');
-
-    list.querySelectorAll('.tracker-assist-item[data-system]').forEach(button=>{
-      button.addEventListener('click',()=>{
-        const system=String(button.dataset.system||'');
-        if(system&&definitions().some(row=>row.system===system)){
-          chooseSystem(system);
-          toast('Tracker selected '+system+'. Ask “Why this system?” for the explanation.');
-        }
-      });
-    });
   }
 
   function esc(s){return String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
@@ -269,7 +383,9 @@
       return false;
     }
     try{
-      return Boolean(await window.jlrSpeakEvent(type,payload||{},fallbackText||'J. L. R. notification.'));
+      const played=Boolean(await window.jlrSpeakEvent(type,payload||{},fallbackText||'Tracker notification.'));
+      if(played&&type!=='repeat')recordBrainSpeech(type,fallbackText||'Tracker notification.');
+      return played;
     }catch(error){
       console.warn('JLR voice event failed',error);
       return false;
@@ -295,14 +411,12 @@
   }
 
   function scoutFallbackText(snapshot){
-    const selected=(me?.characters||[]).find(c=>String(c.characterId)===String(scanCharacterId));
-    const name=String(selected?.name||snapshot?.characterName||'Scout');
     const system=String(snapshot?.system||'current system');
     const ledger=snapshot?.ledger||null;
     const mined=Math.max(0,Number(ledger?.minedM3SinceSite)||0);
     const site=Math.max(0,Number(ledger?.siteM3)||0);
-    let text='Tracker needs an updated scan for system '+system+'. Open your Probe Scanner and copy the scan results into Tracker in the Fields tab. Thank you.';
-    if(mined>0&&site>0)text+=' Linked Eve mining ledgers report '+fmt(mined,'m3')+' of '+fmt(site,'m3')+' cubic meters mined.';
+    let text=system+'. Scan update required.';
+    if(mined>0&&site>0)text+=' '+fmt(mined,'m3')+' of '+fmt(site,'m3')+' cubic meters reported mined.';
     return text;
   }
 
@@ -358,6 +472,7 @@
   }
 
   function queueStartupGreeting(){
+    if(localStorage.getItem('jlrBrainStartupBriefing')==='false')return;
     if(startupGreetingQueued)return;
     startupGreetingQueued=true;
     if(soundEnabled)toast('🔊 Tracker voice ready — click once to activate.');
@@ -852,7 +967,7 @@
     }
   }
   function applyTab(tab){
-    const valid=['fields','fleet','performance','ice','gas','pvp','threat','mer','toons'];
+    const valid=['fields','brain','fleet','performance','ice','gas','pvp','threat','mer','toons'];
     if(doctrineAllowed())valid.splice(5,0,'doctrine');
     if(trackerAllowed()){
       const pvpIndex=valid.indexOf('pvp');
@@ -867,6 +982,7 @@
     if(activeTab==='performance')refreshFleetPerformanceData(false);
     if(activeTab==='pvp'&&!pvpIntel&&!pvpIntelLoading)loadPvpIntel();
     if(activeTab==='threat')renderThreatScan();
+    if(activeTab==='brain'&&localStorage.getItem('jlrBrainAutoListen')==='true'&&!brainMicWanted)startBrainListening();
   }
   function initTabs(){
     const host=$('tabHost');
@@ -900,24 +1016,78 @@
 
     const quick=document.querySelector('.quick-update');
     let assistant=document.querySelector('.tracker-assistant-panel');
-    if(!assistant){
-      assistant=document.createElement('section');
-      assistant.className='glass tracker-assistant-panel';
-      assistant.innerHTML=`
-        <div class="tracker-assist-head">
-          <div>
-            <span class="eyebrow">TRACKER BRAIN</span>
-            <strong>ASSISTANT</strong>
-            <span id="trackerBrainStatus" class="status-pill">● ANALYZING</span>
-          </div>
-          <div class="tracker-assist-actions">
-            <button id="trackerBriefMe" class="orb purple" type="button" title="Ask Tracker for a spoken operations briefing">▶ BRIEF ME</button>
-            <button id="trackerWhySystem" class="orb blue" type="button" title="Ask Tracker why the selected field has its current status">WHY THIS SYSTEM?</button>
+    if(!assistant)assistant=document.createElement('section');
+    assistant.className='glass tracker-assistant-panel';
+    assistant.innerHTML=`
+      <div class="tracker-brain-head">
+        <div class="tracker-brain-title">
+          <span class="eyebrow">TRACKER BRAIN // OPERATIONS ASSISTANT</span>
+          <div class="tracker-brain-title-row">
+            <strong>TRACKER CONTROL ROOM</strong>
+            <span id="trackerBrainStatus" class="status-pill">● ONLINE</span>
           </div>
         </div>
-        <div id="trackerBrainSummary" class="tracker-assist-summary">Tracker is analyzing the current operation.</div>
-        <div id="trackerBrainList" class="tracker-assist-list" aria-live="polite"></div>`;
-    }
+        <div class="tracker-assist-actions">
+          <button id="trackerBriefMe" class="orb purple" type="button">▶ BRIEF ME</button>
+          <button id="trackerRepeatLast" class="orb green" type="button">↻ REPEAT LAST</button>
+          <button id="trackerMicToggle" class="orb blue" type="button">TALK TO TRACKER</button>
+        </div>
+      </div>
+
+      <div class="tracker-brain-grid">
+        <section class="brain-card">
+          <div class="brain-card-head"><strong>VOICE SETTINGS</strong><small>How Tracker behaves for you</small></div>
+          <div class="brain-setting-grid">
+            <label class="brain-setting"><span>VOICE</span><select id="brainVoiceEnabled"><option value="on">ON</option><option value="off">OFF</option></select></label>
+            <label class="brain-setting"><span>STARTUP BRIEFING</span><select id="brainStartupBriefing"><option value="on">ON</option><option value="off">OFF</option></select></label>
+            <label class="brain-setting"><span>CONVERSATION WINDOW</span><select id="brainConversationWindow"><option value="15">15 SECONDS</option><option value="30">30 SECONDS</option><option value="60">60 SECONDS</option></select></label>
+            <label class="brain-setting"><span>AUTO ARM MIC</span><select id="brainAutoListen"><option value="off">OFF</option><option value="on">ON</option></select></label>
+          </div>
+        </section>
+
+        <section class="brain-card brain-talk-card">
+          <div class="brain-card-head"><strong>TALK TO TRACKER</strong><small>Natural voice interaction</small></div>
+          <div id="brainListenPanel" class="brain-listen-panel">
+            <span class="brain-listen-orb">●</span>
+            <div><strong id="brainListenStatus">SAY “TRACKER”</strong><small id="brainListenHint">Arm the microphone once, then use the wake word.</small></div>
+          </div>
+          <div id="brainHeard" class="brain-heard">Standby.</div>
+          <div id="brainReply" class="brain-reply">Tracker ready.</div>
+        </section>
+
+        <section class="brain-card">
+          <div class="brain-card-head"><strong>BRIEFING SETTINGS</strong><small>What matters in a briefing</small></div>
+          <div class="brain-check-grid">
+            <label><input type="checkbox" checked disabled> Mining / fields</label>
+            <label><input type="checkbox" checked disabled> Scan status</label>
+            <label><input type="checkbox" checked disabled> Respawns</label>
+            <label><input type="checkbox" checked disabled> Threat alerts</label>
+            <label><input type="checkbox" checked disabled> Heavy Fighters</label>
+            <label><input type="checkbox" checked disabled> ESI health</label>
+          </div>
+        </section>
+
+        <section class="brain-card">
+          <div class="brain-card-head"><strong>SPEECH HISTORY</strong><small>Recent Tracker announcements</small></div>
+          <div id="brainSpeechHistory" class="brain-speech-history"></div>
+        </section>
+
+        <section class="brain-card">
+          <div class="brain-card-head"><strong>FEEDBACK</strong><small>Bug, suggestion, or speech issue</small></div>
+          <div class="brain-feedback-types">
+            <button class="board-tool brain-feedback-type active" data-feedback-type="bug" type="button">REPORT BUG</button>
+            <button class="board-tool brain-feedback-type" data-feedback-type="suggestion" type="button">SUGGEST FEATURE</button>
+            <button class="board-tool brain-feedback-type" data-feedback-type="speech" type="button">SPEECH ISSUE</button>
+          </div>
+          <textarea id="brainFeedbackText" class="brain-feedback-text" maxlength="1200" placeholder="Tell Tracker what happened or what you want changed."></textarea>
+          <button id="brainFeedbackSubmit" class="board-tool" type="button">SUBMIT TO TRACKER</button>
+        </section>
+
+        <section class="brain-card">
+          <div class="brain-card-head"><strong>CURRENT BRAIN DECISIONS</strong><small>What Tracker is acting on</small></div>
+          <div id="brainDecisionList" class="brain-decision-list"></div>
+        </section>
+      </div>`;
     const calculator=document.querySelector('.shared-calculator');
     const timers=document.querySelector('.timers-panel');
     const board=document.querySelector('.board-panel');
@@ -3965,6 +4135,65 @@
     });
     eventSource.onerror=()=>{$('liveBadge').textContent='⚠ DATA CONNECTION LOST';$('liveBadge').title='Live dashboard updates disconnected; the page is attempting to reconnect.'};
   }
+
+  document.addEventListener('change',event=>{
+    const target=event.target;
+    if(target?.id==='brainVoiceEnabled'){
+      soundEnabled=target.value==='on';
+      localStorage.setItem('jlrSoundEnabled',String(soundEnabled));
+      updateSoundStatus();
+    }else if(target?.id==='brainStartupBriefing'){
+      localStorage.setItem('jlrBrainStartupBriefing',String(target.value==='on'));
+    }else if(target?.id==='brainConversationWindow'){
+      localStorage.setItem('jlrBrainConversationWindow',String(target.value));
+    }else if(target?.id==='brainAutoListen'){
+      const on=target.value==='on';
+      localStorage.setItem('jlrBrainAutoListen',String(on));
+      if(on)startBrainListening();else stopBrainListening();
+    }
+  });
+
+  document.addEventListener('click',async event=>{
+    const target=event.target instanceof Element?event.target:null;
+    if(!target)return;
+    if(target.closest('#trackerRepeatLast')){
+      const row=brainSpeechHistory[0];
+      if(!row){toast('Nothing to repeat yet.');return}
+      await speakJlr('repeat',{text:row.text},row.text);
+      return;
+    }
+    if(target.closest('#trackerMicToggle')){
+      if(brainMicWanted)stopBrainListening();else startBrainListening();
+      return;
+    }
+    const repeatRow=target.closest('.brain-repeat-row');
+    if(repeatRow){
+      const row=brainSpeechHistory[Number(repeatRow.dataset.historyIndex||0)];
+      if(row)await speakJlr('repeat',{text:row.text},row.text);
+      return;
+    }
+    const feedbackType=target.closest('.brain-feedback-type');
+    if(feedbackType){
+      document.querySelectorAll('.brain-feedback-type').forEach(button=>button.classList.toggle('active',button===feedbackType));
+      return;
+    }
+    if(target.closest('#brainFeedbackSubmit')){
+      const type=document.querySelector('.brain-feedback-type.active')?.dataset.feedbackType||'suggestion';
+      const message=String($('brainFeedbackText')?.value||'').trim();
+      if(!message){toast('Add a short description first.');return}
+      await api('/api/tracker/brain/feedback',{method:'POST',body:JSON.stringify({type,message,context:{version:state?.app?.version||'2.9.75',tab:activeTab,lastSpeech:brainSpeechHistory[0]?.text||''}})});
+      $('brainFeedbackText').value='';
+      toast('Tracker feedback submitted.');
+      return;
+    }
+    const decision=target.closest('.brain-decision-row[data-system]');
+    if(decision?.dataset.system){
+      brainLastSystem=decision.dataset.system;
+      chooseSystem(brainLastSystem);
+      if($('brainReply'))$('brainReply').textContent='Context set to '+brainLastSystem+'. Ask Tracker why.';
+      return;
+    }
+  });
 
   document.addEventListener('click',async event=>{
     const target=event.target instanceof Element?event.target:null;

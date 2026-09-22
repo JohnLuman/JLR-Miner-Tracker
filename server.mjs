@@ -784,7 +784,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.74',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.75',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -2771,7 +2771,7 @@ function trackerSpokenSystem(system){
   const letters={
     A:'ay',B:'bee',C:'see',D:'dee',E:'ee',F:'eff',G:'gee',H:'aitch',
     I:'eye',J:'jay',K:'kay',L:'el',M:'em',N:'en',O:'oh',P:'pee',
-    Q:'queue',R:'are',S:'ess',T:'tee',U:'you',V:'vee',W:'double you',
+    Q:'queue',R:'are',S:'ess',T:'tee',U:'you',V:'vee',W:'dub you',
     X:'ex',Y:'why',Z:'zee',
   };
   const digits={
@@ -2782,21 +2782,37 @@ function trackerSpokenSystem(system){
 }
 
 
+
+function trackerSpeechCleanup(text){
+  let clean=String(text||'')
+    .replace(/[—–]+/g,'. ')
+    .replace(/;/g,'. ')
+    .replace(/m³/gi,'cubic meters')
+    .replace(/\bESI\b/g,'E S I')
+    .replace(/\bEVE\b/g,'Eve')
+    .replace(/\bISK\b/g,'isk')
+    .replace(/\s+/g,' ')
+    .replace(/\s+([,.!?])/g,'$1')
+    .trim();
+  clean=clean.split(/(?<=[.!?])\s+/).map(sentence=>{
+    const row=sentence.trim();
+    return row.length>115?row.replace(/,\s+/g,'. '):row;
+  }).filter(Boolean).join(' ');
+  return clean.slice(0,600);
+}
+
 function jlrScoutVoiceText(characterName,system){
   const safeSystem=trackerSpokenSystem(system);
   const scan=scanActivityPublic()[system]||null;
   const scanMs=Date.parse(scan?.lastScanAt||'');
-  const parts=[`Tracker needs an updated scan for system ${safeSystem}.`];
-
+  const parts=[safeSystem+'. Scan update required.'];
   if(Number.isFinite(scanMs)){
     const minutes=Math.max(0,Math.floor((Date.now()-scanMs)/60000));
-    if(minutes>=120)parts.push(`The last confirmed scan was about ${Math.floor(minutes/60)} hours ago.`);
-    else if(minutes>=60)parts.push('The last confirmed scan was about one hour ago.');
+    if(minutes>=120)parts.push('Last report, '+Math.floor(minutes/60)+' hours ago.');
+    else if(minutes>=60)parts.push('Last report, one hour ago.');
   }else{
-    parts.push('Tracker does not have a confirmed scan for this system.');
+    parts.push('No confirmed scan.');
   }
-
-  parts.push('Open your Probe Scanner and copy the scan results into Tracker in the Fields tab. Thank you.');
   return parts.join(' ');
 }
 
@@ -2807,20 +2823,13 @@ function jlrFieldVoiceText(system){
   const ledger=scan?.ledger||null;
   const field=state.fields?.[system]||null;
   const pct=Number(ledger?.depletionPct);
-  const parts=[];
-
-  if(field?.autoReopenedAt){
-    parts.push(`Mining has been detected in system ${safeSystem}, so Tracker marked the field as picked and cancelled the respawn timer.`);
-  }else{
-    parts.push(`Mining has been detected in system ${safeSystem}. Tracker marked the field as picked.`);
-  }
-
+  const parts=[safeSystem+'. Mining detected. Field marked picked.'];
+  if(field?.autoReopenedAt)parts.push('Respawn timer cancelled.');
   if(Number.isFinite(pct)&&pct>=95){
-    parts.push(`The field is estimated to be ${Math.round(pct)} percent mined. A new scan is needed.`);
+    parts.push('Estimated depletion, '+Math.round(pct)+' percent. Fresh scan required.');
   }else if(Number.isFinite(pct)&&pct>=80){
-    parts.push(`The field is estimated to be ${Math.round(pct)} percent mined. A new scan is recommended.`);
+    parts.push('Estimated depletion, '+Math.round(pct)+' percent. Scan recommended.');
   }
-
   return parts.join(' ');
 }
 
@@ -3122,6 +3131,32 @@ function trackerBrainSnapshot(){
 }
 
 function trackerBrainBriefing(user,{force=false}={}){
+  const snapshot=trackerBrainSnapshot();
+  const candidates=force?snapshot.issues:snapshot.issues.filter(issue=>!trackerBrainRecentlyAnnounced(user,issue));
+  const parts=[];
+  if(!snapshot.issues.length){
+    parts.push('All systems normal.');
+  }else if(!candidates.length){
+    parts.push('No new priority changes.');
+  }else{
+    const attention=candidates.filter(issue=>issue.rank>=2);
+    const source=attention.length?attention:candidates;
+    if(attention.length)parts.push(attention.length+' item'+(attention.length===1?'':'s')+' require attention.');
+    else parts.push(source.length+' status update'+(source.length===1?'':'s')+'.');
+    const stale=source.filter(issue=>issue.type==='scan-stale');
+    const specific=source.filter(issue=>issue.type!=='scan-stale').slice(0,2);
+    const spoken=[...specific];
+    if(spoken.length<2&&stale.length)spoken.push(stale[0]);
+    for(const issue of spoken)parts.push(issue.voice);
+    const ids=new Set(spoken.map(issue=>issue.id));
+    const remaining=source.filter(issue=>!ids.has(issue.id));
+    const remainingStale=remaining.filter(issue=>issue.type==='scan-stale').length;
+    if(remainingStale)parts.push(remainingStale+' additional system'+(remainingStale===1?'':'s')+' require scans.');
+    else if(remaining.length)parts.push(remaining.length+' additional item'+(remaining.length===1?'':'s')+'.');
+    trackerBrainRemember(user,source.slice(0,8));
+  }
+  return{text:parts.join(' '),snapshot,candidates};
+}={}){
   const snapshot=trackerBrainSnapshot();
   const candidates=force?snapshot.issues:snapshot.issues.filter(issue=>!trackerBrainRecentlyAnnounced(user,issue));
   const parts=['Tracker is online.'];
@@ -4011,11 +4046,8 @@ function trackerVoiceText(loss){
   const fighter=trackerSpeechSafe(loss?.shipTypeName||'Heavy Fighter',64)||'Heavy Fighter';
   const system=trackerSpokenSystem(loss?.systemName||'an unknown system');
   const value=Number(loss?.totalValue)||0;
-  const parts=[`A ${fighter} was lost in system ${system}.`];
-
-  if(value>0)parts.push(`The estimated loss is ${trackerSpokenIsk(value)} isk.`);
-  parts.push('Check Tracker for the full report.');
-
+  const parts=[fighter+' loss. '+system+'.'];
+  if(value>0)parts.push('Estimated value, '+trackerSpokenIsk(value)+' isk.');
   return parts.join(' ');
 }
 
@@ -4028,30 +4060,20 @@ function jlrScanVoiceText(system){
   const safeSystem=trackerSpokenSystem(system);
   const definition=SYSTEM_MAP.get(system)||null;
   const scan=state.scans?.[system]||null;
-  const parts=[`Tracker received the scan for system ${safeSystem}.`];
-
+  const parts=[safeSystem+'. Scan received.'];
   if(definition){
     const ore=trackerSpeechSafe(definition.ore,48)||'T three ore';
     const detected=scan?.t3?.detected;
-    if(detected===true)parts.push(`${ore} has been confirmed in the field.`);
-    else if(detected===false)parts.push(`${ore} was not detected. Confirm the field before starting its timer.`);
+    if(detected===true)parts.push(ore+' confirmed.');
+    else if(detected===false)parts.push(ore+' not detected.');
   }
-
   if(scan?.ice){
     const seen=Math.max(0,Number(scan.ice.seen)||0);
     const expected=Math.max(1,Number(scan.ice.expected)||1);
-    parts.push(`${seen} of ${expected} ice fields were detected.`);
+    parts.push(seen+' of '+expected+' ice fields detected.');
   }
-
   const a0=state.market?.a0Reports?.[system];
-  if(a0){
-    parts.push(
-      a0.detected
-        ? 'An A zero rare asteroid site has been confirmed.'
-        : 'No active A zero rare asteroid site was detected.'
-    );
-  }
-
+  if(a0)parts.push(a0.detected?'A zero site confirmed.':'No active A zero site detected.');
   return parts.join(' ');
 }
 
@@ -4061,7 +4083,7 @@ async function trackerVoiceWorkerAudio(text,cacheKey='tracker',voiceProfile='cor
     err.code='TTS_NOT_CONFIGURED';
     throw err;
   }
-  const cleanText=String(text||'').trim().slice(0,600);
+  const cleanText=trackerSpeechCleanup(text);
   if(!cleanText)throw new Error('Tracker voice text was empty.');
   // Speaker/reference changes must never reuse audio synthesized by an older voice.
   // Bump TRACKER_VOICE_CACHE_VERSION (or override it in Railway) whenever the speaker changes.
@@ -4136,7 +4158,7 @@ async function streamTrackerVoiceToResponse(res,text,cacheKey,{priority='normal'
     err.code='TTS_NOT_CONFIGURED';
     throw err;
   }
-  const cleanText=String(text||'').trim().slice(0,600);
+  const cleanText=trackerSpeechCleanup(text);
   if(!cleanText)throw new Error('Tracker voice text was empty.');
   const selectedVoice=['core','scout','alert'].includes(String(voice||''))?String(voice):'core';
   const versionedCacheKey=`${TRACKER_VOICE_CACHE_VERSION}|${selectedVoice}|${String(cacheKey||'stream')}`;
@@ -6013,7 +6035,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.74',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.75',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -6057,6 +6079,33 @@ async function routeApi(req,res,url) {
     const explanation=trackerBrainWhySystem(system);
     if(!explanation)return json(res,404,{error:'UNTRACKED_SYSTEM',message:'That system is not a tracked T3 field.'});
     return json(res,200,explanation);
+  }
+  if(req.method==='GET'&&url.pathname==='/api/tracker/brain/briefing'){
+    const force=url.searchParams.get('force')==='1';
+    return json(res,200,trackerBrainBriefing(user,{force}));
+  }
+  if(req.method==='POST'&&url.pathname==='/api/tracker/brain/feedback'){
+    if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
+    let body;
+    try{body=await readBody(req,8_000)}
+    catch(err){return json(res,400,{error:'BAD_FEEDBACK',message:String(err.message||err)})}
+    const type=['bug','suggestion','speech'].includes(String(body?.type||''))?String(body.type):'suggestion';
+    const message=trackerSpeechSafe(body?.message,1200);
+    if(!message)return json(res,400,{error:'FEEDBACK_REQUIRED',message:'Add a short description first.'});
+    state.feedback ||= [];
+    const row={
+      id:crypto.randomUUID(),
+      at:now(),
+      userId:String(user?.id||''),
+      displayName:String(user?.displayName||''),
+      type,
+      message,
+      context:body?.context&&typeof body.context==='object'?body.context:{},
+    };
+    state.feedback.unshift(row);
+    state.feedback=state.feedback.slice(0,250);
+    await save();
+    return json(res,201,{ok:true,id:row.id,at:row.at});
   }
   if(req.method==='GET'&&url.pathname==='/api/voice/stream/briefing'){
     const force=url.searchParams.get('force')==='1';
@@ -6149,6 +6198,10 @@ async function routeApi(req,res,url) {
       }
       voiceText=jlrScanVoiceText(system);
       cacheKey=`scan-${system}-${new Date(scanAt).toISOString()}`;
+    }else if(type==='brain'||type==='repeat'){
+      voiceText=trackerSpeechSafe(body?.text,600);
+      if(!voiceText)return json(res,400,{error:'VOICE_TEXT_REQUIRED',message:'Tracker voice text was empty.'});
+      cacheKey=type+'-'+crypto.createHash('sha1').update(voiceText).digest('hex').slice(0,20);
     }else{
       return json(res,400,{error:'UNSUPPORTED_VOICE_EVENT',message:'That JLR voice event is not supported.'});
     }
@@ -6466,7 +6519,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.74 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.75 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
 setInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': tracker-heartbeat\n\n')}catch{trackerLiveClients.delete(res)}}},20_000).unref();
 setInterval(()=>resetExpired(true),15_000).unref();
