@@ -124,7 +124,7 @@ const TRACKER_LIVE_RETENTION_MS = 24 * 60 * 60 * 1000;
 const TRACKER_R2Z2_ENABLED = String(process.env.TRACKER_R2Z2_ENABLED || 'true').trim().toLowerCase() !== 'false';
 const TRACKER_TTS_WORKER_URL = String(process.env.TRACKER_TTS_WORKER_URL || '').trim().replace(/\/$/,'');
 const TRACKER_TTS_WORKER_TOKEN = String(process.env.TRACKER_TTS_WORKER_TOKEN || '').trim();
-const TRACKER_VOICE_CACHE_VERSION = String(process.env.TRACKER_VOICE_CACHE_VERSION || 'v3-speaker-20260922-1').trim() || 'v3-speaker-20260922-1';
+const TRACKER_VOICE_CACHE_VERSION = String(process.env.TRACKER_VOICE_CACHE_VERSION || 'v3-speaker-20260922-1-single-alert').trim() || 'v3-speaker-20260922-1';
 const TRACKER_TTS_TIMEOUT_MS = clamp(process.env.TRACKER_TTS_TIMEOUT_MS,3_000,60_000,20_000);
 const TRACKER_TTS_CACHE_DIR = path.join(DATA_DIR,'tracker-voice-cache');
 const ZKILL_LIFETIME_DAMAGE_CACHE_MS = 24 * 60 * 60 * 1000;
@@ -723,7 +723,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.58',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.59',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -2725,7 +2725,7 @@ function jlrScoutVoiceText(characterName,system){
   const scan=scanActivityPublic()[system]||null;
   const ledger=scan?.ledger||null;
   const pct=Number(ledger?.depletionPct);
-  const parts=[`Tracker scan request. You entered ${safeSystem}.`];
+  const parts=[`Tracker detected that system ${safeSystem} needs a scan update.`];
 
   if(ledger?.likelyDepleted&&Number.isFinite(pct)){
     parts.push(`Eve mining data estimates this field is about ${Math.round(pct)} percent mined.`);
@@ -2745,74 +2745,6 @@ function jlrScoutVoiceText(characterName,system){
   parts.push('Please copy your Probe Scanner results and send them to Tracker.');
   return parts.join(' ');
 }
-
-async function a0CandidateForScan(systemId,system,a0Detected=false){
-  const known=(state.market?.a0Fields||[]).find(row=>row.system===system);
-  if(known)return {...known};
-  if(!a0Detected)return null;
-
-  const ids=await resolveUniverseIds([CN_SYSTEM_NAME]);
-  const originId=ids.get(CN_SYSTEM_NAME);
-  if(!originId)return null;
-  const [origin,target]=await Promise.all([
-    esiGet(`https://esi.evetech.net/latest/universe/systems/${originId}/?datasource=tranquility`).then(x=>x.data),
-    esiGet(`https://esi.evetech.net/latest/universe/systems/${systemId}/?datasource=tranquility`).then(x=>x.data),
-  ]);
-  const distance=lyDistance(origin.position,target.position);
-  if(!Number.isFinite(distance)||distance>TITAN_BRIDGE_RANGE_LY+1e-9)return null;
-
-  let spectralClass='A0',starId=Number(target.star_id)||null;
-  if(starId){
-    try{
-      const star=(await esiGet(`https://esi.evetech.net/latest/universe/stars/${starId}/?datasource=tranquility`)).data;
-      spectralClass=String(star.spectral_class||spectralClass).trim()||spectralClass;
-    }catch{}
-  }
-  return {
-    system,
-    systemId:Number(systemId),
-    distanceLy:distance,
-    security:Number(target.security_status),
-    starId,
-    spectralClass,
-    eligibility:'Probe Scanner confirmed A0 Rare Asteroids',
-    discoveredByScan:true,
-  };
-}
-
-async function recordA0ProbeScan({characterName,systemId,system,text}){
-  const scan=parseA0Scan(text);
-  const candidate=await a0CandidateForScan(systemId,system,scan.detected);
-  if(!candidate)return {tracked:false,inRange:false,scan};
-  if(!scan.valid)return {tracked:true,inRange:true,candidate,scan,status:'invalid'};
-
-  state.market.a0Reports ||= {};
-  const checkedAt=now();
-  state.market.a0Reports[system]={
-    systemId:Number(systemId),
-    distanceLy:Number(candidate.distanceLy),
-    security:Number(candidate.security),
-    starId:Number(candidate.starId)||null,
-    spectralClass:String(candidate.spectralClass||'A0'),
-    detected:Boolean(scan.detected),
-    siteName:scan.siteName,
-    scannerRowCount:Number(scan.scannerRowCount)||0,
-    lastCheckedAt:checkedAt,
-    nextUpdateAt:new Date(Date.parse(checkedAt)+A0_REPORT_TTL).toISOString(),
-    reportedBy:String(characterName||''),
-  };
-  return {
-    tracked:true,
-    inRange:true,
-    candidate,
-    scan,
-    status:scan.detected?'active':'clear',
-    lastCheckedAt:checkedAt,
-    nextUpdateAt:state.market.a0Reports[system].nextUpdateAt,
-  };
-}
-
-
 
 function jlrFieldVoiceText(system){
   const safeSystem=trackerSpokenSystem(system);
@@ -5663,7 +5595,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.58',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.59',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -5712,7 +5644,7 @@ async function routeApi(req,res,url) {
     const due=!Number.isFinite(scanMs)||Date.now()-scanMs>=A0_REPORT_TTL||Boolean(scan?.ledger?.needsScan||scan?.ledger?.likelyDepleted);
     if(!due)return json(res,409,{error:'SCAN_NOT_DUE',message:'This system does not currently require a scan update.'});
     const voiceText=jlrScoutVoiceText(scout.name,system);
-    try{return await streamTrackerVoiceToResponse(res,voiceText,`scout-${system}-${Math.floor(Date.now()/900000)}`,{priority:'normal',voice:'scout'})}
+    try{return await streamTrackerVoiceToResponse(res,voiceText,`scout-${system}-${Math.floor(Date.now()/900000)}`,{priority:'normal',voice:'alert'})}
     catch(err){
       console.warn('JLR Scout voice stream failed',system,String(err.message||err));
       return json(res,503,{error:err?.code||'JLR_VOICE_UNAVAILABLE',message:String(err.message||err)});
@@ -5725,7 +5657,7 @@ async function routeApi(req,res,url) {
     }
     const voiceText=jlrFieldVoiceText(system);
     const stamp=state.esi.fieldInference?.[system]?.lastLedgerAt||state.esi.fieldInference?.[system]?.seededAt||state.fields?.[system]?.updatedAt||now();
-    try{return await streamTrackerVoiceToResponse(res,voiceText,`field-${system}-${stamp}`,{priority:'normal',voice:'core'})}
+    try{return await streamTrackerVoiceToResponse(res,voiceText,`field-${system}-${stamp}`,{priority:'normal',voice:'alert'})}
     catch(err){
       console.warn('JLR field voice stream failed',system,String(err.message||err));
       return json(res,503,{error:err?.code||'JLR_VOICE_UNAVAILABLE',message:String(err.message||err)});
@@ -5733,7 +5665,7 @@ async function routeApi(req,res,url) {
   }
   if(req.method==='GET'&&url.pathname==='/api/voice/stream/startup'){
     const voiceText=jlrStartupVoiceText(user);
-    try{return await streamTrackerVoiceToResponse(res,voiceText,'startup',{priority:'normal',voice:'core'})}
+    try{return await streamTrackerVoiceToResponse(res,voiceText,'startup',{priority:'normal',voice:'alert'})}
     catch(err){
       console.warn('JLR startup voice stream failed',String(err.message||err));
       return json(res,503,{error:err?.code||'JLR_VOICE_UNAVAILABLE',message:String(err.message||err)});
@@ -5746,7 +5678,7 @@ async function routeApi(req,res,url) {
       return json(res,409,{error:'RECENT_SCAN_REQUIRED',message:'A recent Probe Scanner update is required before announcing a scan result.'});
     }
     const voiceText=jlrScanVoiceText(system);
-    try{return await streamTrackerVoiceToResponse(res,voiceText,`scan-${system}-${new Date(scanAt).toISOString()}`,{priority:'normal',voice:'scout'})}
+    try{return await streamTrackerVoiceToResponse(res,voiceText,`scan-${system}-${new Date(scanAt).toISOString()}`,{priority:'normal',voice:'alert'})}
     catch(err){
       console.warn('JLR scan voice stream failed',system,String(err.message||err));
       return json(res,503,{error:err?.code||'JLR_VOICE_UNAVAILABLE',message:String(err.message||err)});
@@ -5773,7 +5705,7 @@ async function routeApi(req,res,url) {
     }else{
       return json(res,400,{error:'UNSUPPORTED_VOICE_EVENT',message:'That JLR voice event is not supported.'});
     }
-    const voiceProfile=type==='startup'?'core':'scout';
+    const voiceProfile='alert';
     try{return sendTrackerAudio(res,await trackerVoiceWorkerAudio(voiceText,cacheKey,voiceProfile))}
     catch(err){
       console.warn('JLR voice event failed',type,String(err.message||err));
@@ -6056,7 +5988,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.58 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.59 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
 setInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': tracker-heartbeat\n\n')}catch{trackerLiveClients.delete(res)}}},20_000).unref();
 setInterval(()=>resetExpired(true),15_000).unref();
