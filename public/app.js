@@ -213,7 +213,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.102');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.103');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -303,7 +303,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR TRACKER MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.102'),
+      'Version: '+String(state?.app?.version||'2.9.103'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -1158,7 +1158,7 @@
   async function speakBrainAnswer(text,type='brain',payload={}){
     const spoken=String(text||'').trim();
     if(!spoken)return false;
-    brainSetListen('TRACKER SPEAKING','Generating JLR custom voice…');
+    brainSetListen('TRACKER SPEAKING','Generating JLR custom voice response…');
     let played=false;
     if(typeof window.jlrSpeakEvent==='function'){
       try{
@@ -5126,7 +5126,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.102',
+          version:state?.app?.version||'2.9.103',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
