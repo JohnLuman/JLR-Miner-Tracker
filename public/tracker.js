@@ -1,8 +1,10 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.37';
-  const ALARM_CHUNKS=6;
-  const CORE_URL='/tracker-core.js?v=2.9.37';
+  const ALARM_VERSION='2.9.38';
+  const CORE_URL='/tracker-core.js?v=2.9.38';
+  const ALARM_URL='/audio/heavy-fighter-calm-alert-00.b64?v='+ALARM_VERSION;
+  const ALARM_BYTES=11642;
+  const ALARM_MIME='audio/ogg; codecs=opus';
 
   let alarmContext=null;
   let alarmBufferPromise=null;
@@ -10,8 +12,6 @@
   let alarmHtmlPlayer=null;
   let alarmBlobUrl=null;
   let alarmGeneration=0;
-  let lastAlertText='';
-  let lastAlertAt=0;
 
   function ensureAlarmContext(){
     if(!alarmContext){
@@ -22,25 +22,19 @@
   }
 
   async function loadAlarmBytes(){
-    const requests=[];
-    for(let index=0;index<ALARM_CHUNKS;index++){
-      const part=String(index).padStart(2,'0');
-      requests.push(fetch('/audio/who-lost-the-fighter-'+part+'.b64?v='+ALARM_VERSION,{cache:'no-store'}).then(function(response){
-        if(!response.ok)throw new Error('Alarm audio part '+part+' failed: '+response.status);
-        return response.text();
-      }));
-    }
-    const chunks=await Promise.all(requests);
-    const raw=atob(chunks.join('').replace(/\s+/g,''));
+    const response=await fetch(ALARM_URL,{cache:'no-store'});
+    if(!response.ok)throw new Error('Voice alert failed: '+response.status);
+    const encoded=(await response.text()).replace(/\s+/g,'');
+    const raw=atob(encoded);
     const bytes=new Uint8Array(raw.length);
     for(let index=0;index<raw.length;index++)bytes[index]=raw.charCodeAt(index);
-    if(bytes.length!==70317)throw new Error('Alarm audio was incomplete: '+bytes.length+' bytes.');
+    if(bytes.length!==ALARM_BYTES)throw new Error('Voice alert was incomplete: '+bytes.length+' bytes.');
     return bytes;
   }
 
   function ensureHtmlPlayer(bytes){
     if(alarmHtmlPlayer)return alarmHtmlPlayer;
-    if(!alarmBlobUrl)alarmBlobUrl=URL.createObjectURL(new Blob([bytes],{type:'audio/mpeg'}));
+    if(!alarmBlobUrl)alarmBlobUrl=URL.createObjectURL(new Blob([bytes],{type:ALARM_MIME}));
     alarmHtmlPlayer=new Audio(alarmBlobUrl);
     alarmHtmlPlayer.preload='auto';
     alarmHtmlPlayer.volume=1;
@@ -58,13 +52,13 @@
           const buffer=await context.decodeAudioData(copy);
           return {kind:'webaudio',buffer:buffer,bytes:bytes};
         }catch(error){
-          console.warn('Who Lost the Fighter WebAudio decode failed; using HTML audio.',error);
+          console.warn('Heavy Fighter voice alert WebAudio decode failed; using HTML audio.',error);
         }
       }
       return {kind:'html',player:ensureHtmlPlayer(bytes),bytes:bytes};
     })().catch(function(error){
       alarmBufferPromise=null;
-      console.warn('Who Lost the Fighter alarm failed to load.',error);
+      console.warn('Heavy Fighter voice alert failed to load.',error);
       throw error;
     });
     return alarmBufferPromise;
@@ -79,7 +73,7 @@
     return Boolean(!context||context.state==='running');
   }
 
-  async function playSongAlarm(){
+  async function playVoiceAlert(){
     const generation=alarmGeneration;
     try{
       const loaded=await loadAlarmBuffer();
@@ -106,7 +100,6 @@
         source.start(0);
         return true;
       }
-
       const player=loaded.player||ensureHtmlPlayer(loaded.bytes);
       player.pause();
       player.currentTime=0;
@@ -115,13 +108,12 @@
       await player.play();
       return true;
     }catch(error){
-      console.warn('Who Lost the Fighter alarm playback failed.',error);
+      console.warn('Heavy Fighter voice alert playback failed.',error);
       return false;
     }
   }
 
-
-  function stopSongAlarm(){
+  function stopVoiceAlert(){
     alarmGeneration++;
     let stopped=false;
     if(alarmSource){
@@ -138,23 +130,6 @@
     return stopped;
   }
 
-  function isFighterAlert(text){
-    const value=String(text||'').trim();
-    return /\bDOWN in\b/i.test(value)||/Heavy Fighters DOWN/i.test(value);
-  }
-
-  function handleToast(){
-    const toast=document.getElementById('toast');
-    if(!toast||toast.classList.contains('hidden'))return;
-    const text=String(toast.textContent||'').trim();
-    if(!isFighterAlert(text))return;
-    const time=Date.now();
-    if(text===lastAlertText&&time-lastAlertAt<3000)return;
-    lastAlertText=text;
-    lastAlertAt=time;
-    playSongAlarm();
-  }
-
   function watchTrackerUi(){
     document.addEventListener('click',function(event){
       const target=event.target instanceof Element?event.target:null;
@@ -164,21 +139,21 @@
 
     const relabel=function(){
       const button=document.getElementById('trackerTest');
-      if(button&&button.textContent!=='▶ TEST WHO LOST THE FIGHTER'){
-        button.textContent='▶ TEST WHO LOST THE FIGHTER';
-        button.title='Play the 35-second Who Lost the Fighter alarm';
+      if(button&&button.textContent!=='▶ TEST CALM VOICE ALERT'){
+        button.textContent='▶ TEST CALM VOICE ALERT';
+        button.title='Play the calm Heavy Fighter loss voice alert';
       }
     };
-    const uiObserver=new MutationObserver(relabel);
-    uiObserver.observe(document.documentElement,{subtree:true,childList:true});
+    const observer=new MutationObserver(relabel);
+    observer.observe(document.documentElement,{subtree:true,childList:true});
     relabel();
   }
 
-  window.jlrPlayFighterAlarm=playSongAlarm;
-  window.jlrStopFighterAlarm=stopSongAlarm;
+  window.jlrPlayFighterAlarm=playVoiceAlert;
+  window.jlrStopFighterAlarm=stopVoiceAlert;
   window.jlrUnlockFighterAlarm=unlockAlarm;
 
-    watchTrackerUi();
+  watchTrackerUi();
   loadAlarmBuffer().catch(function(){});
 
   const core=document.createElement('script');
