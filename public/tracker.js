@@ -1,7 +1,7 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.102';
-  const CORE_URL='/tracker-core.js?v=2.9.102';
+  const ALARM_VERSION='2.9.103';
+  const CORE_URL='/tracker-core.js?v=2.9.103';
 
   let alarmContext=null;
   let alarmSource=null;
@@ -403,17 +403,48 @@
     return playCustomEndpoint(endpoint+'&nonce='+Date.now(),generation,'JLR Heavy Fighter custom voice');
   }
 
-  async function playCustomBrainText(text,generation,detail){
+  function splitBrainVoiceText(text,maxLen){
+    const clean=String(text||'').replace(/\s+/g,' ').trim();
+    const limit=Math.max(120,Number(maxLen)||220);
+    if(!clean)return[];
+    const sentences=clean.match(/[^.!?]+[.!?]+|[^.!?]+$/g)||[clean];
+    const chunks=[];
+    let current='';
+    const pushCurrent=()=>{if(current.trim())chunks.push(current.trim());current='';};
+    for(const sentenceRaw of sentences){
+      const sentence=String(sentenceRaw||'').trim();
+      if(!sentence)continue;
+      if(sentence.length<=limit){
+        if(!current)current=sentence;
+        else if((current+' '+sentence).length<=limit)current+=' '+sentence;
+        else{pushCurrent();current=sentence;}
+        continue;
+      }
+      pushCurrent();
+      const words=sentence.split(/\s+/);
+      let piece='';
+      for(const word of words){
+        if(!piece)piece=word;
+        else if((piece+' '+word).length<=limit)piece+=' '+word;
+        else{chunks.push(piece);piece=word;}
+      }
+      if(piece)chunks.push(piece);
+    }
+    pushCurrent();
+    return chunks;
+  }
+
+  async function fetchBufferedBrainAudio(text,generation,detail){
     if(generation!==alarmGeneration)return false;
     const controller=new AbortController();
     activeFetch=controller;
     try{
-      const response=await fetch('/api/voice/stream/brain',{
+      const response=await fetch('/api/voice/event',{
         method:'POST',
         credentials:'same-origin',
         cache:'no-store',
         headers:{'Content-Type':'application/json','Accept':'audio/*, application/json'},
-        body:JSON.stringify({text:String(text||'')}),
+        body:JSON.stringify({type:'brain',text:String(text||'')}),
         signal:controller.signal
       });
       if(activeFetch===controller)activeFetch=null;
@@ -430,11 +461,8 @@
         throw new Error('JLR conversational voice HTTP '+response.status+(message?': '+message.slice(0,220):''));
       }
       const played=await playAudioResponse(response,generation,detail||'JLR conversational custom voice');
-      if(played){
-        window.jlrVoiceLastError='';
-        reportVoiceMode('custom',detail||'JLR conversational custom voice');
-      }
-      return played;
+      if(!played)throw new Error('Custom voice returned audio but playback did not start.');
+      return true;
     }catch(error){
       if(activeFetch===controller)activeFetch=null;
       if(generation!==alarmGeneration)return false;
@@ -444,6 +472,26 @@
       console.error((detail||'JLR conversational custom voice')+' failed.',error);
       return false;
     }
+  }
+
+  async function playCustomBrainText(text,generation,detail){
+    if(generation!==alarmGeneration)return false;
+    window.jlrVoiceLastError='';
+    const chunks=splitBrainVoiceText(text,220);
+    if(!chunks.length)return false;
+
+    for(let i=0;i<chunks.length;i++){
+      if(generation!==alarmGeneration)return false;
+      const ok=await fetchBufferedBrainAudio(chunks[i],generation,(detail||'JLR conversational custom voice')+' • '+(i+1)+'/'+chunks.length);
+      if(!ok)return false;
+      // playAudioResponse starts the buffer immediately; wait until that chunk
+      // finishes before generating/playing the next one so sentences never overlap.
+      await waitForVoiceIdle(generation);
+    }
+
+    window.jlrVoiceLastError='';
+    reportVoiceMode('custom',detail||'JLR conversational custom voice');
+    return true;
   }
 
   async function speakEvent(type,payload,localFallback){
