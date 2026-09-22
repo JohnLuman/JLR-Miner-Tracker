@@ -233,13 +233,17 @@
       window.removeEventListener('pointerdown',trigger,true);
       window.removeEventListener('keydown',trigger,true);
       if(!soundEnabled){startupGreetingQueued=false;return;}
-      try{
-        if(typeof window.jlrUnlockFighterAlarm==='function')await window.jlrUnlockFighterAlarm();
-      }catch(error){}
-      // Give tracker.js a moment if app.js finished booting first.
-      for(let attempt=0;attempt<12&&typeof window.jlrSpeakEvent!=='function';attempt++){
-        await new Promise(resolve=>setTimeout(resolve,100));
+      // Keep audio.play inside this exact user gesture. Awaiting AudioContext.resume
+      // first can consume the browser's autoplay activation window.
+      if(typeof window.jlrSpeakEvent!=='function'){
+        startupGreetingQueued=false;
+        toast('🔊 JLR voice is still loading — click once more.');
+        setTimeout(queueStartupGreeting,400);
+        return;
       }
+      try{
+        if(typeof window.jlrUnlockFighterAlarm==='function')window.jlrUnlockFighterAlarm();
+      }catch(error){}
       const played=await speakJlr('startup',{},'J. L. R. systems online. Welcome back.');
       if(played){
         sessionStorage.setItem(STARTUP_GREETING_KEY,'1');
