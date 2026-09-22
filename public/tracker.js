@@ -1,7 +1,7 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.104';
-  const CORE_URL='/tracker-core.js?v=2.9.104';
+  const ALARM_VERSION='2.9.108';
+  const CORE_URL='/tracker-core.js?v=2.9.108';
 
   let alarmContext=null;
   let alarmSource=null;
@@ -136,7 +136,7 @@
     return playFallbackText(fallbackText(loss),generation);
   }
 
-  async function playAudioResponse(response,generation,detail){
+  async function playAudioResponse(response,generation,detail,playbackRate=1){
     if(generation!==alarmGeneration)return false;
     const type=String(response.headers.get('content-type')||'').toLowerCase();
     if(!type.startsWith('audio/'))throw new Error('JLR custom voice returned '+(type||'invalid content type'));
@@ -152,6 +152,7 @@
     const source=context.createBufferSource();
     const gain=context.createGain();
     source.buffer=buffer;
+    source.playbackRate.setValueAtTime(Math.max(.85,Math.min(1.25,Number(playbackRate)||1)),context.currentTime);
     gain.gain.setValueAtTime(1,context.currentTime);
     source.connect(gain);
     gain.connect(context.destination);
@@ -461,7 +462,7 @@
         throw new Error('JLR conversational voice HTTP '+response.status+(message?': '+message.slice(0,220):''));
       }
       const profile=String(response.headers.get('x-jlr-voice-profile')||'custom');
-      const played=await playAudioResponse(response,generation,(detail||'JLR conversational custom voice')+' • '+profile);
+      const played=await playAudioResponse(response,generation,(detail||'JLR conversational custom voice')+' • '+profile,1.12);
       if(!played)throw new Error('Custom voice returned audio but playback did not start.');
       window.jlrVoiceProfile=profile;
       window.jlrVoiceLastError='';
@@ -480,7 +481,7 @@
   async function playCustomBrainText(text,generation,detail){
     if(generation!==alarmGeneration)return false;
     window.jlrVoiceLastError='';
-    const chunks=splitBrainVoiceText(text,220);
+    const chunks=splitBrainVoiceText(text,360);
     if(!chunks.length)return false;
 
     for(let i=0;i<chunks.length;i++){
