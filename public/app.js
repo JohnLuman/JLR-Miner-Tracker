@@ -58,6 +58,8 @@
   let brainMicDeviceId=localStorage.getItem('jlrBrainMicDeviceId')||'default';
   let brainMicRestartTimer=null;
   let brainMicStartToken=0;
+  let brainPreferBrowserSpeechInput=false;
+  let brainNetworkFailures=0;
   let brainMicWanted=true;
   let brainConversationUntil=0;
   let brainLastSystem='';
@@ -187,7 +189,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.80');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.81');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -431,13 +433,28 @@
     recognition.continuous=true;
     recognition.interimResults=false;
     recognition.lang='en-US';
-    let trackBound=Boolean(track);
+    let localSpeech=false;
+    if('processLocally' in recognition&&typeof Recognition.available==='function'){
+      try{
+        const availability=await Recognition.available({langs:['en-US'],processLocally:true});
+        if(availability==='available'){
+          recognition.processLocally=true;
+          localSpeech=true;
+        }
+      }catch(error){
+        console.debug('JLR on-device speech recognition unavailable.',error);
+      }
+    }
+    let trackBound=Boolean(track)&&brainMicDeviceId!=='default'&&!brainPreferBrowserSpeechInput;
+    if(!trackBound&&track)stopBrainMicStream();
     recognition.__jlrRetry=true;
     recognition.__jlrStarted=false;
     recognition.onstart=()=>{
       recognition.__jlrStarted=true;
+      brainNetworkFailures=0;
       const input=trackBound?brainMicLabel():'Browser default microphone';
-      brainSetListen('MIC ON',input+' • Say “Tracker” to wake the assistant. Follow-up questions work briefly without repeating it.');
+      const engine=localSpeech?'ON-DEVICE • ':'';
+      brainSetListen('MIC ON',engine+input+' • Say “Tracker” to wake the assistant. Follow-up questions work briefly without repeating it.');
     };
     recognition.onerror=event=>{
       const code=String(event?.error||'microphone error');
@@ -451,11 +468,25 @@
         return;
       }
       if(code==='no-speech'){
-        brainSetListen('MIC ON',brainMicLabel()+' • Say “Tracker” to wake the assistant.');
+        const input=trackBound?brainMicLabel():'Browser default microphone';
+        brainSetListen('MIC ON',input+' • Say “Tracker” to wake the assistant.');
         return;
       }
       if(code==='network'){
-        brainSetListen('MIC SPEECH SERVICE ERROR','Microphone is open, but browser speech recognition could not connect. Tracker will retry.');
+        recognition.__jlrRetry=false;
+        brainNetworkFailures+=1;
+        if(trackBound){
+          brainPreferBrowserSpeechInput=true;
+          brainSetListen('MIC RETRYING','Selected microphone opened, but direct-track speech failed. Retrying with the browser speech input.');
+          if(brainRecognition===recognition)brainRecognition=null;
+          try{recognition.abort()}catch{}
+          scheduleBrainMicRestart(500);
+          return;
+        }
+        brainSetListen('MIC SPEECH SERVICE ERROR','Microphone is open, but this browser’s speech recognition service is unavailable. Tracker will keep retrying.');
+        if(brainRecognition===recognition)brainRecognition=null;
+        try{recognition.abort()}catch{}
+        scheduleBrainMicRestart(Math.min(15000,3000+brainNetworkFailures*2000));
         return;
       }
       brainSetListen('MIC '+code.toUpperCase(),'Tracker will retry automatically.');
@@ -480,7 +511,7 @@
       if(brainMicWanted&&recognition.__jlrRetry!==false)scheduleBrainMicRestart(700);
     };
     try{
-      if(track){
+      if(trackBound){
         try{
           recognition.start(track);
         }catch(trackError){
@@ -4330,6 +4361,8 @@
       const next=String(target.value||'default');
       if(next!==brainMicDeviceId){
         brainMicDeviceId=next;
+        brainPreferBrowserSpeechInput=false;
+        brainNetworkFailures=0;
         localStorage.setItem('jlrBrainMicDeviceId',brainMicDeviceId);
         brainSetListen('MIC SWITCHING','Opening '+brainMicLabel(brainMicDeviceId)+'…');
         restartBrainListening(true);
@@ -4365,7 +4398,7 @@
       const type=document.querySelector('.brain-feedback-type.active')?.dataset.feedbackType||'suggestion';
       const message=String($('brainFeedbackText')?.value||'').trim();
       if(!message){toast('Add a short description first.');return}
-      await api('/api/tracker/brain/feedback',{method:'POST',body:JSON.stringify({type,message,context:{version:state?.app?.version||'2.9.80',tab:activeTab,lastSpeech:brainSpeechHistory[0]?.text||''}})});
+      await api('/api/tracker/brain/feedback',{method:'POST',body:JSON.stringify({type,message,context:{version:state?.app?.version||'2.9.81',tab:activeTab,lastSpeech:brainSpeechHistory[0]?.text||''}})});
       $('brainFeedbackText').value='';
       toast('Tracker feedback submitted.');
       return;
