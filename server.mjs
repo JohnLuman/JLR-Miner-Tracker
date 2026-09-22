@@ -605,6 +605,10 @@ function effectiveSystems(ores=effectiveOres()) {
 function scanActivityPublic() {
   const out={};
   const at=Date.now();
+  // Raw fleet-wide daily mining totals by tracked T3 system. This diagnostic is
+  // intentionally independent of GREEN/YELLOW field inference so the board can
+  // show whether ESI mapping itself is working.
+  const esiTodayBySystem=combinedTrackedFieldLedgerTotals(dateUTC());
   const ledgerPublic=(system)=>{
     const row=state.esi.fieldInference?.[system]||null;
     const minedM3SinceSite=Math.max(0,Number(row?.minedM3SinceSite)||0);
@@ -643,6 +647,7 @@ function scanActivityPublic() {
       scannerRowCount:Number(row?.scannerRowCount)||0,
       kinds:Array.isArray(row?.kinds)?row.kinds:[],
       source:row?.source||null,
+      esiTodayM3:Math.max(0,Number(esiTodayBySystem[system])||0),
       t3:row?.t3&&typeof row.t3==='object'?{ore:String(row.t3.ore||''),detected:Boolean(row.t3.detected)}:null,
       ice:row?.ice&&Number(row.ice.expected)>0?{
         expected:Number(row.ice.expected),
@@ -671,6 +676,12 @@ function scanActivityPublic() {
   for(const system of Object.keys(state.esi.fieldInference||{})){
     if(!out[system])add(system,{});
     else out[system].ledger=ledgerPublic(system);
+  }
+  // Raw ESI-today evidence may exist even when field inference was intentionally
+  // blocked by a same-day reset boundary. Publish it for diagnostics.
+  for(const system of Object.keys(esiTodayBySystem)){
+    if(!out[system])add(system,{});
+    else out[system].esiTodayM3=Math.max(0,Number(esiTodayBySystem[system])||0);
   }
   return out;
 }
@@ -723,7 +734,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.61',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.62',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -2724,17 +2735,17 @@ function jlrScoutVoiceText(characterName,system){
   const safeSystem=trackerSpokenSystem(system);
   const scan=scanActivityPublic()[system]||null;
   const scanMs=Date.parse(scan?.lastScanAt||'');
-  const parts=[`System ${safeSystem} needs a scan update.`];
+  const parts=[`Tracker needs an updated scan for system ${safeSystem}.`];
 
   if(Number.isFinite(scanMs)){
     const minutes=Math.max(0,Math.floor((Date.now()-scanMs)/60000));
     if(minutes>=120)parts.push(`The last confirmed scan was about ${Math.floor(minutes/60)} hours ago.`);
     else if(minutes>=60)parts.push('The last confirmed scan was about one hour ago.');
   }else{
-    parts.push('No confirmed scan is recorded for this system.');
+    parts.push('Tracker does not have a confirmed scan for this system.');
   }
 
-  parts.push('Open your Probe Scanner, then send the results to Tracker for instructions.');
+  parts.push('Open your Probe Scanner and send the results to Tracker for instructions.');
   return parts.join(' ');
 }
 
@@ -5626,7 +5637,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.61',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.62',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -6019,7 +6030,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.61 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.62 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
 setInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': tracker-heartbeat\n\n')}catch{trackerLiveClients.delete(res)}}},20_000).unref();
 setInterval(()=>resetExpired(true),15_000).unref();
