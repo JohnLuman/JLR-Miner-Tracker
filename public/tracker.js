@@ -1,12 +1,13 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.43';
-  const CORE_URL='/tracker-core.js?v=2.9.43';
+  const ALARM_VERSION='2.9.45';
+  const CORE_URL='/tracker-core.js?v=2.9.45';
 
   let alarmContext=null;
   let alarmSource=null;
   let activeFetch=null;
   let activeUtterance=null;
+  let activeMediaElement=null;
   let alarmGeneration=0;
   let lastVoiceMode='unknown';
 
@@ -48,6 +49,15 @@
     if(alarmSource){
       try{alarmSource.stop();stopped=true;}catch(error){}
       alarmSource=null;
+    }
+    if(activeMediaElement){
+      try{
+        activeMediaElement.pause();
+        activeMediaElement.removeAttribute('src');
+        activeMediaElement.load();
+        stopped=true;
+      }catch(error){}
+      activeMediaElement=null;
     }
     if('speechSynthesis' in window){
       const synth=window.speechSynthesis;
@@ -138,41 +148,104 @@
     return true;
   }
 
+  function playStreamUrl(url,generation,fallback,detail){
+    if(generation!==alarmGeneration)return Promise.resolve(false);
+    return new Promise(function(resolve){
+      const audio=new Audio();
+      activeMediaElement=audio;
+      audio.preload='auto';
+      audio.volume=1;
+      audio.src=url;
+      let settled=false;
+      let started=false;
+      const startedAt=performance.now();
+
+      function cleanupAsCurrent(){
+        if(activeMediaElement===audio)activeMediaElement=null;
+      }
+      function finish(value){
+        if(settled)return;
+        settled=true;
+        clearTimeout(timer);
+        resolve(Boolean(value));
+      }
+      function useFallback(reason){
+        if(generation!==alarmGeneration){cleanupAsCurrent();finish(false);return}
+        if(reason)console.warn('JLR streaming voice unavailable; using browser fallback.',reason);
+        try{audio.pause();audio.removeAttribute('src');audio.load()}catch(error){}
+        cleanupAsCurrent();
+        const ok=playFallbackText(fallback,generation);
+        finish(ok);
+      }
+
+      audio.addEventListener('playing',function(){
+        if(generation!==alarmGeneration){
+          try{audio.pause()}catch(error){}
+          cleanupAsCurrent();
+          finish(false);
+          return;
+        }
+        started=true;
+        const latency=Math.max(0,Math.round(performance.now()-startedAt));
+        reportVoiceMode('custom',(detail||'Streaming GPT-SoVITS voice')+' • '+latency+' ms to audio');
+        window.jlrVoiceTransport='streaming';
+        finish(true);
+      },{once:true});
+      audio.addEventListener('ended',cleanupAsCurrent,{once:true});
+      audio.addEventListener('error',function(){
+        if(!started)useFallback(new Error('Streaming audio element failed to load.'));
+        else cleanupAsCurrent();
+      },{once:true});
+
+      const timer=setTimeout(function(){
+        if(!started)useFallback(new Error('Streaming voice start timed out.'));
+      },45000);
+
+      try{
+        const playPromise=audio.play();
+        if(playPromise&&typeof playPromise.catch==='function'){
+          playPromise.catch(function(error){if(!started)useFallback(error);});
+        }
+      }catch(error){
+        useFallback(error);
+      }
+    });
+  }
+
   async function playVoiceAlert(loss){
     stopVoiceAlert();
     const generation=alarmGeneration;
-    const context=ensureAlarmContext();
     const isTest=Boolean(loss&&loss.test);
     const killId=String(loss&&loss.killmailId||'').replace(/\D/g,'');
-    const endpoint=isTest?'/api/tracker/heavy-fighters/voice/test':(killId?'/api/tracker/heavy-fighters/voice/'+killId:'');
+    const endpoint=isTest?'/api/tracker/heavy-fighters/voice/test?stream=1':(killId?'/api/tracker/heavy-fighters/voice/'+killId+'?stream=1':'');
     if(!endpoint)return playFallbackSpeech(loss,generation);
-    try{
-      if(context&&context.state==='suspended'){
-        try{await context.resume();}catch(error){}
-      }
-      const controller=new AbortController();
-      activeFetch=controller;
-      const response=await fetch(endpoint,{credentials:'same-origin',cache:'no-store',signal:controller.signal});
-      if(activeFetch===controller)activeFetch=null;
-      if(generation!==alarmGeneration)return false;
-      if(!response.ok)throw new Error('JLR custom voice unavailable: '+response.status);
-      return await playAudioResponse(response,generation,'Custom GPT-SoVITS voice');
-    }catch(error){
-      if(generation!==alarmGeneration)return false;
-      if(error&&error.name!=='AbortError')console.warn('JLR custom voice unavailable; using browser fallback.',error);
-      return playFallbackSpeech(loss,generation);
-    }
+    // Do not await this here: invoking resume + audio.play inside the same user
+    // gesture gives browsers the best chance to preserve autoplay permission.
+    unlockAlarm();
+    return playStreamUrl(endpoint,generation,fallbackText(loss),'Streaming GPT-SoVITS voice');
   }
 
   async function speakEvent(type,payload,localFallback){
     stopVoiceAlert();
     const generation=alarmGeneration;
-    await unlockAlarm();
     const fallback=String(localFallback||'J. L. R. voice notification.');
+    const kind=String(type||'');
+    let endpoint='';
+    if(kind==='startup')endpoint='/api/voice/stream/startup';
+    else if(kind==='scan'){
+      const system=String(payload&&payload.system||'').trim();
+      if(system)endpoint='/api/voice/stream/scan?system='+encodeURIComponent(system);
+    }
+
+    unlockAlarm();
+    if(endpoint)return playStreamUrl(endpoint,generation,fallback,'JLR '+kind+' streaming voice');
+
+    // Compatibility path for future event types that do not have GET streaming
+    // routes yet.
     try{
       const controller=new AbortController();
       activeFetch=controller;
-      const body={type:String(type||''),...(payload&&typeof payload==='object'?payload:{})};
+      const body={type:kind,...(payload&&typeof payload==='object'?payload:{})};
       const response=await fetch('/api/voice/event',{
         method:'POST',
         credentials:'same-origin',
@@ -183,19 +256,10 @@
       });
       if(activeFetch===controller)activeFetch=null;
       if(generation!==alarmGeneration)return false;
-      if(!response.ok){
-        let serverFallback=fallback;
-        try{
-          const errorPayload=await response.json();
-          if(errorPayload&&errorPayload.fallbackText)serverFallback=String(errorPayload.fallbackText);
-        }catch(error){}
-        if(response.status!==503)console.warn('JLR voice event returned '+response.status+'.');
-        return playFallbackText(serverFallback,generation);
-      }
-      return await playAudioResponse(response,generation,'JLR '+String(type||'event')+' custom voice');
+      if(!response.ok)return playFallbackText(fallback,generation);
+      return await playAudioResponse(response,generation,'JLR '+kind+' custom voice');
     }catch(error){
       if(generation!==alarmGeneration)return false;
-      if(error&&error.name!=='AbortError')console.warn('JLR voice event unavailable; using browser fallback.',error);
       return playFallbackText(fallback,generation);
     }
   }
