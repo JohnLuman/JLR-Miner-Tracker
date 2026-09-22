@@ -221,12 +221,17 @@
   function queueStartupGreeting(){
     if(startupGreetingQueued||sessionStorage.getItem(STARTUP_GREETING_KEY)==='1')return;
     startupGreetingQueued=true;
+    if(soundEnabled)toast('🔊 JLR custom voice ready — click anywhere once to activate.');
     const trigger=()=>{
       window.removeEventListener('pointerdown',trigger,true);
       window.removeEventListener('keydown',trigger,true);
       sessionStorage.setItem(STARTUP_GREETING_KEY,'1');
       if(!soundEnabled)return;
-      setTimeout(()=>speakJlr('startup',{},'J. L. R. systems online. Welcome back.'),180);
+      try{
+        if(typeof window.jlrUnlockFighterAlarm==='function')window.jlrUnlockFighterAlarm();
+      }catch(error){}
+      toast('🔊 JLR voice activated.');
+      setTimeout(()=>speakJlr('startup',{},'J. L. R. systems online. Welcome back.'),120);
     };
     window.addEventListener('pointerdown',trigger,true);
     window.addEventListener('keydown',trigger,true);
