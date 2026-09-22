@@ -1,7 +1,7 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.53';
-  const CORE_URL='/tracker-core.js?v=2.9.53';
+  const ALARM_VERSION='2.9.57';
+  const CORE_URL='/tracker-core.js?v=2.9.57';
 
   let alarmContext=null;
   let alarmSource=null;
@@ -29,16 +29,24 @@
     return alarmContext;
   }
 
+  function spokenSystem(value){
+    const raw=String(value||'').replace(/[^A-Za-z0-9\- ]/g,'').trim();
+    if(!raw)return'an unknown system';
+    if(!/^[A-Z0-9]+(?:-[A-Z0-9]+)+$/.test(raw))return raw;
+    const digits={'0':'zero','1':'one','2':'two','3':'three','4':'four','5':'five','6':'six','7':'seven','8':'eight','9':'nine'};
+    return [...raw].map(ch=>ch==='-'?'tack':(digits[ch]||ch)).join(' ');
+  }
+
   function fallbackText(loss){
-    if(loss&&loss.test)return 'Attention. Tracker custom voice systems are being tested. Heavy Fighter tracking is standing by.';
+    if(loss&&loss.test)return 'Tracker voice test. The custom speaker is online. Heavy Fighter tracking is standing by.';
     const fighter=String(loss&&loss.shipTypeName||'Heavy Fighter').replace(/[^\w .,&()\-]/g,'').trim()||'Heavy Fighter';
-    const system=String(loss&&loss.systemName||'an unknown system').replace(/[^\w .,&()\-]/g,'').trim()||'an unknown system';
+    const system=spokenSystem(loss&&loss.systemName||'an unknown system');
     const value=Number(loss&&loss.totalValue)||0;
     let valueText='';
     if(value>=1e9)valueText=' Estimated loss value, '+(value/1e9).toFixed(value>=1e10?0:1)+' billion ISK.';
     else if(value>=1e6)valueText=' Estimated loss value, '+(value/1e6).toFixed(value>=1e7?0:1)+' million ISK.';
     else if(value>=1e3)valueText=' Estimated loss value, '+Math.round(value/1e3)+' thousand ISK.';
-    return 'Attention. A '+fighter+' has been lost in '+system+'.'+valueText+' Please check Tracker for pilot and kill information.';
+    return 'Tracker alert. A '+fighter+' has been lost in '+system+'.'+valueText+' Check Tracker for pilot and kill information.';
   }
 
   function stopVoiceAlert(){
