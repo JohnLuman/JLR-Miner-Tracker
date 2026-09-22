@@ -607,13 +607,17 @@ function scanActivityPublic() {
   const at=Date.now();
   const ledgerPublic=(system)=>{
     const row=state.esi.fieldInference?.[system]||null;
-    if(!row?.lastLedgerAt)return null;
+    const minedM3SinceSite=Math.max(0,Number(row?.minedM3SinceSite)||0);
+    const evidenceAt=row?.lastLedgerAt||row?.seededAt||null;
+    if(!row||(!evidenceAt&&minedM3SinceSite<=0))return null;
     const lastMs=Date.parse(row.lastLedgerAt||'');
     const active=Number.isFinite(lastMs)&&at-lastMs<=45*60*1000;
     const depletionPct=Number.isFinite(Number(row.depletionPct))?Math.max(0,Math.min(100,Number(row.depletionPct))):null;
     return{
-      lastActivityAt:row.lastLedgerAt,
+      lastActivityAt:evidenceAt,
       active,
+      seeded:Boolean(row.seededAt)&&!row.lastLedgerAt,
+      seededAt:row.seededAt||null,
       lastDeltaM3:Math.max(0,Number(row.lastDeltaM3)||0),
       minedM3SinceBaseline:Math.max(0,Number(row.minedM3SinceBaseline)||0),
       minedM3SinceSite:Math.max(0,Number(row.minedM3SinceSite)||0),
@@ -717,7 +721,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.51',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.52',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -2400,8 +2404,86 @@ function updateFieldLedgerActivity(characterId,rows,sampleAt=now()){
   const totals=trackedFieldLedgerTotals(rows,day);
   const prev=state.esi.ledgerFieldSnapshots[key];
   if(!prev||prev.date!==day||!prev.totals||typeof prev.totals!=='object'){
+    // The mining ledger is cumulative for the whole EVE day. The old logic
+    // seeded the first sample silently, which meant mining that happened before
+    // JLR's first sample of the day never reached the field cards. Safely
+    // backfill today's totals only when this field/site cycle predates 00:00 UTC.
+    const changedSystems=[];
+    const dayStartMs=Date.parse(day+'T00:00:00Z');
+    for(const [system,totalRaw] of Object.entries(totals)){
+      const total=Math.max(0,Number(totalRaw)||0);
+      if(total<=0)continue;
+      const definition=SYSTEM_MAP.get(system);
+      const field=state.fields?.[system];
+      if(!definition||!field)continue;
+
+      const scanAt=state.scans?.[system]?.lastScanAt||null;
+      const scanMs=Date.parse(scanAt||'');
+      const fieldMs=Date.parse(field.updatedAt||'');
+      const priorInference=state.esi.fieldInference[system]||null;
+      const baselineMs=Date.parse(priorInference?.baselineAt||'');
+      const respawnMs=Date.parse(priorInference?.respawnCompletedAt||'');
+      const boundaries=[scanMs,fieldMs,baselineMs,respawnMs].filter(Number.isFinite);
+      const cycleBoundaryMs=boundaries.length?Math.max(...boundaries):NaN;
+
+      // If this site was scanned, cleared, reset, or respawned after the EVE day
+      // began, a daily cumulative total cannot tell us whether the ore was mined
+      // before or after that boundary. Wait for the next ESI delta instead.
+      if(Number.isFinite(dayStartMs)&&Number.isFinite(cycleBoundaryMs)&&cycleBoundaryMs>=dayStartMs)continue;
+
+      let inference=priorInference||{
+        baselineAt:scanAt,
+        baselineDetected:Boolean(state.scans?.[system]?.t3?.detected),
+        minedM3SinceBaseline:0,minedM3SinceSite:0,activityStartedAt:null,
+        lastLedgerAt:null,lastDeltaM3:0,depletionPct:null,needsScan:false,
+        likelyDepleted:false,siteM3:Number(definition.siteM3)||0,
+      };
+
+      inference.minedM3SinceSite=Math.max(0,Number(inference.minedM3SinceSite)||0)+total;
+      if(inference.baselineDetected&&(!Number.isFinite(baselineMs)||baselineMs<dayStartMs)){
+        inference.minedM3SinceBaseline=Math.max(0,Number(inference.minedM3SinceBaseline)||0)+total;
+      }
+      const siteM3=Math.max(0,Number(definition.siteM3)||Number(inference.siteM3)||0);
+      const depletionBase=inference.baselineDetected
+        ?Math.max(0,Number(inference.minedM3SinceBaseline)||0)
+        :Math.max(0,Number(inference.minedM3SinceSite)||0);
+      const depletionPct=siteM3>0&&depletionBase>0?Math.min(100,(depletionBase/siteM3)*100):null;
+      inference={
+        ...inference,
+        siteM3,
+        seededAt:sampleAt,
+        seededDay:day,
+        lastDeltaM3:0,
+        depletionPct,
+        needsScan:Number.isFinite(depletionPct)&&depletionPct>=80,
+        likelyDepleted:Number.isFinite(depletionPct)&&depletionPct>=95,
+      };
+      state.esi.fieldInference[system]=inference;
+      field.ledgerMinedM3=Math.max(0,Number(inference.minedM3SinceSite)||0);
+
+      if(field.status==='ready'){
+        field.status='picked';
+        field.timerEndsAt=null;
+        field.updatedAt=sampleAt;
+        field.ledgerPickedAt=field.ledgerPickedAt||sampleAt;
+        changedSystems.push(system);
+      }else if(field.status==='picked'){
+        changedSystems.push(system);
+      }else if(field.status==='cleared'){
+        // A RED field whose clear/respawn boundary predates today's ledger can
+        // safely be reopened because all of today's mining happened afterward.
+        field.status='picked';
+        field.timerEndsAt=null;
+        field.updatedAt=sampleAt;
+        field.autoReopenedAt=sampleAt;
+        field.autoReopenReason='esi-ledger-day-seed';
+        field.autoReopenM3=total;
+        field.ledgerPickedAt=field.ledgerPickedAt||sampleAt;
+        changedSystems.push(system);
+      }
+    }
     state.esi.ledgerFieldSnapshots[key]={date:day,lastSampleAt:sampleAt,totals};
-    return [];
+    return changedSystems;
   }
 
   const previousSampleAt=prev.lastSampleAt;
@@ -2667,6 +2749,24 @@ async function recordA0ProbeScan({characterName,systemId,system,text}){
     lastCheckedAt:checkedAt,
     nextUpdateAt:state.market.a0Reports[system].nextUpdateAt,
   };
+}
+
+
+function jlrFieldVoiceText(system){
+  const safeSystem=trackerSpeechSafe(system,48)||'tracked system';
+  const scan=scanActivityPublic()[system]||null;
+  const ledger=scan?.ledger||null;
+  const field=state.fields?.[system]||null;
+  const mined=Math.max(0,Number(ledger?.minedM3SinceSite)||Number(field?.ledgerMinedM3)||0);
+  const site=Math.max(0,Number(ledger?.siteM3)||Number(SYSTEM_MAP.get(system)?.siteM3)||0);
+  const pct=Number(ledger?.depletionPct);
+  const parts=[`J. L. R. mining update. Mining activity has been detected in ${safeSystem}. The field is marked picked.`];
+  if(mined>0)parts.push(`Linked ESI ledgers report ${Math.round(mined).toLocaleString('en-US')} cubic meters mined from the current tracked cycle.`);
+  if(Number.isFinite(pct)&&pct>=95)parts.push(`Estimated depletion is ${Math.round(pct)} percent. Please send a Probe Scanner update now.`);
+  else if(Number.isFinite(pct)&&pct>=80)parts.push(`Estimated depletion is ${Math.round(pct)} percent. A Probe Scanner update is recommended.`);
+  else if(site>0&&mined>0)parts.push(`Tracked site volume is approximately ${Math.round(site).toLocaleString('en-US')} cubic meters.`);
+  if(field?.autoReopenedAt)parts.push('A previous respawn timer was cancelled because new mining activity was detected.');
+  return parts.join(' ');
 }
 
 function recordBoardScan({system,text,a0,t3Scan=null,definition=null}){
@@ -5492,7 +5592,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.51',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.52',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -5544,6 +5644,19 @@ async function routeApi(req,res,url) {
     try{return await streamTrackerVoiceToResponse(res,voiceText,`scout-${system}-${Math.floor(Date.now()/900000)}`,{priority:'normal',voice:'scout'})}
     catch(err){
       console.warn('JLR Scout voice stream failed',system,String(err.message||err));
+      return json(res,503,{error:err?.code||'JLR_VOICE_UNAVAILABLE',message:String(err.message||err)});
+    }
+  }
+  if(req.method==='GET'&&url.pathname==='/api/voice/stream/field'){
+    const system=String(url.searchParams.get('system')||'').trim();
+    if(!system||!SYSTEM_MAP.has(system)){
+      return json(res,400,{error:'UNTRACKED_SYSTEM',message:'That system is not a tracked T3 field.'});
+    }
+    const voiceText=jlrFieldVoiceText(system);
+    const stamp=state.esi.fieldInference?.[system]?.lastLedgerAt||state.esi.fieldInference?.[system]?.seededAt||state.fields?.[system]?.updatedAt||now();
+    try{return await streamTrackerVoiceToResponse(res,voiceText,`field-${system}-${stamp}`,{priority:'normal',voice:'core'})}
+    catch(err){
+      console.warn('JLR field voice stream failed',system,String(err.message||err));
       return json(res,503,{error:err?.code||'JLR_VOICE_UNAVAILABLE',message:String(err.message||err)});
     }
   }
@@ -5872,7 +5985,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.51 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.52 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
 setInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': tracker-heartbeat\n\n')}catch{trackerLiveClients.delete(res)}}},20_000).unref();
 setInterval(()=>resetExpired(true),15_000).unref();
