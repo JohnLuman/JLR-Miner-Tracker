@@ -1974,3 +1974,6 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .brain-mic-level-row>b{text-align:right;color:var(--theme-accent,var(--green))}
 .brain-mic-level{height:7px;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--input-bg,#071710)}
 .brain-mic-level>i{display:block;height:100%;width:2%;border-radius:999px;background:var(--theme-accent,var(--green));transition:width .09s linear}
+
+/* v2.9.100 — conversational Tracker question hint */
+.brain-question-hint{margin:-2px 0 8px;padding:7px 9px;border-left:2px solid var(--theme-accent,var(--green));background:color-mix(in srgb,var(--theme-accent,var(--green)) 4%,transparent);font-size:8px;line-height:1.45;color:var(--muted)}
