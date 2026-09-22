@@ -1,69 +1,143 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.39';
-  const CORE_URL='/tracker-core.js?v=2.9.39';
-  const ALERT_TEXT='Attention. A Heavy Fighter loss has been detected. Please check the JLR Tracker for the system, pilot, corporation, and loss details. JLR Tracker is standing by.';
+  const ALARM_VERSION='2.9.40';
+  const CORE_URL='/tracker-core.js?v=2.9.40';
 
+  let alarmContext=null;
+  let alarmSource=null;
+  let activeFetch=null;
   let activeUtterance=null;
+  let alarmGeneration=0;
 
-  function availableVoices(){
-    if(!('speechSynthesis' in window))return [];
-    return window.speechSynthesis.getVoices()||[];
+  function ensureAlarmContext(){
+    if(!alarmContext){
+      const AudioContext=window.AudioContext||window.webkitAudioContext;
+      if(AudioContext)alarmContext=new AudioContext();
+    }
+    return alarmContext;
   }
 
-  function voiceScore(voice){
-    const name=String(voice&&voice.name||'').toLowerCase();
-    const lang=String(voice&&voice.lang||'').toLowerCase();
-    let score=0;
-    if(lang.startsWith('en-us'))score+=30;
-    else if(lang.startsWith('en-gb'))score+=24;
-    else if(lang.startsWith('en'))score+=18;
-    if(/natural|neural|online/.test(name))score+=30;
-    if(/guy|ryan|mark|david|daniel|george|male/.test(name))score+=22;
-    if(/microsoft|google|apple/.test(name))score+=8;
-    if(/zira|samantha|victoria|female/.test(name))score-=6;
-    return score;
+  function fallbackText(loss){
+    if(loss&&loss.test)return 'Attention. J. L. R. custom voice systems are being tested. Heavy Fighter tracking is standing by.';
+    const fighter=String(loss&&loss.shipTypeName||'Heavy Fighter').replace(/[^\w .,&()\-]/g,'').trim()||'Heavy Fighter';
+    const system=String(loss&&loss.systemName||'an unknown system').replace(/[^\w .,&()\-]/g,'').trim()||'an unknown system';
+    const value=Number(loss&&loss.totalValue)||0;
+    let valueText='';
+    if(value>=1e9)valueText=' Estimated loss value, '+(value/1e9).toFixed(value>=1e10?0:1)+' billion ISK.';
+    else if(value>=1e6)valueText=' Estimated loss value, '+(value/1e6).toFixed(value>=1e7?0:1)+' million ISK.';
+    else if(value>=1e3)valueText=' Estimated loss value, '+Math.round(value/1e3)+' thousand ISK.';
+    return 'Attention. A '+fighter+' has been lost in '+system+'.'+valueText+' Please check J. L. R. Tracker for pilot and kill information.';
   }
 
-  function preferredVoice(){
-    return availableVoices().slice().sort(function(a,b){return voiceScore(b)-voiceScore(a);})[0]||null;
+  function stopVoiceAlert(){
+    alarmGeneration++;
+    let stopped=false;
+    if(activeFetch){
+      try{activeFetch.abort();stopped=true;}catch(error){}
+      activeFetch=null;
+    }
+    if(alarmSource){
+      try{alarmSource.stop();stopped=true;}catch(error){}
+      alarmSource=null;
+    }
+    if('speechSynthesis' in window){
+      const synth=window.speechSynthesis;
+      if(activeUtterance||synth.speaking||synth.pending){
+        try{synth.cancel();stopped=true;}catch(error){}
+      }
+      activeUtterance=null;
+    }
+    return stopped;
   }
 
   async function unlockAlarm(){
-    if(!('speechSynthesis' in window))return false;
-    availableVoices();
-    return true;
+    const context=ensureAlarmContext();
+    if(context&&context.state==='suspended'){
+      try{await context.resume();}catch(error){}
+    }
+    if('speechSynthesis' in window)window.speechSynthesis.getVoices();
+    return Boolean((context&&context.state==='running')||('speechSynthesis' in window));
   }
 
-  async function playVoiceAlert(){
-    if(!('speechSynthesis' in window))return false;
+  function preferredFallbackVoice(){
+    if(!('speechSynthesis' in window))return null;
+    const voices=window.speechSynthesis.getVoices()||[];
+    return voices.slice().sort(function(a,b){
+      function score(v){
+        const name=String(v&&v.name||'').toLowerCase();
+        const lang=String(v&&v.lang||'').toLowerCase();
+        let n=lang.startsWith('en-us')?30:lang.startsWith('en')?20:0;
+        if(/natural|neural|online/.test(name))n+=25;
+        if(/guy|ryan|mark|david|daniel|george/.test(name))n+=10;
+        return n;
+      }
+      return score(b)-score(a);
+    })[0]||null;
+  }
+
+  function playFallbackSpeech(loss,generation){
+    if(generation!==alarmGeneration||!('speechSynthesis' in window))return false;
     try{
-      window.speechSynthesis.cancel();
-      const utterance=new SpeechSynthesisUtterance(ALERT_TEXT);
-      const voice=preferredVoice();
+      const synth=window.speechSynthesis;
+      synth.cancel();
+      const utterance=new SpeechSynthesisUtterance(fallbackText(loss));
+      const voice=preferredFallbackVoice();
       if(voice)utterance.voice=voice;
       utterance.lang=voice&&voice.lang?voice.lang:'en-US';
-      utterance.rate=.86;
-      utterance.pitch=.76;
+      utterance.rate=.9;
+      utterance.pitch=.82;
       utterance.volume=1;
       utterance.onend=function(){if(activeUtterance===utterance)activeUtterance=null;};
       utterance.onerror=function(){if(activeUtterance===utterance)activeUtterance=null;};
       activeUtterance=utterance;
-      window.speechSynthesis.speak(utterance);
+      synth.speak(utterance);
       return true;
     }catch(error){
-      console.warn('Heavy Fighter voice alert playback failed.',error);
-      activeUtterance=null;
+      console.warn('JLR fallback voice failed.',error);
       return false;
     }
   }
 
-  function stopVoiceAlert(){
-    if(!('speechSynthesis' in window))return false;
-    const wasSpeaking=Boolean(activeUtterance||window.speechSynthesis.speaking||window.speechSynthesis.pending);
-    window.speechSynthesis.cancel();
-    activeUtterance=null;
-    return wasSpeaking;
+  async function playVoiceAlert(loss){
+    stopVoiceAlert();
+    const generation=alarmGeneration;
+    const context=ensureAlarmContext();
+    const isTest=Boolean(loss&&loss.test);
+    const killId=String(loss&&loss.killmailId||'').replace(/\D/g,'');
+    const endpoint=isTest?'/api/tracker/heavy-fighters/voice/test':(killId?'/api/tracker/heavy-fighters/voice/'+killId:'');
+    if(!endpoint)return playFallbackSpeech(loss,generation);
+    try{
+      if(context&&context.state==='suspended'){
+        try{await context.resume();}catch(error){}
+      }
+      const controller=new AbortController();
+      activeFetch=controller;
+      const response=await fetch(endpoint,{credentials:'same-origin',cache:'no-store',signal:controller.signal});
+      if(activeFetch===controller)activeFetch=null;
+      if(generation!==alarmGeneration)return false;
+      if(!response.ok)throw new Error('JLR custom voice unavailable: '+response.status);
+      const type=String(response.headers.get('content-type')||'').toLowerCase();
+      if(!type.startsWith('audio/'))throw new Error('JLR custom voice returned '+(type||'invalid content type'));
+      if(!context||context.state!=='running')throw new Error('Browser audio context is not active.');
+      const bytes=await response.arrayBuffer();
+      if(generation!==alarmGeneration)return false;
+      const buffer=await context.decodeAudioData(bytes.slice(0));
+      if(generation!==alarmGeneration)return false;
+      const source=context.createBufferSource();
+      const gain=context.createGain();
+      source.buffer=buffer;
+      gain.gain.setValueAtTime(1,context.currentTime);
+      source.connect(gain);
+      gain.connect(context.destination);
+      source.onended=function(){if(alarmSource===source)alarmSource=null;};
+      alarmSource=source;
+      source.start(0);
+      return true;
+    }catch(error){
+      if(generation!==alarmGeneration)return false;
+      if(error&&error.name!=='AbortError')console.warn('JLR custom voice unavailable; using browser fallback.',error);
+      return playFallbackSpeech(loss,generation);
+    }
   }
 
   function watchTrackerUi(){
@@ -75,9 +149,9 @@
 
     const relabel=function(){
       const button=document.getElementById('trackerTest');
-      if(button&&button.textContent!=='▶ TEST NATURAL VOICE ALERT'){
-        button.textContent='▶ TEST NATURAL VOICE ALERT';
-        button.title='Play the calm natural-voice Heavy Fighter alert';
+      if(button&&button.textContent!=='▶ TEST JLR CUSTOM VOICE'){
+        button.textContent='▶ TEST JLR CUSTOM VOICE';
+        button.title='Test the dynamic JLR custom voice worker';
       }
     };
     const observer=new MutationObserver(relabel);
@@ -90,10 +164,8 @@
   window.jlrUnlockFighterAlarm=unlockAlarm;
 
   if('speechSynthesis' in window){
-    window.speechSynthesis.onvoiceschanged=function(){availableVoices();};
-    availableVoices();
+    window.speechSynthesis.onvoiceschanged=function(){window.speechSynthesis.getVoices();};
   }
-
   watchTrackerUi();
 
   const core=document.createElement('script');
