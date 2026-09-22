@@ -1,7 +1,7 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.60';
-  const CORE_URL='/tracker-core.js?v=2.9.60';
+  const ALARM_VERSION='2.9.61';
+  const CORE_URL='/tracker-core.js?v=2.9.61';
 
   let alarmContext=null;
   let alarmSource=null;
@@ -38,7 +38,7 @@
   }
 
   function fallbackText(loss){
-    if(loss&&loss.test)return 'Tracker voice test. The custom speaker is online. Heavy Fighter tracking is standing by.';
+    if(loss&&loss.test)return 'Tracker voice online. Heavy Fighter tracking ready.';
     const fighter=String(loss&&loss.shipTypeName||'Heavy Fighter').replace(/[^\w .,&()\-]/g,'').trim()||'Heavy Fighter';
     const system=spokenSystem(loss&&loss.systemName||'an unknown system');
     const value=Number(loss&&loss.totalValue)||0;
@@ -46,7 +46,7 @@
     if(value>=1e9)valueText=' Estimated loss value, '+(value/1e9).toFixed(value>=1e10?0:1)+' billion ISK.';
     else if(value>=1e6)valueText=' Estimated loss value, '+(value/1e6).toFixed(value>=1e7?0:1)+' million ISK.';
     else if(value>=1e3)valueText=' Estimated loss value, '+Math.round(value/1e3)+' thousand ISK.';
-    return 'Tracker alert. A '+fighter+' has been lost in '+system+'.'+valueText+' Check Tracker for pilot and kill information.';
+    return fighter+' lost in '+system+'.'+valueText+' Check Tracker for details.';
   }
 
   function stopVoiceAlert(){
