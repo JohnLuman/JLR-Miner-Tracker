@@ -180,8 +180,14 @@
       el.textContent='⚠ EVE SYNC ERROR';
       el.title=String(state.esi.lastError);
     }else if(state?.esi?.lastSyncAt){
-      el.textContent='● EVE DATA '+ago(state.esi.lastSyncAt).toUpperCase();
-      el.title='Latest successful EVE character-data sync: '+ago(state.esi.lastSyncAt)+'.';
+      const dbg=state?.esi?.ledgerDebug||null;
+      if(dbg&&!dbg.cacheComplete){
+        el.textContent='● EVE LEDGER '+Number(dbg.cachedCharacters||0)+'/'+Number(dbg.linkedCharacters||0);
+        el.title='Character data has synced before, but the in-memory mining-ledger cache is still rebuilding after this server start.';
+      }else{
+        el.textContent='● EVE DATA '+ago(state.esi.lastSyncAt).toUpperCase();
+        el.title='Latest successful EVE character-data sync: '+ago(state.esi.lastSyncAt)+'.';
+      }
     }else{
       el.textContent='● EVE DATA PENDING';
       el.title='No successful EVE character-data sync has completed yet.';
@@ -2403,7 +2409,17 @@
 
     $('actualTodayM3').textContent=fmt(state.esi.actual.today.m3,'m3');
     $('actualTodayIsk').textContent=fmt(actualValue(state.esi.actual.today.jbv));
-    $('actualTodaySub').textContent=state.esi.lastSyncAt?`tracked T3 ledger • EVE day (UTC) • synced ${ago(state.esi.lastSyncAt)}`:'waiting for first EVE ledger sync';
+    const ledgerDebug=state.esi?.ledgerDebug||null;
+    if(ledgerDebug){
+      const cacheText=`cache ${Number(ledgerDebug.cachedCharacters||0)}/${Number(ledgerDebug.linkedCharacters||0)}`;
+      const rowText=`today rows ${Number(ledgerDebug.todayRows||0)} • matched T3 ${Number(ledgerDebug.matchedT3Rows||0)}`;
+      const rejectText=(Number(ledgerDebug.unmatchedSystemRows||0)||Number(ledgerDebug.unmatchedOreRows||0))
+        ?` • rejected system ${Number(ledgerDebug.unmatchedSystemRows||0)} • ore ${Number(ledgerDebug.unmatchedOreRows||0)}`
+        :'';
+      $('actualTodaySub').textContent=`${cacheText} • ${rowText}${rejectText}${state.esi.lastSyncAt?' • synced '+ago(state.esi.lastSyncAt):''}`;
+    }else{
+      $('actualTodaySub').textContent=state.esi.lastSyncAt?`tracked T3 ledger • EVE day (UTC) • synced ${ago(state.esi.lastSyncAt)}`:'waiting for first EVE ledger sync';
+    }
     const payoutPriceBasis=state.market?.jitaBuyBasis==='janice-immediate-buy'?'Janice Jita buy':'ESI Jita buy fallback';
     const unpricedM3=Number(state.esi.actual.today.unpricedM3||0);
     $('actualTodayIskSub').textContent=unpricedM3>0
@@ -2789,7 +2805,13 @@
     const scanLine=boardScanLine(d.system);
     const evidence=boardEvidenceLine(d.system);
     const esiToday=Math.max(0,Number(state?.scans?.[d.system]?.esiTodayM3)||0);
-    const esiTodayHtml=`<span class="sys-evidence ${esiToday>0?'active':''}" title="Raw linked ESI mining ledger total matched to this T3 system for the current Eve day. This diagnostic is independent of GREEN/YELLOW status.">ESI TODAY • ${esc(fmt(esiToday,'m3'))} m³</span>`;
+    const ledgerDebug=state?.esi?.ledgerDebug||null;
+    const ledgerReady=Boolean(ledgerDebug?.cacheComplete);
+    const esiTodayText=ledgerReady?`ESI TODAY • ${fmt(esiToday,'m3')} m³`:'ESI TODAY • SYNCING';
+    const esiTodayTitle=ledgerReady
+      ?'Raw linked ESI mining ledger total matched to this T3 system for the current Eve day. This diagnostic is independent of GREEN/YELLOW status.'
+      :`Mining ledger cache is still rebuilding: ${Number(ledgerDebug?.cachedCharacters||0)} of ${Number(ledgerDebug?.linkedCharacters||state?.esi?.linkedCharacters||0)} linked characters cached.`;
+    const esiTodayHtml=`<span class="sys-evidence ${esiToday>0?'active':''}" title="${esc(esiTodayTitle)}">${esc(esiTodayText)}</span>`;
     const evidenceHtml=evidence?`<span class="sys-evidence ${esc(evidence.tone||'')}">${esc(evidence.text)}</span>`:'';
     b.innerHTML=`${f.cherryPicked?'<span class="cherry-pin">🍒</span>':''}<button class="favorite-toggle" type="button" aria-pressed="${favorite}" title="${favorite?'Remove from favorites':'Favorite this system'}">${favorite?'★':'☆'}</button>${boardArrangeMode?'<span class="drag-grip" aria-hidden="true">⠿</span>':''}<span class="sys-name">${esc(d.system)}</span><span class="sys-ore">#${d.rank} ${esc(d.ore)}</span>${includeTimer?`<span class="sys-state">${line}${distanceText}</span>`:''}<span class="sys-scan${scanLine.stale?' stale':''}">${esc(scanLine.text)}</span>${esiTodayHtml}${evidenceHtml}`;
     b.title=`${d.system} • ${d.ore} • ${statusText[f.status]}${favorite?' • Favorite':''}${f.autoReopenedAt?` • ESI mining detected ${ago(f.autoReopenedAt)}`:''}${Number.isFinite(distance)?` • ${distance.toFixed(2)} LY from C-N4OD`:''} • ${scanLine.title} • ESI today ${Math.round(esiToday).toLocaleString()} m³${evidence?' • '+evidence.title:''}${f.cherryPicked?' • Cherry Picked':''}${f.notes?.length?` • ${f.notes.length} notes`:''}`;
