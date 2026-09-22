@@ -235,7 +235,7 @@
     const ledger=snapshot?.ledger||null;
     const mined=Math.max(0,Number(ledger?.minedM3SinceSite)||0);
     const site=Math.max(0,Number(ledger?.siteM3)||0);
-    let text='Tracker scan request. You entered '+system+'. This system needs a scan update. Please copy your Probe Scanner results and send them to Tracker.';
+    let text='Scan update needed in '+system+'. Open Probe Scanner and send the results to Tracker.';
     if(mined>0&&site>0)text+=' Linked Eve mining ledgers report '+fmt(mined,'m3')+' of '+fmt(site,'m3')+' cubic meters mined.';
     return text;
   }
@@ -3814,7 +3814,7 @@
       const ledger=nextState.scans?.[system]?.ledger||{};
       const mined=Math.max(0,Number(ledger.minedM3SinceSite)||0);
       const pct=Number(ledger.depletionPct);
-      let fallback='Tracker mining update. Mining detected in '+system+'.';
+      let fallback='Mining detected in '+system+'. Field marked picked.';
       if(mined>0)fallback+=' About '+Math.round(mined).toLocaleString()+' cubic meters reported mined.';
       if(Number.isFinite(pct)&&pct>=80)fallback+=' Estimated depletion '+Math.round(pct)+' percent. Scan recommended.';
       speakJlr('field',{system},fallback);
