@@ -199,7 +199,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.92');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.93');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -431,49 +431,97 @@
   async function loadBrainLocalModel(){
     if(brainLocalModel)return brainLocalModel;
     if(brainLocalModelPromise)return brainLocalModelPromise;
-    brainSetListen('MIC AI LOADING','Preparing JLR local speech recognition. First load may download the offline English model (~40 MB); later loads use browser storage.');
-    brainLocalModelPromise=(async()=>{
+
+    const waitForLibrary=async()=>{
       const started=Date.now();
       while(!(window.Vosk&&typeof window.Vosk.Model==='function')){
         if(Date.now()-started>10000)throw new Error('JLR speech library did not load.');
         await new Promise(resolve=>setTimeout(resolve,100));
       }
+    };
 
-      const modelUrl='/vendor/vosk/model-en-us-0.15.tar.gz?v=2';
-      brainSetListen('MIC AI LOADING','Speech engine ready. Loading the offline English model…');
+    const loadCandidate=(modelUrl,label,timeoutMs=90000)=>new Promise((resolve,reject)=>{
+      let settled=false;
+      let instance=null;
+      let timer=null;
+      const finish=(ok,value)=>{
+        if(settled)return;
+        settled=true;
+        if(timer)clearTimeout(timer);
+        if(!ok){
+          try{instance?.terminate?.()}catch{}
+          reject(value instanceof Error?value:new Error(String(value||label+' failed.')));
+        }else resolve(value);
+      };
+      try{
+        brainSetListen('MIC AI LOADING',label);
+        instance=new window.Vosk.Model(modelUrl,-1);
 
-      const model=await new Promise((resolve,reject)=>{
-        let settled=false;
-        let instance=null;
-        const finish=(ok,value)=>{
-          if(settled)return;
-          settled=true;
-          clearTimeout(timer);
-          if(ok)resolve(value);
-          else reject(value instanceof Error?value:new Error(String(value||'Local speech model failed to load.')));
-        };
-        const timer=setTimeout(()=>finish(false,new Error('Local speech model timed out while starting.')),120000);
-        try{
-          instance=new window.Vosk.Model(modelUrl,-1);
-          instance.on('load',message=>{
-            if(message?.result)finish(true,instance);
-            else finish(false,new Error('Local speech model reported an unsuccessful load.'));
-          });
-          instance.on('error',message=>{
-            finish(false,new Error('Local speech model error: '+String(message?.error||message?.message||'unknown worker error')));
-          });
-        }catch(error){
-          finish(false,error);
+        // Vosk only forwards worker messages through Model.on(). A worker that
+        // crashes before it can post a message otherwise looks like a silent hang.
+        const worker=instance?.worker||instance?._worker||null;
+        if(worker&&typeof worker.addEventListener==='function'){
+          worker.addEventListener('error',event=>{
+            const detail=String(event?.message||event?.error?.message||'speech worker crashed');
+            finish(false,new Error('Local speech worker error: '+detail));
+          },{once:true});
+          worker.addEventListener('messageerror',()=>{
+            finish(false,new Error('Local speech worker returned an unreadable message.'));
+          },{once:true});
         }
-      });
 
-      try{model.setLogLevel?.(-1)}catch{}
-      brainLocalModel=model;
-      return model;
+        instance.on('load',message=>{
+          if(message?.result)finish(true,instance);
+          else finish(false,new Error('Local speech model reported an unsuccessful load.'));
+        });
+        instance.on('error',message=>{
+          finish(false,new Error('Local speech model error: '+String(message?.error||message?.message||'unknown worker error')));
+        });
+
+        timer=setTimeout(()=>finish(false,new Error(label+' timed out.')),timeoutMs);
+      }catch(error){
+        finish(false,error);
+      }
+    });
+
+    brainLocalModelPromise=(async()=>{
+      await waitForLibrary();
+
+      // This archive is specifically repackaged for vosk-browser and served with
+      // permissive CORS. Keep the JLR same-origin cache as a second path.
+      const candidates=[
+        {
+          url:'https://fiddle-app.github.io/voice-models/vosk-model-small-en-us-0.15.tar.gz',
+          label:'Loading the JLR offline English model from the browser-compatible model host…',
+          timeout:90000,
+        },
+        {
+          url:'/vendor/vosk/model-en-us-0.15.tar.gz?v=3',
+          label:'Primary model path was unavailable. Retrying through JLR…',
+          timeout:120000,
+        },
+      ];
+
+      const failures=[];
+      for(const candidate of candidates){
+        try{
+          const model=await loadCandidate(candidate.url,candidate.label,candidate.timeout);
+          try{model.setLogLevel?.(-1)}catch{}
+          brainLocalModel=model;
+          return model;
+        }catch(error){
+          const detail=String(error?.message||error||'unknown model error');
+          failures.push(detail);
+          console.warn('JLR local speech model candidate failed.',candidate.url,error);
+        }
+      }
+
+      throw new Error('Local speech model could not start. '+failures.join(' | '));
     })().catch(error=>{
       brainLocalModelPromise=null;
       throw error;
     });
+
     return brainLocalModelPromise;
   }
   async function startBrainLocalListening(reason='LOCAL AI'){
@@ -4763,7 +4811,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.92',
+          version:state?.app?.version||'2.9.93',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
