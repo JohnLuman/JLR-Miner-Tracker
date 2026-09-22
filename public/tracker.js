@@ -1,13 +1,22 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.40';
-  const CORE_URL='/tracker-core.js?v=2.9.40';
+  const ALARM_VERSION='2.9.41';
+  const CORE_URL='/tracker-core.js?v=2.9.41';
 
   let alarmContext=null;
   let alarmSource=null;
   let activeFetch=null;
   let activeUtterance=null;
   let alarmGeneration=0;
+  let lastVoiceMode='unknown';
+
+  function reportVoiceMode(mode,detail){
+    lastVoiceMode=mode;
+    window.jlrVoiceMode=mode;
+    try{
+      window.dispatchEvent(new CustomEvent('jlr-voice-mode',{detail:{mode:mode,detail:String(detail||'')}}));
+    }catch(error){}
+  }
 
   function ensureAlarmContext(){
     if(!alarmContext){
@@ -78,6 +87,7 @@
   function playFallbackSpeech(loss,generation){
     if(generation!==alarmGeneration||!('speechSynthesis' in window))return false;
     try{
+      reportVoiceMode('fallback','Browser voice fallback');
       const synth=window.speechSynthesis;
       synth.cancel();
       const utterance=new SpeechSynthesisUtterance(fallbackText(loss));
@@ -132,6 +142,7 @@
       source.onended=function(){if(alarmSource===source)alarmSource=null;};
       alarmSource=source;
       source.start(0);
+      reportVoiceMode('custom','Custom GPT-SoVITS voice');
       return true;
     }catch(error){
       if(generation!==alarmGeneration)return false;
