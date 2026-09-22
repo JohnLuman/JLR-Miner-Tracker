@@ -199,7 +199,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.87');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.88');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -3033,24 +3033,13 @@
     $('cnValueKpi').textContent=cnHourly===null?'—':`${fmt(cnHourly)}/hr`;
     $('cnValueSub').textContent=cnHourly===null?'C-N private mineral price unavailable':`${cnPerM3.toFixed(2)} ISK/m³ • ${(payout*100).toFixed(1)}% payout • prices ${ago(state.market?.lastUpdatedAt)}`;
 
-    $('actualTodayM3').textContent=fmt(state.esi.actual.today.m3,'m3');
     $('actualTodayIsk').textContent=fmt(actualValue(state.esi.actual.today.jbv));
-    const ledgerDebug=state.esi?.ledgerDebug||null;
-    if(ledgerDebug){
-      const cacheText=`cache ${Number(ledgerDebug.cachedCharacters||0)}/${Number(ledgerDebug.linkedCharacters||0)}`;
-      const rowText=`today rows ${Number(ledgerDebug.todayRows||0)} • matched T3 ${Number(ledgerDebug.matchedT3Rows||0)}`;
-      const rejectText=(Number(ledgerDebug.unmatchedSystemRows||0)||Number(ledgerDebug.unmatchedOreRows||0))
-        ?` • rejected system ${Number(ledgerDebug.unmatchedSystemRows||0)} • ore ${Number(ledgerDebug.unmatchedOreRows||0)}`
-        :'';
-      $('actualTodaySub').textContent=`${cacheText} • ${rowText}${rejectText}${state.esi.lastSyncAt?' • synced '+ago(state.esi.lastSyncAt):''}`;
-    }else{
-      $('actualTodaySub').textContent=state.esi.lastSyncAt?`tracked T3 ledger • EVE day (UTC) • synced ${ago(state.esi.lastSyncAt)}`:'waiting for first EVE ledger sync';
-    }
     const payoutPriceBasis=state.market?.jitaBuyBasis==='janice-immediate-buy'?'Janice Jita buy':'ESI Jita buy fallback';
     const unpricedM3=Number(state.esi.actual.today.unpricedM3||0);
+    const appTodayM3=Number(state.esi.actual.today.m3||0);
     $('actualTodayIskSub').textContent=unpricedM3>0
-      ?payoutPriceBasis+' refined • '+fmt(unpricedM3,'m3')+' m³ awaiting price • ALL JLR-LINKED TOONS'
-      :payoutPriceBasis+' refined • exact grade • '+(payout*100).toFixed(1)+'% payout • ALL JLR-LINKED TOONS';
+      ?fmt(appTodayM3,'m3')+' m³ • '+payoutPriceBasis+' refined • '+fmt(unpricedM3,'m3')+' m³ awaiting price • ALL JLR-LINKED TOONS'
+      :fmt(appTodayM3,'m3')+' m³ • '+payoutPriceBasis+' refined • exact grade • '+(payout*100).toFixed(1)+'% payout • ALL JLR-LINKED TOONS';
     const myTotals=myLedgerSummary?.totals||null;
     const myRawValue=Number(myTotals?.jbv||0);
     const myUnpricedM3=Number(myTotals?.unpricedM3||0);
@@ -4590,7 +4579,7 @@
       const type=document.querySelector('.brain-feedback-type.active')?.dataset.feedbackType||'suggestion';
       const message=String($('brainFeedbackText')?.value||'').trim();
       if(!message){toast('Add a short description first.');return}
-      await api('/api/tracker/brain/feedback',{method:'POST',body:JSON.stringify({type,message,context:{version:state?.app?.version||'2.9.87',tab:activeTab,lastSpeech:brainSpeechHistory[0]?.text||''}})});
+      await api('/api/tracker/brain/feedback',{method:'POST',body:JSON.stringify({type,message,context:{version:state?.app?.version||'2.9.88',tab:activeTab,lastSpeech:brainSpeechHistory[0]?.text||''}})});
       $('brainFeedbackText').value='';
       toast('Tracker feedback submitted.');
       return;
