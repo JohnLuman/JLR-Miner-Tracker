@@ -3827,6 +3827,46 @@
     }
   });
 
+  $('scanAllFits')?.addEventListener('click',async()=>{
+    const button=$('scanAllFits');
+    const characters=Array.isArray(me?.characters)?me.characters:[];
+    if(!characters.length){toast('No linked toons to scan.');return;}
+    button.disabled=true;
+    const original=button.textContent;
+    let ok=0,failed=0,saved=0,mining=0,abyssal=0;
+    const errors=[];
+    try{
+      for(let index=0;index<characters.length;index++){
+        const character=characters[index];
+        button.textContent=`SCANNING ${index+1}/${characters.length}…`;
+        try{
+          const payload=await api(`/api/esi/fittings/${encodeURIComponent(character.characterId)}`,{method:'POST',body:'{}'});
+          me=payload.user||me;
+          const fit=payload.fitSync||{};
+          ok++;
+          saved+=Number(fit.savedFittingsCount||0);
+          mining+=Number(fit.miningFittingsCount||0);
+          abyssal+=Number(fit.abyssalStripCount||0);
+          renderAll();
+        }catch(error){
+          failed++;
+          errors.push(`${character.name||character.characterId}: ${String(error?.message||error)}`);
+        }
+        if(index<characters.length-1)await new Promise(resolve=>setTimeout(resolve,350));
+      }
+      await refreshMe().catch(()=>{});
+      renderAll();
+      button.textContent=failed?'SCAN COMPLETE ⚠':'SCAN COMPLETE ✓';
+      if(failed){
+        toast(`Fits scanned: ${ok} succeeded • ${failed} failed • ${saved} saved • ${mining} mining • ${abyssal} Abyssal. ${errors[0]||''}`);
+      }else{
+        toast(`All ${ok} toons scanned • ${saved} saved fits • ${mining} mining fits • ${abyssal} Abyssal strips`);
+      }
+    }finally{
+      setTimeout(()=>{button.textContent=original;button.disabled=false},3000);
+    }
+  });
+
   $('oreTrendSelect').addEventListener('change',()=>{
     oreTrendType=$('oreTrendSelect').value||'Kylixium';
     localStorage.setItem('jlrOreTrend',oreTrendType);
