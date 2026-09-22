@@ -237,6 +237,7 @@ let heavyFighterTypeIdsCache = {at:0,ids:null,promise:null};
 let trackerLiveLosses = [];
 const trackerLiveSeenKillIds = new Set();
 const trackerVoiceJobs = new Map();
+const trackerBrainAnnouncementMemory = new Map();
 let trackerR2z2State = {
   running:false,
   caughtUp:false,
@@ -783,10 +784,11 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.70',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.71',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
+    trackerBrain:trackerBrainSnapshot(),
     market:{lastUpdatedAt:state.market.lastUpdatedAt,lastError:state.market.lastError,privateLastError:state.market.privateLastError||null,refreshing:marketRefreshInProgress,valuation:'MAX REFINE',maxRefineYield:MAX_REFINE_YIELD,jita:'Jita IV - Moon 4 - Caldari Navy Assembly Plant',jitaBuyBasis:state.market.jitaBuyBasis||'unavailable',janiceConfigured:Boolean(JANICE_API_KEY),janiceLastError:state.market.janiceLastError||null,local:CN_SYSTEM_NAME,titanBridgeRangeLy:TITAN_BRIDGE_RANGE_LY,history:marketHistoryPublic(),privateAccess:Boolean(state.market.refreshTokenEnc),marketCharacterName:state.market.characterName||null,structureName:state.market.structureName||null},
     esi:{configured:Boolean(EVE_CLIENT_ID),linkedCharacters:Object.keys(state.characters).length,lastSyncAt:state.esi.lastSyncAt,lastError:/temporarily unavailable\s*\(HTTP\s*\d+\)/i.test(String(state.esi.lastError||''))?null:state.esi.lastError,syncing:syncInProgress||manualSyncCount>0,ledgerDebug:miningLedgerDebug(),scheduler:{...autoSyncPlan(Object.keys(state.characters).length||1),active:esiCharacterSyncActive,queued:esiCharacterSyncWaiters.length,backoffUntil:esiBackoffUntil>Date.now()?new Date(esiBackoffUntil).toISOString():null},actual:{today:todayActual,week:weekActual,basis:{day:'UTC',exactTypeId:true,exactGrade:true,valuationVersion:LEDGER_VALUATION_VERSION}},performance:{daily:daily.slice(0,90).map(row=>({date:String(row.date||''),m3:Number(row.m3||0),jbv:Number(row.jbv||0),unpricedM3:Number(row.unpricedM3||0),ores:row.ores&&typeof row.ores==='object'?row.ores:{}})),samples:(state.esi.performanceSamples||[]).slice(-672)}},
     serverNow:now(),
@@ -2822,6 +2824,350 @@ function jlrFieldVoiceText(system){
   return parts.join(' ');
 }
 
+function trackerBrainPriorityRank(priority){
+  return priority==='critical'?4:priority==='high'?3:priority==='attention'?2:1;
+}
+
+function trackerBrainVolumeText(value){
+  const n=Math.max(0,Number(value)||0);
+  if(n>=1e6)return (n/1e6).toFixed(n>=1e7?0:1)+' million cubic meters';
+  if(n>=1e3)return Math.round(n/1e3)+' thousand cubic meters';
+  return Math.round(n)+' cubic meters';
+}
+
+function trackerBrainScanAgeText(scanAt){
+  const ms=Date.parse(scanAt||'');
+  if(!Number.isFinite(ms))return 'No confirmed scan is recorded.';
+  const minutes=Math.max(0,Math.floor((Date.now()-ms)/60000));
+  if(minutes<60)return 'The last confirmed scan was less than one hour ago.';
+  if(minutes<120)return 'The last confirmed scan was about one hour ago.';
+  const hours=Math.floor(minutes/60);
+  if(hours<24)return `The last confirmed scan was about ${hours} hours ago.`;
+  const days=Math.floor(hours/24);
+  return `The last confirmed scan was about ${days} day${days===1?'':'s'} ago.`;
+}
+
+function trackerBrainIssueSignature(issue){
+  return String(issue?.signature||issue?.id||'');
+}
+
+function trackerBrainMemoryFor(user){
+  const key=String(user?.id||'shared');
+  let memory=trackerBrainAnnouncementMemory.get(key);
+  if(!memory){
+    memory=new Map();
+    trackerBrainAnnouncementMemory.set(key,memory);
+  }
+  const cutoff=Date.now()-24*60*60*1000;
+  for(const [id,row] of memory){
+    if(Number(row?.at||0)<cutoff)memory.delete(id);
+  }
+  if(trackerBrainAnnouncementMemory.size>500){
+    const first=trackerBrainAnnouncementMemory.keys().next().value;
+    if(first&&first!==key)trackerBrainAnnouncementMemory.delete(first);
+  }
+  return memory;
+}
+
+function trackerBrainRecentlyAnnounced(user,issue){
+  const memory=trackerBrainMemoryFor(user);
+  const prior=memory.get(String(issue.id));
+  if(!prior||prior.signature!==trackerBrainIssueSignature(issue))return false;
+  const rank=trackerBrainPriorityRank(issue.priority);
+  const ttl=rank>=4?2*60*1000:rank>=3?5*60*1000:rank>=2?30*60*1000:60*60*1000;
+  return Date.now()-Number(prior.at||0)<ttl;
+}
+
+function trackerBrainRemember(user,issues){
+  const memory=trackerBrainMemoryFor(user);
+  for(const issue of issues||[]){
+    memory.set(String(issue.id),{signature:trackerBrainIssueSignature(issue),at:Date.now()});
+  }
+}
+
+function trackerBrainWhySystem(system){
+  const definition=SYSTEM_MAP.get(system)||null;
+  if(!definition)return null;
+  const field=state.fields?.[system]||null;
+  const scan=scanActivityPublic()[system]||null;
+  const ledger=scan?.ledger||null;
+  const rawToday=Math.max(0,Number(scan?.esiTodayM3)||0);
+  const mined=Math.max(0,Number(ledger?.minedM3SinceSite)||0);
+  const pct=Number(ledger?.depletionPct);
+  const scanMs=Date.parse(scan?.lastScanAt||'');
+  const stale=!Number.isFinite(scanMs)||Date.now()-scanMs>=A0_REPORT_TTL;
+  const spoken=trackerSpokenSystem(system);
+  const facts=[];
+  let priority='info';
+
+  if(field?.status==='cleared'){
+    const endMs=Date.parse(field.timerEndsAt||'');
+    if(Number.isFinite(endMs)&&endMs>Date.now()){
+      const minutes=Math.max(1,Math.ceil((endMs-Date.now())/60000));
+      const hours=Math.floor(minutes/60),rem=minutes%60;
+      const remaining=hours>0?(rem?hours+' hours and '+rem+' minutes':hours+' hours'):minutes+' minutes';
+      facts.push(`The field is in its respawn timer with about ${remaining} remaining.`);
+    }else{
+      facts.push('The field is marked cleared and is waiting to become available.');
+    }
+  }else if(field?.status==='picked'){
+    facts.push('The field is marked picked.');
+  }else{
+    facts.push('The field is currently marked mineable.');
+  }
+
+  if(rawToday>0){
+    facts.push(`Linked Eve mining ledgers report ${trackerBrainVolumeText(rawToday)} mined in this system today.`);
+  }
+
+  if(field?.status==='ready'&&rawToday>0&&mined<=0){
+    priority='attention';
+    facts.push('Tracker has not safely assigned that daily total to the current site cycle, so the field has not been changed from green yet.');
+  }else if(mined>0){
+    facts.push(`Tracker has attributed ${trackerBrainVolumeText(mined)} to the current site cycle.`);
+  }
+
+  if(Number.isFinite(pct)){
+    if(pct>=95){
+      priority='high';
+      facts.push(`Estimated depletion is ${Math.round(pct)} percent. A new scan is needed.`);
+    }else if(pct>=80){
+      if(priority!=='high')priority='attention';
+      facts.push(`Estimated depletion is ${Math.round(pct)} percent. A new scan is recommended.`);
+    }
+  }
+
+  if(stale){
+    if(priority==='info')priority='attention';
+    facts.push(trackerBrainScanAgeText(scan?.lastScanAt));
+  }
+
+  const first=facts[0]||'No active field warning is recorded.';
+  const voice=`For system ${spoken}. ${facts.join(' ')}`;
+  return{
+    system,
+    ore:definition.ore,
+    priority,
+    summary:first,
+    facts,
+    voice,
+    fieldStatus:field?.status||null,
+    rawTodayM3:rawToday,
+    minedM3SinceSite:mined,
+    depletionPct:Number.isFinite(pct)?pct:null,
+    lastScanAt:scan?.lastScanAt||null,
+    generatedAt:now(),
+  };
+}
+
+function trackerBrainSnapshot(){
+  const issues=[];
+  const scans=scanActivityPublic();
+  const debug=miningLedgerDebug();
+  const live=trackerLiveStatus();
+
+  const add=(issue)=>{
+    if(!issue?.id)return;
+    issues.push({...issue,rank:trackerBrainPriorityRank(issue.priority)});
+  };
+
+  if(state.esi.lastError){
+    add({
+      id:'esi-sync-error',
+      type:'esi',
+      priority:'high',
+      title:'Eve synchronization warning',
+      reason:String(state.esi.lastError),
+      voice:'Eve synchronization has a warning. Check the connected character status.',
+      signature:'esi-sync-error|'+String(state.esi.lastError),
+    });
+  }else if(!debug.cacheComplete){
+    const label=`${debug.cachedCharacters} of ${debug.linkedCharacters} character ledgers are ready`;
+    add({
+      id:'esi-ledger-partial',
+      type:'esi',
+      priority:'info',
+      title:'Mining ledger cache is rebuilding',
+      reason:label,
+      voice:`Mining ledger synchronization is still in progress. ${label}.`,
+      signature:`esi-ledger-partial|${debug.cachedCharacters}|${debug.linkedCharacters}`,
+    });
+  }
+
+  const marketMs=Date.parse(state.market?.lastUpdatedAt||'');
+  if(!Number.isFinite(marketMs)||Date.now()-marketMs>=36*60*60*1000){
+    add({
+      id:'market-stale',
+      type:'market',
+      priority:'attention',
+      title:'Market data needs an update',
+      reason:Number.isFinite(marketMs)?`Last market refresh was ${Math.floor((Date.now()-marketMs)/3600000)} hours ago.`:'No successful market refresh is recorded.',
+      voice:'Market data needs an update.',
+      signature:'market-stale|'+String(state.market?.lastUpdatedAt||'never'),
+    });
+  }
+
+  if(!live.caughtUp){
+    add({
+      id:'fighter-feed-connecting',
+      type:'tracker',
+      priority:'info',
+      title:'Heavy Fighter feed is connecting',
+      reason:'The live Heavy Fighter feed has not caught up yet.',
+      voice:'Heavy Fighter tracking is still connecting.',
+      signature:'fighter-feed|'+String(live.lastSuccessAt||live.startedAt||'pending'),
+    });
+  }
+
+  for(const definition of SYSTEM_DEFS){
+    const system=definition.system;
+    const field=state.fields?.[system]||null;
+    const scan=scans?.[system]||null;
+    const ledger=scan?.ledger||null;
+    const rawToday=Math.max(0,Number(scan?.esiTodayM3)||0);
+    const mined=Math.max(0,Number(ledger?.minedM3SinceSite)||0);
+    const pct=Number(ledger?.depletionPct);
+    const scanMs=Date.parse(scan?.lastScanAt||'');
+    const stale=!Number.isFinite(scanMs)||Date.now()-scanMs>=A0_REPORT_TTL;
+    const spoken=trackerSpokenSystem(system);
+
+    if(field?.status==='ready'&&rawToday>0&&mined<=0){
+      add({
+        id:'field-attribution-'+system,
+        type:'field-attribution',
+        system,
+        priority:'attention',
+        title:`${system}: mining recorded, site attribution pending`,
+        reason:`ESI reports ${Math.round(rawToday).toLocaleString()} m³ mined today, but Tracker cannot safely assign it to the current site cycle yet.`,
+        voice:`System ${spoken} has mining recorded today, but Tracker has not safely assigned it to the current site cycle.`,
+        signature:`field-attribution|${system}|${Math.round(rawToday)}|${field?.updatedAt||''}`,
+      });
+      continue;
+    }
+
+    if(Number.isFinite(pct)&&pct>=95){
+      add({
+        id:'field-depletion-'+system,
+        type:'field-depletion',
+        system,
+        priority:'high',
+        title:`${system}: scan needed now`,
+        reason:`Estimated depletion is ${Math.round(pct)}% with ${Math.round(mined).toLocaleString()} m³ attributed to this site cycle.`,
+        voice:`System ${spoken} is estimated to be ${Math.round(pct)} percent mined. A new scan is needed.`,
+        signature:`field-depletion|${system}|${Math.round(pct)}|${ledger?.lastActivityAt||''}`,
+      });
+      continue;
+    }
+
+    if(Boolean(ledger?.needsScan)){
+      add({
+        id:'field-scan-'+system,
+        type:'field-scan',
+        system,
+        priority:'attention',
+        title:`${system}: scan recommended`,
+        reason:Number.isFinite(pct)?`Estimated depletion is ${Math.round(pct)}%.`:'Linked mining activity indicates the field should be checked.',
+        voice:`System ${spoken} needs a scan update.`,
+        signature:`field-scan|${system}|${Math.round(Number.isFinite(pct)?pct:0)}|${ledger?.lastActivityAt||''}`,
+      });
+      continue;
+    }
+
+    if(stale&&field?.status!=='cleared'){
+      add({
+        id:'scan-stale-'+system,
+        type:'scan-stale',
+        system,
+        priority:'attention',
+        title:`${system}: scan update needed`,
+        reason:trackerBrainScanAgeText(scan?.lastScanAt),
+        voice:`System ${spoken} needs an updated scan.`,
+        signature:`scan-stale|${system}|${scan?.lastScanAt||'never'}`,
+      });
+      continue;
+    }
+
+    if(field?.status==='cleared'){
+      const endMs=Date.parse(field.timerEndsAt||'');
+      if(Number.isFinite(endMs)&&endMs>Date.now()&&endMs-Date.now()<=60*60*1000){
+        const minutes=Math.max(1,Math.ceil((endMs-Date.now())/60000));
+        add({
+          id:'respawn-soon-'+system,
+          type:'respawn',
+          system,
+          priority:'info',
+          title:`${system}: respawn approaching`,
+          reason:`About ${minutes} minutes remain on the respawn timer.`,
+          voice:`System ${spoken} is expected to respawn in about ${minutes} minutes.`,
+          signature:`respawn-soon|${system}|${field.timerEndsAt}`,
+        });
+      }
+    }
+  }
+
+  issues.sort((a,b)=>b.rank-a.rank||String(a.system||'').localeCompare(String(b.system||''))||String(a.id).localeCompare(String(b.id)));
+  const counts={critical:0,high:0,attention:0,info:0};
+  for(const issue of issues)counts[issue.priority]=(counts[issue.priority]||0)+1;
+  const attentionCount=issues.filter(issue=>issue.rank>=2).length;
+
+  return{
+    generatedAt:now(),
+    healthy:attentionCount===0,
+    attentionCount,
+    counts,
+    issues,
+    connectedCharacters:Object.keys(state.characters).length,
+    ledgerCache:{linked:debug.linkedCharacters,cached:debug.cachedCharacters,complete:debug.cacheComplete},
+  };
+}
+
+function trackerBrainBriefing(user,{force=false}={}){
+  const snapshot=trackerBrainSnapshot();
+  const candidates=force?snapshot.issues:snapshot.issues.filter(issue=>!trackerBrainRecentlyAnnounced(user,issue));
+  const parts=['Tracker is online.'];
+  const connected=snapshot.connectedCharacters;
+
+  if(!snapshot.issues.length){
+    parts.push('Everything looks normal.');
+  }else if(!candidates.length){
+    parts.push('There are no new priority changes.');
+  }else{
+    const attention=candidates.filter(issue=>issue.rank>=2);
+    const source=attention.length?attention:candidates;
+    if(attention.length){
+      parts.push(`I have ${attention.length} item${attention.length===1?'':'s'} that need attention.`);
+    }else{
+      parts.push(`I have ${source.length} status update${source.length===1?'':'s'}.`);
+    }
+
+    const spoken=[];
+    const staleScans=source.filter(issue=>issue.type==='scan-stale');
+    const specific=source.filter(issue=>issue.type!=='scan-stale').slice(0,2);
+    spoken.push(...specific);
+
+    if(spoken.length<2&&staleScans.length){
+      spoken.push(staleScans[0]);
+    }
+
+    for(const issue of spoken)parts.push(issue.voice);
+
+    const spokenIds=new Set(spoken.map(issue=>issue.id));
+    const remaining=source.filter(issue=>!spokenIds.has(issue.id));
+    const remainingStale=remaining.filter(issue=>issue.type==='scan-stale').length;
+    if(remainingStale>0){
+      parts.push(`${remainingStale} additional system${remainingStale===1?'':'s'} need scan updates.`);
+    }else if(remaining.length>0){
+      parts.push(`${remaining.length} additional item${remaining.length===1?' is':'s are'} listed in Tracker Assist.`);
+    }
+
+    trackerBrainRemember(user,source.slice(0,8));
+  }
+
+  if(connected>0)parts.push(`${connected} connected character${connected===1?' is':'s are'} being monitored.`);
+  return{text:parts.join(' '),snapshot,candidates};
+}
+
+
 function recordBoardScan({system,text,a0,t3Scan=null,definition=null}){
   const parsed=parseA0Scan(text);
   const iceParsed=parseIceScan(text);
@@ -3674,33 +4020,7 @@ function trackerVoiceText(loss){
 }
 
 function jlrStartupVoiceText(user){
-  const linked=(user?.characterIds||[]).length;
-  const tracker=trackerLiveStatus();
-  const parts=['Tracker is online.'];
-
-  parts.push(
-    state.esi.lastError
-      ? 'Eve synchronization has a warning.'
-      : state.esi.lastSyncAt
-        ? 'Eve data is synchronized.'
-        : 'Eve synchronization is pending.'
-  );
-
-  const marketMs=Date.parse(state.market?.lastUpdatedAt||'');
-  parts.push(
-    Number.isFinite(marketMs)&&Date.now()-marketMs<36*60*60*1000
-      ? 'Market data is current.'
-      : 'Market data needs an update.'
-  );
-
-  parts.push(
-    tracker.caughtUp
-      ? 'Heavy Fighter tracking is connected.'
-      : 'Heavy Fighter tracking is connecting.'
-  );
-
-  parts.push(`${linked} linked character${linked===1?' is':'s are'} ready.`);
-  return parts.join(' ');
+  return trackerBrainBriefing(user,{force:false}).text;
 }
 
 
@@ -5693,7 +6013,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.70',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.71',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -6117,7 +6437,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.70 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.71 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
 setInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': tracker-heartbeat\n\n')}catch{trackerLiveClients.delete(res)}}},20_000).unref();
 setInterval(()=>resetExpired(true),15_000).unref();
