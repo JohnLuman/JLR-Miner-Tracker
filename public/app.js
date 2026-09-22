@@ -198,7 +198,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.83');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.84');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -383,7 +383,8 @@
     stopBrainMicStream();
     const selected=brainMicDeviceId||'default';
     brainSetListen('MIC STARTING','Opening '+brainMicLabel(selected)+'…');
-    const audio=selected==='default'?true:{deviceId:{exact:selected}};
+    const speechAudio={echoCancellation:true,noiseSuppression:true,channelCount:1};
+    const audio=selected==='default'?speechAudio:{...speechAudio,deviceId:{exact:selected}};
     const stream=await navigator.mediaDevices.getUserMedia({audio});
     const track=stream.getAudioTracks()[0]||null;
     if(!track){
@@ -429,14 +430,21 @@
   async function loadBrainLocalModel(){
     if(brainLocalModel)return brainLocalModel;
     if(brainLocalModelPromise)return brainLocalModelPromise;
-    if(!window.Vosk?.createModel)throw new Error('JLR local speech engine did not load. Refresh the page and try again.');
-    brainSetListen('MIC AI LOADING','Loading JLR local speech recognition. The first load downloads an offline English model; later loads use the browser cache.');
-    brainLocalModelPromise=(async()=>{
-      const model=await window.Vosk.createModel('https://ccoreilly.github.io/vosk-browser/models/vosk-model-small-en-us-0.15.tar.gz');
-      try{model.setLogLevel?.(-1)}catch{}
-      brainLocalModel=model;
-      return model;
-    })().catch(error=>{
+    brainSetListen('MIC AI LOADING','Downloading and preparing the JLR offline English speech model (~40 MB). First load may take a minute; later loads use the browser cache.');
+    const actual=(async()=>{
+      const module=await import('/vendor/vosk/vosk.wasm.js?v=0.0.3');
+      if(typeof module.createVoskClient!=='function')throw new Error('JLR speech engine module is missing createVoskClient().');
+      const client=await module.createVoskClient({
+        modelUrl:'https://fiddle-app.github.io/voice-models/vosk-model-small-en-us-0.15.tar.gz',
+        workerUrl:'/vendor/vosk/vosk.worker.js',
+        wasmUrl:'/vendor/vosk/vosk.wasm',
+        logLevel:-1,
+      });
+      brainLocalModel=client;
+      return client;
+    })();
+    const timeout=new Promise((_,reject)=>setTimeout(()=>reject(new Error('Offline speech model did not finish loading within 90 seconds. Click TALK TO TRACKER to retry.')),90000));
+    brainLocalModelPromise=Promise.race([actual,timeout]).catch(error=>{
       brainLocalModelPromise=null;
       throw error;
     });
@@ -4552,7 +4560,7 @@
       const type=document.querySelector('.brain-feedback-type.active')?.dataset.feedbackType||'suggestion';
       const message=String($('brainFeedbackText')?.value||'').trim();
       if(!message){toast('Add a short description first.');return}
-      await api('/api/tracker/brain/feedback',{method:'POST',body:JSON.stringify({type,message,context:{version:state?.app?.version||'2.9.83',tab:activeTab,lastSpeech:brainSpeechHistory[0]?.text||''}})});
+      await api('/api/tracker/brain/feedback',{method:'POST',body:JSON.stringify({type,message,context:{version:state?.app?.version||'2.9.84',tab:activeTab,lastSpeech:brainSpeechHistory[0]?.text||''}})});
       $('brainFeedbackText').value='';
       toast('Tracker feedback submitted.');
       return;
