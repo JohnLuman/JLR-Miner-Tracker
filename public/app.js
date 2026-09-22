@@ -181,7 +181,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.77');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.78');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -247,7 +247,7 @@
     const command=heard.toLowerCase().replace(/^tracker[\s,.:;-]*/,'').trim();
     if(!command){
       brainConversationUntil=Date.now()+brainConversationMs();
-      brainSetListen('LISTENING','Ask your question.');
+      brainSetListen('MIC ON','Listening for your question.');
       return;
     }
     brainConversationUntil=Date.now()+brainConversationMs();
@@ -305,7 +305,7 @@
     recognition.continuous=true;
     recognition.interimResults=false;
     recognition.lang='en-US';
-    recognition.onstart=()=>brainSetListen('SAY “TRACKER”','Wake word armed. Follow-up questions work briefly without repeating it.');
+    recognition.onstart=()=>brainSetListen('MIC ON','Say “Tracker” to wake the assistant. Follow-up questions work briefly without repeating it.');
     recognition.onerror=event=>{
       const code=String(event?.error||'microphone error');
       if(code==='not-allowed'||code==='service-not-allowed'){
@@ -315,7 +315,7 @@
         return;
       }
       if(code==='no-speech'){
-        brainSetListen('SAY “TRACKER”','Wake word armed.');
+        brainSetListen('MIC ON','Say “Tracker” to wake the assistant.');
         return;
       }
       brainSetListen('MIC '+code.toUpperCase(),'Tracker will retry automatically.');
@@ -4192,7 +4192,7 @@
       const type=document.querySelector('.brain-feedback-type.active')?.dataset.feedbackType||'suggestion';
       const message=String($('brainFeedbackText')?.value||'').trim();
       if(!message){toast('Add a short description first.');return}
-      await api('/api/tracker/brain/feedback',{method:'POST',body:JSON.stringify({type,message,context:{version:state?.app?.version||'2.9.77',tab:activeTab,lastSpeech:brainSpeechHistory[0]?.text||''}})});
+      await api('/api/tracker/brain/feedback',{method:'POST',body:JSON.stringify({type,message,context:{version:state?.app?.version||'2.9.78',tab:activeTab,lastSpeech:brainSpeechHistory[0]?.text||''}})});
       $('brainFeedbackText').value='';
       toast('Tracker feedback submitted.');
       return;
