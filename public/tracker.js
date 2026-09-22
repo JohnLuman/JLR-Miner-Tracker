@@ -1,133 +1,69 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.38';
-  const CORE_URL='/tracker-core.js?v=2.9.38';
-  const ALARM_URL='/audio/heavy-fighter-calm-alert-00.b64?v='+ALARM_VERSION;
-  const ALARM_BYTES=11642;
-  const ALARM_MIME='audio/ogg; codecs=opus';
+  const ALARM_VERSION='2.9.39';
+  const CORE_URL='/tracker-core.js?v=2.9.39';
+  const ALERT_TEXT='Attention. A Heavy Fighter loss has been detected. Please check the JLR Tracker for the system, pilot, corporation, and loss details. JLR Tracker is standing by.';
 
-  let alarmContext=null;
-  let alarmBufferPromise=null;
-  let alarmSource=null;
-  let alarmHtmlPlayer=null;
-  let alarmBlobUrl=null;
-  let alarmGeneration=0;
+  let activeUtterance=null;
 
-  function ensureAlarmContext(){
-    if(!alarmContext){
-      const AudioContext=window.AudioContext||window.webkitAudioContext;
-      if(AudioContext)alarmContext=new AudioContext();
-    }
-    return alarmContext;
+  function availableVoices(){
+    if(!('speechSynthesis' in window))return [];
+    return window.speechSynthesis.getVoices()||[];
   }
 
-  async function loadAlarmBytes(){
-    const response=await fetch(ALARM_URL,{cache:'no-store'});
-    if(!response.ok)throw new Error('Voice alert failed: '+response.status);
-    const encoded=(await response.text()).replace(/\s+/g,'');
-    const raw=atob(encoded);
-    const bytes=new Uint8Array(raw.length);
-    for(let index=0;index<raw.length;index++)bytes[index]=raw.charCodeAt(index);
-    if(bytes.length!==ALARM_BYTES)throw new Error('Voice alert was incomplete: '+bytes.length+' bytes.');
-    return bytes;
+  function voiceScore(voice){
+    const name=String(voice&&voice.name||'').toLowerCase();
+    const lang=String(voice&&voice.lang||'').toLowerCase();
+    let score=0;
+    if(lang.startsWith('en-us'))score+=30;
+    else if(lang.startsWith('en-gb'))score+=24;
+    else if(lang.startsWith('en'))score+=18;
+    if(/natural|neural|online/.test(name))score+=30;
+    if(/guy|ryan|mark|david|daniel|george|male/.test(name))score+=22;
+    if(/microsoft|google|apple/.test(name))score+=8;
+    if(/zira|samantha|victoria|female/.test(name))score-=6;
+    return score;
   }
 
-  function ensureHtmlPlayer(bytes){
-    if(alarmHtmlPlayer)return alarmHtmlPlayer;
-    if(!alarmBlobUrl)alarmBlobUrl=URL.createObjectURL(new Blob([bytes],{type:ALARM_MIME}));
-    alarmHtmlPlayer=new Audio(alarmBlobUrl);
-    alarmHtmlPlayer.preload='auto';
-    alarmHtmlPlayer.volume=1;
-    return alarmHtmlPlayer;
-  }
-
-  function loadAlarmBuffer(){
-    if(alarmBufferPromise)return alarmBufferPromise;
-    alarmBufferPromise=(async function(){
-      const bytes=await loadAlarmBytes();
-      const context=ensureAlarmContext();
-      if(context){
-        try{
-          const copy=bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength);
-          const buffer=await context.decodeAudioData(copy);
-          return {kind:'webaudio',buffer:buffer,bytes:bytes};
-        }catch(error){
-          console.warn('Heavy Fighter voice alert WebAudio decode failed; using HTML audio.',error);
-        }
-      }
-      return {kind:'html',player:ensureHtmlPlayer(bytes),bytes:bytes};
-    })().catch(function(error){
-      alarmBufferPromise=null;
-      console.warn('Heavy Fighter voice alert failed to load.',error);
-      throw error;
-    });
-    return alarmBufferPromise;
+  function preferredVoice(){
+    return availableVoices().slice().sort(function(a,b){return voiceScore(b)-voiceScore(a);})[0]||null;
   }
 
   async function unlockAlarm(){
-    const context=ensureAlarmContext();
-    if(context&&context.state==='suspended'){
-      try{await context.resume();}catch(error){}
-    }
-    loadAlarmBuffer().catch(function(){});
-    return Boolean(!context||context.state==='running');
+    if(!('speechSynthesis' in window))return false;
+    availableVoices();
+    return true;
   }
 
   async function playVoiceAlert(){
-    const generation=alarmGeneration;
+    if(!('speechSynthesis' in window))return false;
     try{
-      const loaded=await loadAlarmBuffer();
-      if(generation!==alarmGeneration)return false;
-      if(loaded.kind==='webaudio'){
-        const context=ensureAlarmContext();
-        if(!context)return false;
-        if(context.state==='suspended'){
-          try{await context.resume();}catch(error){}
-        }
-        if(context.state!=='running')return false;
-        if(alarmSource){
-          try{alarmSource.stop();}catch(error){}
-          alarmSource=null;
-        }
-        const source=context.createBufferSource();
-        const gain=context.createGain();
-        source.buffer=loaded.buffer;
-        gain.gain.setValueAtTime(1,context.currentTime);
-        source.connect(gain);
-        gain.connect(context.destination);
-        source.onended=function(){if(alarmSource===source)alarmSource=null;};
-        alarmSource=source;
-        source.start(0);
-        return true;
-      }
-      const player=loaded.player||ensureHtmlPlayer(loaded.bytes);
-      player.pause();
-      player.currentTime=0;
-      player.muted=false;
-      player.volume=1;
-      await player.play();
+      window.speechSynthesis.cancel();
+      const utterance=new SpeechSynthesisUtterance(ALERT_TEXT);
+      const voice=preferredVoice();
+      if(voice)utterance.voice=voice;
+      utterance.lang=voice&&voice.lang?voice.lang:'en-US';
+      utterance.rate=.86;
+      utterance.pitch=.76;
+      utterance.volume=1;
+      utterance.onend=function(){if(activeUtterance===utterance)activeUtterance=null;};
+      utterance.onerror=function(){if(activeUtterance===utterance)activeUtterance=null;};
+      activeUtterance=utterance;
+      window.speechSynthesis.speak(utterance);
       return true;
     }catch(error){
       console.warn('Heavy Fighter voice alert playback failed.',error);
+      activeUtterance=null;
       return false;
     }
   }
 
   function stopVoiceAlert(){
-    alarmGeneration++;
-    let stopped=false;
-    if(alarmSource){
-      try{alarmSource.stop();stopped=true;}catch(error){}
-      alarmSource=null;
-    }
-    if(alarmHtmlPlayer){
-      try{
-        alarmHtmlPlayer.pause();
-        alarmHtmlPlayer.currentTime=0;
-        stopped=true;
-      }catch(error){}
-    }
-    return stopped;
+    if(!('speechSynthesis' in window))return false;
+    const wasSpeaking=Boolean(activeUtterance||window.speechSynthesis.speaking||window.speechSynthesis.pending);
+    window.speechSynthesis.cancel();
+    activeUtterance=null;
+    return wasSpeaking;
   }
 
   function watchTrackerUi(){
@@ -139,9 +75,9 @@
 
     const relabel=function(){
       const button=document.getElementById('trackerTest');
-      if(button&&button.textContent!=='▶ TEST CALM VOICE ALERT'){
-        button.textContent='▶ TEST CALM VOICE ALERT';
-        button.title='Play the calm Heavy Fighter loss voice alert';
+      if(button&&button.textContent!=='▶ TEST NATURAL VOICE ALERT'){
+        button.textContent='▶ TEST NATURAL VOICE ALERT';
+        button.title='Play the calm natural-voice Heavy Fighter alert';
       }
     };
     const observer=new MutationObserver(relabel);
@@ -153,8 +89,12 @@
   window.jlrStopFighterAlarm=stopVoiceAlert;
   window.jlrUnlockFighterAlarm=unlockAlarm;
 
+  if('speechSynthesis' in window){
+    window.speechSynthesis.onvoiceschanged=function(){availableVoices();};
+    availableVoices();
+  }
+
   watchTrackerUi();
-  loadAlarmBuffer().catch(function(){});
 
   const core=document.createElement('script');
   core.src=CORE_URL;
