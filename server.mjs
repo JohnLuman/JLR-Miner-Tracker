@@ -122,6 +122,10 @@ const TRACKER_R2Z2_REQUEST_GAP_MS = 120;
 const TRACKER_R2Z2_ERROR_WAIT_MS = 5 * 1000;
 const TRACKER_LIVE_RETENTION_MS = 24 * 60 * 60 * 1000;
 const TRACKER_R2Z2_ENABLED = String(process.env.TRACKER_R2Z2_ENABLED || 'true').trim().toLowerCase() !== 'false';
+const TRACKER_TTS_WORKER_URL = String(process.env.TRACKER_TTS_WORKER_URL || '').trim().replace(/\/$/,'');
+const TRACKER_TTS_WORKER_TOKEN = String(process.env.TRACKER_TTS_WORKER_TOKEN || '').trim();
+const TRACKER_TTS_TIMEOUT_MS = clamp(process.env.TRACKER_TTS_TIMEOUT_MS,3_000,60_000,20_000);
+const TRACKER_TTS_CACHE_DIR = path.join(DATA_DIR,'tracker-voice-cache');
 const ZKILL_LIFETIME_DAMAGE_CACHE_MS = 24 * 60 * 60 * 1000;
 const ZKILL_LIFETIME_PAGE_GAP_MS = 700;
 const THREAT_CHARACTER_CACHE_MS = 6 * 60 * 60 * 1000;
@@ -230,6 +234,7 @@ const trackerLiveClients = new Set();
 let heavyFighterTypeIdsCache = {at:0,ids:null,promise:null};
 let trackerLiveLosses = [];
 const trackerLiveSeenKillIds = new Set();
+const trackerVoiceJobs = new Map();
 let trackerR2z2State = {
   running:false,
   caughtUp:false,
@@ -678,7 +683,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.37',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.40',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -3194,6 +3199,100 @@ async function heavyFighterTypeIds(){
   return pending;
 }
 
+function trackerVoiceConfigured(){
+  return Boolean(TRACKER_TTS_WORKER_URL&&TRACKER_TTS_WORKER_TOKEN);
+}
+
+function trackerSpeechSafe(value,max=80){
+  return String(value||'').replace(/[\r\n\t]+/g,' ').replace(/\s+/g,' ').replace(/[^\w .,'&()\-]/g,'').trim().slice(0,max);
+}
+
+function trackerSpokenIsk(value){
+  const n=Math.max(0,Number(value)||0);
+  if(n>=1e12)return (n/1e12).toFixed(n>=1e13?0:1)+' trillion';
+  if(n>=1e9)return (n/1e9).toFixed(n>=1e10?0:1)+' billion';
+  if(n>=1e6)return (n/1e6).toFixed(n>=1e7?0:1)+' million';
+  if(n>=1e3)return Math.round(n/1e3)+' thousand';
+  return Math.round(n).toLocaleString('en-US');
+}
+
+function trackerVoiceText(loss){
+  const fighter=trackerSpeechSafe(loss?.shipTypeName||'Heavy Fighter',64)||'Heavy Fighter';
+  const system=trackerSpeechSafe(loss?.systemName||'an unknown system',48)||'an unknown system';
+  const value=Number(loss?.totalValue)||0;
+  const valueText=value>0?` Estimated loss value, ${trackerSpokenIsk(value)} ISK.`:'';
+  return `Attention. A ${fighter} has been lost in ${system}.${valueText} Please check J. L. R. Tracker for pilot and kill information.`;
+}
+
+async function trackerVoiceWorkerAudio(text,cacheKey='alert'){
+  if(!trackerVoiceConfigured()){
+    const err=new Error('JLR custom voice worker is not configured.');
+    err.code='TTS_NOT_CONFIGURED';
+    throw err;
+  }
+  const cleanText=String(text||'').trim().slice(0,600);
+  if(!cleanText)throw new Error('Tracker voice text was empty.');
+  const hash=crypto.createHash('sha256').update(`v1|${cacheKey}|${cleanText}`).digest('hex');
+  const audioPath=path.join(TRACKER_TTS_CACHE_DIR,`${hash}.audio`);
+  const metaPath=path.join(TRACKER_TTS_CACHE_DIR,`${hash}.json`);
+  try{
+    const [bytes,metaRaw]=await Promise.all([fsp.readFile(audioPath),fsp.readFile(metaPath,'utf8')]);
+    const meta=JSON.parse(metaRaw);
+    if(bytes.length&&String(meta?.mime||'').startsWith('audio/'))return{bytes,mime:meta.mime,cached:true,text:cleanText};
+  }catch{}
+  if(trackerVoiceJobs.has(hash))return trackerVoiceJobs.get(hash);
+  const job=(async()=>{
+    await fsp.mkdir(TRACKER_TTS_CACHE_DIR,{recursive:true});
+    const response=await fetch(`${TRACKER_TTS_WORKER_URL}/synthesize`,{
+      method:'POST',
+      headers:{
+        'Authorization':`Bearer ${TRACKER_TTS_WORKER_TOKEN}`,
+        'Content-Type':'application/json',
+        'Accept':'audio/wav, audio/ogg, audio/mpeg, application/octet-stream',
+      },
+      body:JSON.stringify({text:cleanText,cache_key:String(cacheKey||hash),voice:'jlr-alert'}),
+      signal:AbortSignal.timeout(TRACKER_TTS_TIMEOUT_MS),
+    });
+    if(!response.ok){
+      const detail=(await response.text().catch(()=>'' )).slice(0,300);
+      throw new Error(`JLR voice worker ${response.status}: ${detail||response.statusText}`);
+    }
+    const mime=String(response.headers.get('content-type')||'audio/wav').split(';')[0].trim().toLowerCase();
+    if(!mime.startsWith('audio/'))throw new Error(`JLR voice worker returned ${mime||'an invalid content type'}.`);
+    const bytes=Buffer.from(await response.arrayBuffer());
+    if(!bytes.length||bytes.length>8_000_000)throw new Error(`JLR voice worker returned an invalid audio size (${bytes.length} bytes).`);
+    await Promise.all([
+      fsp.writeFile(audioPath,bytes),
+      fsp.writeFile(metaPath,JSON.stringify({mime,text:cleanText,cacheKey,createdAt:now(),bytes:bytes.length}),'utf8'),
+    ]);
+    return{bytes,mime,cached:false,text:cleanText};
+  })().finally(()=>trackerVoiceJobs.delete(hash));
+  trackerVoiceJobs.set(hash,job);
+  return job;
+}
+
+async function trackerVoiceForLoss(loss){
+  const killId=String(loss?.killmailId||'unknown');
+  return trackerVoiceWorkerAudio(trackerVoiceText(loss),`kill-${killId}`);
+}
+
+async function trackerVoiceLossById(killId){
+  const id=String(killId||'');
+  let loss=mergeTrackerLosses(heavyFighterTrackerCache.data?.losses).find(row=>String(row?.killmailId||'')===id)||null;
+  if(loss)return loss;
+  const snapshot=await heavyFighterTracker(false);
+  return (snapshot.losses||[]).find(row=>String(row?.killmailId||'')===id)||null;
+}
+
+function sendTrackerAudio(res,audio){
+  res.writeHead(200,{
+    'Content-Type':audio.mime||'audio/wav',
+    'Cache-Control':'private, max-age=86400',
+    'Content-Length':audio.bytes.length,
+    'X-JLR-Voice-Cache':audio.cached?'HIT':'MISS',
+  });
+  res.end(audio.bytes);
+}
 function trackerLiveStatus(){
   return{
     enabled:TRACKER_R2Z2_ENABLED,
@@ -3311,6 +3410,9 @@ async function processR2z2TrackerPayload(payload,sequence){
   trackerR2z2State.lastHeavyFighterAt=liveLoss.receivedAt;
 
   if(trackerR2z2State.caughtUp){
+    if(trackerVoiceConfigured()){
+      trackerVoiceForLoss(liveLoss).catch(err=>console.warn('Tracker voice pre-generation failed',String(err.message||err)));
+    }
     sendTrackerEvent('loss',liveLoss);
   }
 }
@@ -4992,7 +5094,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.37',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.40',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -5059,6 +5161,41 @@ async function routeApi(req,res,url) {
         }catch{}
       }
       return json(res,502,{error:'ZKILL_LEADERBOARD_FAILED',message:String(err.message||err)});
+    }
+  }
+  if(req.method==='GET'&&url.pathname==='/api/tracker/heavy-fighters/voice/status'){
+    let access;
+    try{access=await trackerAccessForUser(user)}
+    catch(err){return json(res,503,{error:'TRACKER_ACCESS_CHECK_FAILED',message:'Tracker access could not be verified with EVE right now.'})}
+    if(!access.allowed)return json(res,403,{error:'TRACKER_CORPORATION_REQUIRED',message:'Tracker is restricted to the configured corporation.'});
+    return json(res,200,{configured:trackerVoiceConfigured(),workerUrlConfigured:Boolean(TRACKER_TTS_WORKER_URL),tokenConfigured:Boolean(TRACKER_TTS_WORKER_TOKEN)});
+  }
+  if(req.method==='GET'&&url.pathname==='/api/tracker/heavy-fighters/voice/test'){
+    let access;
+    try{access=await trackerAccessForUser(user)}
+    catch(err){return json(res,503,{error:'TRACKER_ACCESS_CHECK_FAILED',message:'Tracker access could not be verified with EVE right now.'})}
+    if(!access.allowed)return json(res,403,{error:'TRACKER_CORPORATION_REQUIRED',message:'Tracker is restricted to the configured corporation.'});
+    try{
+      const audio=await trackerVoiceWorkerAudio('Attention. J. L. R. custom voice systems are online. Heavy Fighter tracking is standing by.','test');
+      return sendTrackerAudio(res,audio);
+    }catch(err){
+      console.warn('Tracker voice test failed',String(err.message||err));
+      return json(res,503,{error:err?.code||'TRACKER_TTS_UNAVAILABLE',message:String(err.message||err)});
+    }
+  }
+  const trackerVoiceMatch=url.pathname.match(/^\/api\/tracker\/heavy-fighters\/voice\/(\d+)$/);
+  if(req.method==='GET'&&trackerVoiceMatch){
+    let access;
+    try{access=await trackerAccessForUser(user)}
+    catch(err){return json(res,503,{error:'TRACKER_ACCESS_CHECK_FAILED',message:'Tracker access could not be verified with EVE right now.'})}
+    if(!access.allowed)return json(res,403,{error:'TRACKER_CORPORATION_REQUIRED',message:'Tracker is restricted to the configured corporation.'});
+    try{
+      const loss=await trackerVoiceLossById(trackerVoiceMatch[1]);
+      if(!loss)return json(res,404,{error:'TRACKER_LOSS_NOT_FOUND',message:'That Heavy Fighter loss is not available in the current Tracker window.'});
+      return sendTrackerAudio(res,await trackerVoiceForLoss(loss));
+    }catch(err){
+      console.warn('Tracker voice generation failed',String(err.message||err));
+      return json(res,503,{error:err?.code||'TRACKER_TTS_UNAVAILABLE',message:String(err.message||err)});
     }
   }
   if(req.method==='GET'&&url.pathname==='/api/tracker/heavy-fighters'){
@@ -5253,7 +5390,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.37 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.40 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
 setInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': tracker-heartbeat\n\n')}catch{trackerLiveClients.delete(res)}}},20_000).unref();
 setInterval(()=>resetExpired(true),15_000).unref();
