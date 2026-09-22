@@ -1,7 +1,7 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.41';
-  const CORE_URL='/tracker-core.js?v=2.9.41';
+  const ALARM_VERSION='2.9.42';
+  const CORE_URL='/tracker-core.js?v=2.9.42';
 
   let alarmContext=null;
   let alarmSource=null;
@@ -84,13 +84,13 @@
     })[0]||null;
   }
 
-  function playFallbackSpeech(loss,generation){
+  function playFallbackText(text,generation){
     if(generation!==alarmGeneration||!('speechSynthesis' in window))return false;
     try{
       reportVoiceMode('fallback','Browser voice fallback');
       const synth=window.speechSynthesis;
       synth.cancel();
-      const utterance=new SpeechSynthesisUtterance(fallbackText(loss));
+      const utterance=new SpeechSynthesisUtterance(String(text||'J. L. R. voice notification.'));
       const voice=preferredFallbackVoice();
       if(voice)utterance.voice=voice;
       utterance.lang=voice&&voice.lang?voice.lang:'en-US';
@@ -106,6 +106,36 @@
       console.warn('JLR fallback voice failed.',error);
       return false;
     }
+  }
+
+  function playFallbackSpeech(loss,generation){
+    return playFallbackText(fallbackText(loss),generation);
+  }
+
+  async function playAudioResponse(response,generation,detail){
+    if(generation!==alarmGeneration)return false;
+    const type=String(response.headers.get('content-type')||'').toLowerCase();
+    if(!type.startsWith('audio/'))throw new Error('JLR custom voice returned '+(type||'invalid content type'));
+    const context=ensureAlarmContext();
+    if(context&&context.state==='suspended'){
+      try{await context.resume();}catch(error){}
+    }
+    if(!context||context.state!=='running')throw new Error('Browser audio context is not active.');
+    const bytes=await response.arrayBuffer();
+    if(generation!==alarmGeneration)return false;
+    const buffer=await context.decodeAudioData(bytes.slice(0));
+    if(generation!==alarmGeneration)return false;
+    const source=context.createBufferSource();
+    const gain=context.createGain();
+    source.buffer=buffer;
+    gain.gain.setValueAtTime(1,context.currentTime);
+    source.connect(gain);
+    gain.connect(context.destination);
+    source.onended=function(){if(alarmSource===source)alarmSource=null;};
+    alarmSource=source;
+    source.start(0);
+    reportVoiceMode('custom',detail||'Custom GPT-SoVITS voice');
+    return true;
   }
 
   async function playVoiceAlert(loss){
@@ -126,28 +156,47 @@
       if(activeFetch===controller)activeFetch=null;
       if(generation!==alarmGeneration)return false;
       if(!response.ok)throw new Error('JLR custom voice unavailable: '+response.status);
-      const type=String(response.headers.get('content-type')||'').toLowerCase();
-      if(!type.startsWith('audio/'))throw new Error('JLR custom voice returned '+(type||'invalid content type'));
-      if(!context||context.state!=='running')throw new Error('Browser audio context is not active.');
-      const bytes=await response.arrayBuffer();
-      if(generation!==alarmGeneration)return false;
-      const buffer=await context.decodeAudioData(bytes.slice(0));
-      if(generation!==alarmGeneration)return false;
-      const source=context.createBufferSource();
-      const gain=context.createGain();
-      source.buffer=buffer;
-      gain.gain.setValueAtTime(1,context.currentTime);
-      source.connect(gain);
-      gain.connect(context.destination);
-      source.onended=function(){if(alarmSource===source)alarmSource=null;};
-      alarmSource=source;
-      source.start(0);
-      reportVoiceMode('custom','Custom GPT-SoVITS voice');
-      return true;
+      return await playAudioResponse(response,generation,'Custom GPT-SoVITS voice');
     }catch(error){
       if(generation!==alarmGeneration)return false;
       if(error&&error.name!=='AbortError')console.warn('JLR custom voice unavailable; using browser fallback.',error);
       return playFallbackSpeech(loss,generation);
+    }
+  }
+
+  async function speakEvent(type,payload,localFallback){
+    stopVoiceAlert();
+    const generation=alarmGeneration;
+    await unlockAlarm();
+    const fallback=String(localFallback||'J. L. R. voice notification.');
+    try{
+      const controller=new AbortController();
+      activeFetch=controller;
+      const body={type:String(type||''),...(payload&&typeof payload==='object'?payload:{})};
+      const response=await fetch('/api/voice/event',{
+        method:'POST',
+        credentials:'same-origin',
+        cache:'no-store',
+        headers:{'Content-Type':'application/json','Accept':'audio/*, application/json'},
+        body:JSON.stringify(body),
+        signal:controller.signal
+      });
+      if(activeFetch===controller)activeFetch=null;
+      if(generation!==alarmGeneration)return false;
+      if(!response.ok){
+        let serverFallback=fallback;
+        try{
+          const errorPayload=await response.json();
+          if(errorPayload&&errorPayload.fallbackText)serverFallback=String(errorPayload.fallbackText);
+        }catch(error){}
+        if(response.status!==503)console.warn('JLR voice event returned '+response.status+'.');
+        return playFallbackText(serverFallback,generation);
+      }
+      return await playAudioResponse(response,generation,'JLR '+String(type||'event')+' custom voice');
+    }catch(error){
+      if(generation!==alarmGeneration)return false;
+      if(error&&error.name!=='AbortError')console.warn('JLR voice event unavailable; using browser fallback.',error);
+      return playFallbackText(fallback,generation);
     }
   }
 
@@ -173,6 +222,7 @@
   window.jlrPlayFighterAlarm=playVoiceAlert;
   window.jlrStopFighterAlarm=stopVoiceAlert;
   window.jlrUnlockFighterAlarm=unlockAlarm;
+  window.jlrSpeakEvent=speakEvent;
 
   if('speechSynthesis' in window){
     window.speechSynthesis.onvoiceschanged=function(){window.speechSynthesis.getVoices();};
