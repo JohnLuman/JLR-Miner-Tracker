@@ -172,6 +172,8 @@
   }
   function renderDataStatus(){
     const el=$('liveBadge');
+    const versionEl=$('appVersion');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.73');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
