@@ -213,7 +213,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.103');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.104');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -303,7 +303,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR TRACKER MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.103'),
+      'Version: '+String(state?.app?.version||'2.9.104'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -322,6 +322,10 @@
       'Last final: '+String(brainMicLastFinal||'none'),
       'Voice active now: '+String(brainVoiceActive()),
       'Suppressed transcripts: '+String(brainMicSuppressedTranscripts),
+      'Voice mode: '+String(window.jlrVoiceMode||'unknown'),
+      'Voice profile: '+String(window.jlrVoiceProfile||'unknown'),
+      'Voice transport: '+String(window.jlrVoiceTransport||'unknown'),
+      'Voice last error: '+String(window.jlrVoiceLastError||'none'),
     ];
     if(serverDiag){
       lines.push('Server speech model cached: '+String(Boolean(serverDiag.modelCached)));
@@ -1174,8 +1178,10 @@
     }
     const detail=String(window.jlrVoiceLastError||'The JLR custom voice worker did not return audio.');
     brainRecordMicDiag('VOICE-E501','CUSTOM_VOICE',detail);
-    brainSetListen('CUSTOM VOICE ERROR • VOICE-E501',detail);
+    brainSetListen('CUSTOM VOICE ERROR • VOICE-E501',detail+' • Use COPY DIAGNOSTICS and send me the result.');
     if($('brainReply'))$('brainReply').textContent=spoken+'\n\nCUSTOM VOICE ERROR: '+detail;
+    brainMicLastError=brainRecordMicDiag('VOICE-E501','CUSTOM_VOICE',detail);
+    renderBrainMicDiagnostic();
     return false;
   }
 
@@ -5126,7 +5132,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.103',
+          version:state?.app?.version||'2.9.104',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
