@@ -1958,3 +1958,12 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .feedback-recent{display:flex;flex-direction:column;gap:7px;max-height:650px;overflow:auto;padding-right:2px}.feedback-history-row{border:1px solid var(--line);border-radius:7px;padding:9px;background:var(--input-bg,#071710)}.feedback-history-top{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:5px}.feedback-kind,.feedback-status{font-size:7px;font-weight:700;letter-spacing:.05em}.feedback-kind{color:var(--theme-accent,var(--green))}.feedback-status{color:var(--muted)}.feedback-history-row>strong{display:block;font-size:9px}.feedback-history-row>p{margin:4px 0;color:var(--muted);font-size:8px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.feedback-history-row>small{font-size:7px;color:var(--muted)}
 @media(max-width:980px){.feedback-layout{grid-template-columns:1fr}.feedback-side{display:grid;grid-template-columns:1fr 1fr}.feedback-hero{align-items:flex-start}.feedback-hero-note{min-width:220px}.feedback-type-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:650px){.feedback-hero{flex-direction:column}.feedback-hero-note{min-width:0;max-width:none;width:100%}.feedback-side{display:flex}.feedback-meta-grid,.feedback-detail-grid{grid-template-columns:1fr}.feedback-type-grid{grid-template-columns:1fr 1fr}}
+
+/* v2.9.94 — Tracker microphone error-code diagnostics */
+.brain-mic-diagnostic{margin-top:7px;border:1px solid color-mix(in srgb,var(--red,#ff5c6c) 65%,var(--line));border-radius:7px;padding:8px;background:color-mix(in srgb,var(--red,#ff5c6c) 5%,var(--input-bg,#071710))}
+.brain-mic-diagnostic.hidden{display:none}
+.brain-mic-diagnostic-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.brain-mic-diagnostic-head strong{font-size:10px;letter-spacing:.08em;color:var(--red,#ff6b75)}
+.brain-mic-diagnostic-head span{font-size:7px;color:var(--muted)}
+.brain-mic-diagnostic p{margin:6px 0;font-size:8px;line-height:1.4;color:var(--muted);overflow-wrap:anywhere}
+.brain-mic-diagnostic-actions{display:flex;gap:6px;flex-wrap:wrap}
