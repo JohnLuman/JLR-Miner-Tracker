@@ -608,15 +608,17 @@ function scanActivityPublic() {
   const ledgerPublic=(system)=>{
     const row=state.esi.fieldInference?.[system]||null;
     const minedM3SinceSite=Math.max(0,Number(row?.minedM3SinceSite)||0);
-    const evidenceAt=row?.lastLedgerAt||row?.seededAt||null;
+    const lastMs=Date.parse(row?.lastLedgerAt||'');
+    const seededMs=Date.parse(row?.seededAt||'');
+    const seeded=Number.isFinite(seededMs)&&(!Number.isFinite(lastMs)||seededMs>lastMs);
+    const evidenceAt=seeded?row.seededAt:(row?.lastLedgerAt||row?.seededAt||null);
     if(!row||(!evidenceAt&&minedM3SinceSite<=0))return null;
-    const lastMs=Date.parse(row.lastLedgerAt||'');
     const active=Number.isFinite(lastMs)&&at-lastMs<=45*60*1000;
     const depletionPct=Number.isFinite(Number(row.depletionPct))?Math.max(0,Math.min(100,Number(row.depletionPct))):null;
     return{
       lastActivityAt:evidenceAt,
       active,
-      seeded:Boolean(row.seededAt)&&!row.lastLedgerAt,
+      seeded,
       seededAt:row.seededAt||null,
       lastDeltaM3:Math.max(0,Number(row.lastDeltaM3)||0),
       minedM3SinceBaseline:Math.max(0,Number(row.minedM3SinceBaseline)||0),
