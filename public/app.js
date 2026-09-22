@@ -213,7 +213,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.109');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.110');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -303,7 +303,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR TRACKER MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.109'),
+      'Version: '+String(state?.app?.version||'2.9.110'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -325,6 +325,7 @@
       'Voice mode: '+String(window.jlrVoiceMode||'unknown'),
       'Voice profile: '+String(window.jlrVoiceProfile||'unknown'),
       'Voice transport: '+String(window.jlrVoiceTransport||'unknown'),
+      'Voice first audio ms: '+String(window.jlrVoiceFirstAudioMs??'unknown'),
       'Voice last error: '+String(window.jlrVoiceLastError||'none'),
     ];
     if(serverDiag){
@@ -333,6 +334,13 @@
       lines.push('Server model source: '+String(serverDiag.modelSource||'none'));
       lines.push('Server model in flight: '+String(Boolean(serverDiag.modelLoadInFlight)));
       lines.push('Server model last error: '+String(serverDiag.modelLastError||'none'));
+      const worker=serverDiag.voiceWorker||{};
+      lines.push('Voice worker reachable: '+String(Boolean(worker.reachable)));
+      lines.push('Voice worker latency ms: '+String(worker.latencyMs??'unknown'));
+      lines.push('Voice worker version: '+String(worker.workerVersion||'unknown'));
+      lines.push('Voice worker streaming: '+String(Boolean(worker.streaming)));
+      lines.push('Voice worker stable streaming: '+String(Boolean(worker.stableStreaming)));
+      lines.push('Voice worker streaming modes: '+String(Array.isArray(worker.streamingModes)?worker.streamingModes.join(','):'unknown'));
     }
     lines.push('Recent stages:');
     for(const row of brainMicDiagTrail.slice(0,12))lines.push(row.at+' | '+row.code+' | '+row.stage+' | '+row.detail);
@@ -5168,7 +5176,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.109',
+          version:state?.app?.version||'2.9.110',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
