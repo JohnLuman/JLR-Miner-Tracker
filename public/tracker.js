@@ -1,7 +1,7 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.81';
-  const CORE_URL='/tracker-core.js?v=2.9.81';
+  const ALARM_VERSION='2.9.102';
+  const CORE_URL='/tracker-core.js?v=2.9.102';
 
   let alarmContext=null;
   let alarmSource=null;
@@ -403,6 +403,49 @@
     return playCustomEndpoint(endpoint+'&nonce='+Date.now(),generation,'JLR Heavy Fighter custom voice');
   }
 
+  async function playCustomBrainText(text,generation,detail){
+    if(generation!==alarmGeneration)return false;
+    const controller=new AbortController();
+    activeFetch=controller;
+    try{
+      const response=await fetch('/api/voice/stream/brain',{
+        method:'POST',
+        credentials:'same-origin',
+        cache:'no-store',
+        headers:{'Content-Type':'application/json','Accept':'audio/*, application/json'},
+        body:JSON.stringify({text:String(text||'')}),
+        signal:controller.signal
+      });
+      if(activeFetch===controller)activeFetch=null;
+      if(generation!==alarmGeneration)return false;
+      if(!response.ok){
+        const type=String(response.headers.get('content-type')||'');
+        let message='';
+        try{
+          if(type.includes('application/json')){
+            const body=await response.json();
+            message=String(body&&body.message||body&&body.error||'');
+          }else message=String(await response.text());
+        }catch(error){}
+        throw new Error('JLR conversational voice HTTP '+response.status+(message?': '+message.slice(0,220):''));
+      }
+      const played=await playAudioResponse(response,generation,detail||'JLR conversational custom voice');
+      if(played){
+        window.jlrVoiceLastError='';
+        reportVoiceMode('custom',detail||'JLR conversational custom voice');
+      }
+      return played;
+    }catch(error){
+      if(activeFetch===controller)activeFetch=null;
+      if(generation!==alarmGeneration)return false;
+      const message=String(error&&error.message||error||'JLR conversational voice failed.');
+      window.jlrVoiceLastError=message;
+      reportVoiceMode('error',message);
+      console.error((detail||'JLR conversational custom voice')+' failed.',error);
+      return false;
+    }
+  }
+
   async function speakEvent(type,payload,localFallback){
     const fallback=String(localFallback||'Tracker voice notification.');
     const kind=String(type||'');
@@ -428,6 +471,11 @@
     // queue normal announcements instead of stopping the sentence already playing.
     unlockAlarm();
     return enqueueVoiceTask(async function(generation){
+      if(kind==='brain'||kind==='repeat'){
+        const text=String(payload&&payload.text||fallback||'').trim();
+        if(!text)return false;
+        return playCustomBrainText(text,generation,'JLR '+kind+' custom voice');
+      }
       if(endpoint){
         const joiner=endpoint.includes('?')?'&':'?';
         return playCustomEndpoint(endpoint+joiner+'nonce='+Date.now(),generation,'JLR '+kind+' custom voice');
