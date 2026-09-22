@@ -204,7 +204,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.97');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.98');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -294,7 +294,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR TRACKER MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.97'),
+      'Version: '+String(state?.app?.version||'2.9.98'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -617,7 +617,8 @@
           instance.on('error',message=>{
             const detail=String(message?.error||message?.message||'Unknown Vosk worker error.');
             let code='MIC-E126',stage='VOSK_MODEL_ERROR';
-            if(/sync file system|indexeddb|idb|fs error/i.test(detail)){code='MIC-E125';stage='VOSK_INDEXEDDB'}
+            if(/content security policy|unsafe-eval|violates the following content security/i.test(detail)){code='MIC-E124';stage='VOSK_CSP'}
+            else if(/sync file system|indexeddb|idb|fs error/i.test(detail)){code='MIC-E125';stage='VOSK_INDEXEDDB'}
             else if(/archive|extract|zip|tar/i.test(detail)){code='MIC-E128';stage='VOSK_ARCHIVE'}
             finish(false,brainMicCodeError(code,stage,detail));
           });
@@ -4949,7 +4950,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.97',
+          version:state?.app?.version||'2.9.98',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
