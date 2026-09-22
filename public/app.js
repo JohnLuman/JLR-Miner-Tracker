@@ -70,6 +70,11 @@
   let brainLocalProcessor=null;
   let brainLocalMute=null;
   let brainLocalSession=0;
+  let brainMicLastError=null;
+  let brainMicDiagTrail=[];
+  try{brainMicDiagTrail=JSON.parse(localStorage.getItem('jlrBrainMicDiagTrail')||'[]')}catch{}
+  if(!Array.isArray(brainMicDiagTrail))brainMicDiagTrail=[];
+  brainMicDiagTrail=brainMicDiagTrail.slice(0,30);
   let brainMicWanted=true;
   let brainConversationUntil=0;
   let brainLastSystem='';
@@ -199,7 +204,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.93');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.94');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -246,6 +251,88 @@
   function brainConversationMs(){
     const seconds=Math.max(15,Math.min(60,Number(localStorage.getItem('jlrBrainConversationWindow')||30)||30));
     return seconds*1000;
+  }
+  function brainMicCodeError(code,stage,detail){
+    const error=new Error(String(detail||'Tracker microphone error.'));
+    error.jlrCode=String(code||'MIC-E999');
+    error.jlrStage=String(stage||'UNKNOWN');
+    return error;
+  }
+  function brainRecordMicDiag(code,stage,detail){
+    const row={at:new Date().toISOString(),code:String(code||'MIC-I000'),stage:String(stage||'INFO'),detail:String(detail||'').slice(0,800)};
+    brainMicDiagTrail.unshift(row);
+    brainMicDiagTrail=brainMicDiagTrail.slice(0,30);
+    localStorage.setItem('jlrBrainMicDiagTrail',JSON.stringify(brainMicDiagTrail));
+    return row;
+  }
+  function renderBrainMicDiagnostic(){
+    const panel=$('brainMicDiagnostic');
+    if(!panel)return;
+    const row=brainMicLastError;
+    panel.classList.toggle('hidden',!row);
+    if(!row)return;
+    if($('brainMicErrorCode'))$('brainMicErrorCode').textContent=row.code;
+    if($('brainMicErrorStage'))$('brainMicErrorStage').textContent=row.stage;
+    if($('brainMicErrorDetail'))$('brainMicErrorDetail').textContent=row.detail;
+  }
+  function brainSetMicError(error,recovery='Click TALK TO TRACKER to retry.'){
+    const code=String(error?.jlrCode||'MIC-E999');
+    const stage=String(error?.jlrStage||error?.name||'UNKNOWN');
+    const detail=String(error?.message||error||'Tracker microphone failed.').trim();
+    brainMicLastError=brainRecordMicDiag(code,stage,detail);
+    brainSetListen('MIC AI ERROR • '+code,detail+' '+recovery);
+    renderBrainMicDiagnostic();
+  }
+  function brainClearMicError(){
+    brainMicLastError=null;
+    renderBrainMicDiagnostic();
+  }
+  function brainMicDiagnosticsText(serverDiag=null){
+    const last=brainMicLastError;
+    const recognition=Boolean(window.SpeechRecognition||window.webkitSpeechRecognition);
+    const localModel=Boolean(brainLocalModel);
+    const track=brainMicTrack;
+    const lines=[
+      'JLR TRACKER MIC DIAGNOSTICS',
+      'Version: '+String(state?.app?.version||'2.9.94'),
+      'Time: '+new Date().toISOString(),
+      'Browser: '+String(navigator.userAgent||'unknown'),
+      'SpeechRecognition: '+String(recognition),
+      'Vosk library: '+String(Boolean(window.Vosk)),
+      'Vosk model ready: '+String(localModel),
+      'Selected mic: '+brainMicLabel(),
+      'Mic track: '+String(track?.readyState||'none'),
+      'Last code: '+String(last?.code||'none'),
+      'Last stage: '+String(last?.stage||'none'),
+      'Last detail: '+String(last?.detail||'none'),
+    ];
+    if(serverDiag){
+      lines.push('Server speech model cached: '+String(Boolean(serverDiag.modelCached)));
+      lines.push('Server model bytes: '+String(serverDiag.modelBytes||0));
+      lines.push('Server model source: '+String(serverDiag.modelSource||'none'));
+      lines.push('Server model in flight: '+String(Boolean(serverDiag.modelLoadInFlight)));
+      lines.push('Server model last error: '+String(serverDiag.modelLastError||'none'));
+    }
+    lines.push('Recent stages:');
+    for(const row of brainMicDiagTrail.slice(0,12))lines.push(row.at+' | '+row.code+' | '+row.stage+' | '+row.detail);
+    return lines.join('\n');
+  }
+  async function runBrainMicDiagnostic(copy=true){
+    let serverDiag=null;
+    try{serverDiag=await api('/api/tracker/speech/diagnostics')}catch(error){
+      brainRecordMicDiag('MIC-D901','SERVER_DIAGNOSTIC',String(error?.message||error));
+    }
+    const text=brainMicDiagnosticsText(serverDiag);
+    if(copy){
+      try{
+        await navigator.clipboard.writeText(text);
+        toast('Mic diagnostics copied.');
+      }catch(error){
+        console.info(text);
+        toast('Mic diagnostics printed to browser console.');
+      }
+    }
+    return text;
   }
   function brainSetListen(status,hint=''){
     if($('brainListenStatus'))$('brainListenStatus').textContent=status;
@@ -390,7 +477,7 @@
     const track=stream.getAudioTracks()[0]||null;
     if(!track){
       try{stream.getTracks().forEach(row=>row.stop())}catch{}
-      throw new Error('No live microphone track was returned.');
+      throw brainMicCodeError('MIC-E203','MIC_TRACK','No live microphone track was returned.');
     }
     brainMicStream=stream;
     brainMicTrack=track;
@@ -435,93 +522,93 @@
     const waitForLibrary=async()=>{
       const started=Date.now();
       while(!(window.Vosk&&typeof window.Vosk.Model==='function')){
-        if(Date.now()-started>10000)throw new Error('JLR speech library did not load.');
+        if(Date.now()-started>10000)throw brainMicCodeError('MIC-E101','VOSK_LIBRARY','Vosk browser library did not load within 10 seconds.');
         await new Promise(resolve=>setTimeout(resolve,100));
       }
+      brainRecordMicDiag('MIC-I101','VOSK_LIBRARY','Vosk browser library ready.');
     };
 
-    const loadCandidate=(modelUrl,label,timeoutMs=90000)=>new Promise((resolve,reject)=>{
+    const loadCandidate=(candidate)=>new Promise((resolve,reject)=>{
       let settled=false;
       let instance=null;
       let timer=null;
-      const finish=(ok,value)=>{
+      const fail=(suffix,stage,detail)=>{
+        const code=candidate.prefix+suffix;
         if(settled)return;
         settled=true;
         if(timer)clearTimeout(timer);
-        if(!ok){
-          try{instance?.terminate?.()}catch{}
-          reject(value instanceof Error?value:new Error(String(value||label+' failed.')));
-        }else resolve(value);
+        try{instance?.terminate?.()}catch{}
+        reject(brainMicCodeError(code,stage,detail));
+      };
+      const succeed=()=>{
+        if(settled)return;
+        settled=true;
+        if(timer)clearTimeout(timer);
+        brainRecordMicDiag(candidate.prefix+'0',candidate.stage,'Model loaded successfully.');
+        resolve(instance);
       };
       try{
-        brainSetListen('MIC AI LOADING',label);
-        instance=new window.Vosk.Model(modelUrl,-1);
-
-        // Vosk only forwards worker messages through Model.on(). A worker that
-        // crashes before it can post a message otherwise looks like a silent hang.
+        brainSetListen('MIC AI LOADING • '+candidate.prefix+'0',candidate.label);
+        brainRecordMicDiag(candidate.prefix+'0',candidate.stage,'Starting model load: '+candidate.url);
+        instance=new window.Vosk.Model(candidate.url,-1);
         const worker=instance?.worker||instance?._worker||null;
         if(worker&&typeof worker.addEventListener==='function'){
           worker.addEventListener('error',event=>{
-            const detail=String(event?.message||event?.error?.message||'speech worker crashed');
-            finish(false,new Error('Local speech worker error: '+detail));
+            fail('2',candidate.stage+'_WORKER',String(event?.message||event?.error?.message||'Speech worker crashed.'));
           },{once:true});
           worker.addEventListener('messageerror',()=>{
-            finish(false,new Error('Local speech worker returned an unreadable message.'));
+            fail('3',candidate.stage+'_MESSAGE','Speech worker returned an unreadable message.');
           },{once:true});
         }
-
         instance.on('load',message=>{
-          if(message?.result)finish(true,instance);
-          else finish(false,new Error('Local speech model reported an unsuccessful load.'));
+          if(message?.result)succeed();
+          else fail('4',candidate.stage+'_LOAD','Speech model returned load=false.');
         });
         instance.on('error',message=>{
-          finish(false,new Error('Local speech model error: '+String(message?.error||message?.message||'unknown worker error')));
+          fail('5',candidate.stage+'_MODEL',String(message?.error||message?.message||'Unknown model worker error.'));
         });
-
-        timer=setTimeout(()=>finish(false,new Error(label+' timed out.')),timeoutMs);
+        timer=setTimeout(()=>fail('1',candidate.stage+'_TIMEOUT','Speech model did not finish loading before the '+Math.round(candidate.timeout/1000)+' second timeout.'),candidate.timeout);
       }catch(error){
-        finish(false,error);
+        fail('6',candidate.stage+'_CONSTRUCTOR',String(error?.message||error||'Could not create Vosk model.'));
       }
     });
 
     brainLocalModelPromise=(async()=>{
       await waitForLibrary();
-
-      // This archive is specifically repackaged for vosk-browser and served with
-      // permissive CORS. Keep the JLR same-origin cache as a second path.
       const candidates=[
         {
           url:'https://fiddle-app.github.io/voice-models/vosk-model-small-en-us-0.15.tar.gz',
-          label:'Loading the JLR offline English model from the browser-compatible model host…',
+          label:'Loading browser-compatible English model…',
           timeout:90000,
+          prefix:'MIC-E11',
+          stage:'PRIMARY_MODEL',
         },
         {
-          url:'/vendor/vosk/model-en-us-0.15.tar.gz?v=3',
-          label:'Primary model path was unavailable. Retrying through JLR…',
+          url:'/vendor/vosk/model-en-us-0.15.tar.gz?v=4',
+          label:'Primary model path failed. Retrying through JLR…',
           timeout:120000,
+          prefix:'MIC-E12',
+          stage:'JLR_MODEL',
         },
       ];
-
       const failures=[];
       for(const candidate of candidates){
         try{
-          const model=await loadCandidate(candidate.url,candidate.label,candidate.timeout);
+          const model=await loadCandidate(candidate);
           try{model.setLogLevel?.(-1)}catch{}
           brainLocalModel=model;
           return model;
         }catch(error){
-          const detail=String(error?.message||error||'unknown model error');
-          failures.push(detail);
+          failures.push(String(error?.jlrCode||'MIC-E999')+': '+String(error?.message||error));
+          brainRecordMicDiag(error?.jlrCode||'MIC-E999',error?.jlrStage||candidate.stage,String(error?.message||error));
           console.warn('JLR local speech model candidate failed.',candidate.url,error);
         }
       }
-
-      throw new Error('Local speech model could not start. '+failures.join(' | '));
+      throw brainMicCodeError('MIC-E130','MODEL_EXHAUSTED','Both speech model paths failed. '+failures.join(' | '));
     })().catch(error=>{
       brainLocalModelPromise=null;
       throw error;
     });
-
     return brainLocalModelPromise;
   }
   async function startBrainLocalListening(reason='LOCAL AI'){
@@ -535,7 +622,7 @@
       const model=await loadBrainLocalModel();
       if(session!==brainLocalSession||!brainMicWanted)return;
       const AudioContextClass=window.AudioContext||window.webkitAudioContext;
-      if(!AudioContextClass)throw new Error('This browser does not expose Web Audio.');
+      if(!AudioContextClass)throw brainMicCodeError('MIC-E401','WEB_AUDIO','This browser does not expose Web Audio.');
       const context=new AudioContextClass();
       brainLocalAudioContext=context;
       if(context.state==='suspended'){
@@ -547,7 +634,9 @@
       }
       const stream=brainMicStream;
       if(!stream)throw new Error('Microphone stream is unavailable.');
-      const recognizer=new model.KaldiRecognizer(context.sampleRate);
+      let recognizer=null;
+      try{recognizer=new model.KaldiRecognizer(context.sampleRate)}
+      catch(error){throw brainMicCodeError('MIC-E402','RECOGNIZER_CREATE',String(error?.message||error||'Could not create local speech recognizer.'))}
       brainLocalRecognizer=recognizer;
       try{recognizer.setWords?.(false)}catch{}
       recognizer.on('result',message=>{
@@ -577,13 +666,15 @@
       brainLocalMute=mute;
       brainNetworkFailures=0;
       brainSpeechStartHangs=0;
-      brainSetListen('MIC ON',reason+' • '+brainMicLabel()+' • Say “Tracker” to wake the assistant. Speech stays on this device after the model is loaded.');
+      brainClearMicError();
+      brainRecordMicDiag('MIC-OK','LISTENING',reason+' • '+brainMicLabel());
+      brainSetListen('MIC ON','MIC-OK • '+reason+' • '+brainMicLabel()+' • Say “Tracker” to wake the assistant.');
     }catch(error){
       if(session!==brainLocalSession)return;
       stopBrainLocalCapture(false);
       const name=String(error?.name||'');
       if(name==='NotAllowedError'||name==='SecurityError'){
-        brainSetListen('MIC PERMISSION REQUIRED','Allow microphone access, then click TALK TO TRACKER.');
+        brainSetMicError(brainMicCodeError('MIC-E201','MIC_PERMISSION','Microphone permission was blocked.'),'Allow microphone access, then click TALK TO TRACKER.');
         return;
       }
       if((name==='NotFoundError'||name==='OverconstrainedError')&&brainMicDeviceId!=='default'){
@@ -592,13 +683,12 @@
         localStorage.setItem('jlrBrainMicDeviceId','default');
         stopBrainMicStream();
         renderBrainMicSelect();
-        brainSetListen('MIC DEVICE LOST',missing+' is unavailable. Falling back to system default.');
+        brainSetMicError(brainMicCodeError('MIC-E202','MIC_DEVICE',missing+' is unavailable.'),'Tracker is falling back to the system default microphone.');
         scheduleBrainMicRestart(900);
         return;
       }
       console.warn('JLR local speech engine failed.',error);
-      const message=String(error?.message||error||'Local speech recognition could not start.').trim();
-      brainSetListen('MIC AI ERROR',/click talk to tracker to retry\.?$/i.test(message)?message:message+' Click TALK TO TRACKER to retry.');
+      brainSetMicError(error,'Click TALK TO TRACKER to retry, then use COPY DIAGNOSTICS if it fails again.');
     }
   }
   async function startBrainListening(){
@@ -632,7 +722,7 @@
       if(startToken!==brainMicStartToken)return;
       const name=String(error?.name||'');
       if(name==='NotAllowedError'||name==='SecurityError'){
-        brainSetListen('MIC PERMISSION REQUIRED','Allow microphone access, then click TALK TO TRACKER.');
+        brainSetMicError(brainMicCodeError('MIC-E201','MIC_PERMISSION','Microphone permission was blocked.'),'Allow microphone access, then click TALK TO TRACKER.');
         return;
       }
       if((name==='NotFoundError'||name==='OverconstrainedError')&&brainMicDeviceId!=='default'){
@@ -687,11 +777,11 @@
       const code=String(event?.error||'microphone error');
       if(code==='not-allowed'||code==='service-not-allowed'){
         recognition.__jlrRetry=false;
-        brainSetListen('MIC PERMISSION REQUIRED','Allow microphone access, then click TALK TO TRACKER.');
+        brainSetMicError(brainMicCodeError('MIC-E201','MIC_PERMISSION','Microphone permission was blocked.'),'Allow microphone access, then click TALK TO TRACKER.');
         return;
       }
       if(code==='audio-capture'){
-        brainSetListen('MIC CAPTURE ERROR',brainMicLabel()+' is not providing audio. Tracker will retry.');
+        brainSetMicError(brainMicCodeError('MIC-E303','BROWSER_CAPTURE',brainMicLabel()+' is not providing audio.'),'Tracker will retry automatically.');
         return;
       }
       if(code==='no-speech'){
@@ -710,7 +800,8 @@
           scheduleBrainMicRestart(500);
           return;
         }
-        brainSetListen('MIC AI FALLBACK','Browser speech service is unavailable. Switching Tracker to JLR local speech recognition…');
+        brainRecordMicDiag('MIC-E301','BROWSER_SPEECH_NETWORK','Browser speech service returned a network error; switching to JLR local speech.');
+        brainSetListen('MIC AI FALLBACK • MIC-E301','Browser speech service is unavailable. Switching Tracker to JLR local speech recognition…');
         if(brainRecognition===recognition)brainRecognition=null;
         try{recognition.abort()}catch{}
         stopBrainMicStream();
@@ -754,7 +845,8 @@
         if(trackBound){
           brainPreferBrowserSpeechInput=true;
         }else if(brainSpeechStartHangs>=2){
-          brainSetListen('MIC AI FALLBACK','Browser speech recognition did not start. Switching Tracker to JLR local speech recognition…');
+          brainRecordMicDiag('MIC-E302','BROWSER_SPEECH_START','Browser speech recognition failed to start twice; switching to JLR local speech.');
+          brainSetListen('MIC AI FALLBACK • MIC-E302','Browser speech recognition did not start. Switching Tracker to JLR local speech recognition…');
           stopBrainMicStream();
           setTimeout(()=>{ if(brainMicWanted)void startBrainLocalListening('JLR LOCAL AI • STARTUP FALLBACK'); },250);
           return;
@@ -768,7 +860,7 @@
       },6000);
     }catch(error){
       if(brainRecognition===recognition)brainRecognition=null;
-      brainSetListen('MIC START ERROR',String(error?.message||error||'Speech recognition could not start.'));
+      brainSetMicError(brainMicCodeError('MIC-E304','BROWSER_SPEECH_START',String(error?.message||error||'Speech recognition could not start.')),'Tracker will retry automatically.');
       scheduleBrainMicRestart(1200);
     }
   }
@@ -1561,6 +1653,14 @@
           </div>
           <div id="brainHeard" class="brain-heard">Standby.</div>
           <div id="brainReply" class="brain-reply">Tracker ready.</div>
+          <div id="brainMicDiagnostic" class="brain-mic-diagnostic hidden">
+            <div class="brain-mic-diagnostic-head"><strong id="brainMicErrorCode">MIC-E000</strong><span id="brainMicErrorStage">STAGE</span></div>
+            <p id="brainMicErrorDetail">No microphone error recorded.</p>
+            <div class="brain-mic-diagnostic-actions">
+              <button id="brainMicCopyDiag" class="board-tool" type="button">COPY DIAGNOSTICS</button>
+              <button id="brainMicClearDiag" class="board-tool subtle" type="button">CLEAR ERROR</button>
+            </div>
+          </div>
         </section>
 
         <section class="brain-card">
@@ -4778,7 +4878,17 @@
       return;
     }
     if(target.closest('#trackerMicToggle')){
+      brainClearMicError();
       restartBrainListening(true,true);
+      return;
+    }
+    if(target.closest('#brainMicCopyDiag')){
+      await runBrainMicDiagnostic(true);
+      return;
+    }
+    if(target.closest('#brainMicClearDiag')){
+      brainClearMicError();
+      toast('Mic error display cleared.');
       return;
     }
     const repeatRow=target.closest('.brain-repeat-row');
@@ -4811,7 +4921,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.93',
+          version:state?.app?.version||'2.9.94',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
