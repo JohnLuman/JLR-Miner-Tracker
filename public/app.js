@@ -2345,9 +2345,13 @@
     }
     if(minedText){
       return{
-        text:minedText,
+        text:ledger.seeded&&!ledger.active
+          ?`LEDGER • ${fmt(mined,'m3')} / ${fmt(site,'m3')} m³ MINED TODAY`
+          :minedText,
         tone:ledger.active?'active':'',
-        title:`Linked ESI mining ledgers report ${Math.round(mined).toLocaleString()} m³ mined from this site's tracked activity cycle${site>0?' out of '+Math.round(site).toLocaleString()+' m³ total':''}. Last activity ${ago(ledger.lastActivityAt)}.`,
+        title:ledger.seeded&&!ledger.active
+          ?`Today's linked ESI ledger already contains ${Math.round(mined).toLocaleString()} m³ mined in this system. ESI's daily ledger does not provide the exact mining time, so this confirms today's mining but not that mining is active right now.`
+          :`Linked ESI mining ledgers report ${Math.round(mined).toLocaleString()} m³ mined from this site's tracked activity cycle${site>0?' out of '+Math.round(site).toLocaleString()+' m³ total':''}. Last activity ${ago(ledger.lastActivityAt)}.`,
       };
     }
     if(ledger.active){
@@ -3783,14 +3787,47 @@
     fleetPerformanceRefreshPromise=pending;
     return pending;
   }
+  function announceFieldEsiChanges(previousState,nextState){
+    if(!previousState||!nextState||!soundEnabled||window.jlrVoiceUserActivated!==true)return;
+    const queued=[];
+    for(const d of (nextState.source?.systems||[])){
+      const system=String(d.system||'');
+      if(!system)continue;
+      const beforeField=previousState.fields?.[system]||null;
+      const afterField=nextState.fields?.[system]||null;
+      const beforeLedger=previousState.scans?.[system]?.ledger||null;
+      const afterLedger=nextState.scans?.[system]?.ledger||null;
+      if(!afterField||!afterLedger)continue;
+
+      const esiPicked=afterField.status==='picked'
+        && beforeField?.status!=='picked'
+        && Boolean(afterField.ledgerPickedAt||afterField.autoReopenedAt);
+      const depletionAlert=Boolean(afterLedger.likelyDepleted&&!beforeLedger?.likelyDepleted);
+      const scanAlert=Boolean(afterLedger.needsScan&&!beforeLedger?.needsScan);
+
+      if(esiPicked||depletionAlert||scanAlert)queued.push(system);
+    }
+    for(const system of queued.slice(0,8)){
+      const ledger=nextState.scans?.[system]?.ledger||{};
+      const mined=Math.max(0,Number(ledger.minedM3SinceSite)||0);
+      const pct=Number(ledger.depletionPct);
+      let fallback='J. L. R. mining update. Mining activity detected in '+system+'.';
+      if(mined>0)fallback+=' '+Math.round(mined).toLocaleString()+' cubic meters reported mined.';
+      if(Number.isFinite(pct)&&pct>=80)fallback+=' Estimated depletion '+Math.round(pct)+' percent. Scan recommended.';
+      speakJlr('field',{system},fallback);
+    }
+  }
+
   function connectSse(){
     if(eventSource)eventSource.close();
     eventSource=new EventSource('/api/events');
     eventSource.addEventListener('state',e=>{
+      const previousState=state;
       const previousSync=state?.esi?.lastSyncAt||null;
       const nextState=JSON.parse(e.data);
       const syncChanged=Boolean(nextState?.esi?.lastSyncAt&&nextState.esi.lastSyncAt!==previousSync);
       state=nextState;
+      announceFieldEsiChanges(previousState,nextState);
       if(syncChanged){
         refreshMe().then(()=>{
           renderAll();
