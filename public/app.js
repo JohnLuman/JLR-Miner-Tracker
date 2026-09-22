@@ -181,7 +181,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.76');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.77');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -311,14 +311,21 @@
       if(code==='not-allowed'||code==='service-not-allowed'){
         brainMicWanted=false;
         localStorage.setItem('jlrBrainMicArmed','false');
+        brainSetListen('MIC PERMISSION REQUIRED','Click TALK TO TRACKER and allow microphone access.');
+        return;
       }
-      brainSetListen('MIC '+code.toUpperCase(),'Click TALK TO TRACKER to try again.');
+      if(code==='no-speech'){
+        brainSetListen('SAY “TRACKER”','Wake word armed.');
+        return;
+      }
+      brainSetListen('MIC '+code.toUpperCase(),'Tracker will retry automatically.');
     };
     recognition.onresult=event=>{
       if(typeof window.jlrVoiceIsActive==='function'&&window.jlrVoiceIsActive())return;
       for(let i=event.resultIndex;i<event.results.length;i++){
         if(!event.results[i].isFinal)continue;
         const transcript=String(event.results[i][0]?.transcript||'').trim();
+        if($('brainHeard'))$('brainHeard').textContent='HEARD: “'+transcript+'”';
         const lower=transcript.toLowerCase();
         const wake=lower.indexOf('tracker');
         if(wake>=0){
@@ -355,6 +362,10 @@
     if($('brainStartupBriefing'))$('brainStartupBriefing').value=localStorage.getItem('jlrBrainStartupBriefing')==='false'?'off':'on';
     if($('brainConversationWindow'))$('brainConversationWindow').value=localStorage.getItem('jlrBrainConversationWindow')||'30';
     if($('brainAutoListen'))$('brainAutoListen').value=localStorage.getItem('jlrBrainAutoListen')==='true'?'on':'off';
+    if(!brainMicWanted&&!brainRecognition){
+      const remembered=localStorage.getItem('jlrBrainMicArmed')==='true';
+      brainSetListen(remembered?'MIC STARTING':'MIC OFF',remembered?'Restoring wake-word listening.':'Click TALK TO TRACKER once to grant microphone access.');
+    }
     renderBrainSpeechHistory();
     const decisions=$('brainDecisionList');
     const issues=Array.isArray(brain?.issues)?brain.issues:[];
@@ -1049,7 +1060,7 @@
           <div class="brain-card-head"><strong>TALK TO TRACKER</strong><small>Natural voice interaction</small></div>
           <div id="brainListenPanel" class="brain-listen-panel">
             <span class="brain-listen-orb">●</span>
-            <div><strong id="brainListenStatus">SAY “TRACKER”</strong><small id="brainListenHint">Arm the microphone once, then use the wake word.</small></div>
+            <div><strong id="brainListenStatus">MIC OFF</strong><small id="brainListenHint">Click TALK TO TRACKER once to grant microphone access.</small></div>
           </div>
           <div id="brainHeard" class="brain-heard">Standby.</div>
           <div id="brainReply" class="brain-reply">Tracker ready.</div>
@@ -4181,7 +4192,7 @@
       const type=document.querySelector('.brain-feedback-type.active')?.dataset.feedbackType||'suggestion';
       const message=String($('brainFeedbackText')?.value||'').trim();
       if(!message){toast('Add a short description first.');return}
-      await api('/api/tracker/brain/feedback',{method:'POST',body:JSON.stringify({type,message,context:{version:state?.app?.version||'2.9.76',tab:activeTab,lastSpeech:brainSpeechHistory[0]?.text||''}})});
+      await api('/api/tracker/brain/feedback',{method:'POST',body:JSON.stringify({type,message,context:{version:state?.app?.version||'2.9.77',tab:activeTab,lastSpeech:brainSpeechHistory[0]?.text||''}})});
       $('brainFeedbackText').value='';
       toast('Tracker feedback submitted.');
       return;
@@ -4605,6 +4616,9 @@
       const auth=await fetch('/api/me',{credentials:'same-origin'}).then(r=>r.json());
       if(!auth.authenticated){showLogin();return}
       me=auth.user;syncDoctrineTabAccess();syncTrackerTabAccess();initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');queueStartupGreeting();await loadMerIntel();await loadState();connectSse();startScoutLocationWatch();
+      if(localStorage.getItem('jlrBrainMicArmed')==='true'){
+        setTimeout(()=>startBrainListening(),1200);
+      }
       const params=new URLSearchParams(location.search);if(params.get('linked'))toast('Mining toon connected.');if(params.get('login'))toast('Logged in.');if(params.get('market')==='authorized')toast('John market access authorized.');if(params.get('error'))toast(decodeURIComponent(params.get('error')));if(params.toString())history.replaceState({},'',location.pathname);
     }catch(e){console.error(e);showLogin();$('setupWarning').classList.remove('hidden');$('setupWarning').textContent=`JLR could not load: ${e.message}`}
   }
