@@ -2,13 +2,14 @@
 (function(){
   const ALARM_VERSION='2.9.37';
   const ALARM_CHUNKS=6;
-  const CORE_URL='/tracker-core.js?v=2.9.32';
+  const CORE_URL='/tracker-core.js?v=2.9.37';
 
   let alarmContext=null;
   let alarmBufferPromise=null;
   let alarmSource=null;
   let alarmHtmlPlayer=null;
   let alarmBlobUrl=null;
+  let alarmGeneration=0;
   let lastAlertText='';
   let lastAlertAt=0;
 
@@ -79,8 +80,10 @@
   }
 
   async function playSongAlarm(){
+    const generation=alarmGeneration;
     try{
       const loaded=await loadAlarmBuffer();
+      if(generation!==alarmGeneration)return false;
       if(loaded.kind==='webaudio'){
         const context=ensureAlarmContext();
         if(!context)return false;
@@ -119,6 +122,7 @@
 
 
   function stopSongAlarm(){
+    alarmGeneration++;
     let stopped=false;
     if(alarmSource){
       try{alarmSource.stop();stopped=true;}catch(error){}
