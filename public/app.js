@@ -213,7 +213,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.100');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.101');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -303,7 +303,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR TRACKER MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.100'),
+      'Version: '+String(state?.app?.version||'2.9.101'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -360,7 +360,7 @@
     const briefing=await api('/api/tracker/brain/briefing?force=1');
     const text=String(briefing?.text||'Tracker briefing ready.');
     if($('brainReply'))$('brainReply').textContent=text;
-    await speakJlr('briefing',{},text);
+    await speakBrainAnswer(text,'briefing',{});
   }
   async function handleBrainCommand(transcript){
     const heard=String(transcript||'').trim();
@@ -376,23 +376,36 @@
     try{
       if(/\b(stop|cancel|quiet)\b/.test(command)){
         if(typeof window.jlrStopFighterAlarm==='function')window.jlrStopFighterAlarm();
-        if($('brainReply'))$('brainReply').textContent='Stopped.';
+        const answer='Stopped.';
+        if($('brainReply'))$('brainReply').textContent=answer;
+        await speakBrainAnswer(answer,'brain',{text:answer});
         return;
       }
       if(/\b(repeat|say that again)\b/.test(command)){
         const row=brainSpeechHistory[0];
-        if(!row){if($('brainReply'))$('brainReply').textContent='Nothing to repeat yet.';return}
+        if(!row){
+          const answer='Nothing to repeat yet.';
+          if($('brainReply'))$('brainReply').textContent=answer;
+          await speakBrainAnswer(answer,'brain',{text:answer});
+          return;
+        }
         if($('brainReply'))$('brainReply').textContent=row.text;
-        await speakJlr('repeat',{text:row.text},row.text);
+        await speakBrainAnswer(row.text,'repeat',{text:row.text});
         return;
       }
       if(/\bwhy\b/.test(command)){
         const system=brainLastSystem||selectedSystem;
-        if(!system){if($('brainReply'))$('brainReply').textContent='No system context yet.';return}
+        if(!system){
+          const answer='No system context yet.';
+          if($('brainReply'))$('brainReply').textContent=answer;
+          await speakBrainAnswer(answer,'brain',{text:answer});
+          return;
+        }
         const explanation=await api('/api/tracker/brain/why?system='+encodeURIComponent(system));
         brainLastSystem=system;
-        if($('brainReply'))$('brainReply').textContent=String(explanation?.summary||explanation?.voice||'');
-        await speakJlr('why',{system},explanation?.voice||'');
+        const answer=String(explanation?.summary||explanation?.voice||'');
+        if($('brainReply'))$('brainReply').textContent=answer;
+        await speakBrainAnswer(explanation?.voice||answer,'why',{system});
         return;
       }
       if(/\b(which|where|highest|priority|first)\b/.test(command)&&state?.trackerBrain?.issues?.length){
@@ -400,7 +413,7 @@
         if(issue?.system)brainLastSystem=String(issue.system);
         const answer=String(issue?.voice||issue?.reason||issue?.title||'No priority issue.');
         if($('brainReply'))$('brainReply').textContent=answer;
-        await speakJlr('brain',{text:answer},answer);
+        await speakBrainAnswer(answer,'brain',{text:answer});
         return;
       }
       if(/\b(status|brief|attention|changed|anything else|update)\b/.test(command)){
@@ -416,10 +429,11 @@
       const answer=String(response?.text||'I do not have an answer for that yet.');
       if($('brainReply'))$('brainReply').textContent=answer;
       brainConversationUntil=Date.now()+brainConversationMs();
-      await speakJlr('brain',{text:answer},answer);
-      if(brainMicWanted)brainSetListen('MIC ON','Follow-up ready. You can keep talking briefly without saying “Tracker” again.');
+      await speakBrainAnswer(answer,'brain',{text:answer});
     }catch(error){
-      if($('brainReply'))$('brainReply').textContent=String(error?.message||error);
+      const answer=String(error?.message||error||'Tracker could not answer that.');
+      if($('brainReply'))$('brainReply').textContent=answer;
+      await speakBrainAnswer(answer,'brain',{text:answer});
     }
   }
   function brainMicLabel(deviceId=brainMicDeviceId){
@@ -1104,6 +1118,59 @@
       console.warn('JLR voice event failed',error);
       return false;
     }
+  }
+
+  function browserSpeakTracker(text){
+    if(!('speechSynthesis' in window))return false;
+    try{
+      const synth=window.speechSynthesis;
+      synth.cancel();
+      const utterance=new SpeechSynthesisUtterance(String(text||'Tracker response.'));
+      const voices=synth.getVoices()||[];
+      const voice=voices.find(v=>/^en-US/i.test(String(v.lang||'')))||voices.find(v=>/^en/i.test(String(v.lang||'')))||null;
+      if(voice)utterance.voice=voice;
+      utterance.lang=voice?.lang||'en-US';
+      utterance.rate=.92;
+      utterance.pitch=.86;
+      utterance.volume=1;
+      synth.speak(utterance);
+      return true;
+    }catch(error){
+      console.warn('Tracker browser speech fallback failed',error);
+      return false;
+    }
+  }
+
+  function restoreBrainListenAfterVoice(){
+    const started=Date.now();
+    const tick=()=>{
+      if(!brainMicWanted)return;
+      const active=brainVoiceActive();
+      if(!active||Date.now()-started>120000){
+        brainSetListen('MIC ON','Follow-up ready. You can keep talking briefly without saying “Tracker” again.');
+        return;
+      }
+      setTimeout(tick,150);
+    };
+    setTimeout(tick,250);
+  }
+
+  async function speakBrainAnswer(text,type='brain',payload={}){
+    const spoken=String(text||'').trim();
+    if(!spoken)return false;
+    brainSetListen('TRACKER SPEAKING','Responding by voice…');
+    let played=false;
+    if(typeof window.jlrSpeakEvent==='function'){
+      try{
+        played=Boolean(await window.jlrSpeakEvent(type,payload||{},spoken));
+      }catch(error){
+        console.warn('Tracker conversational voice failed',error);
+      }
+    }
+    if(!played)played=browserSpeakTracker(spoken);
+    if(played&&type!=='repeat')recordBrainSpeech(type,spoken);
+    restoreBrainListenAfterVoice();
+    return played;
   }
 
   function scanVoiceFallback(preview){
@@ -5053,7 +5120,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.100',
+          version:state?.app?.version||'2.9.101',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
