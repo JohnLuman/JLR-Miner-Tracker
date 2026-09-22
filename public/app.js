@@ -204,7 +204,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.95');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.96');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -294,7 +294,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR TRACKER MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.95'),
+      'Version: '+String(state?.app?.version||'2.9.96'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -515,100 +515,138 @@
     }
     if(stopStream)stopBrainMicStream();
   }
+  async function resetBrainVoskStorageOnce(){
+    const marker='lichess-vosk-0.0.3-jlr1';
+    if(localStorage.getItem('jlrVoskStorageVersion')===marker)return;
+    if(!('indexedDB' in window))throw brainMicCodeError('MIC-E102','INDEXEDDB','IndexedDB is unavailable in this browser session.');
+
+    try{
+      brainRecordMicDiag('MIC-I102','INDEXEDDB','Checking Vosk browser storage before first load.');
+      if(typeof indexedDB.databases==='function'){
+        const dbs=await indexedDB.databases();
+        const voskNames=(dbs||[]).map(row=>String(row?.name||'')).filter(name=>/vosk/i.test(name));
+        for(const name of voskNames){
+          await new Promise(resolve=>{
+            const request=indexedDB.deleteDatabase(name);
+            request.onsuccess=request.onerror=request.onblocked=()=>resolve();
+          });
+          brainRecordMicDiag('MIC-I103','INDEXEDDB_RESET','Cleared old Vosk database: '+name);
+        }
+      }else{
+        for(const name of ['/vosk','EM_FS_/vosk']){
+          await new Promise(resolve=>{
+            const request=indexedDB.deleteDatabase(name);
+            request.onsuccess=request.onerror=request.onblocked=()=>resolve();
+          });
+        }
+      }
+
+      // Confirm the browser can actually create/write/delete IndexedDB data.
+      await new Promise((resolve,reject)=>{
+        const request=indexedDB.open('jlr-vosk-storage-probe',1);
+        request.onupgradeneeded=()=>{try{request.result.createObjectStore('probe')}catch{}};
+        request.onerror=()=>reject(request.error||new Error('IndexedDB open failed.'));
+        request.onsuccess=()=>{
+          const db=request.result;
+          try{
+            const tx=db.transaction('probe','readwrite');
+            tx.objectStore('probe').put('ok','status');
+            tx.oncomplete=()=>{db.close();indexedDB.deleteDatabase('jlr-vosk-storage-probe');resolve()};
+            tx.onerror=()=>{db.close();reject(tx.error||new Error('IndexedDB write failed.'))};
+            tx.onabort=()=>{db.close();reject(tx.error||new Error('IndexedDB write aborted.'))};
+          }catch(error){
+            db.close();
+            reject(error);
+          }
+        };
+      });
+      localStorage.setItem('jlrVoskStorageVersion',marker);
+      brainRecordMicDiag('MIC-I104','INDEXEDDB','Vosk browser storage is writable.');
+    }catch(error){
+      throw brainMicCodeError('MIC-E103','INDEXEDDB',String(error?.message||error||'IndexedDB storage test failed.'));
+    }
+  }
+
   async function loadBrainLocalModel(){
     if(brainLocalModel)return brainLocalModel;
     if(brainLocalModelPromise)return brainLocalModelPromise;
 
-    const waitForLibrary=async()=>{
-      const started=Date.now();
-      while(!(window.Vosk&&typeof window.Vosk.Model==='function')){
-        if(Date.now()-started>10000)throw brainMicCodeError('MIC-E101','VOSK_LIBRARY','Vosk browser library did not load within 10 seconds.');
-        await new Promise(resolve=>setTimeout(resolve,100));
-      }
-      brainRecordMicDiag('MIC-I101','VOSK_LIBRARY','Vosk browser library ready.');
-    };
-
-    const loadCandidate=(candidate)=>new Promise((resolve,reject)=>{
-      let settled=false;
-      let instance=null;
-      let timer=null;
-      const fail=(suffix,stage,detail)=>{
-        const code=candidate.prefix+suffix;
-        if(settled)return;
-        settled=true;
-        if(timer)clearTimeout(timer);
-        try{instance?.terminate?.()}catch{}
-        reject(brainMicCodeError(code,stage,detail));
-      };
-      const succeed=()=>{
-        if(settled)return;
-        settled=true;
-        if(timer)clearTimeout(timer);
-        brainRecordMicDiag(candidate.prefix+'0',candidate.stage,'Model loaded successfully.');
-        resolve(instance);
-      };
-      try{
-        brainSetListen('MIC AI LOADING • '+candidate.prefix+'0',candidate.label);
-        brainRecordMicDiag(candidate.prefix+'0',candidate.stage,'Starting model load: '+candidate.url);
-        instance=new window.Vosk.Model(candidate.url,-1);
-        const worker=instance?.worker||instance?._worker||null;
-        if(worker&&typeof worker.addEventListener==='function'){
-          worker.addEventListener('error',event=>{
-            fail('2',candidate.stage+'_WORKER',String(event?.message||event?.error?.message||'Speech worker crashed.'));
-          },{once:true});
-          worker.addEventListener('messageerror',()=>{
-            fail('3',candidate.stage+'_MESSAGE','Speech worker returned an unreadable message.');
-          },{once:true});
-        }
-        instance.on('load',message=>{
-          if(message?.result)succeed();
-          else fail('4',candidate.stage+'_LOAD','Speech model returned load=false.');
-        });
-        instance.on('error',message=>{
-          fail('5',candidate.stage+'_MODEL',String(message?.error||message?.message||'Unknown model worker error.'));
-        });
-        timer=setTimeout(()=>fail('1',candidate.stage+'_TIMEOUT','Speech model did not finish loading before the '+Math.round(candidate.timeout/1000)+' second timeout.'),candidate.timeout);
-      }catch(error){
-        fail('6',candidate.stage+'_CONSTRUCTOR',String(error?.message||error||'Could not create Vosk model.'));
-      }
-    });
-
     brainLocalModelPromise=(async()=>{
-      await waitForLibrary();
-      const candidates=[
-        {
-          url:'https://fiddle-app.github.io/voice-models/vosk-model-small-en-us-0.15.tar.gz',
-          label:'Loading browser-compatible English model…',
-          timeout:90000,
-          prefix:'MIC-E11',
-          stage:'PRIMARY_MODEL',
-        },
-        {
-          url:'/vendor/vosk/model-en-us-0.15.tar.gz?v=4',
-          label:'Primary model path failed. Retrying through JLR…',
-          timeout:120000,
-          prefix:'MIC-E12',
-          stage:'JLR_MODEL',
-        },
-      ];
-      const failures=[];
-      for(const candidate of candidates){
-        try{
-          const model=await loadCandidate(candidate);
-          try{model.setLogLevel?.(-1)}catch{}
-          brainLocalModel=model;
-          return model;
-        }catch(error){
-          failures.push(String(error?.jlrCode||'MIC-E999')+': '+String(error?.message||error));
-          brainRecordMicDiag(error?.jlrCode||'MIC-E999',error?.jlrStage||candidate.stage,String(error?.message||error));
-          console.warn('JLR local speech model candidate failed.',candidate.url,error);
-        }
+      await resetBrainVoskStorageOnce();
+
+      brainSetListen('MIC AI LOADING • MIC-I110','Loading JLR speech runtime…');
+      brainRecordMicDiag('MIC-I110','VOSK_RUNTIME','Loading same-origin Lichess Vosk runtime.');
+      let module;
+      try{
+        module=await import('/vendor/vosk/vosk.wasm.js?v=0.0.3-jlr1');
+      }catch(error){
+        throw brainMicCodeError('MIC-E104','VOSK_RUNTIME_IMPORT',String(error?.message||error||'Could not import Vosk runtime.'));
       }
-      throw brainMicCodeError('MIC-E130','MODEL_EXHAUSTED','Both speech model paths failed. '+failures.join(' | '));
+      if(typeof module?.Model!=='function'){
+        throw brainMicCodeError('MIC-E105','VOSK_RUNTIME_API','Vosk runtime loaded without the Model API.');
+      }
+
+      const resolver=asset=>{
+        const name=String(asset||'').split('/').pop();
+        if(name==='vosk.worker.js')return location.origin+'/vendor/vosk/vosk.worker.js?v=0.0.3-jlr1';
+        if(name==='vosk.wasm')return location.origin+'/vendor/vosk/vosk.wasm?v=0.0.3-jlr1';
+        return location.origin+'/vendor/vosk/'+name;
+      };
+
+      const modelUrl=location.origin+'/vendor/vosk/model-en-us-0.15.tar.gz?v=5';
+      brainSetListen('MIC AI LOADING • MIC-I120','Loading offline English model with the new speech runtime…');
+      brainRecordMicDiag('MIC-I120','VOSK_MODEL','Starting model load through JLR: '+modelUrl);
+
+      const model=await new Promise((resolve,reject)=>{
+        let settled=false;
+        let instance=null;
+        const finish=(ok,value)=>{
+          if(settled)return;
+          settled=true;
+          clearTimeout(timer);
+          if(ok){
+            brainRecordMicDiag('MIC-I129','VOSK_MODEL','Offline English model loaded successfully.');
+            resolve(value);
+          }else{
+            try{instance?.terminate?.()}catch{}
+            reject(value instanceof Error?value:brainMicCodeError('MIC-E129','VOSK_MODEL',String(value||'Model failed.')));
+          }
+        };
+        const timer=setTimeout(()=>finish(false,brainMicCodeError('MIC-E121','VOSK_MODEL_TIMEOUT','New Vosk runtime did not finish loading the model within 3 minutes.')),180000);
+        try{
+          instance=new module.Model(modelUrl,resolver,-1);
+          const worker=instance?.worker||instance?._worker||null;
+          if(worker&&typeof worker.addEventListener==='function'){
+            worker.addEventListener('error',event=>{
+              finish(false,brainMicCodeError('MIC-E122','VOSK_WORKER',String(event?.message||event?.error?.message||'Speech worker crashed.')));
+            },{once:true});
+            worker.addEventListener('messageerror',()=>{
+              finish(false,brainMicCodeError('MIC-E123','VOSK_WORKER_MESSAGE','Speech worker returned an unreadable message.'));
+            },{once:true});
+          }
+          instance.on('load',message=>{
+            if(message?.result)finish(true,instance);
+            else finish(false,brainMicCodeError('MIC-E124','VOSK_MODEL_LOAD','Speech model returned load=false.'));
+          });
+          instance.on('error',message=>{
+            const detail=String(message?.error||message?.message||'Unknown Vosk worker error.');
+            const code=/sync file system|indexeddb|idb/i.test(detail)?'MIC-E125':'MIC-E126';
+            const stage=code==='MIC-E125'?'VOSK_INDEXEDDB':'VOSK_MODEL_ERROR';
+            finish(false,brainMicCodeError(code,stage,detail));
+          });
+        }catch(error){
+          finish(false,brainMicCodeError('MIC-E127','VOSK_MODEL_CONSTRUCTOR',String(error?.message||error||'Could not create Vosk model.')));
+        }
+      });
+
+      try{model.setLogLevel?.(-1)}catch{}
+      brainLocalModel=model;
+      return model;
     })().catch(error=>{
       brainLocalModelPromise=null;
       throw error;
     });
+
     return brainLocalModelPromise;
   }
   async function startBrainLocalListening(reason='LOCAL AI'){
@@ -4923,7 +4961,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.95',
+          version:state?.app?.version||'2.9.96',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
