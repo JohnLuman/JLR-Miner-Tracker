@@ -713,7 +713,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.42',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.43',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -790,10 +790,48 @@ async function exchangeCode(code,pending) {
   if(!r.ok)throw new Error(p.error_description||p.error||`Token exchange ${r.status}`); return p;
 }
 async function refreshToken(refresh) {
-  const meta=await getSsoMetadata(); const body=new URLSearchParams({grant_type:'refresh_token',refresh_token:refresh}); const headers={'Content-Type':'application/x-www-form-urlencoded','User-Agent':ESI_USER_AGENT};
-  if(EVE_CLIENT_SECRET) headers.Authorization=`Basic ${Buffer.from(`${EVE_CLIENT_ID}:${EVE_CLIENT_SECRET}`).toString('base64')}`; else body.set('client_id',EVE_CLIENT_ID);
-  const r=await fetch(meta.token_endpoint||'https://login.eveonline.com/v2/oauth/token',{method:'POST',headers,body}); const p=await r.json().catch(()=>({}));
-  if(!r.ok)throw new Error(p.error_description||p.error||`Token refresh ${r.status}`); return p;
+  const meta=await getSsoMetadata();
+  const endpoint=meta.token_endpoint||'https://login.eveonline.com/v2/oauth/token';
+  let lastStatus=0,lastMessage='';
+  for(let attempt=0;attempt<3;attempt++){
+    const body=new URLSearchParams({grant_type:'refresh_token',refresh_token:refresh});
+    const headers={'Content-Type':'application/x-www-form-urlencoded','User-Agent':ESI_USER_AGENT};
+    if(EVE_CLIENT_SECRET)headers.Authorization=`Basic ${Buffer.from(`${EVE_CLIENT_ID}:${EVE_CLIENT_SECRET}`).toString('base64')}`;
+    else body.set('client_id',EVE_CLIENT_ID);
+    try{
+      const response=await fetch(endpoint,{method:'POST',headers,body,signal:AbortSignal.timeout(15_000)});
+      lastStatus=response.status;
+      const raw=await response.text().catch(()=>'');
+      let payload={};
+      try{payload=raw?JSON.parse(raw):{}}catch{}
+      if(response.ok)return payload;
+      lastMessage=String(payload.error_description||payload.error||raw||'').trim().slice(0,180);
+      const temporary=response.status===429||response.status>=500;
+      if(temporary&&attempt<2){
+        const retrySeconds=clamp(response.headers.get('retry-after'),1,10,attempt+1);
+        await sleep(retrySeconds*1000);
+        continue;
+      }
+      if(temporary){
+        const error=new Error(`EVE login service is temporarily unavailable (HTTP ${response.status}). Please try the scan again in a moment.`);
+        error.code='EVE_SSO_TEMPORARY';
+        error.status=response.status;
+        throw error;
+      }
+      throw new Error(lastMessage||`Token refresh ${response.status}`);
+    }catch(error){
+      if(error?.code==='EVE_SSO_TEMPORARY')throw error;
+      if(attempt<2&&(error?.name==='TimeoutError'||error?.name==='AbortError'||error instanceof TypeError)){
+        await sleep((attempt+1)*1000);
+        continue;
+      }
+      throw error;
+    }
+  }
+  const error=new Error(`EVE login service is temporarily unavailable${lastStatus?` (HTTP ${lastStatus})`:''}. Please try the scan again in a moment.`);
+  error.code='EVE_SSO_TEMPORARY';
+  if(lastMessage)error.detail=lastMessage;
+  throw error;
 }
 async function verifyJwt(token,requireMining=true) {
   const parts=String(token).split('.'); if(parts.length!==3)throw new Error('Invalid JWT');
@@ -5246,7 +5284,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.42',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.43',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -5569,7 +5607,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.42 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.43 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
 setInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': tracker-heartbeat\n\n')}catch{trackerLiveClients.delete(res)}}},20_000).unref();
 setInterval(()=>resetExpired(true),15_000).unref();
