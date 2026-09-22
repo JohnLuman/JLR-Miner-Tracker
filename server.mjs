@@ -227,6 +227,7 @@ const tokenKey = await loadTokenKey();
 const sessionSecret = crypto.createHash('sha256').update(process.env.SESSION_SECRET || tokenKey).digest();
 const characterSyncPromises = new Map();
 const characterAccessPromises = new Map();
+const characterAccessTokenCache = new Map();
 const userSyncPromises = new Map();
 const ledgerRowsByCharacter = new Map();
 const universeNameCache = new Map();
@@ -2523,6 +2524,8 @@ function hasThreatContactAccess(scopes){
 
 async function characterAccess(ch){
   const key=String(ch.characterId);
+  const cached=characterAccessTokenCache.get(key);
+  if(cached&&Number(cached.expiresAt)>Date.now()+60_000)return{access:cached.access,identity:cached.identity};
   if(characterAccessPromises.has(key))return characterAccessPromises.get(key);
   const pending=(async()=>{
     const tokens=await refreshToken(decrypt(ch.refreshTokenEnc));
@@ -2530,10 +2533,72 @@ async function characterAccess(ch){
     if(String(identity.characterId)!==key)throw new Error('Refresh token changed character');
     if(tokens.refresh_token)ch.refreshTokenEnc=encrypt(tokens.refresh_token);
     ch.scopes=identity.scopes;
+    const expiresIn=Math.max(120,Number(tokens.expires_in)||1200);
+    characterAccessTokenCache.set(key,{access:tokens.access_token,identity,expiresAt:Date.now()+expiresIn*1000});
     return{access:tokens.access_token,identity};
   })().finally(()=>characterAccessPromises.delete(key));
   characterAccessPromises.set(key,pending);
   return pending;
+}
+
+async function scoutLocationSnapshot(ch){
+  const {access,identity}=await characterAccess(ch);
+  if(!identity.scopes.includes(LOCATION_SCOPE)){
+    const error=new Error('This Scout toon needs EVE location access.');
+    error.code='LOCATION_SCOPE_REQUIRED';
+    throw error;
+  }
+  const {data}=await esiGet(`https://esi.evetech.net/latest/characters/${ch.characterId}/location/?datasource=tranquility`,access);
+  const systemId=String(data?.solar_system_id||'');
+  if(!systemId)throw new Error('EVE did not return the Scout toon’s current solar system.');
+  await ensureSystem([systemId]);
+  const system=state.esi.systemCache[systemId]?.name||`System ${systemId}`;
+  const t3=SYSTEM_MAP.get(system)||null;
+  const ice=(state.market?.iceFields||[]).find(row=>row.system===system)||null;
+  const a0=(state.market?.a0Fields||[]).find(row=>row.system===system)||state.market?.a0Reports?.[system]||null;
+  const tracked=Boolean(t3||ice||a0);
+  const scan=scanActivityPublic()[system]||null;
+  const ledger=scan?.ledger||null;
+  const lastScanAt=scan?.lastScanAt||null;
+  const scanMs=Date.parse(lastScanAt||'');
+  const stale=!Number.isFinite(scanMs)||Date.now()-scanMs>=A0_REPORT_TTL;
+  const ledgerNeedsScan=Boolean(ledger?.needsScan||ledger?.likelyDepleted);
+  const needsScan=tracked&&(stale||ledgerNeedsScan);
+  return{
+    characterId:String(ch.characterId),
+    characterName:String(ch.name||'Scout'),
+    systemId,
+    system,
+    tracked,
+    kinds:[t3?'t3':null,ice?'ice':null,a0?'a0':null].filter(Boolean),
+    lastScanAt,
+    scanDue:stale,
+    needsScan,
+    ledgerNeedsScan,
+    ledger,
+    field:t3?state.fields?.[system]||null:null,
+    checkedAt:now(),
+  };
+}
+
+function jlrScoutVoiceText(system){
+  const safeSystem=trackerSpeechSafe(system,48)||'Current system';
+  const scan=scanActivityPublic()[system]||null;
+  const ledger=scan?.ledger||null;
+  const parts=[`Scout update. ${safeSystem} requires a Probe Scanner update.`];
+  const scanMs=Date.parse(scan?.lastScanAt||'');
+  if(Number.isFinite(scanMs)){
+    const hours=Math.max(0,Math.floor((Date.now()-scanMs)/3600000));
+    if(hours>=1)parts.push(`Last scan was ${hours} hour${hours===1?'':'s'} ago.`);
+  }else{
+    parts.push('No confirmed scan is recorded.');
+  }
+  const mined=Math.max(0,Number(ledger?.minedM3SinceSite)||0);
+  const site=Math.max(0,Number(ledger?.siteM3)||0);
+  if(mined>0&&site>0){
+    parts.push(`Linked mining ledgers report ${trackerSpokenIsk(mined).replace(/ ISK$/,'')} of ${trackerSpokenIsk(site).replace(/ ISK$/,'')} cubic meters mined.`);
+  }
+  return parts.join(' ');
 }
 
 async function a0CandidateForScan(systemId,system,a0Detected=false){
@@ -5434,6 +5499,33 @@ async function routeApi(req,res,url) {
     return json(res,200,await doctrineMarketSnapshot());
   }
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
+  if(req.method==='GET'&&url.pathname==='/api/scout/location'){
+    const characterId=String(url.searchParams.get('characterId')||'');
+    if(!characterId||!user.characterIds.map(String).includes(characterId))return json(res,404,{error:'CHARACTER_NOT_LINKED',message:'That Scout toon is not linked to your account.'});
+    const ch=state.characters[characterId];
+    if(!ch)return json(res,404,{error:'CHARACTER_NOT_LINKED'});
+    try{return json(res,200,await scoutLocationSnapshot(ch))}
+    catch(err){
+      if(err?.code==='LOCATION_SCOPE_REQUIRED')return json(res,409,{error:err.code,message:err.message});
+      return json(res,502,{error:'SCOUT_LOCATION_FAILED',message:String(err.message||err)});
+    }
+  }
+  if(req.method==='GET'&&url.pathname==='/api/voice/stream/scout'){
+    const system=String(url.searchParams.get('system')||'').trim();
+    if(!system||(!SYSTEM_MAP.has(system)&&!(state.market?.iceFields||[]).some(row=>row.system===system)&&!(state.market?.a0Fields||[]).some(row=>row.system===system)&&!state.market?.a0Reports?.[system])){
+      return json(res,400,{error:'UNTRACKED_SYSTEM',message:'That system is not on a JLR mining board.'});
+    }
+    const scan=scanActivityPublic()[system]||null;
+    const scanMs=Date.parse(scan?.lastScanAt||'');
+    const due=!Number.isFinite(scanMs)||Date.now()-scanMs>=A0_REPORT_TTL||Boolean(scan?.ledger?.needsScan||scan?.ledger?.likelyDepleted);
+    if(!due)return json(res,409,{error:'SCAN_NOT_DUE',message:'This system does not currently require a scan update.'});
+    const voiceText=jlrScoutVoiceText(system);
+    try{return await streamTrackerVoiceToResponse(res,voiceText,`scout-${system}-${Math.floor(Date.now()/900000)}`,{priority:'normal'})}
+    catch(err){
+      console.warn('JLR Scout voice stream failed',system,String(err.message||err));
+      return json(res,503,{error:err?.code||'JLR_VOICE_UNAVAILABLE',message:String(err.message||err)});
+    }
+  }
   if(req.method==='GET'&&url.pathname==='/api/voice/stream/startup'){
     const voiceText=jlrStartupVoiceText(user);
     try{return await streamTrackerVoiceToResponse(res,voiceText,'startup',{priority:'normal'})}
