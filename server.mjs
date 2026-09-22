@@ -784,7 +784,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.109',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.110',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -3171,9 +3171,9 @@ function trackerBrainAnswer(user,question){
   const snapshot=trackerBrainSnapshot();
   const linked=(user?.characterIds||[]).map(String).filter(Boolean);
   const primaryName=trackerBrainPrimaryName(user);
-  const appVersion='2.9.109';
+  const appVersion='2.9.110';
 
-  const voiceSummary=(text,max=220)=>{
+  const voiceSummary=(text,max=170)=>{
     const clean=trackerSpeechSafe(text,1200).replace(/\s+/g,' ').trim();
     if(clean.length<=max)return clean;
     const sentences=clean.match(/[^.!?]+[.!?]+|[^.!?]+$/g)||[clean];
@@ -3190,7 +3190,10 @@ function trackerBrainAnswer(user,question){
   const answer=(topic,text,extra={})=>{
     const safeText=trackerSpeechSafe(text,1200);
     const requestedVoice=extra&&typeof extra.voiceText==='string'?extra.voiceText:'';
-    const voiceText=trackerSpeechSafe(requestedVoice||voiceSummary(safeText),260);
+    const voiceText=trackerSpeechSafe(requestedVoice||voiceSummary(safeText),200)
+      .replace(/[,;:]+/g,' ')
+      .replace(/\s+/g,' ')
+      .trim();
     return{
       handled:true,
       topic,
@@ -3206,7 +3209,7 @@ function trackerBrainAnswer(user,question){
   if(/\b(what can you do|what do you do|help me|help|capabilities|commands|what can i ask|what should i ask)\b/.test(q)){
     return answer('capabilities',
       'I can explain every major part of JLR Miner Tracker, brief you on field and scan status, explain respawn timers and priorities, answer questions about Fleet and Fits, mining performance, ledgers and payouts, market data, ice, gas, doctrine market, PVP, Heavy Fighter Tracker, Threat Scan, MER intel, linked toons, ESI, voice controls, and feedback. You can also ask follow-up questions without repeating Tracker for a short time.',
-      {voiceText:'I can brief fields and scans, explain fleet performance and payouts, check ESI and market data, and answer questions about any JLR feature.'}
+      {voiceText:'I can brief fields and scans and explain fleet performance and payouts and check ESI and market data and answer questions about any JLR feature.'}
     );
   }
 
@@ -4521,7 +4524,7 @@ function sendTrackerAudio(res,audio){
   res.end(audio.bytes);
 }
 
-async function streamTrackerVoiceToResponse(res,text,cacheKey,{priority='normal',voice='core'}={}){
+async function streamTrackerVoiceToResponse(res,text,cacheKey,{priority='normal',voice='core',streamingMode=2}={}){
   if(!trackerVoiceConfigured()){
     const err=new Error('JLR custom voice worker is not configured.');
     err.code='TTS_NOT_CONFIGURED';
@@ -4531,14 +4534,13 @@ async function streamTrackerVoiceToResponse(res,text,cacheKey,{priority='normal'
   if(!cleanText)throw new Error('Tracker voice text was empty.');
   const selectedVoice=['core','scout','alert'].includes(String(voice||''))?String(voice):'core';
   const versionedCacheKey=`${TRACKER_VOICE_CACHE_VERSION}|${selectedVoice}|${String(cacheKey||'stream')}`;
+  const mode=[1,2,3].includes(Number(streamingMode))?Number(streamingMode):2;
   const workerPayload={
     text:cleanText,
     cache_key:versionedCacheKey,
     voice:selectedVoice,
     priority:priority==='urgent'?'urgent':'normal',
-    // v3 keeps even urgent speech on mode 2. The tiny first-byte gain from
-    // mode 3 was not worth the cadence/fragment quality loss.
-    streaming_mode:2,
+    streaming_mode:mode,
   };
   let response;
   try{
@@ -4576,6 +4578,7 @@ async function streamTrackerVoiceToResponse(res,text,cacheKey,{priority='normal'
     'X-Accel-Buffering':'no',
     'X-JLR-Voice-Stream':'1',
     'X-JLR-Voice-Priority':priority==='urgent'?'urgent':'normal',
+    'X-JLR-Voice-Stream-Mode':String(mode),
     'X-JLR-Voice-Cache-Version':TRACKER_VOICE_CACHE_VERSION,
   });
   res.flushHeaders?.();
@@ -6404,7 +6407,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.109',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.110',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -6430,8 +6433,9 @@ async function routeApi(req,res,url) {
   }
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
   if(req.method==='GET'&&url.pathname==='/api/tracker/speech/diagnostics'){
+    const voiceWorker=await trackerVoiceHealth().catch(err=>({configured:Boolean(TRACKER_TTS_WORKER_URL),reachable:false,message:String(err?.message||err)}));
     return json(res,200,{
-      version:'2.9.109',
+      version:'2.9.110',
       modelCached:Boolean(voskModelArchive),
       modelBytes:voskModelArchive?.length||0,
       modelSource:voskModelSource||null,
@@ -6441,6 +6445,7 @@ async function routeApi(req,res,url) {
       modelPath:VOSK_MODEL_PATH,
       runtimeCached:[...voskRuntimeCache.keys()],
       runtimeErrors:Object.fromEntries(voskRuntimeErrors),
+      voiceWorker,
     });
   }
   if(req.method==='GET'&&url.pathname==='/api/scout/location'){
@@ -6547,7 +6552,7 @@ async function routeApi(req,res,url) {
     if(!voiceText)return json(res,400,{error:'VOICE_TEXT_REQUIRED',message:'Tracker voice text was empty.'});
     const cacheKey='brain-'+crypto.createHash('sha1').update(voiceText).digest('hex').slice(0,20);
     try{
-      return await streamTrackerVoiceToResponse(res,voiceText,cacheKey,{priority:'normal',voice:'core'});
+      return await streamTrackerVoiceToResponse(res,voiceText,cacheKey,{priority:'urgent',voice:'core',streamingMode:3});
     }catch(err){
       console.warn('Tracker conversational custom voice failed',String(err.message||err));
       return json(res,503,{error:err?.code||'JLR_CUSTOM_VOICE_UNAVAILABLE',message:String(err.message||err)});
@@ -6558,7 +6563,7 @@ async function routeApi(req,res,url) {
     if(!voiceText)return json(res,400,{error:'VOICE_TEXT_REQUIRED',message:'Tracker voice text was empty.'});
     const cacheKey='brain-live-'+crypto.createHash('sha1').update(voiceText).digest('hex').slice(0,20);
     try{
-      return await streamTrackerVoiceToResponse(res,voiceText,cacheKey,{priority:'normal',voice:'core'});
+      return await streamTrackerVoiceToResponse(res,voiceText,cacheKey,{priority:'urgent',voice:'core',streamingMode:3});
     }catch(err){
       console.warn('Tracker conversational live voice failed',String(err.message||err));
       return json(res,503,{error:err?.code||'JLR_CUSTOM_VOICE_UNAVAILABLE',message:String(err.message||err)});
@@ -6974,7 +6979,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.109 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.110 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>{
   Promise.all([
     loadVoskRuntimeAsset(VOSK_RUNTIME_FILES['/vendor/vosk/vosk-0.0.8.js']),
