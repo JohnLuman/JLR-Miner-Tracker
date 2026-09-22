@@ -213,7 +213,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.105');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.106');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -303,7 +303,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR TRACKER MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.105'),
+      'Version: '+String(state?.app?.version||'2.9.106'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -5167,7 +5167,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.105',
+          version:state?.app?.version||'2.9.106',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
@@ -5273,11 +5273,14 @@
 
   function applyFieldUpdate(system,updatedField){state.fields[system]=updatedField;renderAll()}
   function applyPreviewBoardScan(preview){
-    const scan=preview?.boardScan;
-    if(!state||!preview?.system||!scan?.recorded)return;
+    const boardScan=preview?.boardScan;
+    const serverScan=preview?.serverScan;
+    const scan=serverScan?.lastScanAt?serverScan:boardScan;
+    if(!state||!preview?.system||!scan?.lastScanAt)return false;
     state.scans ||= {};
     state.scans[preview.system]={
       ...(state.scans[preview.system]||{}),
+      ...scan,
       lastScanAt:scan.lastScanAt,
       due:false,
       nextUpdateAt:scan.nextUpdateAt||null,
@@ -5285,9 +5288,10 @@
       kinds:Array.isArray(scan.kinds)?scan.kinds:[],
       ice:scan.ice||null,
       t3:scan.t3||null,
-      source:'probe-scan',
+      source:scan.source||'probe-scan',
     };
     renderBoards();
+    return true;
   }
   function openScanPaste(){
     $('scanPasteText').value='';
@@ -5302,8 +5306,17 @@
     if(!selected.locationAccess){location.href='/auth/eve/start?intent=link';return}
     scanBusy=true;renderScanCharacters();setScanStatus(`Checking ${selected.name} location…`);
     try{
+      const scanRequestAt=Date.now();
       const preview=await api('/api/scans/preview',{method:'POST',body:JSON.stringify({characterId:selected.characterId,text})});
-      applyPreviewBoardScan(preview);
+      const appliedScan=applyPreviewBoardScan(preview);
+      if(preview?.tracked&&preview?.scan?.valid){
+        const recordedAt=Date.parse(preview?.serverScan?.lastScanAt||preview?.boardScan?.lastScanAt||'');
+        const fresh=Number.isFinite(recordedAt)&&recordedAt>=scanRequestAt-5000;
+        if(!preview?.boardScan?.recorded||!appliedScan||!fresh){
+          const parser=preview?.boardScan?.parserStatus||{};
+          throw new Error('FIELD-SCAN-E01: Probe Scanner rows were recognized, but the Fields board timestamp was not committed. T3='+String(Boolean(parser.t3))+' ICE='+String(Boolean(parser.ice))+' A0='+String(Boolean(parser.a0))+'.');
+        }
+      }
       if(preview?.boardScan?.recorded||preview?.tracked||preview?.a0?.tracked){
         speakJlr('scan',{system:preview.system},scanVoiceFallback(preview));
       }
@@ -5346,8 +5359,9 @@
         }
         const ledgerMined=Math.max(0,Number(state?.scans?.[preview.system]?.ledger?.minedM3SinceSite)||0);
         if(preview.field?.status==='picked'&&ledgerMined>0){
-          setScanStatus(`${preview.system}: ${preview.definition.ore} detected — remains YELLOW • ${fmt(ledgerMined,'m3')} m³ reported mined.`,'success');
-          $('fieldMessage').textContent=`${preview.system} scan confirmed the deposit still exists; linked ESI ledgers have already reported ${fmt(ledgerMined,'m3')} m³ mined from this site cycle.`;
+          setScanStatus(`${preview.system}: scan recorded NOW • ${preview.definition.ore} detected • remains YELLOW • ${fmt(ledgerMined,'m3')} m³ reported mined.`,'success');
+          $('fieldMessage').textContent=`${preview.system} scan timestamp updated. The field remains PICKED because linked ESI ledgers already report ${fmt(ledgerMined,'m3')} m³ mined from this site cycle.`;
+          toast(`${preview.system}: scan updated; field remains PICKED from ESI mining evidence.`);
           renderBoards();
           sfx('systemSelect');
           return;
