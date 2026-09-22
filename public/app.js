@@ -199,7 +199,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.90');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.91');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -431,21 +431,46 @@
   async function loadBrainLocalModel(){
     if(brainLocalModel)return brainLocalModel;
     if(brainLocalModelPromise)return brainLocalModelPromise;
-    brainSetListen('MIC AI LOADING','Loading JLR local speech recognition. First load prepares the offline English model (~40 MB) through JLR; later loads use browser storage.');
-    const actual=(async()=>{
+    brainSetListen('MIC AI LOADING','Preparing JLR local speech recognition. First load may download the offline English model (~40 MB); later loads use browser storage.');
+    brainLocalModelPromise=(async()=>{
       const started=Date.now();
-      while(!(window.Vosk&&typeof window.Vosk.createModel==='function')){
+      while(!(window.Vosk&&typeof window.Vosk.Model==='function')){
         if(Date.now()-started>10000)throw new Error('JLR speech library did not load.');
         await new Promise(resolve=>setTimeout(resolve,100));
       }
-      brainSetListen('MIC AI LOADING','Speech engine ready. Preparing the offline English model (~40 MB)…');
-      const model=await window.Vosk.createModel('/vendor/vosk/model-en-us-0.15.tar.gz?v=1');
+
+      const modelUrl='/vendor/vosk/model-en-us-0.15.tar.gz?v=2';
+      brainSetListen('MIC AI LOADING','Speech engine ready. Loading the offline English model…');
+
+      const model=await new Promise((resolve,reject)=>{
+        let settled=false;
+        let instance=null;
+        const finish=(ok,value)=>{
+          if(settled)return;
+          settled=true;
+          clearTimeout(timer);
+          if(ok)resolve(value);
+          else reject(value instanceof Error?value:new Error(String(value||'Local speech model failed to load.')));
+        };
+        const timer=setTimeout(()=>finish(false,new Error('Local speech model timed out while starting.')),120000);
+        try{
+          instance=new window.Vosk.Model(modelUrl,-1);
+          instance.on('load',message=>{
+            if(message?.result)finish(true,instance);
+            else finish(false,new Error('Local speech model reported an unsuccessful load.'));
+          });
+          instance.on('error',message=>{
+            finish(false,new Error('Local speech model error: '+String(message?.error||message?.message||'unknown worker error')));
+          });
+        }catch(error){
+          finish(false,error);
+        }
+      });
+
       try{model.setLogLevel?.(-1)}catch{}
       brainLocalModel=model;
       return model;
-    })();
-    const timeout=new Promise((_,reject)=>setTimeout(()=>reject(new Error('Offline speech model did not finish loading within 5 minutes.')),300000));
-    brainLocalModelPromise=Promise.race([actual,timeout]).catch(error=>{
+    })().catch(error=>{
       brainLocalModelPromise=null;
       throw error;
     });
@@ -532,7 +557,7 @@
     const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
     const ua=String(navigator.userAgent||'');
     const isOpera=ua.includes('OPR/')||ua.includes('Opera/');
-    if(isOpera||!Recognition){
+    if(!Recognition){
       brainMicWanted=true;
       localStorage.setItem('jlrBrainMicArmed','true');
       await startBrainLocalListening(isOpera?'JLR LOCAL AI • OPERA GX':'JLR LOCAL AI');
@@ -606,7 +631,7 @@
       brainNetworkFailures=0;
       brainSpeechStartHangs=0;
       const input=trackBound?brainMicLabel():'Browser default microphone';
-      const engine=localSpeech?'ON-DEVICE • ':'';
+      const engine=localSpeech?'ON-DEVICE • ':(isOpera?'OPERA SPEECH • ':'');
       brainSetListen('MIC ON',engine+input+' • Say “Tracker” to wake the assistant. Follow-up questions work briefly without repeating it.');
     };
     recognition.onerror=event=>{
@@ -4588,7 +4613,7 @@
       const type=document.querySelector('.brain-feedback-type.active')?.dataset.feedbackType||'suggestion';
       const message=String($('brainFeedbackText')?.value||'').trim();
       if(!message){toast('Add a short description first.');return}
-      await api('/api/tracker/brain/feedback',{method:'POST',body:JSON.stringify({type,message,context:{version:state?.app?.version||'2.9.90',tab:activeTab,lastSpeech:brainSpeechHistory[0]?.text||''}})});
+      await api('/api/tracker/brain/feedback',{method:'POST',body:JSON.stringify({type,message,context:{version:state?.app?.version||'2.9.91',tab:activeTab,lastSpeech:brainSpeechHistory[0]?.text||''}})});
       $('brainFeedbackText').value='';
       toast('Tracker feedback submitted.');
       return;
