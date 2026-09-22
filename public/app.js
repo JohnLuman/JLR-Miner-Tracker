@@ -46,6 +46,8 @@
   let threatShareUrl='';
   let threatShareError='';
   let ledgerAuditLoading=false;
+  const STARTUP_GREETING_KEY='jlrStartupGreetingV1';
+  let startupGreetingQueued=false;
 
   const DEFAULT_FLEET = { members:{}, uptime:100, payout:95, order:[] };
   function loadFleet() {
@@ -189,6 +191,45 @@
     if(!el)return;
     el.textContent=message;
     el.className=tone;
+  }
+
+  function speakJlr(type,payload,fallbackText){
+    if(!soundEnabled||typeof window.jlrSpeakEvent!=='function')return false;
+    Promise.resolve(window.jlrSpeakEvent(type,payload||{},fallbackText||'J. L. R. notification.'))
+      .catch(error=>console.warn('JLR voice event failed',error));
+    return true;
+  }
+
+  function scanVoiceFallback(preview){
+    const system=String(preview?.system||'current system');
+    const parts=[system+' scan synchronized.'];
+    if(preview?.tracked&&preview?.definition){
+      const ore=String(preview.definition.ore||'T3 ore');
+      parts.push(preview?.scan?.detected?ore+' deposit detected.':ore+' deposit not detected.');
+    }
+    const ice=preview?.boardScan?.ice;
+    if(ice){
+      const seen=Math.max(0,Number(ice.seen)||0),expected=Math.max(1,Number(ice.expected)||1);
+      parts.push(seen+' of '+expected+' ice fields detected.');
+    }
+    if(preview?.a0?.tracked){
+      parts.push(preview?.a0?.scan?.detected?'A zero rare asteroid site detected.':'No active A zero rare asteroid site detected.');
+    }
+    return parts.join(' ');
+  }
+
+  function queueStartupGreeting(){
+    if(startupGreetingQueued||sessionStorage.getItem(STARTUP_GREETING_KEY)==='1')return;
+    startupGreetingQueued=true;
+    const trigger=()=>{
+      window.removeEventListener('pointerdown',trigger,true);
+      window.removeEventListener('keydown',trigger,true);
+      sessionStorage.setItem(STARTUP_GREETING_KEY,'1');
+      if(!soundEnabled)return;
+      setTimeout(()=>speakJlr('startup',{},'J. L. R. systems online. Welcome back.'),180);
+    };
+    window.addEventListener('pointerdown',trigger,true);
+    window.addEventListener('keydown',trigger,true);
   }
 
   function compactNumber(v){
@@ -2182,6 +2223,43 @@
     };
   }
 
+  function boardEvidenceLine(system){
+    const ledger=state?.scans?.[system]?.ledger||null;
+    if(!ledger)return null;
+    const pct=Number(ledger.depletionPct);
+    const pctKnown=Number.isFinite(pct);
+    if(ledger.likelyDepleted&&pctKnown){
+      return{
+        text:`INFERRED • ${Math.round(pct)}% MINED • SCAN NOW`,
+        tone:'danger',
+        title:`Ledger inference estimates about ${Math.round(pct)}% of the last scan-confirmed site has been mined. This does not clear the field; a Probe Scanner confirmation is still required.`,
+      };
+    }
+    if(ledger.needsScan&&pctKnown){
+      return{
+        text:`INFERRED • ${Math.round(pct)}% MINED • SCAN`,
+        tone:'warning',
+        title:`Ledger inference estimates about ${Math.round(pct)}% of the last scan-confirmed site has been mined. Scan recommended.`,
+      };
+    }
+    if(ledger.active){
+      const delta=Math.max(0,Number(ledger.lastDeltaM3)||0);
+      return{
+        text:`LEDGER • MINING ACTIVE${delta>0?' • +'+Math.round(delta).toLocaleString()+' M³':''}`,
+        tone:'active',
+        title:`ESI mining-ledger activity detected ${ago(ledger.lastActivityAt)}. This confirms mining activity, not field depletion.`,
+      };
+    }
+    if(ledger.lastActivityAt){
+      return{
+        text:`LEDGER • ${ago(ledger.lastActivityAt).toUpperCase()}`,
+        tone:'',
+        title:`Last tracked mining-ledger activity ${ago(ledger.lastActivityAt)}.`,
+      };
+    }
+    return null;
+  }
+
   function renderTop(){
     if(!state)return;
     const ores=state.source.ores;
@@ -2598,8 +2676,10 @@
     const distance=d.distanceLy==null?NaN:Number(d.distanceLy);
     const distanceText=Number.isFinite(distance)?` • ${distance.toFixed(2)} LY`:'';
     const scanLine=boardScanLine(d.system);
-    b.innerHTML=`${f.cherryPicked?'<span class="cherry-pin">🍒</span>':''}<button class="favorite-toggle" type="button" aria-pressed="${favorite}" title="${favorite?'Remove from favorites':'Favorite this system'}">${favorite?'★':'☆'}</button>${boardArrangeMode?'<span class="drag-grip" aria-hidden="true">⠿</span>':''}<span class="sys-name">${esc(d.system)}</span><span class="sys-ore">#${d.rank} ${esc(d.ore)}</span>${includeTimer?`<span class="sys-state">${line}${distanceText}</span>`:''}<span class="sys-scan${scanLine.stale?' stale':''}">${esc(scanLine.text)}</span>`;
-    b.title=`${d.system} • ${d.ore} • ${statusText[f.status]}${favorite?' • Favorite':''}${f.autoReopenedAt?` • ESI mining detected ${ago(f.autoReopenedAt)}`:''}${Number.isFinite(distance)?` • ${distance.toFixed(2)} LY from C-N4OD`:''} • ${scanLine.title}${f.cherryPicked?' • Cherry Picked':''}${f.notes?.length?` • ${f.notes.length} notes`:''}`;
+    const evidence=boardEvidenceLine(d.system);
+    const evidenceHtml=evidence?`<span class="sys-evidence ${esc(evidence.tone||'')}">${esc(evidence.text)}</span>`:'';
+    b.innerHTML=`${f.cherryPicked?'<span class="cherry-pin">🍒</span>':''}<button class="favorite-toggle" type="button" aria-pressed="${favorite}" title="${favorite?'Remove from favorites':'Favorite this system'}">${favorite?'★':'☆'}</button>${boardArrangeMode?'<span class="drag-grip" aria-hidden="true">⠿</span>':''}<span class="sys-name">${esc(d.system)}</span><span class="sys-ore">#${d.rank} ${esc(d.ore)}</span>${includeTimer?`<span class="sys-state">${line}${distanceText}</span>`:''}<span class="sys-scan${scanLine.stale?' stale':''}">${esc(scanLine.text)}</span>${evidenceHtml}`;
+    b.title=`${d.system} • ${d.ore} • ${statusText[f.status]}${favorite?' • Favorite':''}${f.autoReopenedAt?` • ESI mining detected ${ago(f.autoReopenedAt)}`:''}${Number.isFinite(distance)?` • ${distance.toFixed(2)} LY from C-N4OD`:''} • ${scanLine.title}${evidence?' • '+evidence.title:''}${f.cherryPicked?' • Cherry Picked':''}${f.notes?.length?` • ${f.notes.length} notes`:''}`;
 
     b.querySelector('.favorite-toggle').addEventListener('click',e=>{
       e.preventDefault();e.stopPropagation();toggleBoardFavorite('t3',d.system);sfx('select');
@@ -3672,6 +3752,8 @@
       scannerRowCount:Number(scan.scannerRowCount)||0,
       kinds:Array.isArray(scan.kinds)?scan.kinds:[],
       ice:scan.ice||null,
+      t3:scan.t3||null,
+      source:'probe-scan',
     };
     renderBoards();
   }
@@ -3690,6 +3772,9 @@
     try{
       const preview=await api('/api/scans/preview',{method:'POST',body:JSON.stringify({characterId:selected.characterId,text})});
       applyPreviewBoardScan(preview);
+      if(preview?.boardScan?.recorded||preview?.tracked||preview?.a0?.tracked){
+        speakJlr('scan',{system:preview.system},scanVoiceFallback(preview));
+      }
       if(preview.a0?.tracked){
         if(preview.a0.scan?.detected){
           setScanStatus(`${preview.system}: A0 rare asteroid site detected — board updated for 12 hours.`,'success');
@@ -3981,7 +4066,7 @@
       if(!config.ssoConfigured){$('setupWarning').classList.remove('hidden');$('setupWarning').textContent='Login is not configured yet.';}
       const auth=await fetch('/api/me',{credentials:'same-origin'}).then(r=>r.json());
       if(!auth.authenticated){showLogin();return}
-      me=auth.user;syncDoctrineTabAccess();syncTrackerTabAccess();initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');await loadMerIntel();await loadState();connectSse();
+      me=auth.user;syncDoctrineTabAccess();syncTrackerTabAccess();initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');await loadMerIntel();await loadState();connectSse();queueStartupGreeting();
       const params=new URLSearchParams(location.search);if(params.get('linked'))toast('Mining toon connected.');if(params.get('login'))toast('Logged in.');if(params.get('market')==='authorized')toast('John market access authorized.');if(params.get('error'))toast(decodeURIComponent(params.get('error')));if(params.toString())history.replaceState({},'',location.pathname);
     }catch(e){console.error(e);showLogin();$('setupWarning').classList.remove('hidden');$('setupWarning').textContent=`JLR could not load: ${e.message}`}
   }
