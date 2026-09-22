@@ -50,7 +50,6 @@
   let threatShareUrl='';
   let threatShareError='';
   let ledgerAuditLoading=false;
-  const STARTUP_GREETING_KEY='jlrStartupGreetingV2';
   let startupGreetingQueued=false;
 
   const DEFAULT_FLEET = { members:{}, uptime:100, payout:95, order:[] };
@@ -230,11 +229,13 @@
   }
 
   function scoutFallbackText(snapshot){
+    const selected=(me?.characters||[]).find(c=>String(c.characterId)===String(scanCharacterId));
+    const name=String(selected?.name||snapshot?.characterName||'Scout');
     const system=String(snapshot?.system||'current system');
     const ledger=snapshot?.ledger||null;
     const mined=Math.max(0,Number(ledger?.minedM3SinceSite)||0);
     const site=Math.max(0,Number(ledger?.siteM3)||0);
-    let text='Scout update. '+system+' requires a Probe Scanner update.';
+    let text=name+", I noticed you're in system "+system+". Please send a scan to J. L. R. We are in desperate need of an update for that system.";
     if(mined>0&&site>0)text+=' Linked mining ledgers report '+fmt(mined,'m3')+' of '+fmt(site,'m3')+' cubic meters mined.';
     return text;
   }
@@ -264,10 +265,12 @@
           const site=Math.max(0,Number(snapshot?.ledger?.siteM3)||0);
           const ledgerText=mined>0&&site>0?' • '+fmt(mined,'m3')+' / '+fmt(site,'m3')+' m³ reported mined':'';
           if(!scanBusy)setScanStatus(snapshot.system+': SCAN UPDATE NEEDED'+ledgerText,'warning');
-          if(scoutShouldSpeak(snapshot,entered||force)){
-            scoutVoiceCooldown.set(String(snapshot.system),Date.now());
-            speakJlr('scout',{system:snapshot.system},scoutFallbackText(snapshot));
-            toast('🛰 '+snapshot.system+' needs a scan update.');
+          if(scoutShouldSpeak(snapshot,entered||force)&&window.jlrVoiceUserActivated===true){
+            const played=await speakJlr('scout',{system:snapshot.system,characterId:selected.characterId},scoutFallbackText(snapshot));
+            if(played){
+              scoutVoiceCooldown.set(String(snapshot.system),Date.now());
+              toast('🛰 '+selected.name+': '+snapshot.system+' needs a scan update.');
+            }
           }
         }else if(entered&&!scanBusy){
           setScanStatus(snapshot.system+': scan status current.','success');
@@ -289,7 +292,7 @@
   }
 
   function queueStartupGreeting(){
-    if(startupGreetingQueued||sessionStorage.getItem(STARTUP_GREETING_KEY)==='1')return;
+    if(startupGreetingQueued)return;
     startupGreetingQueued=true;
     if(soundEnabled)toast('🔊 JLR voice ready — click once to activate.');
     const trigger=async()=>{
@@ -309,9 +312,11 @@
       }catch(error){}
       const played=await speakJlr('startup',{},'J. L. R. systems online. Welcome back.');
       if(played){
-        sessionStorage.setItem(STARTUP_GREETING_KEY,'1');
         const mode=String(window.jlrVoiceMode||'unknown');
         toast(mode==='custom'?'🔊 JLR CUSTOM VOICE ONLINE.':mode==='fallback'?'⚠ Custom voice unavailable — browser fallback used.':'🔊 JLR voice played.');
+        // Give the startup line room to finish, then immediately re-check
+        // whether the Scout's current system needs a spoken update.
+        setTimeout(()=>pollScoutLocation(true),9000);
       }else{
         startupGreetingQueued=false;
         toast('⚠ JLR voice did not start. Click again or use the Tracker voice test.');
@@ -4176,7 +4181,7 @@
       if(!config.ssoConfigured){$('setupWarning').classList.remove('hidden');$('setupWarning').textContent='Login is not configured yet.';}
       const auth=await fetch('/api/me',{credentials:'same-origin'}).then(r=>r.json());
       if(!auth.authenticated){showLogin();return}
-      me=auth.user;syncDoctrineTabAccess();syncTrackerTabAccess();initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');await loadMerIntel();await loadState();connectSse();queueStartupGreeting();startScoutLocationWatch();
+      me=auth.user;syncDoctrineTabAccess();syncTrackerTabAccess();initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');queueStartupGreeting();await loadMerIntel();await loadState();connectSse();startScoutLocationWatch();
       const params=new URLSearchParams(location.search);if(params.get('linked'))toast('Mining toon connected.');if(params.get('login'))toast('Logged in.');if(params.get('market')==='authorized')toast('John market access authorized.');if(params.get('error'))toast(decodeURIComponent(params.get('error')));if(params.toString())history.replaceState({},'',location.pathname);
     }catch(e){console.error(e);showLogin();$('setupWarning').classList.remove('hidden');$('setupWarning').textContent=`JLR could not load: ${e.message}`}
   }
