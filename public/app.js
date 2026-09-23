@@ -79,6 +79,9 @@
   let brainMicCurrentRms=0;
   let brainMicPeakRms=0;
   let brainMicLastSignalAt=0;
+  let brainMicVoiceLikeAt=0;
+  let brainMicVoiceFrames=0;
+  let brainMicNoiseFloor=0.0015;
   let brainMicLastMeterPaint=0;
   let brainMicLastPartial='';
   let brainMicLastFinal='';
@@ -218,7 +221,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.115');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.116');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -308,7 +311,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR TRACKER MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.115'),
+      'Version: '+String(state?.app?.version||'2.9.116'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -392,6 +395,46 @@
     const shortError=error==='none'?'No custom voice error is currently recorded.':'The last custom voice error is '+error.slice(0,180)+'.';
     return 'Diagnostics are displayed. Microphone track is '+mic+'. Local speech model is '+model+'. Custom voice mode is '+mode+', profile '+profile+'. '+shortError;
   }
+  async function refreshCompanionStatus(){
+    const status=$('brainCompanionStatus');
+    const detail=$('brainCompanionDetail');
+    if(!status||!detail)return;
+    try{
+      const payload=await api('/api/companion/status');
+      const devices=Array.isArray(payload?.devices)?payload.devices:[];
+      status.textContent=devices.length?'● CONNECTED • '+devices.length:'○ NOT PAIRED';
+      detail.textContent=devices.length
+        ?devices.map(row=>String(row.deviceName||'Windows PC')+(row.lastSeenAt?' • seen '+ago(row.lastSeenAt):' • waiting for first EVE location')).join(' | ')
+        :'No Windows companion is paired to this account yet.';
+    }catch(error){
+      status.textContent='⚠ STATUS UNAVAILABLE';
+      detail.textContent=String(error?.message||error);
+    }
+  }
+  async function createCompanionPairCode(){
+    const status=$('brainCompanionStatus');
+    const codeEl=$('brainCompanionCode');
+    const expiry=$('brainCompanionExpiry');
+    try{
+      const payload=await api('/api/companion/pair/start',{method:'POST',body:'{}'});
+      const code=String(payload?.code||'');
+      if(codeEl)codeEl.textContent=code||'—';
+      if(expiry)expiry.textContent=code?'Expires in 10 minutes. Enter this code in JLR Tracker Companion.':'Pair code was not returned.';
+      if(status)status.textContent='PAIR CODE READY';
+      try{if(code)await navigator.clipboard.writeText(code)}catch{}
+      toast(code?'Companion pair code copied: '+code:'Could not create a companion pair code.');
+    }catch(error){toast(String(error?.message||error))}
+  }
+  async function revokeCompanionDevices(){
+    try{
+      await api('/api/companion/revoke',{method:'POST',body:'{}'});
+      if($('brainCompanionCode'))$('brainCompanionCode').textContent='—';
+      if($('brainCompanionExpiry'))$('brainCompanionExpiry').textContent='All companion access has been revoked.';
+      await refreshCompanionStatus();
+      toast('Desktop companion access revoked.');
+    }catch(error){toast(String(error?.message||error))}
+  }
+
   function brainSetListen(status,hint=''){
     if($('brainListenStatus'))$('brainListenStatus').textContent=status;
     if($('brainListenHint')&&hint)$('brainListenHint').textContent=hint;
@@ -602,8 +645,10 @@
     brainMicLastPartial=heard;
     if($('brainHeard'))$('brainHeard').textContent='HEARING: “'+heard+'”';
     const lower=heard.toLowerCase();
-    const wake=lower.indexOf('tracker');
-    if(wake<0||Date.now()<brainMicWakeDebounceUntil||brainVoiceActive())return;
+    const wakeMatch=/\btracker\b/.exec(lower);
+    const localVoiceReady=!brainLocalRecognizer||Date.now()-brainMicVoiceLikeAt<1500;
+    if(!wakeMatch||!localVoiceReady||Date.now()<brainMicWakeDebounceUntil||brainVoiceActive())return;
+    const wake=wakeMatch.index;
     brainMicWakeDebounceUntil=Date.now()+1500;
     brainConversationUntil=Date.now()+brainConversationMs();
     brainRecordMicDiag('MIC-I501','WAKE_PARTIAL','Wake word heard in partial transcript: '+heard);
@@ -613,6 +658,11 @@
   function handleBrainTranscript(transcript){
     const heard=String(transcript||'').trim();
     if(!heard)return;
+    if(brainLocalRecognizer&&Date.now()-brainMicVoiceLikeAt>=1500){
+      brainMicSuppressedTranscripts++;
+      brainRecordMicDiag('MIC-I504','NOISE_SUPPRESS','Ignored local transcript without sustained voice energy: '+heard);
+      return;
+    }
     brainMicLastFinal=heard;
     brainRecordMicDiag('MIC-I502','FINAL_TRANSCRIPT',heard);
     if(brainVoiceActive()){
@@ -622,9 +672,9 @@
     }
     if($('brainHeard'))$('brainHeard').textContent='HEARD: “'+heard+'”';
     const lower=heard.toLowerCase();
-    const wake=lower.indexOf('tracker');
-    if(wake>=0){
-      handleBrainCommand(heard.slice(wake));
+    const wakeMatch=/\btracker\b/.exec(lower);
+    if(wakeMatch){
+      handleBrainCommand(heard.slice(wakeMatch.index));
     }else if(Date.now()<brainConversationUntil){
       handleBrainCommand(heard);
     }
@@ -816,6 +866,9 @@
       brainMicCurrentRms=0;
       brainMicPeakRms=0;
       brainMicLastSignalAt=0;
+      brainMicVoiceLikeAt=0;
+      brainMicVoiceFrames=0;
+      brainMicNoiseFloor=0.0015;
       brainMicLastPartial='';
       brainMicLastFinal='';
       brainMicSuppressedTranscripts=0;
@@ -832,6 +885,14 @@
           brainMicCurrentRms=rms;
           if(rms>brainMicPeakRms)brainMicPeakRms=rms;
           if(rms>0.002)brainMicLastSignalAt=Date.now();
+          const voiceThreshold=Math.max(0.006,brainMicNoiseFloor*3.4);
+          if(rms<voiceThreshold*.75)brainMicNoiseFloor=brainMicNoiseFloor*.985+rms*.015;
+          if(rms>=voiceThreshold){
+            brainMicVoiceFrames=Math.min(8,brainMicVoiceFrames+1);
+            if(brainMicVoiceFrames>=3)brainMicVoiceLikeAt=Date.now();
+          }else{
+            brainMicVoiceFrames=Math.max(0,brainMicVoiceFrames-1);
+          }
           if(performance.now()-brainMicLastMeterPaint>120){
             brainMicLastMeterPaint=performance.now();
             paintBrainMicLevel(rms);
@@ -1940,6 +2001,19 @@
           </div>
         </section>
 
+        <section class="brain-card">
+          <div class="brain-card-head"><strong>DESKTOP COMPANION</strong><small>RIFT-style local EVE movement tracking</small></div>
+          <div class="brain-question-hint">Runs in the Windows tray and reads only your local EVE Local chat logs. It reports toon + solar-system changes to your JLR account so Tracker can follow you even after this browser closes.</div>
+          <div class="brain-follow-head"><strong id="brainCompanionStatus">CHECKING…</strong><small id="brainCompanionDetail">Checking paired Windows devices.</small></div>
+          <div class="brain-reply"><span>PAIR CODE</span><strong id="brainCompanionCode">—</strong><small id="brainCompanionExpiry">Create a one-time code, then enter it in the companion.</small></div>
+          <div class="tracker-assist-actions">
+            <button id="brainCompanionPair" class="orb purple" type="button">CREATE PAIR CODE</button>
+            <button id="brainCompanionRefresh" class="board-tool" type="button">REFRESH</button>
+            <button id="brainCompanionRevoke" class="board-tool subtle" type="button">REVOKE DEVICES</button>
+            <a class="board-tool" href="/downloads/INSTALL-JLR-TRACKER-COMPANION.cmd" download>DOWNLOAD WINDOWS COMPANION</a>
+          </div>
+        </section>
+
         <section class="brain-card brain-talk-card">
           <div class="brain-card-head"><strong>TALK TO TRACKER</strong><small>Natural voice interaction</small></div>
           <div class="brain-question-hint">Try: “Tracker, how much have I made this hour?” • “Tracker, heading to C-N, where can I stop and scan?” • “Tracker, where is my closest scan?”</div>
@@ -2080,6 +2154,7 @@
     const board=document.querySelector('.board-panel');
     const hits=document.querySelector('.hit-panel');
     brain.appendChild(assistant);
+    setTimeout(()=>refreshCompanionStatus(),0);
     const fieldSidebar=document.createElement('div');
     fieldSidebar.className='field-sidebar';
     [quick,timers].filter(Boolean).forEach(el=>fieldSidebar.appendChild(el));
@@ -5184,6 +5259,18 @@
   document.addEventListener('click',async event=>{
     const target=event.target instanceof Element?event.target:null;
     if(!target)return;
+    if(target.closest('#brainCompanionPair')){
+      await createCompanionPairCode();
+      return;
+    }
+    if(target.closest('#brainCompanionRefresh')){
+      await refreshCompanionStatus();
+      return;
+    }
+    if(target.closest('#brainCompanionRevoke')){
+      await revokeCompanionDevices();
+      return;
+    }
     if(target.closest('#trackerRepeatLast')){
       const row=brainSpeechHistory[0];
       if(!row){toast('Nothing to repeat yet.');return}
@@ -5246,7 +5333,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.115',
+          version:state?.app?.version||'2.9.116',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
