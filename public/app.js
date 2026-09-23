@@ -222,7 +222,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.121');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.122');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -312,7 +312,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR TRACKER MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.121'),
+      'Version: '+String(state?.app?.version||'2.9.122'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -1275,6 +1275,7 @@
   }
 
   function browserSpeakTracker(text){
+    if(!soundEnabled)return false;
     if(!('speechSynthesis' in window))return false;
     try{
       const synth=window.speechSynthesis;
@@ -1311,7 +1312,7 @@
 
   async function speakBrainAnswer(text,type='brain',payload={}){
     const spoken=String(text||'').trim();
-    if(!spoken)return false;
+    if(!spoken||!soundEnabled)return false;
     brainSetListen('TRACKER SPEAKING','Generating JLR custom voice response…');
     let played=false;
     if(typeof window.jlrSpeakEvent==='function'){
@@ -1320,6 +1321,10 @@
       }catch(error){
         console.warn('Tracker conversational custom voice failed',error);
       }
+    }
+    if(!soundEnabled){
+      brainSetListen(brainMicWanted?'MIC ON':'VOICE OFF','Tracker voice is muted. Text responses remain enabled.');
+      return false;
     }
     if(played){
       if(type!=='repeat')recordBrainSpeech(type,spoken);
@@ -5276,7 +5281,15 @@
     if(target?.id==='brainVoiceEnabled'){
       soundEnabled=target.value==='on';
       localStorage.setItem('jlrSoundEnabled',String(soundEnabled));
-      if(!soundEnabled)window.jlrReleaseAutoVoice?.();
+      if(!soundEnabled){
+        window.jlrReleaseAutoVoice?.();
+        window.jlrStopVoice?.();
+        try{window.speechSynthesis?.cancel?.()}catch(error){}
+        brainSetListen(brainMicWanted?'MIC ON':'VOICE OFF','Tracker voice is muted. Text responses remain enabled.');
+        toast('Tracker voice muted.');
+      }else{
+        toast('Tracker voice enabled.');
+      }
       updateSoundStatus();
     }else if(target?.id==='brainFollowEnabled'){
       scoutFollowEnabled=target.value==='on';
@@ -5384,7 +5397,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.121',
+          version:state?.app?.version||'2.9.122',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
