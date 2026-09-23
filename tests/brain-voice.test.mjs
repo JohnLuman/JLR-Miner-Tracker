@@ -4,6 +4,11 @@ import vm from 'node:vm';
 import { performance } from 'node:perf_hooks';
 
 const source=fs.readFileSync(new URL('../public/tracker.js',import.meta.url),'utf8');
+const serverSource=fs.readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
+
+assert.match(serverSource,/C-N4OD -> "see, en four oh dee"/,'system codes use a pause instead of speaking the hyphen');
+assert.doesNotMatch(serverSource,/ch==='-'\?'tack'/,'system pronunciation must not say tack for hyphens');
+assert.match(serverSource,/'0':'oh'/,'zero in EVE system codes is spoken as oh');
 
 function voiceHarness(fail=false,sharedStorage=new Map()){
   const events=[];
