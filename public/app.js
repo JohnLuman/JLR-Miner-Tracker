@@ -21,6 +21,9 @@
   let scoutLocationTimer = null;
   let scoutLocationBusy = false;
   let companionStatusTimer = null;
+  let companionStatusBusy = false;
+  let stateRenderFrame = 0;
+  let stateRenderPending = false;
   const scoutLastSystem = new Map();
   const scoutLocations = new Map();
   const scoutLocationErrors = new Map();
@@ -397,10 +400,12 @@
     return 'Diagnostics are displayed. Microphone track is '+mic+'. Local speech model is '+model+'. Custom voice mode is '+mode+', profile '+profile+'. '+shortError;
   }
   async function refreshCompanionStatus(){
+    if(document.hidden||companionStatusBusy)return;
     const status=$('brainCompanionStatus');
     const detail=$('brainCompanionDetail');
     const feed=$('brainCompanionFeedTrack');
     if(!status||!detail)return;
+    companionStatusBusy=true;
     try{
       const payload=await api('/api/companion/status');
       const devices=Array.isArray(payload?.devices)?payload.devices:[];
@@ -435,6 +440,8 @@
         feed.textContent='COMPANION FEED UNAVAILABLE';
         feed.classList.remove('active');
       }
+    }finally{
+      companionStatusBusy=false;
     }
   }
   function startCompanionStatusWatch(){
@@ -1400,7 +1407,7 @@
   }
 
   async function pollScoutLocation(force=false){
-    if(scoutLocationBusy||scanBusy||!me||!scoutFollowEnabled)return;
+    if((document.hidden&&!force)||scoutLocationBusy||scanBusy||!me||!scoutFollowEnabled)return;
     const chars=(me.characters||[]).filter(c=>c.locationAccess);
     if(!chars.length){renderScoutFollow();return}
     const selected=chars.find(c=>String(c.characterId)===String(scanCharacterId));
@@ -5250,6 +5257,21 @@
     }
   }
 
+  function scheduleStateRender(){
+    stateRenderPending=true;
+    if(document.hidden||stateRenderFrame)return;
+    const schedule=typeof window.requestAnimationFrame==='function'
+      ?window.requestAnimationFrame.bind(window)
+      :(callback)=>setTimeout(callback,16);
+    stateRenderFrame=schedule(()=>{
+      stateRenderFrame=0;
+      if(document.hidden||!stateRenderPending)return;
+      stateRenderPending=false;
+      renderAll();
+      renderDataStatus();
+    });
+  }
+
   function connectSse(){
     if(eventSource)eventSource.close();
     eventSource=new EventSource('/api/events');
@@ -5261,16 +5283,9 @@
       state=nextState;
       announceFieldEsiChanges(previousState,nextState);
       if(syncChanged){
-        refreshMe().then(()=>{
-          renderAll();
-          renderDataStatus();
-        }).catch(()=>{
-          renderAll();
-          renderDataStatus();
-        });
+        refreshMe().then(scheduleStateRender).catch(scheduleStateRender);
       }else{
-        renderAll();
-        renderDataStatus();
+        scheduleStateRender();
       }
     });
     eventSource.onerror=()=>{$('liveBadge').textContent='⚠ DATA CONNECTION LOST';$('liveBadge').title='Live dashboard updates disconnected; the page is attempting to reconnect.'};
@@ -5866,9 +5881,20 @@
       const params=new URLSearchParams(location.search);if(params.get('linked'))toast('Mining toon connected.');if(params.get('login'))toast('Logged in.');if(params.get('market')==='authorized')toast('John market access authorized.');if(params.get('error'))toast(decodeURIComponent(params.get('error')));if(params.toString())history.replaceState({},'',location.pathname);
     }catch(e){console.error(e);showLogin();$('setupWarning').classList.remove('hidden');$('setupWarning').textContent=`JLR could not load: ${e.message}`}
   }
-  setInterval(()=>{if(state){renderBoards();renderTimers();renderSelect();renderSelected();renderDataStatus();}},1000);
+  document.addEventListener('visibilitychange',()=>{
+    if(document.hidden)return;
+    scheduleStateRender();
+    refreshCompanionStatus();
+    if(scoutFollowEnabled)pollScoutLocation(true);
+  });
+
+  setInterval(()=>{
+    if(state&&!document.hidden){
+      renderBoards();renderTimers();renderSelect();renderSelected();renderDataStatus();
+    }
+  },1000);
   // SSE updates Fleet Performance as soon as the automatic ESI cycle finishes.
-  // This 15-minute safety refresh also keeps long-open/suspended tabs current.
-  setInterval(()=>{if(me)refreshFleetPerformanceData(false)},15*60*1000);
+  // The safety refresh pauses with hidden tabs; SSE keeps state current meanwhile.
+  setInterval(()=>{if(me&&!document.hidden)refreshFleetPerformanceData(false)},15*60*1000);
   boot();
 })();
