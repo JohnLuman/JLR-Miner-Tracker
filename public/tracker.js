@@ -1,13 +1,15 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.111';
-  const CORE_URL='/tracker-core.js?v=2.9.111';
+  const ALARM_VERSION='2.9.114';
+  const CORE_URL='/tracker-core.js?v=2.9.114';
 
   let alarmContext=null;
   let alarmSource=null;
   let activeFetch=null;
   let activeUtterance=null;
   let activeMediaElement=null;
+  let activeBrainObjectUrl=null;
+  const brainFetches=new Set();
   let alarmGeneration=0;
   let lastVoiceMode='unknown';
   let voiceQueue=[];
@@ -60,6 +62,11 @@
       try{activeFetch.abort();stopped=true;}catch(error){}
       activeFetch=null;
     }
+    for(const controller of brainFetches){
+      controller.abort();
+      stopped=true;
+    }
+    brainFetches.clear();
     if(alarmSource){
       try{alarmSource.stop();stopped=true;}catch(error){}
       alarmSource=null;
@@ -72,6 +79,10 @@
         stopped=true;
       }catch(error){}
       activeMediaElement=null;
+    }
+    if(activeBrainObjectUrl){
+      URL.revokeObjectURL(activeBrainObjectUrl);
+      activeBrainObjectUrl=null;
     }
     if('speechSynthesis' in window){
       const synth=window.speechSynthesis;
@@ -408,7 +419,7 @@
     const clean=String(text||'').replace(/\s+/g,' ').trim();
     const limit=Math.max(120,Number(maxLen)||220);
     if(!clean)return[];
-    const sentences=clean.match(/[^.!?]+[.!?]+|[^.!?]+$/g)||[clean];
+    const sentences=clean.split(/(?<=[.!?])\s+/);
     const chunks=[];
     let current='';
     const pushCurrent=()=>{if(current.trim())chunks.push(current.trim());current='';};
@@ -436,9 +447,9 @@
   }
 
   async function fetchBufferedBrainAudio(text,generation,detail){
-    if(generation!==alarmGeneration)return false;
+    if(generation!==alarmGeneration)return null;
     const controller=new AbortController();
-    activeFetch=controller;
+    brainFetches.add(controller);
     try{
       const response=await fetch('/api/voice/event',{
         method:'POST',
@@ -448,8 +459,7 @@
         body:JSON.stringify({type:'brain',text:String(text||'')}),
         signal:controller.signal
       });
-      if(activeFetch===controller)activeFetch=null;
-      if(generation!==alarmGeneration)return false;
+      if(generation!==alarmGeneration)return null;
       if(!response.ok){
         const type=String(response.headers.get('content-type')||'');
         let message='';
@@ -462,39 +472,44 @@
         throw new Error('JLR conversational voice HTTP '+response.status+(message?': '+message.slice(0,220):''));
       }
       const profile=String(response.headers.get('x-jlr-voice-profile')||'custom');
-      const played=await playAudioResponse(response,generation,(detail||'JLR conversational custom voice')+' • '+profile,1);
-      if(!played)throw new Error('Custom voice returned audio but playback did not start.');
-      window.jlrVoiceProfile=profile;
-      window.jlrVoiceLastError='';
-      return true;
+      const mime=String(response.headers.get('content-type')||'').split(';')[0].trim();
+      if(!mime.startsWith('audio/'))throw new Error('Custom voice returned '+(mime||'an invalid content type'));
+      const bytes=await response.arrayBuffer();
+      if(generation!==alarmGeneration)return null;
+      if(!bytes.byteLength||bytes.byteLength>8_000_000)throw new Error('Custom voice returned an invalid audio size.');
+      return{blob:new Blob([bytes],{type:mime}),profile};
     }catch(error){
-      if(activeFetch===controller)activeFetch=null;
-      if(generation!==alarmGeneration)return false;
+      if(generation!==alarmGeneration)return null;
+      if(error?.name==='AbortError')return null;
       const message=String(error&&error.message||error||'JLR conversational voice failed.');
-      window.jlrVoiceLastError=message;
-      reportVoiceMode('error',message);
       console.error((detail||'JLR conversational custom voice')+' failed.',error);
-      return false;
+      return{error:message};
+    }finally{
+      brainFetches.delete(controller);
     }
   }
 
-  function playBrainStreamChunk(text,generation,detail){
+  function playBrainAudioChunk(prepared,generation,detail){
     if(generation!==alarmGeneration)return Promise.resolve(false);
     return new Promise(function(resolve){
       const audio=new Audio();
       activeMediaElement=audio;
       audio.preload='auto';
       audio.volume=1;
-      audio.playbackRate=1.14;
+      audio.playbackRate=1.18;
       try{audio.preservesPitch=true}catch(error){}
       try{audio.webkitPreservesPitch=true}catch(error){}
-      audio.src='/api/voice/stream/brain?text='+encodeURIComponent(String(text||''))+'&nonce='+Date.now();
+      const objectUrl=URL.createObjectURL(prepared.blob);
+      activeBrainObjectUrl=objectUrl;
+      audio.src=objectUrl;
       let settled=false;
       let started=false;
       const startedAt=performance.now();
 
       const cleanup=()=>{
         if(activeMediaElement===audio)activeMediaElement=null;
+        if(activeBrainObjectUrl===objectUrl)activeBrainObjectUrl=null;
+        URL.revokeObjectURL(objectUrl);
       };
       const finish=value=>{
         if(settled)return;
@@ -511,17 +526,17 @@
         }
         started=true;
         const latency=Math.max(0,Math.round(performance.now()-startedAt));
-        window.jlrVoiceFirstAudioMs=latency;
-        window.jlrVoiceTransport='live-stream';
-        window.jlrVoiceProfile='core';
+        window.jlrVoiceTransport='verified-buffered';
+        window.jlrVoiceProfile=prepared.profile;
         window.jlrVoiceLastError='';
-        reportVoiceMode('custom',(detail||'JLR conversational live voice')+' • '+latency+' ms to audio');
+        reportVoiceMode('custom',(detail||'JLR conversational voice')+' • '+prepared.profile+' • '+latency+' ms to playback');
         finish(true);
       },{once:true});
       audio.addEventListener('ended',cleanup,{once:true});
       audio.addEventListener('error',function(){
         cleanup();
-        const message='Live core voice stream failed before playback.';
+        if(generation!==alarmGeneration){finish(false);return;}
+        const message='Custom voice audio failed during playback.';
         window.jlrVoiceLastError=message;
         reportVoiceMode('error',message);
         finish(false);
@@ -530,10 +545,10 @@
         if(started)return;
         try{audio.pause();audio.removeAttribute('src');audio.load()}catch(error){}
         cleanup();
-        window.jlrVoiceLastError='Live core voice did not begin within 30 seconds.';
+        window.jlrVoiceLastError='Custom voice audio did not begin within 10 seconds.';
         reportVoiceMode('error',window.jlrVoiceLastError);
         finish(false);
-      },30000);
+      },10000);
 
       try{
         const playPromise=audio.play();
@@ -558,19 +573,34 @@
   async function playCustomBrainText(text,generation,detail){
     if(generation!==alarmGeneration)return false;
     window.jlrVoiceLastError='';
-    const chunks=splitBrainVoiceText(text,150);
+    const chunks=splitBrainVoiceText(text,120);
     if(!chunks.length)return false;
-
+    const startedAt=performance.now();
+    let pending=fetchBufferedBrainAudio(chunks[0],generation,detail);
     for(let i=0;i<chunks.length;i++){
       if(generation!==alarmGeneration)return false;
       const label=(detail||'JLR brain custom voice')+' • '+(i+1)+'/'+chunks.length;
-      let ok=await playBrainStreamChunk(chunks[i],generation,label);
-      if(!ok){
-        // Reliability fallback stays on the exact same CORE custom voice.
-        ok=await fetchBufferedBrainAudio(chunks[i],generation,label+' buffered fallback');
+      const prepared=await pending;
+      if(!prepared)return false;
+      if(prepared.error){
+        window.jlrVoiceLastError=prepared.error;
+        reportVoiceMode('error',prepared.error);
+        return false;
       }
-      if(!ok)return false;
+      // The local worker serializes synthesis. Start the next sentence while
+      // this complete chunk plays, rather than waiting until playback ends.
+      pending=i+1<chunks.length?fetchBufferedBrainAudio(chunks[i+1],generation,detail):null;
+      const ok=await playBrainAudioChunk(prepared,generation,label);
+      if(!ok){
+        for(const controller of brainFetches)controller.abort();
+        return false;
+      }
+      if(i===0)window.jlrVoiceFirstAudioMs=Math.round(performance.now()-startedAt);
       await waitForVoiceIdle(generation);
+      if(window.jlrVoiceLastError){
+        for(const controller of brainFetches)controller.abort();
+        return false;
+      }
     }
 
     window.jlrVoiceLastError='';

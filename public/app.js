@@ -20,7 +20,12 @@
   let scanBusy = false;
   let scoutLocationTimer = null;
   let scoutLocationBusy = false;
-  let scoutLastSystem = '';
+  const scoutLastSystem = new Map();
+  const scoutLocations = new Map();
+  const scoutLocationErrors = new Map();
+  let scoutLocationCursor = 0;
+  let scoutFollowEnabled = localStorage.getItem('jlrScoutFollow') !== 'false';
+  let scoutPromptKey = '';
   const scoutVoiceCooldown = new Map();
   let merIntel = null;
   let merIntelError = '';
@@ -213,7 +218,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.112');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.114');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -303,7 +308,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR TRACKER MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.112'),
+      'Version: '+String(state?.app?.version||'2.9.114'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -418,7 +423,7 @@
         await speakBrainAnswer(summary,'brain',{text:summary});
         return;
       }
-      if(/\b(stop|cancel|quiet)\b/.test(command)){
+      if(/^(?:stop|cancel|quiet|stop speaking|be quiet)[.!?]*$/.test(command)){
         if(typeof window.jlrStopFighterAlarm==='function')window.jlrStopFighterAlarm();
         const answer='Stopped.';
         if($('brainReply'))$('brainReply').textContent=answer;
@@ -457,13 +462,13 @@
       // "where", "which" and "update". Previously a question like
       // "closest system to Toon so I can update the app" was intercepted by
       // the generic briefing handler and dumped the whole update list.
-      const liveLookup=/\b(closest|nearest|where is|where's|location|what system|which system|nearby|near me|near my)\b/.test(command);
+      const liveLookup=/\b(closest|nearest|where is|where's|location|what system|which system|nearby|near me|near my|this hour|current hour|last hour|past hour|hourly|heading|headed|on (?:my |the )?way|en route|route to|going to|flying to)\b/.test(command);
       if(liveLookup){
         brainSetListen('TRACKER THINKING','Checking live EVE location and routes…');
         speakBrainAnswer('Checking E S I.','brain',{text:'Checking E S I.'}).catch(()=>{});
         const response=await api('/api/tracker/brain/ask',{
           method:'POST',
-          body:JSON.stringify({question:command}),
+          body:JSON.stringify({question:command,characterId:scanCharacterId,payoutPct:Number(fleetSettings.payout)}),
         });
         const answer=String(response?.text||'I could not determine the closest system.');
         const spokenAnswer=String(response?.voiceText||answer);
@@ -492,7 +497,7 @@
       brainSetListen('TRACKER THINKING','Answering your JLR question…');
       const response=await api('/api/tracker/brain/ask',{
         method:'POST',
-        body:JSON.stringify({question:command}),
+        body:JSON.stringify({question:command,characterId:scanCharacterId,payoutPct:Number(fleetSettings.payout)}),
       });
       const answer=String(response?.text||'I do not have an answer for that yet.');
       const spokenAnswer=String(response?.voiceText||answer);
@@ -1272,13 +1277,8 @@
   }
 
   function scoutFallbackText(snapshot){
-    const system=String(snapshot?.system||'current system');
-    const ledger=snapshot?.ledger||null;
-    const mined=Math.max(0,Number(ledger?.minedM3SinceSite)||0);
-    const site=Math.max(0,Number(ledger?.siteM3)||0);
-    let text=system+'. Scan update required.';
-    if(mined>0&&site>0)text+=' '+fmt(mined,'m3')+' of '+fmt(site,'m3')+' cubic meters reported mined.';
-    return text;
+    const system=String(snapshot?.spokenSystem||snapshot?.system||'current system');
+    return 'I noticed '+String(snapshot?.characterName||'your toon')+' is in '+system+', and its scan is due. Could you send a new Probe Scanner copy when it is safe?';
   }
 
   function scoutShouldSpeak(snapshot,entered){
@@ -1286,38 +1286,75 @@
     const key=String(snapshot.system||'');
     const last=Number(scoutVoiceCooldown.get(key)||0);
     const cooldown=30*60*1000;
-    if(entered)return Date.now()-last>60*1000;
-    return Date.now()-last>cooldown;
+    return !last||entered&&Date.now()-last>cooldown;
+  }
+
+  function renderScoutFollow(){
+    const status=$('brainFollowStatus'),list=$('brainFollowList');
+    if(!status||!list||!me)return;
+    const chars=(me.characters||[]).filter(c=>c.locationAccess);
+    status.textContent=scoutFollowEnabled
+      ?'Following '+chars.length+' location-enabled toon'+(chars.length===1?'':'s')+' while this page is open • checks spread across the roster'
+      :'Auto follow is off.';
+    list.innerHTML=scoutFollowEnabled?chars.map(ch=>{
+      const row=scoutLocations.get(String(ch.characterId));
+      const detail=row?.system?esc(row.system)+' • '+(row.needsScan?'SCAN DUE':row.tracked?'CURRENT':'untracked')+' • '+esc(ago(row.checkedAt))
+        :scoutLocationErrors.has(String(ch.characterId))?'ESI check failed • retrying':'Waiting for ESI check';
+      return '<div class="brain-follow-row"><strong>'+esc(ch.name)+'</strong><span'+(row?.needsScan?' class="scan-due"':'')+'>'+detail+'</span></div>';
+    }).join(''):'<div class="brain-follow-row">Enable Auto Follow to watch your linked toons.</div>';
+  }
+
+  function scoutShowPrompt(snapshot){
+    const panel=$('brainScanPrompt');
+    if(!panel)return;
+    panel.classList.remove('hidden');
+    if($('brainScanPromptText'))$('brainScanPromptText').textContent=String(snapshot.characterName||'Toon')+' is in '+snapshot.system+'. Could you send a new Probe Scanner copy when it is safe?';
+    panel.dataset.characterId=String(snapshot.characterId);
+    const key=String(snapshot.characterId)+':'+String(snapshot.system);
+    scoutVoiceCooldown.set(String(snapshot.system),Date.now());
+    if(scoutPromptKey!==key){scoutPromptKey=key;toast('🛰 '+snapshot.characterName+': '+snapshot.system+' needs a scan update.')}
   }
 
   async function pollScoutLocation(force=false){
-    if(scoutLocationBusy||scanBusy||!me)return;
-    const selected=(me.characters||[]).find(c=>String(c.characterId)===String(scanCharacterId));
-    if(!selected?.locationAccess)return;
+    if(scoutLocationBusy||scanBusy||!me||!scoutFollowEnabled)return;
+    const chars=(me.characters||[]).filter(c=>c.locationAccess);
+    if(!chars.length){renderScoutFollow();return}
+    const selected=chars.find(c=>String(c.characterId)===String(scanCharacterId));
+    const others=chars.filter(c=>String(c.characterId)!==String(selected?.characterId));
+    const batch=[];
+    if(selected)batch.push(String(selected.characterId));
+    for(let i=0;i<Math.min(4-batch.length,others.length);i++)batch.push(String(others[(scoutLocationCursor+i)%others.length].characterId));
+    if(others.length)scoutLocationCursor=(scoutLocationCursor+Math.min(4-Boolean(selected),others.length))%others.length;
     scoutLocationBusy=true;
     try{
-      const snapshot=await api('/api/scout/location?characterId='+encodeURIComponent(selected.characterId));
-      const entered=Boolean(snapshot?.system&&snapshot.system!==scoutLastSystem);
-      if(snapshot?.system)scoutLastSystem=snapshot.system;
-
-      if(snapshot?.tracked){
-        if(snapshot.needsScan){
-          const mined=Math.max(0,Number(snapshot?.ledger?.minedM3SinceSite)||0);
-          const site=Math.max(0,Number(snapshot?.ledger?.siteM3)||0);
-          const ledgerText=mined>0&&site>0?' • '+fmt(mined,'m3')+' / '+fmt(site,'m3')+' m³ reported mined':'';
-          if(!scanBusy)setScanStatus(snapshot.system+': SCAN UPDATE NEEDED'+ledgerText,'warning');
-          if(scoutShouldSpeak(snapshot,entered)&&window.jlrVoiceUserActivated===true){
-            const played=await speakJlr('scout',{system:snapshot.system,characterId:selected.characterId},scoutFallbackText(snapshot));
-            if(played){
-              scoutVoiceCooldown.set(String(snapshot.system),Date.now());
-              toast('🛰 '+selected.name+': '+snapshot.system+' needs a scan update.');
-            }
-          }
-        }else if(entered&&!scanBusy){
-          setScanStatus(snapshot.system+': scan status current.','success');
+      const response=await api('/api/scout/locations',{method:'POST',body:JSON.stringify({characterIds:batch})});
+      if(!scoutFollowEnabled)return;
+      let prompt=null;
+      for(const snapshot of response?.locations||[]){
+        const id=String(snapshot.characterId);
+        scoutLocationErrors.delete(id);
+        const entered=Boolean(snapshot.system&&snapshot.system!==scoutLastSystem.get(id));
+        if(snapshot.system)scoutLastSystem.set(id,snapshot.system);
+        scoutLocations.set(id,snapshot);
+        if(scoutPromptKey.startsWith(id+':')&&(scoutPromptKey!==id+':'+snapshot.system||!snapshot.needsScan)){
+          scoutPromptKey='';
+          $('brainScanPrompt')?.classList.add('hidden');
         }
-      }else if(entered&&!scanBusy){
-        setScanStatus(selected.name+' is in '+snapshot.system+' — not on a tracked mining board.');
+        if(snapshot.needsScan){
+          if(id===String(scanCharacterId)&&!scanBusy)setScanStatus(snapshot.system+': SCAN UPDATE NEEDED','warning');
+          if(scoutShouldSpeak(snapshot,entered)&&!prompt)prompt=snapshot;
+        }else if(id===String(scanCharacterId)&&entered&&!scanBusy){
+          setScanStatus(snapshot.system+(snapshot.tracked?': scan status current.':' — not on a tracked mining board.'),snapshot.tracked?'success':'');
+        }
+      }
+      for(const failure of response?.errors||[])scoutLocationErrors.set(String(failure.characterId),String(failure.error||'ESI_LOCATION_FAILED'));
+      renderScoutFollow();
+      if(prompt){
+        scoutShowPrompt(prompt);
+        if(soundEnabled&&window.jlrVoiceUserActivated===true&&!brainVoiceActive()){
+          const text=scoutFallbackText(prompt);
+          await speakBrainAnswer(text,'brain',{text});
+        }
       }
     }catch(error){
       if(force)console.warn('Scout location check failed',error);
@@ -1328,6 +1365,9 @@
 
   function startScoutLocationWatch(){
     if(scoutLocationTimer)clearInterval(scoutLocationTimer);
+    if($('brainFollowEnabled'))$('brainFollowEnabled').value=scoutFollowEnabled?'on':'off';
+    renderScoutFollow();
+    if(!scoutFollowEnabled)return;
     pollScoutLocation(true);
     scoutLocationTimer=setInterval(()=>pollScoutLocation(false),30*1000);
   }
@@ -1915,12 +1955,13 @@
             <label class="brain-setting"><span>VOICE</span><select id="brainVoiceEnabled"><option value="on">ON</option><option value="off">OFF</option></select></label>
             <label class="brain-setting"><span>STARTUP BRIEFING</span><select id="brainStartupBriefing"><option value="on">ON</option><option value="off">OFF</option></select></label>
             <label class="brain-setting"><span>CONVERSATION WINDOW</span><select id="brainConversationWindow"><option value="15">15 SECONDS</option><option value="30">30 SECONDS</option><option value="60">60 SECONDS</option></select></label>
+            <label class="brain-setting"><span>AUTO FOLLOW TOONS</span><select id="brainFollowEnabled"><option value="on">ON</option><option value="off">OFF</option></select></label>
           </div>
         </section>
 
         <section class="brain-card brain-talk-card">
           <div class="brain-card-head"><strong>TALK TO TRACKER</strong><small>Natural voice interaction</small></div>
-          <div class="brain-question-hint">Try: “Tracker, what can you do for me?” • “What does Fleet Performance show?” • “How does Threat Scan work?”</div>
+          <div class="brain-question-hint">Try: “Tracker, how much have I made this hour?” • “Tracker, heading to C-N, where can I stop and scan?” • “Tracker, where is my closest scan?”</div>
           <div id="brainListenPanel" class="brain-listen-panel">
             <span class="brain-listen-orb">●</span>
             <div><strong id="brainListenStatus">MIC STARTING</strong><small id="brainListenHint">Tracker is arming the microphone and waiting for the wake word.</small></div>
@@ -1932,6 +1973,9 @@
           </div>
           <div id="brainHeard" class="brain-heard">Standby.</div>
           <div id="brainReply" class="brain-reply">Tracker ready.</div>
+          <div id="brainScanPrompt" class="brain-scan-prompt hidden" role="status"><span id="brainScanPromptText"></span><button id="brainScanOpen" class="board-tool" type="button">OPEN SCANNER</button></div>
+          <div class="brain-follow-head"><strong>LINKED TOONS</strong><small id="brainFollowStatus">Checking location access…</small></div>
+          <div id="brainFollowList" class="brain-follow-list"></div>
           <div id="brainMicDiagnostic" class="brain-mic-diagnostic hidden">
             <div class="brain-mic-diagnostic-head"><strong id="brainMicErrorCode">MIC-E000</strong><span id="brainMicErrorStage">STAGE</span></div>
             <p id="brainMicErrorDetail">No microphone error recorded.</p>
@@ -5130,6 +5174,14 @@
       soundEnabled=target.value==='on';
       localStorage.setItem('jlrSoundEnabled',String(soundEnabled));
       updateSoundStatus();
+    }else if(target?.id==='brainFollowEnabled'){
+      scoutFollowEnabled=target.value==='on';
+      localStorage.setItem('jlrScoutFollow',String(scoutFollowEnabled));
+      if(!scoutFollowEnabled){
+        scoutLocations.clear();scoutLocationErrors.clear();scoutLastSystem.clear();scoutPromptKey='';
+        $('brainScanPrompt')?.classList.add('hidden');
+      }
+      startScoutLocationWatch();
     }else if(target?.id==='brainStartupBriefing'){
       localStorage.setItem('jlrBrainStartupBriefing',String(target.value==='on'));
     }else if(target?.id==='brainConversationWindow'){
@@ -5159,6 +5211,18 @@
     if(target.closest('#trackerMicToggle')){
       brainClearMicError();
       restartBrainListening(true,true);
+      return;
+    }
+    if(target.closest('#brainScanOpen')){
+      const id=String($('brainScanPrompt')?.dataset.characterId||'');
+      if((me?.characters||[]).some(ch=>String(ch.characterId)===id)){
+        scanCharacterId=id;
+        localStorage.setItem('jlrScanCharacter',id);
+        renderScanCharacters();
+      }
+      applyTab('fields');
+      $('pasteScan')?.scrollIntoView({behavior:'smooth',block:'center'});
+      $('pasteScan')?.focus();
       return;
     }
     if(target.closest('#brainMicCopyDiag')){
@@ -5200,7 +5264,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.112',
+          version:state?.app?.version||'2.9.114',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
@@ -5301,7 +5365,7 @@
   });
   syncBoardControls();
   $('systemSelect').addEventListener('change',()=>chooseSystem($('systemSelect').value));
-  $('scanCharacter').addEventListener('change',()=>{scanCharacterId=$('scanCharacter').value;localStorage.setItem('jlrScanCharacter',scanCharacterId);scoutLastSystem='';renderScanCharacters();pollScoutLocation(true)});
+  $('scanCharacter').addEventListener('change',()=>{scanCharacterId=$('scanCharacter').value;localStorage.setItem('jlrScanCharacter',scanCharacterId);renderScanCharacters();pollScoutLocation(true)});
   document.querySelectorAll('.filter').forEach(b=>b.addEventListener('click',()=>{filter=b.dataset.filter;document.querySelectorAll('.filter').forEach(x=>x.classList.toggle('active',x===b));renderBoards()}));
 
   function applyFieldUpdate(system,updatedField){state.fields[system]=updatedField;renderAll()}
@@ -5348,6 +5412,13 @@
         if(!preview?.boardScan?.recorded||!appliedScan||!fresh){
           const parser=preview?.boardScan?.parserStatus||{};
           throw new Error('FIELD-SCAN-E01: Probe Scanner rows were recognized, but the Fields board timestamp was not committed. T3='+String(Boolean(parser.t3))+' ICE='+String(Boolean(parser.ice))+' A0='+String(Boolean(parser.a0))+'.');
+        }
+      }
+      if(preview?.boardScan?.recorded||preview?.a0?.scan?.valid){
+        scoutVoiceCooldown.delete(String(preview.system));
+        if(scoutPromptKey===String(selected.characterId)+':'+String(preview.system)){
+          $('brainScanPrompt')?.classList.add('hidden');
+          scoutPromptKey='';
         }
       }
       if(preview?.boardScan?.recorded||preview?.tracked||preview?.a0?.tracked){

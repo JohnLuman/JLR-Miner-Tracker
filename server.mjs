@@ -7,6 +7,8 @@ import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { DOCTRINE_SEED_B64 } from './lib/doctrine-seed.mjs';
 import { parseProbeScan, parseA0Scan, parseIceScan } from './lib/probe-scan.mjs';
+import { nearestTrackedSystems } from './lib/brain-location.mjs';
+import { positiveLedgerDeltas, dueRouteStops, fountainRouteDestination } from './lib/brain-intel.mjs';
 import { parseThreatPaste, compactThreatStats, threatActivityLabels, fountainThreatTags, jlrThreatScore, threatIgnoreReason } from './lib/threat-scan.mjs';
 import {
   BASE_T3_ORE_REPROCESSING,
@@ -89,6 +91,8 @@ const dogmaAttributeCache = new Map();
 const dogmaAttributePromises = new Map();
 const typeLookupPromises = new Map();
 const systemLookupPromises = new Map();
+const trackerLocationCache = new Map();
+const scoutLocationInFlight = new Map();
 const TEN_HOURS = 10 * 60 * 60 * 1000;
 const A0_REPORT_TTL = 12 * 60 * 60 * 1000;
 const SESSION_TTL = 30 * 24 * 60 * 60 * 1000;
@@ -231,10 +235,12 @@ const characterAccessPromises = new Map();
 const characterAccessTokenCache = new Map();
 const userSyncPromises = new Map();
 const ledgerRowsByCharacter = new Map();
+const ledgerSnapshotAtByCharacter = new Map();
 const universeNameCache = new Map();
 const trackerLiveClients = new Set();
 let heavyFighterTypeIdsCache = {at:0,ids:null,promise:null};
 let trackerLiveLosses = [];
+let fountainRouteSystemsCache = {at:0,ids:null,promise:null};
 const trackerLiveSeenKillIds = new Set();
 const trackerVoiceJobs = new Map();
 const trackerBrainAnnouncementMemory = new Map();
@@ -418,7 +424,7 @@ function freshState() {
       autoReopenedAt: null, autoReopenReason: null, autoReopenM3: null,
     }])),
     esi: {
-      typeCache: {}, systemCache: {}, dailyFleet: [], dailyFleetValuationVersion: LEDGER_VALUATION_VERSION, performanceSamples: [], ledgerActivity: {}, ledgerFieldSnapshots: {}, fieldInference: {}, lastSyncAt: null, lastError: null,
+      typeCache: {}, systemCache: {}, dailyFleet: [], dailyFleetValuationVersion: LEDGER_VALUATION_VERSION, performanceSamples: [], hourlyObservations: {}, ledgerActivity: {}, ledgerFieldSnapshots: {}, fieldInference: {}, lastSyncAt: null, lastError: null,
     },
     market: {
       prices: {}, minerals: {}, icePrices: {}, iceProducts: {}, gasPrices: {}, iceFields: [], a0Fields: [], a0Reports: {}, a0ScannedAt: null, t3Distances: {}, history: { ore:{}, ice:{} },
@@ -436,7 +442,11 @@ async function loadState() {
     parsed.version = 3;
     parsed.users ||= {};
     parsed.characters ||= {};
-    for(const ch of Object.values(parsed.characters))migrateCharacterFitCache(ch);
+    for(const ch of Object.values(parsed.characters)){
+      migrateCharacterFitCache(ch);
+      // Earlier Brain builds placed a toon location on the persisted character.
+      delete ch.trackerLocationCache;
+    }
     parsed.scans ||= {};
     parsed.pvpLifetimeDamage ||= {};
     parsed.fields ||= {};
@@ -452,6 +462,7 @@ async function loadState() {
     if(!Array.isArray(parsed.esi.dailyFleet))parsed.esi.dailyFleet=[];
     if(storedDailyFleetValuationVersion!==LEDGER_VALUATION_VERSION)parsed.esi.dailyFleet=[];
     if(!Array.isArray(parsed.esi.performanceSamples))parsed.esi.performanceSamples=[];
+    if(!parsed.esi.hourlyObservations||typeof parsed.esi.hourlyObservations!=='object'||Array.isArray(parsed.esi.hourlyObservations))parsed.esi.hourlyObservations={};
     parsed.esi.ledgerActivity ||= {}; parsed.esi.ledgerFieldSnapshots ||= {}; parsed.esi.fieldInference ||= {};
     parsed.market = { ...base.market, ...(parsed.market || {}) };
     parsed.market.prices ||= {};
@@ -557,7 +568,7 @@ async function readBody(req, max=1_000_000) {
 function securityHeaders(res) {
   res.setHeader('X-Content-Type-Options','nosniff'); res.setHeader('Referrer-Policy','same-origin');
   res.setHeader('X-Frame-Options','DENY');
-  res.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' https://images.evetech.net https://web.ccpgamescdn.com data:; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' https://cdn.jsdelivr.net 'wasm-unsafe-eval' 'unsafe-eval'; connect-src 'self' https://cdn.jsdelivr.net https://ccoreilly.github.io https://fiddle-app.github.io; worker-src 'self' blob:; child-src 'self' blob:; base-uri 'self'; form-action 'self' https://login.eveonline.com; frame-ancestors 'none'");
+  res.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' https://images.evetech.net https://web.ccpgamescdn.com data:; media-src 'self' blob:; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' https://cdn.jsdelivr.net 'wasm-unsafe-eval' 'unsafe-eval'; connect-src 'self' https://cdn.jsdelivr.net https://ccoreilly.github.io https://fiddle-app.github.io; worker-src 'self' blob:; child-src 'self' blob:; base-uri 'self'; form-action 'self' https://login.eveonline.com; frame-ancestors 'none'");
 }
 
 function resetExpired(broadcastIt=true) {
@@ -784,7 +795,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.112',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.114',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -2727,11 +2738,26 @@ async function scoutLocationSnapshot(ch){
     error.code='LOCATION_SCOPE_REQUIRED';
     throw error;
   }
-  const {data}=await esiGet(`https://esi.evetech.net/latest/characters/${ch.characterId}/location/?datasource=tranquility`,access);
-  const systemId=String(data?.solar_system_id||'');
-  if(!systemId)throw new Error('EVE did not return the Scout toon’s current solar system.');
-  await ensureSystem([systemId]);
-  const system=state.esi.systemCache[systemId]?.name||`System ${systemId}`;
+  const id=String(ch.characterId);
+  let location=trackerLocationCache.get(id);
+  if(!location?.live||Date.now()-Date.parse(location.checkedAt||'')>=25_000){
+    let inFlight=scoutLocationInFlight.get(id);
+    if(!inFlight){
+      inFlight=(async()=>{
+        const {data}=await esiGet(`https://esi.evetech.net/latest/characters/${id}/location/?datasource=tranquility`,access);
+        const systemId=String(data?.solar_system_id||'');
+        if(!systemId)throw new Error('EVE did not return the Scout toon’s current solar system.');
+        await ensureSystem([systemId]);
+        const system=state.esi.systemCache[systemId]?.name||`System ${systemId}`;
+        const row={systemId,system,checkedAt:now(),live:true};
+        trackerLocationCache.set(id,row);
+        return row;
+      })().finally(()=>scoutLocationInFlight.delete(id));
+      scoutLocationInFlight.set(id,inFlight);
+    }
+    location=await inFlight;
+  }
+  const {systemId,system}=location;
   const t3=SYSTEM_MAP.get(system)||null;
   const ice=(state.market?.iceFields||[]).find(row=>row.system===system)||null;
   const a0=(state.market?.a0Fields||[]).find(row=>row.system===system)||state.market?.a0Reports?.[system]||null;
@@ -2742,12 +2768,14 @@ async function scoutLocationSnapshot(ch){
   const scanMs=Date.parse(lastScanAt||'');
   const stale=!Number.isFinite(scanMs)||Date.now()-scanMs>=A0_REPORT_TTL;
   const ledgerNeedsScan=Boolean(ledger?.needsScan||ledger?.likelyDepleted);
-  const needsScan=tracked&&(stale||ledgerNeedsScan);
+  const respawning=t3&&!ice&&!a0&&state.fields?.[system]?.status==='cleared'&&Date.parse(state.fields[system].timerEndsAt||'')>Date.now();
+  const needsScan=tracked&&(stale||ledgerNeedsScan)&&(!respawning||ledgerNeedsScan);
   return{
     characterId:String(ch.characterId),
     characterName:String(ch.name||'Scout'),
     systemId,
     system,
+    spokenSystem:trackerSpokenSystem(system),
     tracked,
     kinds:[t3?'t3':null,ice?'ice':null,a0?'a0':null].filter(Boolean),
     lastScanAt,
@@ -2756,7 +2784,7 @@ async function scoutLocationSnapshot(ch){
     ledgerNeedsScan,
     ledger,
     field:t3?state.fields?.[system]||null:null,
-    checkedAt:now(),
+    checkedAt:location.checkedAt,
   };
 }
 
@@ -3195,7 +3223,8 @@ function trackerBrainMentionedCharacter(user,question){
 }
 
 async function trackerBrainCharacterLocation(ch){
-  const cached=ch?.trackerLocationCache||null;
+  const cacheKey=String(ch.characterId);
+  const cached=trackerLocationCache.get(cacheKey)||null;
   try{
     const {access,identity}=await characterAccess(ch);
     if(!identity.scopes.includes(LOCATION_SCOPE)){
@@ -3209,7 +3238,7 @@ async function trackerBrainCharacterLocation(ch){
     await ensureSystem([systemId]);
     const system=state.esi.systemCache[systemId]?.name||('System '+systemId);
     const row={systemId,system,checkedAt:now(),live:true};
-    ch.trackerLocationCache=row;
+    trackerLocationCache.set(cacheKey,row);
     return row;
   }catch(error){
     const age=Date.now()-Date.parse(cached?.checkedAt||'');
@@ -3220,7 +3249,7 @@ async function trackerBrainCharacterLocation(ch){
   }
 }
 
-async function trackerBrainNearestSystems(originSystemId,{updatesOnly=false,limit=3}={}){
+async function trackerBrainNearestSystems(originSystemId,{updatesOnly=false,limit=1}={}){
   const activity=scanActivityPublic();
   const names=new Set([
     ...SYSTEM_DEFS.map(row=>row.system),
@@ -3228,50 +3257,136 @@ async function trackerBrainNearestSystems(originSystemId,{updatesOnly=false,limi
     ...(state.market?.a0Fields||[]).map(row=>row.system),
     ...Object.keys(state.market?.a0Reports||{}),
   ].filter(Boolean));
-
-  let candidates=[...names].filter(system=>{
-    if(!updatesOnly)return true;
-    const row=activity[system]||null;
-    return Boolean(row?.due||row?.ledger?.needsScan||row?.ledger?.likelyDepleted);
-  });
-  if(updatesOnly&&!candidates.length)candidates=[...names];
-  if(!candidates.length)return[];
-
-  const ids=await resolveUniverseIds(candidates);
-  const rows=[];
-  const queue=candidates.map(system=>({system,id:Number(ids.get(system))||0})).filter(row=>row.id>0);
-  const concurrency=6;
-  let cursor=0;
-  const workers=Array.from({length:Math.min(concurrency,queue.length)},async()=>{
-    while(cursor<queue.length){
-      const index=cursor++;
-      const row=queue[index];
+  return nearestTrackedSystems(originSystemId,{
+    names:[...names],activity,updatesOnly,limit,
+    resolveIds:resolveUniverseIds,
+    routeJumps:async(origin,id,system)=>{
       try{
-        if(Number(originSystemId)===row.id){
-          rows.push({...row,jumps:0,due:Boolean(activity[row.system]?.due),activity:activity[row.system]||null});
-          continue;
-        }
-        const {data}=await esiGet(`https://esi.evetech.net/latest/route/${Number(originSystemId)}/${row.id}/?datasource=tranquility&flag=shortest`);
-        const route=Array.isArray(data)?data:[];
-        if(route.length){
-          rows.push({...row,jumps:Math.max(0,route.length-1),due:Boolean(activity[row.system]?.due),activity:activity[row.system]||null});
-        }
+        const {data}=await esiGet(`https://esi.evetech.net/latest/route/${origin}/${id}/?datasource=tranquility&flag=shortest`);
+        return Array.isArray(data)&&data.length?data.length-1:null;
       }catch(error){
-        console.warn('Tracker nearest-system route lookup failed',row.system,String(error?.message||error));
+        console.warn('Tracker nearest-system route lookup failed',system,String(error?.message||error));
+        return null;
       }
-    }
+    },
   });
-  await Promise.all(workers);
-  return rows.sort((a,b)=>a.jumps-b.jumps||Number(b.due)-Number(a.due)||a.system.localeCompare(b.system)).slice(0,Math.max(1,Number(limit)||3));
 }
 
-async function trackerBrainLiveAnswer(user,question){
+function trackerBrainHourlyEarnings(user,payoutPct,period='current'){
+  const hourEnd=new Date();
+  const hourStart=new Date(hourEnd);
+  if(period==='past')hourStart.setTime(hourStart.getTime()-60*60_000);
+  else{
+    hourStart.setUTCMinutes(0,0,0);
+    if(period==='last'){
+      hourEnd.setTime(hourStart.getTime());
+      hourStart.setTime(hourStart.getTime()-60*60_000);
+    }
+  }
+  const start=hourStart.getTime();
+  const end=hourEnd.getTime();
+  const label=period==='last'?'last completed UTC hour':period==='past'?'past 60 minutes':'this UTC hour';
+  const ids=[...new Set((user?.characterIds||[]).map(String))];
+  const observations=ids.flatMap(id=>(state.esi.hourlyObservations?.[id]||[]).filter(row=>{
+    const at=Date.parse(row?.at||'');
+    const since=Date.parse(row?.sinceAt||'');
+    return Number.isFinite(at)&&at>=start&&at<end&&Number.isFinite(since)&&since>=start;
+  }));
+  const totals=observations.reduce((sum,row)=>({
+    jbv:sum.jbv+Math.max(0,Number(row.jbv)||0),
+    m3:sum.m3+Math.max(0,Number(row.m3)||0),
+    unpricedM3:sum.unpricedM3+Math.max(0,Number(row.unpricedM3)||0),
+  }),{jbv:0,m3:0,unpricedM3:0});
+  const pct=payoutPct!==null&&payoutPct!==undefined&&Number.isFinite(Number(payoutPct))?Math.max(0,Math.min(100,Number(payoutPct))):95;
+  const tracked=ids.filter(id=>ledgerRowsByCharacter.has(id)&&ledgerSnapshotAtByCharacter.has(id)).length;
+  if(!ids.length)return{handled:true,topic:'hourly-earnings',text:'Link an EVE mining toon before I can estimate your earnings.',voiceText:'Link a mining toon first.',generatedAt:now()};
+  if(!observations.length){
+    const text='I do not have a reliable estimate for the '+label+' yet. E S I reports mining by day, and Tracker needs two ledger syncs within that period to observe a change. '+tracked+' of '+ids.length+' linked toons have a live ledger baseline.';
+    return{handled:true,topic:'hourly-earnings',text,voiceText:'I need two mining ledger syncs within the '+label+' before I can estimate your earnings.',generatedAt:now(),coverage:{tracked,linked:ids.length}};
+  }
+  const payout=totals.jbv*pct/100;
+  const value=totals.jbv.toLocaleString('en-US',{maximumFractionDigits:0});
+  const paid=payout.toLocaleString('en-US',{maximumFractionDigits:0});
+  const text='Observed in the '+label+': '+(totals.jbv>0?'about '+paid+' ISK'+(totals.unpricedM3?' partial':'')+' payout at '+pct+'% ('+value+' ISK refined Jita buy value; ':'payout cannot be estimated without mineral prices (')+Math.round(totals.m3).toLocaleString('en-US')+' m³ tracked T3 ore). '+observations.length+' ledger change'+(observations.length===1?'':'s')+' observed; '+tracked+'/'+ids.length+' linked toons currently have a live baseline.'
+    +(totals.unpricedM3?' '+Math.round(totals.unpricedM3).toLocaleString('en-US')+' m³ could not be priced.':'')
+    +' E S I has daily totals, so ore mined between syncs may appear later; this is an observed estimate, not an exact clock-hour total.';
+  return{handled:true,topic:'hourly-earnings',text,voiceText:totals.jbv>0?'I have observed about '+paid+' I S K'+(totals.unpricedM3?' partial':'')+' payout in the '+label+' at '+pct+' percent. E S I updates may arrive later.':'I observed '+Math.round(totals.m3).toLocaleString('en-US')+' cubic meters in the '+label+', but need mineral prices to estimate payout.',generatedAt:now(),estimate:{payout:totals.jbv>0?payout:null,jbv:totals.jbv,m3:totals.m3,unpricedM3:totals.unpricedM3,payoutPct:pct,linked:ids.length,baselined:tracked,observations:observations.length,hourStart:hourStart.toISOString(),hourEnd:hourEnd.toISOString()}};
+}
+
+async function fountainRouteSystemIds(){
+  const cache=fountainRouteSystemsCache;
+  if(cache.ids&&Date.now()-cache.at<24*60*60_000)return cache.ids;
+  if(cache.promise)return cache.promise;
+  cache.promise=(async()=>{
+    const region=(await esiGet(`https://esi.evetech.net/latest/universe/regions/${FOUNTAIN_REGION_ID}/?datasource=tranquility`)).data;
+    const constellations=Array.isArray(region?.constellations)?region.constellations:[];
+    const ids=new Set();
+    for(let i=0;i<constellations.length;i+=8){
+      const rows=await Promise.all(constellations.slice(i,i+8).map(id=>esiGet(`https://esi.evetech.net/latest/universe/constellations/${id}/?datasource=tranquility`)));
+      for(const row of rows)for(const id of row.data?.systems||[])ids.add(String(id));
+    }
+    if(!ids.size)throw new Error('Fountain system list is unavailable');
+    cache.ids=ids;cache.at=Date.now();
+    return ids;
+  })().finally(()=>{cache.promise=null});
+  return cache.promise;
+}
+
+async function trackerBrainRouteAnswer(user,raw,options){
+  const destination=fountainRouteDestination(raw,CN_SYSTEM_NAME);
+  if(!destination)return{handled:true,topic:'route-destination-needed',text:'Tell me which Fountain system you are heading to, and I can check tracked scan stops on the E S I gate route.',voiceText:'Which Fountain system are you heading to?',generatedAt:now()};
+  const ch=trackerBrainMentionedCharacter(user,raw)
+    ||(user?.characterIds||[]).map(id=>state.characters[String(id)]).find(row=>String(row?.characterId)===String(options?.characterId))
+    ||(user?.characterIds||[]).map(id=>state.characters[String(id)]).find(row=>String(row?.characterId)===String(user?.primaryCharacterId))
+    ||(user?.characterIds||[]).map(id=>state.characters[String(id)]).find(Boolean);
+  if(!ch)return{handled:true,topic:'route-location-error',text:'Link an EVE toon so I can check its current starting system.',voiceText:'Link a toon first.',generatedAt:now()};
+  let origin;
+  try{origin=await trackerBrainCharacterLocation(ch)}
+  catch(error){return{handled:true,topic:'route-location-error',text:error?.code==='LOCATION_SCOPE_REQUIRED'?ch.name+' needs EVE location access. Update Access on the Toons tab.':'I could not get '+ch.name+' current EVE location: '+String(error?.message||error),voiceText:'I could not check your current system in E S I.',generatedAt:now()}}
+  try{
+    const names=await resolveUniverseIds([destination]);
+    const targetId=names.get(destination)||[...names.entries()].find(([name])=>name.toLowerCase()===destination.toLowerCase())?.[1];
+    if(!targetId)return{handled:true,topic:'route-unknown',text:'I could not find '+destination+' as an EVE system. Say the full Fountain system name.',voiceText:'I could not find that system. Please say the full name.',generatedAt:now()};
+    const fountain=await fountainRouteSystemIds();
+    if(!fountain.has(String(targetId)))return{handled:true,topic:'route-outside-fountain',text:destination+' is outside Fountain. Give me a destination in Fountain.',voiceText:'That destination is outside Fountain.',generatedAt:now()};
+    const {data:route}=await esiGet(`https://esi.evetech.net/latest/route/${origin.systemId}/${targetId}/?datasource=tranquility&flag=shortest`);
+    if(!Array.isArray(route)||!route.length)throw new Error('ESI did not return a gate route');
+    const trackedNames=[...new Set([...SYSTEM_DEFS.map(row=>row.system),...(state.market?.iceFields||[]).map(row=>row.system),...(state.market?.a0Fields||[]).map(row=>row.system),...Object.keys(state.market?.a0Reports||{})])].filter(Boolean);
+    const ids=await resolveUniverseIds(trackedNames);
+    const activity=scanActivityPublic();
+    const byId=new Map();
+    for(const name of trackedNames){
+      const id=ids.get(name);
+      if(!id||!fountain.has(String(id)))continue;
+      const status=activity[name]||{};
+      const field=state.fields?.[name];
+      byId.set(String(id),{system:name,kinds:[SYSTEM_MAP.has(name)?'T3':null,(state.market?.iceFields||[]).some(row=>row.system===name)?'ice':null,(state.market?.a0Fields||[]).some(row=>row.system===name)?'A0':null].filter(Boolean),needsScan:Boolean(status.due!==false||status.ledger?.needsScan||status.ledger?.likelyDepleted),ledgerNeedsScan:Boolean(status.ledger?.needsScan||status.ledger?.likelyDepleted),clearedUntil:field?.status==='cleared'?field.timerEndsAt:null});
+    }
+    const stops=dueRouteStops(route,byId,{limit:3});
+    const prefix='E S I gate route for '+ch.name+': '+origin.system+' to '+destination+' ('+(route.length-1)+' jumps). ';
+    const caveat=origin.stale?' Your starting location is from the last successful E S I check, within 15 minutes.':'';
+    if(!stops.length){const text=prefix+'No tracked Fountain mining systems on that route currently need a scan update.'+caveat;return{handled:true,topic:'route-scans',text,voiceText:text,generatedAt:now(),route:{origin:origin.system,destination,jumps:route.length-1,stops:[]}}}
+    const detail=stops.map(row=>row.system+' ('+(row.atDestination?'destination':row.jumpsFromOrigin+' jumps in')+'; '+row.kinds.join('/')+')').join(', ');
+    const text=prefix+'Scan stops: '+detail+'. Copy the full Probe Scanner list while you are in each system, then choose that toon and paste it in Fields.'+caveat;
+    const voiceText='On the way to '+trackerSpokenSystem(destination)+', '+stops.map(row=>trackerSpokenSystem(row.system)).join(', ')+' need new scans. Please send a Probe Scanner copy when you arrive.';
+    return{handled:true,topic:'route-scans',text,voiceText,generatedAt:now(),route:{origin:origin.system,destination,jumps:route.length-1,stops}};
+  }catch(error){console.warn('Tracker Fountain route lookup failed',String(error?.message||error));return{handled:true,topic:'route-error',text:'I could not verify a Fountain gate route from E S I right now. '+String(error?.message||error),voiceText:'I could not verify the Fountain route right now.',generatedAt:now()}}
+}
+
+async function trackerBrainLiveAnswer(user,question,options={}){
   const raw=trackerSpeechSafe(question,900);
   const q=trackerBrainNormalize(raw);
+  if(/\b(?:how much|what(?:'s| is)?|total|made|earned|earnings|income|payout)\b/.test(q)&&/\b(?:this hour|current hour|last hour|past hour|hourly|so far this hour)\b/.test(q))return trackerBrainHourlyEarnings(user,options.payoutPct,/\blast hour\b/.test(q)?'last':/\bpast hour\b/.test(q)?'past':'current');
+  if(/\b(?:heading|headed|going|travelling|traveling|flying|on (?:my |the )?way|en route|route)\b/.test(q)&&/\b(?:to|toward|towards)\b/.test(q))return trackerBrainRouteAnswer(user,raw,options);
   const locationIntent=/\b(closest|nearest|where is|where s|location|what system|which system|nearby|near )\b/.test(q);
   if(!locationIntent)return trackerBrainAnswer(user,question);
 
-  const ch=trackerBrainMentionedCharacter(user,raw);
+  const explicitOther=/\b(?:where is|where s|location of)\b/.test(q)&&!(/\b(?:my|me|i|closest|nearest)\b/.test(q));
+  const linked=(user?.characterIds||[]).map(id=>state.characters[String(id)]).filter(Boolean);
+  const ch=trackerBrainMentionedCharacter(user,raw)
+    ||(!explicitOther&&linked.find(row=>String(row.characterId)===String(options.characterId)))
+    ||(!explicitOther&&linked.find(row=>String(row.characterId)===String(user?.primaryCharacterId)))
+    ||(!explicitOther&&linked[0]);
   if(!ch){
     const names=(user?.characterIds||[]).map(id=>state.characters[String(id)]?.name).filter(Boolean).slice(0,8);
     const text=names.length
@@ -3295,29 +3410,36 @@ async function trackerBrainLiveAnswer(user,question){
 
   const wantsNearest=/\b(closest|nearest|nearby|near )\b/.test(q);
   if(!wantsNearest){
-    const stale=location.stale?' using the last location seen within fifteen minutes':'';
-    const text=ch.name+' is currently in '+location.system+stale+'.';
-    return{handled:true,topic:'toon-location',text,voiceText:ch.name+' is in '+trackerSpokenSystem(location.system)+'.',generatedAt:now(),location};
+    const text=location.stale
+      ?ch.name+' was last seen in '+location.system+' within fifteen minutes. E S I did not return a live location.'
+      :ch.name+' is currently in '+location.system+'.';
+    const voiceText=ch.name+(location.stale?' was last seen in ':' is in ')+trackerSpokenSystem(location.system)+(location.stale?'. Live E S I is unavailable.':'.');
+    return{handled:true,topic:'toon-location',text,voiceText,generatedAt:now(),location};
   }
 
-  const updatesOnly=/\b(update|scan|stale|needs update|need update|refresh)\b/.test(q);
-  let nearest=[];
+  const updatesOnly=/\b(updates?|updating|scans?|stale|refresh|due)\b/.test(q);
+  let nearest={candidates:1,rows:[]};
   try{
-    nearest=await trackerBrainNearestSystems(location.systemId,{updatesOnly,limit:3});
+    nearest=await trackerBrainNearestSystems(location.systemId,{updatesOnly,limit:1});
   }catch(error){
     console.warn('Tracker nearest-system lookup failed',String(error?.message||error));
   }
-  if(!nearest.length){
+  if(updatesOnly&&!nearest.candidates){
+    const text='No tracked systems currently need a scan update.';
+    return{handled:true,topic:'nearest-system-current',text,voiceText:text,generatedAt:now(),location};
+  }
+  if(!nearest.rows.length){
     const text='I found '+ch.name+' in '+location.system+', but E S I could not calculate routes to the tracked systems.';
     return{handled:true,topic:'nearest-system-error',text,voiceText:'I found '+ch.name+', but route lookup failed.',generatedAt:now(),location};
   }
 
-  const first=nearest[0];
+  const first=nearest.rows[0];
   const qualifier=updatesOnly?' tracked system needing a scan update':' tracked mining system';
   const text='Closest'+qualifier+': '+first.system+'. '+first.jumps+' jump'+(first.jumps===1?'':'s')+' from '+ch.name+' in '+location.system+'.'
     +(location.stale?' Location is from the last successful E S I check, not a live response.':'');
-  const voiceText=trackerSpokenSystem(first.system)+' is closest. '+first.jumps+' jump'+(first.jumps===1?'':'s')+'.';
-  return{handled:true,topic:'nearest-system',text,voiceText,generatedAt:now(),location,nearest,closest:first,updatesOnly};
+  const voiceText=trackerSpokenSystem(first.system)+' is closest. '+first.jumps+' jump'+(first.jumps===1?'':'s')+'.'
+    +(location.stale?' This uses the last E S I location.':'');
+  return{handled:true,topic:'nearest-system',text,voiceText,generatedAt:now(),location,nearest:nearest.rows,closest:first,updatesOnly};
 }
 
 function trackerBrainAnswer(user,question){
@@ -3326,26 +3448,27 @@ function trackerBrainAnswer(user,question){
   const snapshot=trackerBrainSnapshot();
   const linked=(user?.characterIds||[]).map(String).filter(Boolean);
   const primaryName=trackerBrainPrimaryName(user);
-  const appVersion='2.9.112';
+  const appVersion='2.9.114';
 
   const voiceSummary=(text,max=120)=>{
     const clean=trackerSpeechSafe(text,1200).replace(/\s+/g,' ').trim();
     if(clean.length<=max)return clean;
-    const sentences=clean.match(/[^.!?]+[.!?]+|[^.!?]+$/g)||[clean];
+    const sentences=clean.split(/(?<=[.!?])\s+/);
     let out='';
     for(const sentenceRaw of sentences){
       const sentence=String(sentenceRaw||'').trim();
       if(!sentence)continue;
-      if(!out&&sentence.length>max)return sentence.slice(0,max).replace(/\s+\S*$/,'').trim()+'.';
+      // Complete the first thought instead of cutting a spoken sentence off.
+      if(!out&&sentence.length>max)return sentence;
       if((out?out+' ':'')+sentence.length>max)break;
       out+=(out?' ':'')+sentence;
     }
-    return out||clean.slice(0,max).replace(/\s+\S*$/,'').trim()+'.';
+    return out||clean;
   };
   const answer=(topic,text,extra={})=>{
     const safeText=trackerSpeechSafe(text,1200);
     const requestedVoice=extra&&typeof extra.voiceText==='string'?extra.voiceText:'';
-    const voiceText=trackerSpeechSafe(requestedVoice||voiceSummary(safeText),150)
+    const voiceText=trackerSpeechSafe(requestedVoice||voiceSummary(safeText),600)
       .replace(/[,;:]+/g,' ')
       .replace(/\s+/g,' ')
       .trim();
@@ -3363,8 +3486,8 @@ function trackerBrainAnswer(user,question){
 
   if(/\b(what can you do|what do you do|help me|help|capabilities|commands|what can i ask|what should i ask)\b/.test(q)){
     return answer('capabilities',
-      'I can explain every major part of JLR Miner Tracker, brief you on field and scan status, explain respawn timers and priorities, answer questions about Fleet and Fits, mining performance, ledgers and payouts, market data, ice, gas, doctrine market, PVP, Heavy Fighter Tracker, Threat Scan, MER intel, linked toons, ESI, voice controls, and feedback. You can also ask follow-up questions without repeating Tracker for a short time.',
-      {voiceText:'I can brief fields and scans and explain fleet performance and payouts and check ESI and market data and answer questions about any JLR feature.'}
+      'I can estimate your observed mining payout this UTC hour across linked toons, check your current system, find scan stops on the ESI gate route to a Fountain destination, and ask for a new scan when a linked toon reaches a due field. I can also brief you on field and scan status, explain Fleet and Fits, mining performance, market data, and other JLR features. You can ask follow-up questions without repeating Tracker for a short time.',
+      {voiceText:'I can check observed mining payout this hour, Fountain route scan stops, and linked toon locations, and I can ask for new scans when needed.'}
     );
   }
 
@@ -3492,7 +3615,7 @@ function trackerBrainAnswer(user,question){
 
   return answer('general',
     'I can answer questions about JLR Miner Tracker and what its data means. I do not have a general internet knowledge engine built into Tracker yet. Ask me about a tab, feature, field status, mining metric, ESI data, voice control, threat scan, PVP, market data, or how to use something in the app.',
-    {handled:false}
+    {handled:false,voiceText:'I can help with Tracker features, mining numbers, and E S I. Ask me about a specific tab or value.'}
   );
 }
 
@@ -3655,6 +3778,7 @@ async function probeScanPreview(ch,text){
   if(!systemId)throw new Error('EVE did not return a current solar system for this toon.');
   await ensureSystem([systemId]);
   const system=state.esi.systemCache[systemId]?.name||`System ${systemId}`;
+  trackerLocationCache.set(String(ch.characterId),{systemId,system,checkedAt:now(),live:true});
   const definition=SYSTEM_MAP.get(system)||null;
   const scan=definition?parseProbeScan(text,definition.ore):null;
   let correction=null;
@@ -4080,7 +4204,23 @@ async function applyLedgerResults(results,{fullCycle=false}={}){
   const sampleAt=now();
   const today=dateUTC(new Date(sampleAt));
   for(const ledger of successful){
-    ledgerRowsByCharacter.set(String(ledger.characterId),ledger.rows);
+    const id=String(ledger.characterId);
+    const previous=ledgerRowsByCharacter.get(id);
+    const sinceAt=ledgerSnapshotAtByCharacter.get(id);
+    if(previous&&sinceAt){
+      const increments=positiveLedgerDeltas(previous,ledger.rows);
+      const valued=aggregateTrackedT3Ledger({
+        rows:increments,typeById:state.esi.typeCache,systemById:state.esi.systemCache,
+        systemOreByName:SYSTEM_ORE_BY_NAME,priceByMineral:effectiveJitaMineralPrices(),refineYield:MAX_REFINE_YIELD,
+      });
+      const total=valued.reduce((sum,row)=>({m3:sum.m3+row.m3,jbv:sum.jbv+row.jbv,unpricedM3:sum.unpricedM3+row.unpricedM3}),{m3:0,jbv:0,unpricedM3:0});
+      if(total.m3>0){
+        state.esi.hourlyObservations[id] ||= [];
+        state.esi.hourlyObservations[id].push({at:sampleAt,sinceAt,...total});
+      }
+    }
+    ledgerRowsByCharacter.set(id,ledger.rows);
+    ledgerSnapshotAtByCharacter.set(id,sampleAt);
     let totalM3=0;
     for(const row of ledger.rows){
       if(String(row.date)!==today)continue;
@@ -4104,6 +4244,13 @@ async function applyLedgerResults(results,{fullCycle=false}={}){
 
   const connectedIds=new Set(Object.keys(state.characters));
   for(const id of ledgerRowsByCharacter.keys())if(!connectedIds.has(id))ledgerRowsByCharacter.delete(id);
+  const cutoff=Date.now()-3*60*60_000;
+  for(const id of Object.keys(state.esi.hourlyObservations)){
+    if(!connectedIds.has(id)){delete state.esi.hourlyObservations[id];continue}
+    const rows=state.esi.hourlyObservations[id];
+    state.esi.hourlyObservations[id]=(Array.isArray(rows)?rows:[]).filter(row=>Date.parse(row?.at||'')>=cutoff).slice(-48);
+  }
+  for(const id of ledgerSnapshotAtByCharacter.keys())if(!connectedIds.has(id))ledgerSnapshotAtByCharacter.delete(id);
   const cacheComplete=[...connectedIds].every(id=>ledgerRowsByCharacter.has(id));
   if(fullCycle||cacheComplete){
     rebuildDailyFleetFromLedgerCache();
@@ -6562,7 +6709,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.112',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.114',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -6590,7 +6737,7 @@ async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname==='/api/tracker/speech/diagnostics'){
     const voiceWorker=await trackerVoiceHealth().catch(err=>({configured:Boolean(TRACKER_TTS_WORKER_URL),reachable:false,message:String(err?.message||err)}));
     return json(res,200,{
-      version:'2.9.112',
+      version:'2.9.114',
       modelCached:Boolean(voskModelArchive),
       modelBytes:voskModelArchive?.length||0,
       modelSource:voskModelSource||null,
@@ -6614,6 +6761,23 @@ async function routeApi(req,res,url) {
       return json(res,502,{error:'SCOUT_LOCATION_FAILED',message:String(err.message||err)});
     }
   }
+  if(req.method==='POST'&&url.pathname==='/api/scout/locations'){
+    if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
+    let body;
+    try{body=await readBody(req,2_000)}
+    catch(err){return json(res,400,{error:'BAD_SCOUT_REQUEST',message:String(err.message||err)})}
+    const ids=body?.characterIds;
+    if(!Array.isArray(ids)||ids.length>4||!ids.length||ids.some(id=>!/^\d{1,20}$/.test(String(id))))return json(res,400,{error:'BAD_CHARACTER_IDS'});
+    const unique=[...new Set(ids.map(String))];
+    if(unique.some(id=>!(user.characterIds||[]).map(String).includes(id)))return json(res,404,{error:'CHARACTER_NOT_LINKED'});
+    const results=await Promise.all(unique.map(async id=>{
+      const ch=state.characters[id];
+      if(!ch)return{characterId:id,error:'CHARACTER_NOT_LINKED'};
+      try{return await scoutLocationSnapshot(ch)}
+      catch(error){return{characterId:id,error:error?.code||'ESI_LOCATION_FAILED'}}
+    }));
+    return json(res,200,{locations:results.filter(row=>!row.error),errors:results.filter(row=>row.error),checkedAt:now()});
+  }
   if(req.method==='GET'&&url.pathname==='/api/tracker/brain'){
     return json(res,200,trackerBrainSnapshot());
   }
@@ -6634,7 +6798,7 @@ async function routeApi(req,res,url) {
     catch(err){return json(res,400,{error:'BAD_BRAIN_QUESTION',message:String(err.message||err)})}
     const question=trackerSpeechSafe(body?.question,900);
     if(!question)return json(res,400,{error:'QUESTION_REQUIRED',message:'Ask Tracker a question first.'});
-    return json(res,200,await trackerBrainLiveAnswer(user,question));
+    return json(res,200,await trackerBrainLiveAnswer(user,question,{payoutPct:body?.payoutPct,characterId:body?.characterId}));
   }
   if(req.method==='GET'&&url.pathname==='/api/tracker/feedback'){
     const userId=String(user?.id||'');
@@ -7134,7 +7298,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.112 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.114 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>{
   Promise.all([
     loadVoskRuntimeAsset(VOSK_RUNTIME_FILES['/vendor/vosk/vosk-0.0.8.js']),
@@ -7144,7 +7308,9 @@ setTimeout(()=>{
 setTimeout(()=>{
   if(!trackerVoiceConfigured())return;
   const text='Checking E S I.';
-  const cacheKey='brain-live-'+crypto.createHash('sha1').update(text).digest('hex').slice(0,20);
+  // Match /api/voice/event's Brain key so the first live-location reply starts
+  // with already synthesized CORE audio rather than a fresh worker job.
+  const cacheKey='brain-'+crypto.createHash('sha1').update(text).digest('hex').slice(0,20)+'-core';
   trackerVoiceWorkerAudio(text,cacheKey,'core',60_000)
     .catch(err=>console.warn('Tracker conversational acknowledgement warmup deferred:',String(err?.message||err)));
 },3_500).unref();

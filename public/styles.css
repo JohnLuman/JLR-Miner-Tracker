@@ -1919,6 +1919,12 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .brain-listen-panel strong{display:block;font-size:10px}.brain-listen-panel small{display:block;color:var(--muted);font-size:8px;margin-top:2px}
 .brain-heard,.brain-reply{margin-top:6px;border:1px solid var(--line);border-radius:6px;padding:7px 8px;font-size:9px;line-height:1.4;overflow-wrap:anywhere}
 .brain-heard{color:var(--muted)}.brain-reply{border-left:3px solid var(--green)}
+.brain-scan-prompt{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:7px;padding:8px;border:1px solid var(--yellow);border-radius:6px;color:var(--text);font-size:9px;line-height:1.4}
+.brain-scan-prompt.hidden{display:none}.brain-scan-prompt button{flex:0 0 auto}
+.brain-follow-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;font-size:9px}.brain-follow-head small{color:var(--muted);font-size:8px;text-align:right}
+.brain-follow-list{max-height:155px;overflow:auto;display:grid;gap:4px;margin-top:5px}
+.brain-follow-row{display:flex;align-items:center;justify-content:space-between;gap:7px;border:1px solid var(--line);border-radius:5px;padding:5px 7px;font-size:8px}
+.brain-follow-row strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.brain-follow-row span{text-align:right;color:var(--muted)}.brain-follow-row .scan-due{color:var(--yellow)}
 .brain-check-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
 .brain-check-grid label{display:flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:6px;padding:7px;font-size:8px;color:var(--muted)}
 .brain-speech-history,.brain-decision-list{display:flex;flex-direction:column;gap:5px}

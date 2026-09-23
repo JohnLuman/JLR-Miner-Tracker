@@ -46,16 +46,16 @@ JLR requests these ESI scopes:
 - `esi-skills.read_skills.v1` — the linked character's mining and command skill levels
 - `esi-fittings.read_fittings.v1` — the linked character's saved mining fittings
 - `esi-assets.read_assets.v1` — Abyssal mining-module details used by saved fits
-- `esi-location.read_location.v1` — current solar system when that toon imports a Probe Scanner copy
+- `esi-location.read_location.v1` — current solar system for Probe Scanner imports, Brain questions, and Auto Follow scan prompts
 - `esi-characters.read_contacts.v1` — personal standings used by THREAT SCAN
 - `esi-corporations.read_contacts.v1` — corporation standings used by THREAT SCAN
 - `esi-alliances.read_contacts.v1` — alliance standings used by THREAT SCAN
 
-Character location is requested only by the Probe Scanner import action. The current location is returned to that signed-in user for matching the scan to a tracked system; it is not persisted or broadcast to the fleet. Skills and saved fittings are shown only to the JLR account that linked that character.
+When Brain Auto Follow is on, an open dashboard checks linked toons' locations in batches of up to four every 30 seconds (the selected scan toon is checked every round). Only that account sees the current locations. The server briefly caches them in memory; they are not saved to character history or broadcast to the fleet. Turn Auto Follow off in Brain to stop these checks. Probe Scanner imports also check the chosen toon's location; ESI cannot read the scanner list, so the pilot must still copy and paste it. Skills and saved fittings are shown only to the JLR account that linked that character.
 
 Characters authorized before v2.2 need to use **Authorize** once so EVE can grant the two new read-only scopes.
 
-During an ESI sync, the server temporarily reads each mining-ledger row's system and exact ore `type_id`. Only the expected T3 ore family in a tracked field is counted. Refined value uses that grade's CCP SDE recipe, the configured Jita mineral-buy source, and the max-refine yield. The persisted mining history is then reduced to **fleet totals by date**. It does not persist which pilot mined in which system.
+During an ESI sync, the server temporarily reads each mining-ledger row's system and exact ore `type_id`. Only the expected T3 ore family in a tracked field is counted. Refined value uses that grade's CCP SDE recipe, the configured Jita mineral-buy source, and the max-refine yield. Fleet history is reduced to **fleet totals by date**. Brain also retains up to three hours of **private per-toon aggregate changes** for the signed-in owner's hourly estimate, without storing the toon’s mining system or raw ledger rows. ESI does not report a mining time within each day, so this estimate only covers changes observed between ledger syncs within the UTC hour.
 
 Actuals on the dashboard come from EVE mining-ledger API data. Projected values come from the user's local fleet calculator.
 
@@ -212,7 +212,7 @@ The default payout display is 95% JBV, but each browser can change its own proje
 - OAuth `state` is validated.
 - JWT signatures, issuer, expiration, audience, client ID, and requested ESI scopes are checked before protected ESI data is used.
 - POST/PUT/DELETE API requests are same-origin checked.
-- Character location is read only during a user-requested Probe Scanner import and is not stored or shared.
+- Auto Follow checks linked toons' locations while the signed-in page is open; Brain route questions and scanner imports also check location. No location history is saved or shared with other users.
 - Linked toon names are visible only to the account that linked them.
 
 
