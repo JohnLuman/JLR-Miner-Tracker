@@ -20,6 +20,7 @@
   let scanBusy = false;
   let scoutLocationTimer = null;
   let scoutLocationBusy = false;
+  let companionStatusTimer = null;
   const scoutLastSystem = new Map();
   const scoutLocations = new Map();
   const scoutLocationErrors = new Map();
@@ -221,7 +222,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.118');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.119');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -311,7 +312,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR TRACKER MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.118'),
+      'Version: '+String(state?.app?.version||'2.9.119'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -398,18 +399,47 @@
   async function refreshCompanionStatus(){
     const status=$('brainCompanionStatus');
     const detail=$('brainCompanionDetail');
+    const feed=$('brainCompanionFeedTrack');
     if(!status||!detail)return;
     try{
       const payload=await api('/api/companion/status');
       const devices=Array.isArray(payload?.devices)?payload.devices:[];
+      const locations=Array.isArray(payload?.locations)?payload.locations:[];
       status.textContent=devices.length?'● CONNECTED • '+devices.length:'○ NOT PAIRED';
       detail.textContent=devices.length
-        ?devices.map(row=>String(row.deviceName||'Windows PC')+(row.lastSeenAt?' • seen '+ago(row.lastSeenAt):' • waiting for first EVE location')).join(' | ')
+        ?locations.length+' toon'+(locations.length===1?'':'s')+' currently feeding Tracker'
         :'No Windows companion is paired to this account yet.';
+      if(feed){
+        if(locations.length){
+          const parts=locations.map(row=>{
+            const device=String(row.deviceName||'Windows PC');
+            const toon=String(row.characterName||'Toon');
+            const system=String(row.system||'Unknown');
+            return device+' • '+toon+' → '+system+' • '+ago(row.checkedAt);
+          });
+          const line=parts.join('     ✦     ');
+          feed.textContent=line+'     ✦     '+line;
+          feed.classList.add('active');
+          feed.style.setProperty('--companion-feed-seconds',Math.max(18,locations.length*4)+'s');
+        }else{
+          feed.textContent=devices.length?'PAIRED • waiting for EVE Local movement…':'NO COMPANION FEED';
+          feed.classList.remove('active');
+          feed.style.removeProperty('--companion-feed-seconds');
+        }
+      }
     }catch(error){
       status.textContent='⚠ STATUS UNAVAILABLE';
       detail.textContent=String(error?.message||error);
+      if(feed){
+        feed.textContent='COMPANION FEED UNAVAILABLE';
+        feed.classList.remove('active');
+      }
     }
+  }
+  function startCompanionStatusWatch(){
+    if(companionStatusTimer)clearInterval(companionStatusTimer);
+    refreshCompanionStatus();
+    companionStatusTimer=setInterval(()=>refreshCompanionStatus(),5000);
   }
   async function createCompanionPairCode(){
     const status=$('brainCompanionStatus');
@@ -1344,8 +1374,9 @@
       :'Auto follow is off.';
     list.innerHTML=scoutFollowEnabled?chars.map(ch=>{
       const row=scoutLocations.get(String(ch.characterId));
-      const detail=row?.system?esc(row.system)+' • '+(row.needsScan?'SCAN DUE':row.tracked?'CURRENT':'untracked')+' • '+esc(ago(row.checkedAt))
-        :scoutLocationErrors.has(String(ch.characterId))?'ESI check failed • retrying':'Waiting for ESI check';
+      const source=row?.locationSource==='companion'?'COMPANION':'ESI';
+      const detail=row?.system?esc(row.system)+' • '+source+' • '+(row.needsScan?'SCAN DUE':row.tracked?'CURRENT':'untracked')+' • '+esc(ago(row.checkedAt))
+        :scoutLocationErrors.has(String(ch.characterId))?'Location check failed • retrying':'Waiting for location check';
       return '<div class="brain-follow-row"><strong>'+esc(ch.name)+'</strong><span'+(row?.needsScan?' class="scan-due"':'')+'>'+detail+'</span></div>';
     }).join(''):'<div class="brain-follow-row">Enable Auto Follow to watch your linked toons.</div>';
   }
@@ -2011,6 +2042,10 @@
         <section class="brain-card">
           <div class="brain-card-head"><strong>DESKTOP COMPANION</strong></div>
           <div class="brain-follow-head"><strong id="brainCompanionStatus">CHECKING…</strong><small id="brainCompanionDetail">Checking paired Windows devices.</small></div>
+          <div class="brain-companion-feed">
+            <span>LIVE FEED</span>
+            <div class="brain-companion-feed-window"><div id="brainCompanionFeedTrack" class="brain-companion-feed-track">WAITING FOR COMPANION FEED…</div></div>
+          </div>
           <div class="brain-companion-code">
             <div><span>PAIR CODE</span><strong id="brainCompanionCode">—</strong><small id="brainCompanionExpiry"></small></div>
             <button id="brainCompanionCopy" class="board-tool" type="button">COPY CODE</button>
@@ -2163,7 +2198,7 @@
     const board=document.querySelector('.board-panel');
     const hits=document.querySelector('.hit-panel');
     brain.appendChild(assistant);
-    setTimeout(()=>refreshCompanionStatus(),0);
+    setTimeout(()=>startCompanionStatusWatch(),0);
     const fieldSidebar=document.createElement('div');
     fieldSidebar.className='field-sidebar';
     [quick,timers].filter(Boolean).forEach(el=>fieldSidebar.appendChild(el));
@@ -5346,7 +5381,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.118',
+          version:state?.app?.version||'2.9.119',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
