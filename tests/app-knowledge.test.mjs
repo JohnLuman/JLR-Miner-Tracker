@@ -17,7 +17,9 @@ assert.match(server,/const TRACKER_APP_KNOWLEDGE = \{/,'server has a central app
 assert.match(server,/const TRACKER_METRIC_KNOWLEDGE = \[/,'server has a central metric knowledge map');
 assert.match(server,/id:'live-activity-rate'/,'Live Activity Rate has a dedicated explanation');
 assert.match(server,/interval estimate from ESI, not instant laser telemetry/,'Live Activity Rate explains its data limitations');
-assert.match(server,/currentTab:trackerSpeechSafe\(body\?\.currentTab,40\)/,'Brain API receives the active tab');
+assert.match(server,/const currentTab=trackerSpeechSafe\(body\?\.currentTab,40\)/,'Brain API sanitizes the active tab once');
+assert.match(server,/trackerBrainLiveAnswer\(user,resolvedQuestion,\{[\s\S]*?currentTab,/,'Brain API passes the active tab into local Brain fallback');
+assert.match(server,/trackerSupport\.resolveQuestion\(\{[\s\S]*?currentTab,/,'Brain API passes the active tab into shared Tracker support');
 assert.match(app,/currentTab:activeTab/,'browser sends the active tab with Tracker questions');
 assert.match(server,/what am i looking at/,'contextual current-tab questions are supported');
 

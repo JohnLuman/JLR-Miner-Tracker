@@ -1,0 +1,14 @@
+{
+  "name": "jlr-tracker-support",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared context and support service for JLR Tracker chat sessions.",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --check server.mjs && node --check core.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

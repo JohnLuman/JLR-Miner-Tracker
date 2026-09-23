@@ -9,6 +9,7 @@ import { DOCTRINE_SEED_B64 } from './lib/doctrine-seed.mjs';
 import { parseProbeScan, parseA0Scan, parseIceScan, parseWormholeGasScan } from './lib/probe-scan.mjs';
 import { nearestTrackedSystems } from './lib/brain-location.mjs';
 import { positiveLedgerDeltas, dueRouteStops, fountainRouteDestination, brainLiveIntent } from './lib/brain-intel.mjs';
+import { createTrackerSupportClient } from './lib/tracker-support-client.mjs';
 import { parseThreatPaste, compactThreatStats, threatActivityLabels, fountainThreatTags, jlrThreatScore, threatIgnoreReason } from './lib/threat-scan.mjs';
 import {
   BASE_T3_ORE_REPROCESSING,
@@ -35,6 +36,12 @@ const EVE_CLIENT_ID = String(process.env.EVE_CLIENT_ID || '').trim();
 const EVE_CLIENT_SECRET = String(process.env.EVE_CLIENT_SECRET || '').trim();
 const ESI_USER_AGENT = String(process.env.ESI_USER_AGENT || 'JLR-Miner-Tracker/2.2').trim();
 const ESI_COMPAT_DATE = String(process.env.ESI_COMPATIBILITY_DATE || '2026-09-16').trim();
+const trackerSupport = createTrackerSupportClient({
+  baseUrl: process.env.TRACKER_SUPPORT_URL,
+  secret: process.env.TRACKER_SUPPORT_SHARED_SECRET,
+  userKeySecret: process.env.TRACKER_SUPPORT_USER_KEY_SECRET,
+  timeoutMs: num(process.env.TRACKER_SUPPORT_TIMEOUT_MS, 900),
+});
 const MINING_SCOPE = 'esi-industry.read_character_mining.v1';
 const SKILLS_SCOPE = 'esi-skills.read_skills.v1';
 const FITTINGS_SCOPE = 'esi-fittings.read_fittings.v1';
@@ -7398,7 +7405,49 @@ async function routeApi(req,res,url) {
     catch(err){return json(res,400,{error:'BAD_BRAIN_QUESTION',message:String(err.message||err)})}
     const question=trackerSpeechSafe(body?.question,900);
     if(!question)return json(res,400,{error:'QUESTION_REQUIRED',message:'Ask Tracker a question first.'});
-    return json(res,200,await trackerBrainLiveAnswer(user,question,{payoutPct:body?.payoutPct,characterId:body?.characterId,currentTab:trackerSpeechSafe(body?.currentTab,40)}));
+    const currentTab=trackerSpeechSafe(body?.currentTab,40);
+    const supportResolution=await trackerSupport.resolveQuestion({
+      userId:user.id,
+      question,
+      currentTab,
+    });
+    const resolvedQuestion=trackerSpeechSafe(supportResolution?.question,900)||question;
+    const supportOverride=supportResolution?.answerOverride&&typeof supportResolution.answerOverride==='object'
+      ?supportResolution.answerOverride
+      :null;
+    let answer;
+    if(supportOverride?.text){
+      const focusSystem=trackerSpeechSafe(supportOverride.focusSystem,80);
+      const originSystem=trackerSpeechSafe(supportOverride.originSystem,80);
+      const jumps=Number.isFinite(Number(supportOverride.jumps))?Number(supportOverride.jumps):null;
+      let voiceText=trackerSpeechSafe(supportOverride.voiceText||supportOverride.text,1200);
+      if(focusSystem&&voiceText)voiceText=voiceText.split(focusSystem).join(trackerSpokenSystem(focusSystem));
+      if(originSystem&&voiceText)voiceText=voiceText.split(originSystem).join(trackerSpokenSystem(originSystem));
+      answer={
+        handled:true,
+        topic:trackerSpeechSafe(supportOverride.topic,80)||'support-context',
+        text:trackerSpeechSafe(supportOverride.text,1600),
+        voiceText,
+        generatedAt:now(),
+        focusSystem:focusSystem||undefined,
+        jumps,
+        originSystem:originSystem||undefined,
+        supportContext:true,
+      };
+    }else{
+      answer=await trackerBrainLiveAnswer(user,resolvedQuestion,{
+        payoutPct:body?.payoutPct,
+        characterId:body?.characterId,
+        currentTab,
+      });
+    }
+    void trackerSupport.rememberAnswer({
+      userId:user.id,
+      question,
+      currentTab,
+      answer,
+    });
+    return json(res,200,answer);
   }
   if(req.method==='GET'&&url.pathname==='/api/tracker/feedback'){
     const userId=String(user?.id||'');
