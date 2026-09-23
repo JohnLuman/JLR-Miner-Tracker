@@ -1981,6 +1981,9 @@
     document.querySelectorAll('.app-tab').forEach(button=>button.classList.toggle('active',button.dataset.tab===activeTab));
     document.querySelectorAll('.tab-panel').forEach(panel=>panel.classList.toggle('active',panel.dataset.tab===activeTab));
     if(activeTab!=='pvp'&&pvpIntelPoll){clearTimeout(pvpIntelPoll);pvpIntelPoll=null}
+    if(activeTab==='fields'&&state){
+      renderBoards();renderTimers();renderSelect();renderSelected();
+    }
     if(activeTab==='doctrine'&&!doctrineMarket&&!doctrineMarketLoading)loadDoctrineMarket();
     if(activeTab==='performance')refreshFleetPerformanceData(false);
     if(activeTab==='brain'){
@@ -5893,9 +5896,11 @@
   });
 
   setInterval(()=>{
-    if(state&&!document.hidden){
-      renderBoards();renderTimers();renderSelect();renderSelected();renderDataStatus();
+    if(!state||document.hidden)return;
+    if(activeTab==='fields'){
+      renderBoards();renderTimers();renderSelect();renderSelected();
     }
+    renderDataStatus();
   },1000);
   // SSE updates Fleet Performance as soon as the automatic ESI cycle finishes.
   // The safety refresh pauses with hidden tabs; SSE keeps state current meanwhile.
