@@ -92,6 +92,9 @@ const dogmaAttributePromises = new Map();
 const typeLookupPromises = new Map();
 const systemLookupPromises = new Map();
 const trackerLocationCache = new Map();
+const companionPairCodes = new Map();
+const COMPANION_PAIR_TTL_MS = 10 * 60 * 1000;
+const COMPANION_LOCATION_TTL_MS = 90 * 1000;
 const scoutLocationInFlight = new Map();
 const TEN_HOURS = 10 * 60 * 60 * 1000;
 const A0_REPORT_TTL = 12 * 60 * 60 * 1000;
@@ -416,6 +419,7 @@ function freshState() {
     version: 3,
     createdAt: now(),
     users: {},
+    companions: {},
     characters: {},
     scans: {},
     pvpLifetimeDamage: {},
@@ -441,6 +445,7 @@ async function loadState() {
     const base = freshState();
     parsed.version = 3;
     parsed.users ||= {};
+    parsed.companions ||= {};
     parsed.characters ||= {};
     for(const ch of Object.values(parsed.characters)){
       migrateCharacterFitCache(ch);
@@ -554,6 +559,50 @@ function requireUser(req, res) { const user = readSession(req); if (!user) { jso
 function sameOrigin(req) {
   const origin = req.headers.origin; if (!origin) return true;
   try { return new URL(origin).origin === new URL(requestBaseUrl(req)).origin; } catch { return false; }
+}
+
+
+function companionText(value,max=120){
+  return String(value||'').replace(/[\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim().slice(0,max);
+}
+function companionPairCode(){
+  const alphabet='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let out='';
+  for(let i=0;i<10;i++)out+=alphabet[crypto.randomInt(0,alphabet.length)];
+  return out;
+}
+function companionTokenHash(token){
+  return crypto.createHash('sha256').update(String(token||'')).digest('hex');
+}
+function companionCleanupPairs(){
+  const t=Date.now();
+  for(const [code,row] of companionPairCodes)if(Number(row?.expiresAt||0)<=t)companionPairCodes.delete(code);
+}
+function companionAuth(req){
+  const raw=String(req.headers.authorization||'');
+  const match=raw.match(/^Bearer\s+(.+)$/i);
+  if(!match)return null;
+  const token=match[1].trim();
+  if(token.length<32)return null;
+  const hash=companionTokenHash(token);
+  const device=state.companions?.[hash];
+  const user=device&&state.users?.[device.userId];
+  return device&&user?{hash,device,user}:null;
+}
+function companionDevicesForUser(user){
+  const uid=String(user?.id||'');
+  return Object.values(state.companions||{})
+    .filter(row=>String(row?.userId||'')===uid)
+    .map(row=>({id:row.id,deviceName:row.deviceName||'Windows PC',createdAt:row.createdAt,lastSeenAt:row.lastSeenAt||null}))
+    .sort((a,b)=>Date.parse(b.lastSeenAt||b.createdAt||0)-Date.parse(a.lastSeenAt||a.createdAt||0));
+}
+function companionCharacterForUser(user,body){
+  const linked=(user?.characterIds||[]).map(String);
+  const requested=String(body?.characterId||'').trim();
+  if(requested&&linked.includes(requested)&&state.characters[requested])return state.characters[requested];
+  const wanted=companionText(body?.characterName,120).toLowerCase();
+  if(!wanted)return null;
+  return linked.map(id=>state.characters[id]).find(ch=>String(ch?.name||'').trim().toLowerCase()===wanted)||null;
 }
 
 function json(res, status, obj, extra = {}) {
@@ -795,7 +844,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.115',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.116',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -2732,15 +2781,18 @@ async function characterAccess(ch){
 }
 
 async function scoutLocationSnapshot(ch){
-  const {access,identity}=await characterAccess(ch);
-  if(!identity.scopes.includes(LOCATION_SCOPE)){
-    const error=new Error('This Scout toon needs EVE location access.');
-    error.code='LOCATION_SCOPE_REQUIRED';
-    throw error;
-  }
   const id=String(ch.characterId);
   let location=trackerLocationCache.get(id);
-  if(!location?.live||Date.now()-Date.parse(location.checkedAt||'')>=25_000){
+  const cachedAge=Date.now()-Date.parse(location?.checkedAt||'');
+  const companionFresh=location?.source==='companion'&&Number.isFinite(cachedAge)&&cachedAge<COMPANION_LOCATION_TTL_MS;
+  if(!companionFresh){
+    const {access,identity}=await characterAccess(ch);
+    if(!identity.scopes.includes(LOCATION_SCOPE)){
+      const error=new Error('This Scout toon needs EVE location access.');
+      error.code='LOCATION_SCOPE_REQUIRED';
+      throw error;
+    }
+    if(!location?.live||Date.now()-Date.parse(location.checkedAt||'')>=25_000){
     let inFlight=scoutLocationInFlight.get(id);
     if(!inFlight){
       inFlight=(async()=>{
@@ -2749,13 +2801,14 @@ async function scoutLocationSnapshot(ch){
         if(!systemId)throw new Error('EVE did not return the Scout toon’s current solar system.');
         await ensureSystem([systemId]);
         const system=state.esi.systemCache[systemId]?.name||`System ${systemId}`;
-        const row={systemId,system,checkedAt:now(),live:true};
+        const row={systemId,system,checkedAt:now(),live:true,source:'esi'};
         trackerLocationCache.set(id,row);
         return row;
       })().finally(()=>scoutLocationInFlight.delete(id));
       scoutLocationInFlight.set(id,inFlight);
     }
     location=await inFlight;
+    }
   }
   const {systemId,system}=location;
   const t3=SYSTEM_MAP.get(system)||null;
@@ -2785,6 +2838,7 @@ async function scoutLocationSnapshot(ch){
     ledger,
     field:t3?state.fields?.[system]||null:null,
     checkedAt:location.checkedAt,
+    locationSource:location.source||'esi',
   };
 }
 
@@ -3225,6 +3279,10 @@ function trackerBrainMentionedCharacter(user,question){
 async function trackerBrainCharacterLocation(ch){
   const cacheKey=String(ch.characterId);
   const cached=trackerLocationCache.get(cacheKey)||null;
+  const cachedAge=Date.now()-Date.parse(cached?.checkedAt||'');
+  if(cached?.source==='companion'&&cached?.systemId&&Number.isFinite(cachedAge)&&cachedAge<COMPANION_LOCATION_TTL_MS){
+    return{...cached,live:true,stale:false};
+  }
   try{
     const {access,identity}=await characterAccess(ch);
     if(!identity.scopes.includes(LOCATION_SCOPE)){
@@ -3237,7 +3295,7 @@ async function trackerBrainCharacterLocation(ch){
     if(!systemId)throw new Error('EVE did not return a current solar system for '+ch.name+'.');
     await ensureSystem([systemId]);
     const system=state.esi.systemCache[systemId]?.name||('System '+systemId);
-    const row={systemId,system,checkedAt:now(),live:true};
+    const row={systemId,system,checkedAt:now(),live:true,source:'esi'};
     trackerLocationCache.set(cacheKey,row);
     return row;
   }catch(error){
@@ -3457,7 +3515,7 @@ function trackerBrainAnswer(user,question){
   const snapshot=trackerBrainSnapshot();
   const linked=(user?.characterIds||[]).map(String).filter(Boolean);
   const primaryName=trackerBrainPrimaryName(user);
-  const appVersion='2.9.115';
+  const appVersion='2.9.116';
 
   const voiceSummary=(text,max=120)=>{
     const clean=trackerSpeechSafe(text,1200).replace(/\s+/g,' ').trim();
@@ -6718,7 +6776,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.115',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.116',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -6734,7 +6792,84 @@ async function routeApi(req,res,url) {
     }));
     return json(res,200,{authenticated:true,user:profile});
   }
+
+  if(req.method==='POST'&&url.pathname==='/api/companion/pair/claim'){
+    let body;
+    try{body=await readBody(req,4_000)}
+    catch(err){return json(res,400,{error:'BAD_PAIR_REQUEST',message:String(err.message||err)})}
+    companionCleanupPairs();
+    const code=String(body?.code||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+    const pending=companionPairCodes.get(code);
+    if(!pending||Number(pending.expiresAt)<=Date.now())return json(res,404,{error:'PAIR_CODE_INVALID',message:'Pair code is invalid or expired.'});
+    const pairUser=state.users[pending.userId];
+    if(!pairUser){companionPairCodes.delete(code);return json(res,404,{error:'PAIR_USER_GONE'})}
+    const token=crypto.randomBytes(32).toString('base64url');
+    const hash=companionTokenHash(token);
+    state.companions ||= {};
+    state.companions[hash]={
+      id:'cmp_'+randomId(10),
+      userId:String(pairUser.id),
+      deviceName:companionText(body?.deviceName||'Windows PC',80)||'Windows PC',
+      createdAt:now(),
+      lastSeenAt:null,
+    };
+    companionPairCodes.delete(code);
+    await save();
+    return json(res,200,{paired:true,token,account:pairUser.displayName||'JLR pilot',server:requestBaseUrl(req)});
+  }
+  if(req.method==='POST'&&url.pathname==='/api/companion/location'){
+    const auth=companionAuth(req);
+    if(!auth)return json(res,401,{error:'COMPANION_AUTH_REQUIRED',message:'Companion pairing is missing or has been revoked.'});
+    let body;
+    try{body=await readBody(req,4_000)}
+    catch(err){return json(res,400,{error:'BAD_LOCATION_REPORT',message:String(err.message||err)})}
+    const ch=companionCharacterForUser(auth.user,body);
+    if(!ch)return json(res,404,{error:'CHARACTER_NOT_LINKED',message:'The EVE log listener is not linked to this JLR account.'});
+    const system=companionText(body?.system,96);
+    if(!system)return json(res,400,{error:'SYSTEM_REQUIRED'});
+    let ids;
+    try{ids=await resolveUniverseIds([system])}
+    catch(err){return json(res,502,{error:'SYSTEM_LOOKUP_FAILED',message:String(err.message||err)})}
+    const systemId=String(ids.get(system)||'');
+    if(!/^\d+$/.test(systemId))return json(res,400,{error:'UNKNOWN_SYSTEM',message:'EVE did not recognize '+system+'.'});
+    await ensureSystem([systemId]).catch(()=>{});
+    const canonical=state.esi.systemCache[systemId]?.name||system;
+    trackerLocationCache.set(String(ch.characterId),{
+      systemId,system:canonical,checkedAt:now(),observedAt:companionText(body?.observedAt,64)||null,live:true,source:'companion',
+    });
+    auth.device.lastSeenAt=now();
+    await save();
+    const snapshot=await scoutLocationSnapshot(ch);
+    return json(res,200,{ok:true,...snapshot});
+  }
+
   const user=requireUser(req,res);if(!user)return;
+
+  if(req.method==='GET'&&url.pathname==='/api/companion/status'){
+    const devices=companionDevicesForUser(user);
+    return json(res,200,{pairedDevices:devices.length,devices});
+  }
+  if(req.method==='POST'&&url.pathname==='/api/companion/pair/start'){
+    if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
+    companionCleanupPairs();
+    for(const [key,row] of companionPairCodes)if(String(row?.userId||'')===String(user.id))companionPairCodes.delete(key);
+    let code=companionPairCode();
+    while(companionPairCodes.has(code))code=companionPairCode();
+    const expiresAt=Date.now()+COMPANION_PAIR_TTL_MS;
+    companionPairCodes.set(code,{userId:String(user.id),expiresAt});
+    return json(res,200,{code,expiresAt:new Date(expiresAt).toISOString(),server:requestBaseUrl(req),download:'/downloads/INSTALL-JLR-TRACKER-COMPANION.cmd'});
+  }
+  if(req.method==='POST'&&url.pathname==='/api/companion/revoke'){
+    if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
+    let removed=0;
+    for(const [hash,row] of Object.entries(state.companions||{})){
+      if(String(row?.userId||'')!==String(user.id))continue;
+      delete state.companions[hash];
+      removed++;
+    }
+    await save();
+    return json(res,200,{revoked:removed,devices:[]});
+  }
   if(req.method==='GET'&&url.pathname==='/api/doctrine-market'){
     const access=await doctrineAccessForUser(user);
     if(!access.allowed)return json(res,403,{error:'INIT_BLUE_REQUIRED',message:access.message||'INIT or INIT-blue character required.'});
@@ -6746,7 +6881,7 @@ async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname==='/api/tracker/speech/diagnostics'){
     const voiceWorker=await trackerVoiceHealth().catch(err=>({configured:Boolean(TRACKER_TTS_WORKER_URL),reachable:false,message:String(err?.message||err)}));
     return json(res,200,{
-      version:'2.9.115',
+      version:'2.9.116',
       modelCached:Boolean(voskModelArchive),
       modelBytes:voskModelArchive?.length||0,
       modelSource:voskModelSource||null,
@@ -7307,7 +7442,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.115 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.116 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>{
   Promise.all([
     loadVoskRuntimeAsset(VOSK_RUNTIME_FILES['/vendor/vosk/vosk-0.0.8.js']),
