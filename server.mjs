@@ -596,6 +596,24 @@ function companionDevicesForUser(user){
     .map(row=>({id:row.id,deviceName:row.deviceName||'Windows PC',createdAt:row.createdAt,lastSeenAt:row.lastSeenAt||null}))
     .sort((a,b)=>Date.parse(b.lastSeenAt||b.createdAt||0)-Date.parse(a.lastSeenAt||a.createdAt||0));
 }
+function companionLocationsForUser(user){
+  const t=Date.now();
+  return (user?.characterIds||[]).map(String).map(id=>{
+    const ch=state.characters[id];
+    const row=trackerLocationCache.get(id);
+    const age=t-Date.parse(row?.checkedAt||'');
+    if(!ch||row?.source!=='companion'||!row?.system||!Number.isFinite(age)||age>=COMPANION_LOCATION_TTL_MS)return null;
+    return{
+      characterId:id,
+      characterName:String(ch.name||'Toon'),
+      system:String(row.system),
+      checkedAt:row.checkedAt,
+      observedAt:row.observedAt||null,
+      deviceId:row.companionDeviceId||null,
+      deviceName:row.companionDeviceName||'Windows PC',
+    };
+  }).filter(Boolean).sort((a,b)=>Date.parse(b.checkedAt||0)-Date.parse(a.checkedAt||0));
+}
 function companionCharacterForUser(user,body){
   const linked=(user?.characterIds||[]).map(String);
   const requested=String(body?.characterId||'').trim();
@@ -844,7 +862,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.118',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.119',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -3515,7 +3533,7 @@ function trackerBrainAnswer(user,question){
   const snapshot=trackerBrainSnapshot();
   const linked=(user?.characterIds||[]).map(String).filter(Boolean);
   const primaryName=trackerBrainPrimaryName(user);
-  const appVersion='2.9.118';
+  const appVersion='2.9.119';
 
   const voiceSummary=(text,max=120)=>{
     const clean=trackerSpeechSafe(text,1200).replace(/\s+/g,' ').trim();
@@ -6776,7 +6794,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.118',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.119',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -6835,7 +6853,14 @@ async function routeApi(req,res,url) {
     await ensureSystem([systemId]).catch(()=>{});
     const canonical=state.esi.systemCache[systemId]?.name||system;
     trackerLocationCache.set(String(ch.characterId),{
-      systemId,system:canonical,checkedAt:now(),observedAt:companionText(body?.observedAt,64)||null,live:true,source:'companion',
+      systemId,
+      system:canonical,
+      checkedAt:now(),
+      observedAt:companionText(body?.observedAt,64)||null,
+      live:true,
+      source:'companion',
+      companionDeviceId:auth.device.id||null,
+      companionDeviceName:auth.device.deviceName||'Windows PC',
     });
     const companionSeenAt=now();
     auth.device.lastSeenAt=companionSeenAt;
@@ -6852,7 +6877,8 @@ async function routeApi(req,res,url) {
 
   if(req.method==='GET'&&url.pathname==='/api/companion/status'){
     const devices=companionDevicesForUser(user);
-    return json(res,200,{pairedDevices:devices.length,devices});
+    const locations=companionLocationsForUser(user);
+    return json(res,200,{pairedDevices:devices.length,devices,locations});
   }
   if(req.method==='POST'&&url.pathname==='/api/companion/pair/start'){
     if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
@@ -6872,8 +6898,12 @@ async function routeApi(req,res,url) {
       delete state.companions[hash];
       removed++;
     }
+    for(const id of (user.characterIds||[]).map(String)){
+      const cached=trackerLocationCache.get(id);
+      if(cached?.source==='companion')trackerLocationCache.delete(id);
+    }
     await save();
-    return json(res,200,{revoked:removed,devices:[]});
+    return json(res,200,{revoked:removed,devices:[],locations:[]});
   }
   if(req.method==='GET'&&url.pathname==='/api/doctrine-market'){
     const access=await doctrineAccessForUser(user);
@@ -6886,7 +6916,7 @@ async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname==='/api/tracker/speech/diagnostics'){
     const voiceWorker=await trackerVoiceHealth().catch(err=>({configured:Boolean(TRACKER_TTS_WORKER_URL),reachable:false,message:String(err?.message||err)}));
     return json(res,200,{
-      version:'2.9.118',
+      version:'2.9.119',
       modelCached:Boolean(voskModelArchive),
       modelBytes:voskModelArchive?.length||0,
       modelSource:voskModelSource||null,
@@ -7447,7 +7477,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.118 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.119 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>{
   Promise.all([
     loadVoskRuntimeAsset(VOSK_RUNTIME_FILES['/vendor/vosk/vosk-0.0.8.js']),
