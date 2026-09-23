@@ -596,6 +596,15 @@ function companionDevicesForUser(user){
     .map(row=>({id:row.id,deviceName:row.deviceName||'Windows PC',createdAt:row.createdAt,lastSeenAt:row.lastSeenAt||null}))
     .sort((a,b)=>Date.parse(b.lastSeenAt||b.createdAt||0)-Date.parse(a.lastSeenAt||a.createdAt||0));
 }
+function companionActiveForUser(user){
+  const uid=String(user?.id||'');
+  const t=Date.now();
+  return Object.values(state.companions||{}).some(row=>{
+    if(String(row?.userId||'')!==uid)return false;
+    const seen=Date.parse(row?.lastSeenAt||'');
+    return Number.isFinite(seen)&&t-seen<COMPANION_LOCATION_TTL_MS;
+  });
+}
 function companionLocationsForUser(user){
   const t=Date.now();
   return (user?.characterIds||[]).map(String).map(id=>{
@@ -862,7 +871,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.120',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.121',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -2798,11 +2807,19 @@ async function characterAccess(ch){
   return pending;
 }
 
-async function scoutLocationSnapshot(ch){
+async function scoutLocationSnapshot(ch,user=null){
   const id=String(ch.characterId);
   let location=trackerLocationCache.get(id);
   const cachedAge=Date.now()-Date.parse(location?.checkedAt||'');
   const companionFresh=location?.source==='companion'&&Number.isFinite(cachedAge)&&cachedAge<COMPANION_LOCATION_TTL_MS;
+  const companionActive=user?companionActiveForUser(user):false;
+
+  if(!companionFresh&&companionActive){
+    const error=new Error('Desktop companion is online but has not reported a fresh location for '+String(ch.name||'this toon')+' yet.');
+    error.code='COMPANION_WAITING';
+    throw error;
+  }
+
   if(!companionFresh){
     const {access,identity}=await characterAccess(ch);
     if(!identity.scopes.includes(LOCATION_SCOPE)){
@@ -2811,21 +2828,21 @@ async function scoutLocationSnapshot(ch){
       throw error;
     }
     if(!location?.live||Date.now()-Date.parse(location.checkedAt||'')>=25_000){
-    let inFlight=scoutLocationInFlight.get(id);
-    if(!inFlight){
-      inFlight=(async()=>{
-        const {data}=await esiGet(`https://esi.evetech.net/latest/characters/${id}/location/?datasource=tranquility`,access);
-        const systemId=String(data?.solar_system_id||'');
-        if(!systemId)throw new Error('EVE did not return the Scout toon’s current solar system.');
-        await ensureSystem([systemId]);
-        const system=state.esi.systemCache[systemId]?.name||`System ${systemId}`;
-        const row={systemId,system,checkedAt:now(),live:true,source:'esi'};
-        trackerLocationCache.set(id,row);
-        return row;
-      })().finally(()=>scoutLocationInFlight.delete(id));
-      scoutLocationInFlight.set(id,inFlight);
-    }
-    location=await inFlight;
+      let inFlight=scoutLocationInFlight.get(id);
+      if(!inFlight){
+        inFlight=(async()=>{
+          const {data}=await esiGet(`https://esi.evetech.net/latest/characters/${id}/location/?datasource=tranquility`,access);
+          const systemId=String(data?.solar_system_id||'');
+          if(!systemId)throw new Error('EVE did not return the Scout toon’s current solar system.');
+          await ensureSystem([systemId]);
+          const system=state.esi.systemCache[systemId]?.name||`System ${systemId}`;
+          const row={systemId,system,checkedAt:now(),live:true,source:'esi'};
+          trackerLocationCache.set(id,row);
+          return row;
+        })().finally(()=>scoutLocationInFlight.delete(id));
+        scoutLocationInFlight.set(id,inFlight);
+      }
+      location=await inFlight;
     }
   }
   const {systemId,system}=location;
@@ -3297,12 +3314,17 @@ function trackerBrainMentionedCharacter(user,question){
   return bestScore>=0.66?best:null;
 }
 
-async function trackerBrainCharacterLocation(ch){
+async function trackerBrainCharacterLocation(ch,user=null){
   const cacheKey=String(ch.characterId);
   const cached=trackerLocationCache.get(cacheKey)||null;
   const cachedAge=Date.now()-Date.parse(cached?.checkedAt||'');
   if(cached?.source==='companion'&&cached?.systemId&&Number.isFinite(cachedAge)&&cachedAge<COMPANION_LOCATION_TTL_MS){
     return{...cached,live:true,stale:false};
+  }
+  if(user&&companionActiveForUser(user)){
+    const error=new Error('Desktop companion is online but has not reported a fresh location for '+String(ch.name||'this toon')+' yet.');
+    error.code='COMPANION_WAITING';
+    throw error;
   }
   try{
     const {access,identity}=await characterAccess(ch);
@@ -3426,8 +3448,18 @@ async function trackerBrainRouteAnswer(user,raw,options){
     ||(user?.characterIds||[]).map(id=>state.characters[String(id)]).find(Boolean);
   if(!ch)return{handled:true,topic:'route-location-error',text:'Link an EVE toon so I can check its current starting system.',voiceText:'Link a toon first.',generatedAt:now()};
   let origin;
-  try{origin=await trackerBrainCharacterLocation(ch)}
-  catch(error){return{handled:true,topic:'route-location-error',text:error?.code==='LOCATION_SCOPE_REQUIRED'?ch.name+' needs EVE location access. Update Access on the Toons tab.':'I could not get '+ch.name+' current EVE location: '+String(error?.message||error),voiceText:'I could not check your current system in E S I.',generatedAt:now()}}
+  try{origin=await trackerBrainCharacterLocation(ch,user)}
+  catch(error){
+    const waiting=error?.code==='COMPANION_WAITING';
+    return{handled:true,topic:'route-location-error',
+      text:error?.code==='LOCATION_SCOPE_REQUIRED'
+        ?ch.name+' needs EVE location access. Update Access on the Toons tab.'
+        :waiting
+          ?'The desktop companion is online, but it has not reported a fresh location for '+ch.name+' yet.'
+          :'I could not get '+ch.name+' current EVE location: '+String(error?.message||error),
+      voiceText:waiting?'The desktop companion is online, but I am still waiting for that toon location.':'I could not check your current system in E S I.',
+      generatedAt:now()};
+  }
   try{
     const names=await resolveUniverseIds([destination]);
     const targetId=names.get(destination)||[...names.entries()].find(([name])=>name.toLowerCase()===destination.toLowerCase())?.[1];
@@ -3482,15 +3514,20 @@ async function trackerBrainLiveAnswer(user,question,options={}){
 
   let location;
   try{
-    location=await trackerBrainCharacterLocation(ch);
+    location=await trackerBrainCharacterLocation(ch,user);
   }catch(error){
     const detail=String(error?.message||error);
+    const waiting=error?.code==='COMPANION_WAITING';
     const text=error?.code==='LOCATION_SCOPE_REQUIRED'
       ?ch.name+' needs EVE location permission before Tracker can check where it is. Use Update EVE Access on the Toons tab.'
-      :'I could not pull '+ch.name+' location from EVE right now. '+detail;
+      :waiting
+        ?'The desktop companion is online, but it has not reported a fresh location for '+ch.name+' yet.'
+        :'I could not pull '+ch.name+' location from EVE right now. '+detail;
     return{handled:true,topic:'toon-location-error',text,voiceText:error?.code==='LOCATION_SCOPE_REQUIRED'
       ?ch.name+' needs EVE location permission first.'
-      :'I could not get '+ch.name+' location from E S I right now.',generatedAt:now(),errorCode:error?.code||'ESI_LOCATION_FAILED'};
+      :waiting
+        ?'The desktop companion is online, but I am still waiting for that toon location.'
+        :'I could not get '+ch.name+' location from E S I right now.',generatedAt:now(),errorCode:error?.code||'ESI_LOCATION_FAILED'};
   }
 
   const wantsNearest=intent.kind==='nearest';
@@ -3536,7 +3573,7 @@ function trackerBrainAnswer(user,question){
   const snapshot=trackerBrainSnapshot();
   const linked=(user?.characterIds||[]).map(String).filter(Boolean);
   const primaryName=trackerBrainPrimaryName(user);
-  const appVersion='2.9.120';
+  const appVersion='2.9.121';
 
   const voiceSummary=(text,max=120)=>{
     const clean=trackerSpeechSafe(text,1200).replace(/\s+/g,' ').trim();
@@ -6797,7 +6834,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.120',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.121',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -6872,7 +6909,7 @@ async function routeApi(req,res,url) {
       auth.device.lastPersistedAt=companionSeenAt;
       await save();
     }
-    const snapshot=await scoutLocationSnapshot(ch);
+    const snapshot=await scoutLocationSnapshot(ch,auth.user);
     return json(res,200,{ok:true,...snapshot});
   }
 
@@ -6881,7 +6918,7 @@ async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname==='/api/companion/status'){
     const devices=companionDevicesForUser(user);
     const locations=companionLocationsForUser(user);
-    return json(res,200,{pairedDevices:devices.length,devices,locations});
+    return json(res,200,{pairedDevices:devices.length,companionActive:companionActiveForUser(user),devices,locations});
   }
   if(req.method==='POST'&&url.pathname==='/api/companion/pair/start'){
     if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
@@ -6919,7 +6956,7 @@ async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname==='/api/tracker/speech/diagnostics'){
     const voiceWorker=await trackerVoiceHealth().catch(err=>({configured:Boolean(TRACKER_TTS_WORKER_URL),reachable:false,message:String(err?.message||err)}));
     return json(res,200,{
-      version:'2.9.120',
+      version:'2.9.121',
       modelCached:Boolean(voskModelArchive),
       modelBytes:voskModelArchive?.length||0,
       modelSource:voskModelSource||null,
@@ -6937,7 +6974,7 @@ async function routeApi(req,res,url) {
     if(!characterId||!user.characterIds.map(String).includes(characterId))return json(res,404,{error:'CHARACTER_NOT_LINKED',message:'That Scout toon is not linked to your account.'});
     const ch=state.characters[characterId];
     if(!ch)return json(res,404,{error:'CHARACTER_NOT_LINKED'});
-    try{return json(res,200,await scoutLocationSnapshot(ch))}
+    try{return json(res,200,await scoutLocationSnapshot(ch,user))}
     catch(err){
       if(err?.code==='LOCATION_SCOPE_REQUIRED')return json(res,409,{error:err.code,message:err.message});
       return json(res,502,{error:'SCOUT_LOCATION_FAILED',message:String(err.message||err)});
@@ -6955,7 +6992,7 @@ async function routeApi(req,res,url) {
     const results=await Promise.all(unique.map(async id=>{
       const ch=state.characters[id];
       if(!ch)return{characterId:id,error:'CHARACTER_NOT_LINKED'};
-      try{return await scoutLocationSnapshot(ch)}
+      try{return await scoutLocationSnapshot(ch,user)}
       catch(error){return{characterId:id,error:error?.code||'ESI_LOCATION_FAILED'}}
     }));
     return json(res,200,{locations:results.filter(row=>!row.error),errors:results.filter(row=>row.error),checkedAt:now()});
@@ -7480,7 +7517,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.120 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.121 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>{
   Promise.all([
     loadVoskRuntimeAsset(VOSK_RUNTIME_FILES['/vendor/vosk/vosk-0.0.8.js']),
