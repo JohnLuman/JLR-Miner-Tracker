@@ -19,7 +19,9 @@ RUN git init \
     && git fetch --depth 1 origin 48b1a0169a28582a8984402f82cf438d3bfa6aca \
     && git checkout --detach FETCH_HEAD
 
-RUN /opt/conda/bin/conda run -n gptsovits bash install.sh --device CPU --source HF
+# GPT-SoVITS' installer uses tput only to prettify wget progress; Railway builds are headless.
+RUN sed -i 's/tput cuu1 && tput el/true/g' install.sh \
+    && /opt/conda/bin/conda run -n gptsovits bash install.sh --device CPU --source HF
 
 WORKDIR /app
 COPY package.json ./
