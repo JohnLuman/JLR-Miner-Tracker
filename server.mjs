@@ -36,9 +36,10 @@ const EVE_CLIENT_ID = String(process.env.EVE_CLIENT_ID || '').trim();
 const EVE_CLIENT_SECRET = String(process.env.EVE_CLIENT_SECRET || '').trim();
 const ESI_USER_AGENT = String(process.env.ESI_USER_AGENT || 'JLR-Miner-Tracker/2.2').trim();
 const ESI_COMPAT_DATE = String(process.env.ESI_COMPATIBILITY_DATE || '2026-09-16').trim();
+const TRACKER_SUPPORT_SHARED_SECRET = String(process.env.TRACKER_SUPPORT_SHARED_SECRET || '').trim();
 const trackerSupport = createTrackerSupportClient({
   baseUrl: process.env.TRACKER_SUPPORT_URL,
-  secret: process.env.TRACKER_SUPPORT_SHARED_SECRET,
+  secret: TRACKER_SUPPORT_SHARED_SECRET,
   userKeySecret: process.env.TRACKER_SUPPORT_USER_KEY_SECRET,
   timeoutMs: num(process.env.TRACKER_SUPPORT_TIMEOUT_MS, 900),
 });
@@ -617,6 +618,41 @@ function requireUser(req, res) { const user = readSession(req); if (!user) { jso
 function sameOrigin(req) {
   const origin = req.headers.origin; if (!origin) return true;
   try { return new URL(origin).origin === new URL(requestBaseUrl(req)).origin; } catch { return false; }
+}
+function trackerSupportInternalAuth(req){
+  if(TRACKER_SUPPORT_SHARED_SECRET.length<24)return false;
+  const raw=String(req.headers.authorization||'');
+  const match=raw.match(/^Bearer\s+(.+)$/i);
+  if(!match)return false;
+  const supplied=Buffer.from(match[1].trim());
+  const expected=Buffer.from(TRACKER_SUPPORT_SHARED_SECRET);
+  return supplied.length===expected.length&&crypto.timingSafeEqual(supplied,expected);
+}
+async function trackerCoreVoiceReference(){
+  let names=[];
+  try{names=await fsp.readdir(TRACKER_TTS_CACHE_DIR)}
+  catch{return null}
+  const metas=names.filter(name=>name.endsWith('.json')).slice(-2000);
+  const candidates=[];
+  for(const name of metas){
+    try{
+      const meta=JSON.parse(await fsp.readFile(path.join(TRACKER_TTS_CACHE_DIR,name),'utf8'));
+      if(String(meta?.voice||'').toLowerCase()!=='core')continue;
+      if(!String(meta?.mime||'').toLowerCase().startsWith('audio/wav'))continue;
+      const transcript=String(meta?.text||'').replace(/\s+/g,' ').trim();
+      if(transcript.length<24||transcript.length>180)continue;
+      const stem=name.slice(0,-5);
+      const audioPath=path.join(TRACKER_TTS_CACHE_DIR,stem+'.audio');
+      const st=await fsp.stat(audioPath);
+      if(!st.isFile()||st.size<100_000||st.size>2_000_000)continue;
+      const createdMs=Date.parse(meta?.createdAt||'')||st.mtimeMs||0;
+      candidates.push({audioPath,bytes:st.size,transcript,createdMs});
+    }catch{}
+  }
+  candidates.sort((a,b)=>b.createdMs-a.createdMs);
+  const pick=candidates[0]||null;
+  if(!pick)return null;
+  return{...pick,audio:await fsp.readFile(pick.audioPath)};
 }
 
 
@@ -7138,6 +7174,21 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
+  if(req.method==='GET'&&url.pathname==='/api/internal/support/voice-reference'){
+    if(!trackerSupportInternalAuth(req))return json(res,401,{error:'SUPPORT_AUTH_REQUIRED'});
+    const ref=await trackerCoreVoiceReference();
+    if(!ref)return json(res,404,{error:'CORE_VOICE_REFERENCE_UNAVAILABLE'});
+    const transcript=encodeURIComponent(ref.transcript).slice(0,1200);
+    res.writeHead(200,{
+      'Content-Type':'audio/wav',
+      'Content-Length':ref.audio.length,
+      'Cache-Control':'private, no-store',
+      'X-JLR-Reference-Text':transcript,
+      'X-JLR-Reference-Lang':'en',
+      'X-JLR-Reference-Voice':'core',
+    });
+    return res.end(ref.audio);
+  }
   if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.125',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
