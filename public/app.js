@@ -222,7 +222,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.120');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.121');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -312,7 +312,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR TRACKER MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.120'),
+      'Version: '+String(state?.app?.version||'2.9.121'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -405,9 +405,10 @@
       const payload=await api('/api/companion/status');
       const devices=Array.isArray(payload?.devices)?payload.devices:[];
       const locations=Array.isArray(payload?.locations)?payload.locations:[];
-      status.textContent=devices.length?'● CONNECTED • '+devices.length:'○ NOT PAIRED';
+      const companionActive=Boolean(payload?.companionActive);
+      status.textContent=companionActive?'● ACTIVE • '+devices.length:(devices.length?'○ PAIRED • STANDBY':'○ NOT PAIRED');
       detail.textContent=devices.length
-        ?locations.length+' toon'+(locations.length===1?'':'s')+' currently feeding Tracker'
+        ?locations.length+' toon'+(locations.length===1?'':'s')+' feeding • ESI fallback '+(companionActive?'standby':'active')
         :'No Windows companion is paired to this account yet.';
       if(feed){
         if(locations.length){
@@ -1375,8 +1376,10 @@
     list.innerHTML=scoutFollowEnabled?chars.map(ch=>{
       const row=scoutLocations.get(String(ch.characterId));
       const source=row?.locationSource==='companion'?'COMPANION':'ESI';
+      const locationError=scoutLocationErrors.get(String(ch.characterId));
       const detail=row?.system?esc(row.system)+' • '+source+' • '+(row.needsScan?'SCAN DUE':row.tracked?'CURRENT':'untracked')+' • '+esc(ago(row.checkedAt))
-        :scoutLocationErrors.has(String(ch.characterId))?'Location check failed • retrying':'Waiting for location check';
+        :locationError==='COMPANION_WAITING'?'WAITING FOR COMPANION'
+        :locationError?'Location fallback failed • retrying':'Waiting for location check';
       return '<div class="brain-follow-row"><strong>'+esc(ch.name)+'</strong><span'+(row?.needsScan?' class="scan-due"':'')+'>'+detail+'</span></div>';
     }).join(''):'<div class="brain-follow-row">Enable Auto Follow to watch your linked toons.</div>';
   }
@@ -5381,7 +5384,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.120',
+          version:state?.app?.version||'2.9.121',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
