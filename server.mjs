@@ -6837,8 +6837,13 @@ async function routeApi(req,res,url) {
     trackerLocationCache.set(String(ch.characterId),{
       systemId,system:canonical,checkedAt:now(),observedAt:companionText(body?.observedAt,64)||null,live:true,source:'companion',
     });
-    auth.device.lastSeenAt=now();
-    await save();
+    const companionSeenAt=now();
+    auth.device.lastSeenAt=companionSeenAt;
+    const companionPersistAge=Date.now()-Date.parse(auth.device.lastPersistedAt||auth.device.createdAt||'');
+    if(!Number.isFinite(companionPersistAge)||companionPersistAge>=5*60*1000){
+      auth.device.lastPersistedAt=companionSeenAt;
+      await save();
+    }
     const snapshot=await scoutLocationSnapshot(ch);
     return json(res,200,{ok:true,...snapshot});
   }
