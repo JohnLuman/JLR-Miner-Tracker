@@ -400,7 +400,7 @@
     return 'Diagnostics are displayed. Microphone track is '+mic+'. Local speech model is '+model+'. Custom voice mode is '+mode+', profile '+profile+'. '+shortError;
   }
   async function refreshCompanionStatus(){
-    if(document.hidden||companionStatusBusy)return;
+    if(document.hidden||activeTab!=='brain'||companionStatusBusy)return;
     const status=$('brainCompanionStatus');
     const detail=$('brainCompanionDetail');
     const feed=$('brainCompanionFeedTrack');
@@ -1983,6 +1983,10 @@
     if(activeTab!=='pvp'&&pvpIntelPoll){clearTimeout(pvpIntelPoll);pvpIntelPoll=null}
     if(activeTab==='doctrine'&&!doctrineMarket&&!doctrineMarketLoading)loadDoctrineMarket();
     if(activeTab==='performance')refreshFleetPerformanceData(false);
+    if(activeTab==='brain'){
+      refreshCompanionStatus();
+      if(scoutFollowEnabled)pollScoutLocation(true);
+    }
     if(activeTab==='pvp'&&!pvpIntel&&!pvpIntelLoading)loadPvpIntel();
     if(activeTab==='threat')renderThreatScan();
     if(activeTab==='feedback'){
