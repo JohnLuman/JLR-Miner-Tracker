@@ -29,18 +29,24 @@ function Show-JlrBalloon([string]$Title,[string]$Message,[int]$Timeout=5000) {
 }
 
 function Protect-JlrToken([string]$Token) {
-  $bytes = [System.Text.Encoding]::UTF8.GetBytes($Token)
-  $protected = [System.Security.Cryptography.ProtectedData]::Protect($bytes,$null,[System.Security.Cryptography.DataProtectionScope]::CurrentUser)
-  return [Convert]::ToBase64String($protected)
+  if([string]::IsNullOrWhiteSpace($Token)){ return "" }
+  $secure = ConvertTo-SecureString -String $Token -AsPlainText -Force
+  return ConvertFrom-SecureString -SecureString $secure
 }
 
 function Unprotect-JlrToken([string]$ProtectedToken) {
   if([string]::IsNullOrWhiteSpace($ProtectedToken)){ return "" }
   try {
-    $bytes = [Convert]::FromBase64String($ProtectedToken)
-    $plain = [Security.Cryptography.ProtectedData]::Unprotect($bytes,$null,[Security.Cryptography.DataProtectionScope]::CurrentUser)
-    return [Text.Encoding]::UTF8.GetString($plain)
-  } catch { return "" }
+    $secure = ConvertTo-SecureString -String $ProtectedToken
+    $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+    try {
+      return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)
+    } finally {
+      if($ptr -ne [IntPtr]::Zero){ [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
+    }
+  } catch {
+    return ""
+  }
 }
 
 function Save-JlrConfig {
