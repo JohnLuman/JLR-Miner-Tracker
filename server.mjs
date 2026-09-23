@@ -888,7 +888,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.124',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.125',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans,
@@ -3514,7 +3514,7 @@ async function trackerBrainLiveAnswer(user,question,options={}){
   const intent=brainLiveIntent(raw);
   if(intent.kind==='earnings')return trackerBrainHourlyEarnings(user,options.payoutPct,intent.period);
   if(intent.kind==='route')return trackerBrainRouteAnswer(user,raw,options);
-  if(intent.kind==='general')return trackerBrainAnswer(user,question);
+  if(intent.kind==='general')return trackerBrainAnswer(user,question,options);
   const q=trackerBrainNormalize(raw);
 
   const explicitOther=/\b(?:where is|where s|location of)\b/.test(q)&&!(/\b(?:my|me|i|closest|nearest)\b/.test(q));
@@ -3586,13 +3586,185 @@ async function trackerBrainLiveAnswer(user,question,options={}){
   return{handled:true,topic:'nearest-system',text,voiceText,generatedAt:now(),location,nearest:nearest.rows,closest:first,updatesOnly};
 }
 
-function trackerBrainAnswer(user,question){
+
+const TRACKER_APP_KNOWLEDGE = {
+  fields:{
+    label:'Fields',
+    aliases:['field','fields','t3','t3 fields','field board','respawn'],
+    description:'Fields is the main T3 mining board. It tracks each configured Fountain T3 system, field state, cherry-picked state, scan freshness, ledger evidence, and the ten-hour respawn timer after a field is cleared. Green or ready means JLR considers the field available, picked means miners have started or the field was marked cherry-picked, and cleared starts the respawn countdown. Probe Scanner updates and mining-ledger evidence can also flag a system for another scan.',
+    panels:['T3 field cards','scan freshness','ledger activity','cherry-picked state','ten-hour respawn timers','system distance and target ordering']
+  },
+  brain:{
+    label:'Brain',
+    aliases:['brain','tracker brain','talk to tracker','assistant'],
+    description:'Brain is the control room for Tracker. It handles wake-word speech, text answers, briefings, microphone diagnostics, voice controls, current-toon location context, desktop-companion status, and app explanations. Tracker can use the current tab as context, so questions like what is this tab can be answered without repeating the tab name.',
+    panels:['Talk to Tracker','microphone and voice controls','desktop companion','live companion feed','diagnostics','briefing and question responses']
+  },
+  fleet:{
+    label:'Fleet & Fits',
+    aliases:['fleet','fleet and fits','fits','fit','miners','booster setup'],
+    description:'Fleet and Fits is where you build the mining fleet JLR uses for projections. You choose linked miners, ships, saved EVE fits, abyssal strip miners, booster hull and boosts. JLR keeps saved fits distinct, reads abyssal module attributes when available, and calculates unboosted and boosted m3 per hour, cycle information, range, and projected ISK per hour.',
+    panels:['fleet members','saved fits','abyssal laser stats','boosted and unboosted output','booster configuration','projected m3 and ISK per hour']
+  },
+  performance:{
+    label:'Fleet Performance',
+    aliases:['performance','fleet performance','mining performance','performance tab'],
+    description:'Fleet Performance compares observed mining-ledger results with the fleet you configured. It shows today mined, estimated payout, live activity rate, daily mining history, ore mix, and projected-versus-observed production. ESI ledger values are delayed observations rather than second-by-second mining telemetry.',
+    panels:['today mined','today payout','live activity rate','daily mining volume','best day','ore mix','projected versus observed mining']
+  },
+  ice:{
+    label:'Ice',
+    aliases:['ice','ice tab','ice fields','ice mining'],
+    description:'Ice tracks the Fountain ice systems JLR knows about. It keeps ice field count, scan freshness, distance, availability and valuation separate from T3 ore. Probe Scanner updates can confirm how many expected ice fields are currently visible, and stale entries can be flagged for another scan.',
+    panels:['ice field systems','expected versus seen fields','scan age','distance','ice value and payout basis']
+  },
+  gas:{
+    label:'Gas',
+    aliases:['gas','gas tab','gas mining','gas sites'],
+    description:'Gas is the dedicated gas-mining view. It separates gas opportunities from ore and ice and shows the gas types and known site information JLR uses for comparison, including regional site details and value information where available.',
+    panels:['gas types','site types','regional availability','site quantities','value information']
+  },
+  doctrine:{
+    label:'Doctrine Market',
+    aliases:['doctrine','doctrine market','doctrine stock','market doctrine'],
+    description:'Doctrine Market compares local C-N doctrine stock and prices with Jita reference prices and market history. It is designed to show what is stocked, what may be understocked, estimated days of supply, Jita-versus-local pricing, and potential restocking needs. C-N, Jita and history data have different refresh schedules, so Tracker should distinguish live data from workbook fallback data when explaining a value.',
+    panels:['local stock','Jita comparison','days of supply','restock requirement','local markup','market-data source status']
+  },
+  pvp:{
+    label:'INIT PVP',
+    aliases:['pvp','init pvp','killboard','zkill','leaderboard'],
+    description:'INIT PVP summarizes alliance and corporation combat activity from JLR cached killmail data and zKill-backed statistics. It includes corporation ranking, pilot ranking, killmail participation, final blows, damage, ISK on kills, seven-day views, and the separate lifetime-damage history. Cached local data keeps the page usable without making every view depend on a live zKill request.',
+    panels:['corporation ranking','pilot ranking','killmails and final blows','ISK on kills','seven-day damage','lifetime damage']
+  },
+  tracker:{
+    label:'Heavy Fighter Tracker',
+    aliases:['tracker tab','heavy fighter tracker','heavy fighters','fighter losses'],
+    description:'Heavy Fighter Tracker watches the live R2Z2 kill feed for Heavy Fighter losses. Qualifying losses can trigger a JLR alert with fighter type, system, value and kill details. The live feed and its access controls are separate from Brain even though both use the Tracker name.',
+    panels:['live Heavy Fighter losses','alert state','loss details','system and value','killboard links']
+  },
+  threat:{
+    label:'Threat Scan',
+    aliases:['threat','threat scan','dscan','d-scan','local scan','hostiles'],
+    description:'Threat Scan analyzes pasted Local or D-scan data. It filters friendly contacts when configured, identifies relevant neutral or hostile characters, and combines useful context such as character age, ships, kill history, cyno-related activity and Fountain activity. JLR threat presentation gives more weight to activity relevant to Fountain rather than treating all kill history the same.',
+    panels:['Local paste','D-scan paste','character age','ships used','Fountain activity','cyno and kill history','JLR threat assessment']
+  },
+  mer:{
+    label:'MER Intel',
+    aliases:['mer','mer intel','monthly economic report','economic report'],
+    description:'MER Intel turns Monthly Economic Report data into mining and economic context for JLR. It is intended for comparing regional or historical economic trends inside the app rather than treating MER data as real-time telemetry.',
+    panels:['economic trend data','mining context','regional comparison','historical MER information']
+  },
+  toons:{
+    label:'Toons',
+    aliases:['toons','toon','characters','character','esi characters','linked characters'],
+    description:'Toons manages the EVE characters linked to your JLR account through EVE SSO. It shows character connection state and supports the ESI permissions JLR needs for mining ledgers, fits, assets, skills and location features. Updating EVE access refreshes the permissions for an existing linked character.',
+    panels:['linked characters','EVE SSO access','ESI scope status','fit and asset sync','ledger sync','location access']
+  },
+  feedback:{
+    label:'Feedback',
+    aliases:['feedback','bug report','report bug','suggestion','feature idea'],
+    description:'Feedback is JLRs built-in place to send bug reports, feature ideas, speech issues, data problems and UI feedback. Reports can include impact, reproduction steps, expected behavior and diagnostic context, and your recent submissions are shown in the tab.',
+    panels:['bug reports','suggestions','speech issues','data issues','UI issues','recent submissions']
+  }
+};
+
+const TRACKER_METRIC_KNOWLEDGE = [
+  {
+    id:'live-activity-rate',
+    tab:'performance',
+    aliases:['live activity rate','activity rate','live mining rate','mining rate chart'],
+    description:'Live Activity Rate estimates the fleets observed mining rate from ESI mining-ledger changes. On each successful ledger sample, JLR compares each toons current cumulative mined m3 with its previous sample. If the total increased, JLR divides that positive m3 delta by the elapsed sample time to get that toons interval m3 per hour, then adds the rates for all active toons. Active toons are the sampled characters with a positive mining delta; sampled toons are the characters whose ledger data was successfully included. Normal ESI sampling is about every fifteen minutes, stale gaps are capped at thirty minutes so downtime is not counted as continuous mining, and the chart retains seven days of samples. This is an interval estimate from ESI, not instant laser telemetry.',
+    voice:'Live Activity Rate is the combined observed mining rate from positive E S I ledger changes between samples. JLR converts each active toons mined volume change into cubic meters per hour and adds them together. It is an interval estimate, not instant laser telemetry.'
+  },
+  {
+    id:'today-mined',
+    tab:'performance',
+    aliases:['today mined','mined today','today volume'],
+    description:'Today Mined is the accumulated mining volume JLR can see in the linked ESI mining ledgers for the current UTC day. It is a daily total, not the same thing as Live Activity Rate.',
+  },
+  {
+    id:'today-payout',
+    tab:'performance',
+    aliases:['today payout','payout today'],
+    description:'Today Payout applies the configured payout percentage to the tracked T3 mining value JLR can value from todays ledger activity. It is an estimate based on JLRs valuation and payout settings, not an EVE wallet transaction.',
+  },
+  {
+    id:'ore-mix',
+    tab:'performance',
+    aliases:['ore mix','mining mix'],
+    description:'Ore Mix shows how the selected history ranges mined cubic meters are divided among the tracked ores. It is built from linked ESI mining-ledger history and is meant to show production composition rather than live field availability.',
+  },
+  {
+    id:'best-day',
+    tab:'performance',
+    aliases:['best day','best mining day'],
+    description:'Best Day is the highest daily mined-volume result in the history range JLR currently has retained or rebuilt from linked mining ledgers.',
+  },
+  {
+    id:'app-ledger',
+    tab:'performance',
+    aliases:['app ledger'],
+    description:'App Ledger is the combined mining activity JLR can see across participating app users. It is intentionally separate from My Toons so the operation-wide view is not confused with one users linked characters.',
+  },
+  {
+    id:'my-toons-payout',
+    tab:'performance',
+    aliases:['my toons payout','my payout','my toons'],
+    description:'My Toons Payout limits the mining and payout view to the characters linked to your account, so you can compare your own observed production with the wider App Ledger.',
+  }
+];
+
+function trackerBrainKnowledgeLookup(question,currentTab=''){
+  const q=trackerBrainNormalize(question);
+  const tabKey=String(currentTab||'').trim().toLowerCase();
+  for(const metric of TRACKER_METRIC_KNOWLEDGE){
+    if(metric.aliases.some(alias=>q.includes(alias)))return{kind:'metric',...metric};
+  }
+
+  for(const [key,tab] of Object.entries(TRACKER_APP_KNOWLEDGE)){
+    if(tab.aliases.some(alias=>q===alias||q.includes(alias+' tab')||q.includes('the '+alias)||q.includes('about '+alias)||q.includes('explain '+alias)||q.includes('describe '+alias))){
+      return{kind:'tab',key,...tab};
+    }
+  }
+
+  const contextual=/\b(?:this|this tab|current tab|this page|screen|what am i looking at|what does this do|explain this|describe this|tell me about this)\b/.test(q);
+  if(contextual&&TRACKER_APP_KNOWLEDGE[tabKey])return{kind:'tab',key:tabKey,...TRACKER_APP_KNOWLEDGE[tabKey]};
+
+  return null;
+}
+
+function trackerBrainKnowledgeAnswer(question,currentTab=''){
+  const match=trackerBrainKnowledgeLookup(question,currentTab);
+  if(!match)return null;
+  if(match.kind==='metric'){
+    return{
+      handled:true,
+      topic:'app-metric-'+match.id,
+      tab:match.tab,
+      text:match.description,
+      voiceText:match.voice||match.description,
+      generatedAt:now(),
+    };
+  }
+  const panels=Array.isArray(match.panels)&&match.panels.length?' Major areas are '+match.panels.join(', ')+'.':'';
+  const text=match.description+panels;
+  return{
+    handled:true,
+    topic:'app-tab-'+match.key,
+    tab:match.key,
+    text,
+    voiceText:match.description,
+    generatedAt:now(),
+  };
+}
+
+function trackerBrainAnswer(user,question,options={}){
   const raw=trackerSpeechSafe(question,900);
   const q=raw.toLowerCase().replace(/[^a-z0-9%+\-/. ]+/g,' ').replace(/\s+/g,' ').trim();
   const snapshot=trackerBrainSnapshot();
   const linked=(user?.characterIds||[]).map(String).filter(Boolean);
   const primaryName=trackerBrainPrimaryName(user);
-  const appVersion='2.9.124';
+  const appVersion='2.9.125';
 
   const voiceSummary=(text,max=120)=>{
     const clean=trackerSpeechSafe(text,1200).replace(/\s+/g,' ').trim();
@@ -3627,6 +3799,14 @@ function trackerBrainAnswer(user,question){
   };
 
   if(!q)return answer('help','Ask me a question about JLR Miner Tracker.');
+
+  const knowledge=trackerBrainKnowledgeAnswer(raw,options.currentTab);
+  if(knowledge){
+    return answer(knowledge.topic,knowledge.text,{
+      tab:knowledge.tab,
+      voiceText:knowledge.voiceText,
+    });
+  }
 
   if(/\b(what can you do|what do you do|help me|help|capabilities|commands|what can i ask|what should i ask)\b/.test(q)){
     return answer('capabilities',
@@ -6853,7 +7033,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.124',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.125',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -7059,7 +7239,7 @@ async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname==='/api/tracker/speech/diagnostics'){
     const voiceWorker=await trackerVoiceHealth().catch(err=>({configured:Boolean(TRACKER_TTS_WORKER_URL),reachable:false,message:String(err?.message||err)}));
     return json(res,200,{
-      version:'2.9.124',
+      version:'2.9.125',
       modelCached:Boolean(voskModelArchive),
       modelBytes:voskModelArchive?.length||0,
       modelSource:voskModelSource||null,
@@ -7120,7 +7300,7 @@ async function routeApi(req,res,url) {
     catch(err){return json(res,400,{error:'BAD_BRAIN_QUESTION',message:String(err.message||err)})}
     const question=trackerSpeechSafe(body?.question,900);
     if(!question)return json(res,400,{error:'QUESTION_REQUIRED',message:'Ask Tracker a question first.'});
-    return json(res,200,await trackerBrainLiveAnswer(user,question,{payoutPct:body?.payoutPct,characterId:body?.characterId}));
+    return json(res,200,await trackerBrainLiveAnswer(user,question,{payoutPct:body?.payoutPct,characterId:body?.characterId,currentTab:trackerSpeechSafe(body?.currentTab,40)}));
   }
   if(req.method==='GET'&&url.pathname==='/api/tracker/feedback'){
     const userId=String(user?.id||'');
@@ -7620,7 +7800,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.124 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.125 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>{
   Promise.all([
     loadVoskRuntimeAsset(VOSK_RUNTIME_FILES['/vendor/vosk/vosk-0.0.8.js']),
