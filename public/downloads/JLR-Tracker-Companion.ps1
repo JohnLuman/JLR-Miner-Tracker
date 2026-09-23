@@ -14,8 +14,10 @@ New-Item -ItemType Directory -Force -Path $AppRoot | Out-Null
 $script:ExitRequested = $false
 $script:Config = $null
 $script:LastReported = @{}
+$script:LastSentAt = @{}
+$script:LatestSnapshots = @{}
 $script:FileCache = @{}
-$script:LastNotice = ""
+$script:LastNotice = @{}
 $script:ServerOfflineNoticeAt = [datetime]::MinValue
 
 function Show-JlrBalloon([string]$Title,[string]$Message,[int]$Timeout=5000) {
@@ -27,8 +29,8 @@ function Show-JlrBalloon([string]$Title,[string]$Message,[int]$Timeout=5000) {
 }
 
 function Protect-JlrToken([string]$Token) {
-  $bytes = [Text.Encoding]::UTF8.GetBytes($Token)
-  $protected = [Security.Cryptography.ProtectedData]::Protect($bytes,$null,[Security.Cryptography.DataProtectionScope]::CurrentUser)
+  $bytes = [System.Text.Encoding]::UTF8.GetBytes($Token)
+  $protected = [System.Security.Cryptography.ProtectedData]::Protect($bytes,$null,[System.Security.Cryptography.DataProtectionScope]::CurrentUser)
   return [Convert]::ToBase64String($protected)
 }
 
@@ -83,7 +85,7 @@ function Read-JlrLocalLog([string]$Path) {
   $reader = $null
   try {
     $stream = New-Object IO.FileStream($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)
-    $reader = New-Object IO.StreamReader($stream,[Text.Encoding]::Unicode,$true)
+    $reader = New-Object IO.StreamReader($stream,[System.Text.Encoding]::Unicode,$true)
     $text = $reader.ReadToEnd()
     $listenerMatch = [regex]::Match($text,'(?m)^\s*Listener:\s*(.+?)\s*$')
     $systemMatches = [regex]::Matches($text,'(?m)EVE System\s*>\s*Channel changed to Local\s*:\s*(.+?)\s*$')
@@ -114,23 +116,24 @@ function Get-JlrLocalSnapshots {
     Sort-Object LastWriteTimeUtc -Descending |
     Select-Object -First 60)
 
-  $byCharacter = @{}
   foreach($file in $files){
     $fingerprint = [string]$file.Length + ":" + [string]$file.LastWriteTimeUtc.Ticks
     if($script:FileCache[$file.FullName] -eq $fingerprint){ continue }
     $script:FileCache[$file.FullName] = $fingerprint
     $snapshot = Read-JlrLocalLog $file.FullName
     if(-not $snapshot){ continue }
-    if(-not $byCharacter.ContainsKey($snapshot.characterName)){
-      $byCharacter[$snapshot.characterName] = [pscustomobject]@{
-        characterName=$snapshot.characterName
-        system=$snapshot.system
-        observedAt=$file.LastWriteTimeUtc.ToString("o")
-        writeTime=$file.LastWriteTimeUtc
-      }
+    $candidate = [pscustomobject]@{
+      characterName=$snapshot.characterName
+      system=$snapshot.system
+      observedAt=$file.LastWriteTimeUtc.ToString("o")
+      writeTime=$file.LastWriteTimeUtc
+    }
+    $existing = $script:LatestSnapshots[$snapshot.characterName]
+    if(-not $existing -or $candidate.writeTime -gt $existing.writeTime){
+      $script:LatestSnapshots[$snapshot.characterName] = $candidate
     }
   }
-  return @($byCharacter.Values)
+  return @($script:LatestSnapshots.Values)
 }
 
 function Send-JlrLocation($Snapshot) {
@@ -144,12 +147,14 @@ function Send-JlrLocation($Snapshot) {
   try {
     $reply = Invoke-RestMethod -Uri ($script:Config.server.TrimEnd("/") + "/api/companion/location") -Method Post -Headers @{Authorization="Bearer $token"} -ContentType "application/json" -Body $body -TimeoutSec 12
     $script:StatusItem.Text = "Status: " + $reply.characterName + " | " + $reply.system
+    $noticeKey = [string]$reply.characterId
     if($reply.needsScan){
-      $notice = [string]$reply.characterId + ":" + [string]$reply.system
-      if($notice -ne $script:LastNotice){
-        $script:LastNotice = $notice
+      if($script:LastNotice[$noticeKey] -ne [string]$reply.system){
+        $script:LastNotice[$noticeKey] = [string]$reply.system
         Show-JlrBalloon "JLR Tracker - scan update needed" ($reply.characterName + " entered " + $reply.system + ". Tracker needs a fresh Probe Scanner copy.") 7000
       }
+    } else {
+      $script:LastNotice.Remove($noticeKey)
     }
     return $true
   } catch {
@@ -208,8 +213,13 @@ try {
     foreach($snapshot in @(Get-JlrLocalSnapshots)){
       $key = [string]$snapshot.characterName
       $value = [string]$snapshot.system
-      if($script:LastReported[$key] -eq $value){ continue }
-      if(Send-JlrLocation $snapshot){ $script:LastReported[$key] = $value }
+      $lastSent = $script:LastSentAt[$key]
+      $heartbeatDue = (-not $lastSent) -or (((Get-Date) - [datetime]$lastSent).TotalSeconds -ge 30)
+      if($script:LastReported[$key] -eq $value -and -not $heartbeatDue){ continue }
+      if(Send-JlrLocation $snapshot){
+        $script:LastReported[$key] = $value
+        $script:LastSentAt[$key] = Get-Date
+      }
     }
     for($i=0;$i -lt 20 -and -not $script:ExitRequested;$i++){
       [System.Windows.Forms.Application]::DoEvents()
