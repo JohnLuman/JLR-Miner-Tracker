@@ -18,5 +18,7 @@ assert.match(ps,/Channel changed to Local/);
 assert.match(ps,/Listener:/);
 assert.match(ps,/\/api\/companion\/location/);
 assert.match(ps,/ProtectedData/,'pair token is protected with Windows DPAPI');
+assert.match(ps,/LastSentAt/,'companion heartbeats unchanged locations');
+assert.match(ps,/TotalSeconds -ge 30/,'companion heartbeat interval is 30 seconds');
 assert.match(cmd,/JLR-Tracker-Companion\.ps1/);
 console.log('Desktop companion integration tests passed.');
