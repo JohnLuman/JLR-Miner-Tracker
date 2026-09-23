@@ -80,6 +80,10 @@
   let brainLocalMute=null;
   let brainLocalSession=0;
   let brainMicAudioFrames=0;
+  let brainMicWatchdogTimer=null;
+  let brainMicWatchdogLastFrameAt=0;
+  let brainMicTrackMutedAt=0;
+  let brainLongUptimeRecoveryBusy=false;
   let brainMicCurrentRms=0;
   let brainMicPeakRms=0;
   let brainMicLastSignalAt=0;
@@ -225,7 +229,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.123');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.124');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -315,7 +319,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR TRACKER MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.123'),
+      'Version: '+String(state?.app?.version||'2.9.124'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -665,6 +669,19 @@
     }
     brainMicStream=stream;
     brainMicTrack=track;
+    brainMicTrackMutedAt=track.muted?Date.now():0;
+    track.addEventListener('ended',()=>{
+      if(brainMicTrack!==track||!brainMicWanted)return;
+      brainRecordMicDiag('MIC-I611','LONG_UPTIME_RECOVERY','Microphone track ended; reopening the selected microphone.');
+      stopBrainLocalCapture(true);
+      scheduleBrainMicRestart(500);
+    },{once:true});
+    track.addEventListener('mute',()=>{
+      if(brainMicTrack===track)brainMicTrackMutedAt=Date.now();
+    });
+    track.addEventListener('unmute',()=>{
+      if(brainMicTrack===track)brainMicTrackMutedAt=0;
+    });
     await refreshBrainMicrophones();
     return track;
   }
@@ -908,6 +925,7 @@
       const mute=context.createGain();
       mute.gain.value=0;
       brainMicAudioFrames=0;
+      brainMicWatchdogLastFrameAt=Date.now();
       brainMicCurrentRms=0;
       brainMicPeakRms=0;
       brainMicLastSignalAt=0;
@@ -927,6 +945,7 @@
           for(let i=0;i<data.length;i++)sum+=data[i]*data[i];
           const rms=Math.sqrt(sum/Math.max(1,data.length));
           brainMicAudioFrames++;
+          brainMicWatchdogLastFrameAt=Date.now();
           brainMicCurrentRms=rms;
           if(rms>brainMicPeakRms)brainMicPeakRms=rms;
           if(rms>0.002)brainMicLastSignalAt=Date.now();
@@ -990,6 +1009,59 @@
       brainSetMicError(error,'Click TALK TO TRACKER to retry, then use COPY DIAGNOSTICS if it fails again.');
     }
   }
+  async function ensureBrainLongRunHealth(reason='watchdog'){
+    if(!brainMicWanted||document.hidden||brainLongUptimeRecoveryBusy)return;
+    brainLongUptimeRecoveryBusy=true;
+    try{
+      try{await window.jlrWarmVoice?.(reason)}catch(error){}
+
+      if(brainLocalRecognizer){
+        const context=brainLocalAudioContext;
+        if(context?.state==='suspended'){
+          try{await context.resume()}catch(error){}
+        }
+        const trackLive=brainMicTrack?.readyState==='live';
+        const frameAge=brainMicWatchdogLastFrameAt?Date.now()-brainMicWatchdogLastFrameAt:Infinity;
+        const mutedTooLong=brainMicTrackMutedAt&&Date.now()-brainMicTrackMutedAt>30000;
+        const stalled=!trackLive||!context||context.state!=='running'||frameAge>30000||mutedTooLong;
+        if(stalled){
+          const detail='Auto-recovering stale local speech pipeline • track '+String(brainMicTrack?.readyState||'none')+' • audio '+String(context?.state||'none')+' • last frame '+Math.round(frameAge/1000)+'s ago';
+          brainRecordMicDiag('MIC-I612','LONG_UPTIME_RECOVERY',detail);
+          stopBrainLocalCapture(true);
+          await startBrainLocalListening('JLR LOCAL AI • AUTO RECOVERY');
+        }
+        return;
+      }
+
+      if(brainRecognition){
+        if(brainRecognition.__jlrStarted===true)return;
+        brainRecordMicDiag('MIC-I613','LONG_UPTIME_RECOVERY','Browser speech recognizer exists but is not started; resetting it.');
+        brainRecognition.__jlrRetry=false;
+        const stale=brainRecognition;
+        brainRecognition=null;
+        try{stale.abort()}catch{try{stale.stop()}catch{}}
+        scheduleBrainMicRestart(300);
+        return;
+      }
+
+      brainRecordMicDiag('MIC-I614','LONG_UPTIME_RECOVERY','No active speech recognizer found; restarting Tracker microphone.');
+      await startBrainListening();
+    }catch(error){
+      console.warn('Tracker long-uptime recovery failed.',error);
+      brainRecordMicDiag('MIC-E610','LONG_UPTIME_RECOVERY',String(error?.message||error).slice(0,220));
+    }finally{
+      brainLongUptimeRecoveryBusy=false;
+    }
+  }
+
+  function startBrainLongUptimeWatchdog(){
+    if(brainMicWatchdogTimer)clearInterval(brainMicWatchdogTimer);
+    brainMicWatchdogTimer=setInterval(()=>{
+      if(document.hidden||!brainMicWanted)return;
+      void ensureBrainLongRunHealth('30-second uptime watchdog');
+    },30000);
+  }
+
   async function startBrainListening(){
     const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
     const ua=String(navigator.userAgent||'');
@@ -5419,7 +5491,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.123',
+          version:state?.app?.version||'2.9.124',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
@@ -5884,6 +5956,7 @@
       if(!auth.authenticated){showLogin();return}
       me=auth.user;window.jlrVoiceAccountId=String(me.id||'');syncDoctrineTabAccess();syncTrackerTabAccess();initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');queueStartupGreeting();await loadMerIntel();await loadState();connectSse();startScoutLocationWatch();
       await refreshBrainMicrophones();
+      startBrainLongUptimeWatchdog();
       setTimeout(()=>startBrainListening(),1200);
       const params=new URLSearchParams(location.search);if(params.get('linked'))toast('Mining toon connected.');if(params.get('login'))toast('Logged in.');if(params.get('market')==='authorized')toast('John market access authorized.');if(params.get('error'))toast(decodeURIComponent(params.get('error')));if(params.toString())history.replaceState({},'',location.pathname);
     }catch(e){console.error(e);showLogin();$('setupWarning').classList.remove('hidden');$('setupWarning').textContent=`JLR could not load: ${e.message}`}
@@ -5893,7 +5966,11 @@
     scheduleStateRender();
     refreshCompanionStatus();
     if(scoutFollowEnabled)pollScoutLocation(true);
+    void ensureBrainLongRunHealth('tab resumed');
   });
+  window.addEventListener('pageshow',()=>{ if(!document.hidden)void ensureBrainLongRunHealth('page restored'); });
+  window.addEventListener('online',()=>{ if(!document.hidden)void ensureBrainLongRunHealth('network restored'); });
+  window.addEventListener('focus',()=>{ if(!document.hidden)void ensureBrainLongRunHealth('window focused'); });
 
   setInterval(()=>{
     if(!state||document.hidden)return;
