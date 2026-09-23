@@ -13,10 +13,14 @@ New-Item -ItemType Directory -Force -Path $AppRoot | Out-Null
 
 $script:ExitRequested = $false
 $script:Config = $null
+$script:AuthToken = ""
 $script:LastReported = @{}
 $script:LastSentAt = @{}
 $script:LatestSnapshots = @{}
 $script:FileCache = @{}
+$script:TrackedLocalFiles = @()
+$script:NextDirectoryRefresh = [datetime]::MinValue
+$script:NextServerRetryAt = [datetime]::MinValue
 $script:LastNotice = @{}
 $script:ServerOfflineNoticeAt = [datetime]::MinValue
 
@@ -69,8 +73,10 @@ function Pair-JlrCompanion {
   try {
     $reply = Invoke-RestMethod -Uri ($script:Config.server.TrimEnd("/") + "/api/companion/pair/claim") -Method Post -ContentType "application/json" -Body $body -TimeoutSec 15
     if(-not $reply.token){ throw "JLR did not return a companion token." }
-    $script:Config.tokenProtected = Protect-JlrToken ([string]$reply.token)
+    $script:AuthToken = [string]$reply.token
+    $script:Config.tokenProtected = Protect-JlrToken $script:AuthToken
     $script:Config.deviceName = $env:COMPUTERNAME
+    $script:NextServerRetryAt = [datetime]::MinValue
     Save-JlrConfig
     $script:StatusItem.Text = "Status: paired"
     Show-JlrBalloon "JLR Tracker Companion" "Paired. Local EVE system changes will now feed Tracker."
@@ -86,15 +92,50 @@ function Pair-JlrCompanion {
   }
 }
 
+function Read-JlrUtf16Slice($Stream,[long]$Start,[int]$Count) {
+  if($Count -le 0){ return "" }
+  $buffer = New-Object byte[] $Count
+  $Stream.Position = $Start
+  $total = 0
+  while($total -lt $Count){
+    $read = $Stream.Read($buffer,$total,$Count-$total)
+    if($read -le 0){ break }
+    $total += $read
+  }
+  if($total -le 0){ return "" }
+  return [System.Text.Encoding]::Unicode.GetString($buffer,0,$total)
+}
+
 function Read-JlrLocalLog([string]$Path) {
   $stream = $null
   $reader = $null
   try {
     $stream = New-Object IO.FileStream($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)
-    $reader = New-Object IO.StreamReader($stream,[System.Text.Encoding]::Unicode,$true)
-    $text = $reader.ReadToEnd()
-    $listenerMatch = [regex]::Match($text,'(?m)^\s*Listener:\s*(.+?)\s*$')
-    $systemMatches = [regex]::Matches($text,'(?m)EVE System\s*>\s*Channel changed to Local\s*:\s*(.+?)\s*$')
+    $length = [long]$stream.Length
+    if($length -le 0){ return $null }
+
+    # Listener is near the header; the latest system change is normally near the tail.
+    # Avoid rereading a many-megabyte Local log on every chat-line write.
+    $headCount = [int][Math]::Min(16384,$length)
+    $head = Read-JlrUtf16Slice $stream 0 $headCount
+    $tailStart = [long][Math]::Max(0,$length-65536)
+    if(($tailStart % 2) -ne 0){ $tailStart-- }
+    $tailCount = [int]($length-$tailStart)
+    $tail = Read-JlrUtf16Slice $stream $tailStart $tailCount
+
+    $listenerMatch = [regex]::Match($head,'(?m)^\s*Listener:\s*(.+?)\s*$')
+    $systemMatches = [regex]::Matches($tail,'(?m)EVE System\s*>\s*Channel changed to Local\s*:\s*(.+?)\s*$')
+
+    # Preserve old behavior for unusual/very noisy logs where the useful line
+    # fell outside the fast slices.
+    if(-not $listenerMatch.Success -or $systemMatches.Count -eq 0){
+      $stream.Position = 0
+      $reader = New-Object IO.StreamReader($stream,[System.Text.Encoding]::Unicode,$true)
+      $text = $reader.ReadToEnd()
+      $listenerMatch = [regex]::Match($text,'(?m)^\s*Listener:\s*(.+?)\s*$')
+      $systemMatches = [regex]::Matches($text,'(?m)EVE System\s*>\s*Channel changed to Local\s*:\s*(.+?)\s*$')
+    }
+
     if(-not $listenerMatch.Success -or $systemMatches.Count -eq 0){ return $null }
     $listener = $listenerMatch.Groups[1].Value.Trim()
     $system = $systemMatches[$systemMatches.Count-1].Groups[1].Value.Trim()
@@ -116,11 +157,23 @@ function Get-JlrLocalSnapshots {
     return @()
   }
 
-  $cutoff = (Get-Date).ToUniversalTime().AddHours(-12)
-  $files = @(Get-ChildItem -Path $logDir -Filter "Local_*.txt" -File -ErrorAction SilentlyContinue |
-    Where-Object { $_.LastWriteTimeUtc -ge $cutoff } |
-    Sort-Object LastWriteTimeUtc -Descending |
-    Select-Object -First 60)
+  $now = Get-Date
+  $cutoff = $now.ToUniversalTime().AddHours(-12)
+  if($script:TrackedLocalFiles.Count -eq 0 -or $now -ge $script:NextDirectoryRefresh){
+    $script:TrackedLocalFiles = @(Get-ChildItem -Path $logDir -Filter "Local_*.txt" -File -ErrorAction SilentlyContinue |
+      Where-Object { $_.LastWriteTimeUtc -ge $cutoff } |
+      Sort-Object LastWriteTimeUtc -Descending |
+      Select-Object -First 60)
+    $script:NextDirectoryRefresh = $now.AddSeconds(10)
+  }
+
+  $files = @()
+  foreach($tracked in @($script:TrackedLocalFiles)){
+    try {
+      $tracked.Refresh()
+      if($tracked.Exists){ $files += $tracked }
+    } catch {}
+  }
 
   foreach($file in $files){
     $fingerprint = [string]$file.Length + ":" + [string]$file.LastWriteTimeUtc.Ticks
@@ -142,48 +195,119 @@ function Get-JlrLocalSnapshots {
   return @($script:LatestSnapshots.Values)
 }
 
-function Send-JlrLocation($Snapshot) {
-  $token = Unprotect-JlrToken ([string]$script:Config.tokenProtected)
-  if([string]::IsNullOrWhiteSpace($token)){ return $false }
+function Handle-JlrLocationReply($Reply) {
+  if(-not $Reply){ return }
+  $noticeKey = [string]$Reply.characterId
+  if($Reply.needsScan){
+    if($script:LastNotice[$noticeKey] -ne [string]$Reply.system){
+      $script:LastNotice[$noticeKey] = [string]$Reply.system
+      Show-JlrBalloon "JLR Tracker - scan update needed" ($Reply.characterName + " entered " + $Reply.system + ". Tracker needs a fresh Probe Scanner copy.") 7000
+    }
+  } else {
+    $script:LastNotice.Remove($noticeKey)
+  }
+}
+
+function Handle-JlrSendFailure($ErrorRecord) {
+  $statusCode = 0
+  try { $statusCode = [int]$ErrorRecord.Exception.Response.StatusCode } catch {}
+  if($statusCode -eq 401){
+    $script:AuthToken = ""
+    $script:Config.tokenProtected = ""
+    Save-JlrConfig
+    $script:StatusItem.Text = "Status: pairing revoked"
+    Show-JlrBalloon "JLR Tracker Companion" "Pairing was revoked. Use Pair / Re-pair from the tray menu."
+    return
+  }
+  $script:NextServerRetryAt = (Get-Date).AddSeconds(5)
+  $script:StatusItem.Text = "Status: server unavailable"
+  if(((Get-Date) - $script:ServerOfflineNoticeAt).TotalMinutes -ge 10){
+    $script:ServerOfflineNoticeAt = Get-Date
+    Show-JlrBalloon "JLR Tracker Companion" "JLR server is temporarily unreachable. Tracking will retry automatically."
+  }
+}
+
+function Send-JlrLocationLegacy($Snapshot) {
+  if([string]::IsNullOrWhiteSpace($script:AuthToken)){ return $false }
   $body = @{
     characterName = [string]$Snapshot.characterName
     system = [string]$Snapshot.system
     observedAt = [string]$Snapshot.observedAt
   } | ConvertTo-Json
   try {
-    $reply = Invoke-RestMethod -Uri ($script:Config.server.TrimEnd("/") + "/api/companion/location") -Method Post -Headers @{Authorization="Bearer $token"} -ContentType "application/json" -Body $body -TimeoutSec 12
-    $script:StatusItem.Text = "Status: " + $reply.characterName + " | " + $reply.system
-    $noticeKey = [string]$reply.characterId
-    if($reply.needsScan){
-      if($script:LastNotice[$noticeKey] -ne [string]$reply.system){
-        $script:LastNotice[$noticeKey] = [string]$reply.system
-        Show-JlrBalloon "JLR Tracker - scan update needed" ($reply.characterName + " entered " + $reply.system + ". Tracker needs a fresh Probe Scanner copy.") 7000
-      }
+    $reply = Invoke-RestMethod -Uri ($script:Config.server.TrimEnd("/") + "/api/companion/location") -Method Post -Headers @{Authorization="Bearer $script:AuthToken"} -ContentType "application/json" -Body $body -TimeoutSec 12
+    Handle-JlrLocationReply $reply
+    return $true
+  } catch {
+    Handle-JlrSendFailure $_
+    return $false
+  }
+}
+
+function Send-JlrLocations($Snapshots) {
+  $rows = @($Snapshots)
+  if($rows.Count -eq 0){ return $true }
+  if([string]::IsNullOrWhiteSpace($script:AuthToken)){ return $false }
+  if((Get-Date) -lt $script:NextServerRetryAt){ return $false }
+
+  $locations = @($rows | ForEach-Object {
+    @{
+      characterName = [string]$_.characterName
+      system = [string]$_.system
+      observedAt = [string]$_.observedAt
+    }
+  })
+  $body = @{ locations=$locations } | ConvertTo-Json -Depth 4
+
+  try {
+    $reply = Invoke-RestMethod -Uri ($script:Config.server.TrimEnd("/") + "/api/companion/locations") -Method Post -Headers @{Authorization="Bearer $script:AuthToken"} -ContentType "application/json" -Body $body -TimeoutSec 12
+    $script:NextServerRetryAt = [datetime]::MinValue
+    foreach($result in @($reply.results)){ Handle-JlrLocationReply $result }
+
+    # A successful batch counts as a heartbeat for every submitted snapshot,
+    # including an unlinked Local log. That prevents a bad row from hot-looping.
+    $sentAt = Get-Date
+    foreach($snapshot in $rows){
+      $key = [string]$snapshot.characterName
+      $script:LastReported[$key] = [string]$snapshot.system
+      $script:LastSentAt[$key] = $sentAt
+    }
+
+    $results = @($reply.results)
+    if($results.Count -eq 1){
+      $script:StatusItem.Text = "Status: " + $results[0].characterName + " | " + $results[0].system
+    } elseif($results.Count -gt 1){
+      $script:StatusItem.Text = "Status: " + $results.Count + " toons synced"
     } else {
-      $script:LastNotice.Remove($noticeKey)
+      $script:StatusItem.Text = "Status: connected"
     }
     return $true
   } catch {
     $statusCode = 0
     try { $statusCode = [int]$_.Exception.Response.StatusCode } catch {}
-    if($statusCode -eq 401){
-      $script:Config.tokenProtected = ""
-      Save-JlrConfig
-      $script:StatusItem.Text = "Status: pairing revoked"
-      Show-JlrBalloon "JLR Tracker Companion" "Pairing was revoked. Use Pair / Re-pair from the tray menu."
-      return $false
+
+    # Backward compatibility if a companion updates before the server deployment.
+    if($statusCode -eq 404){
+      $any = $false
+      foreach($snapshot in $rows){
+        if(Send-JlrLocationLegacy $snapshot){
+          $key = [string]$snapshot.characterName
+          $script:LastReported[$key] = [string]$snapshot.system
+          $script:LastSentAt[$key] = Get-Date
+          $any = $true
+        }
+      }
+      return $any
     }
-    $script:StatusItem.Text = "Status: server unavailable"
-    if(((Get-Date) - $script:ServerOfflineNoticeAt).TotalMinutes -ge 10){
-      $script:ServerOfflineNoticeAt = Get-Date
-      Show-JlrBalloon "JLR Tracker Companion" "JLR server is temporarily unreachable. Tracking will retry automatically."
-    }
+
+    Handle-JlrSendFailure $_
     return $false
   }
 }
 
 $script:Config = Load-JlrConfig
 if([string]::IsNullOrWhiteSpace([string]$script:Config.server)){ $script:Config.server = $Server }
+$script:AuthToken = Unprotect-JlrToken ([string]$script:Config.tokenProtected)
 
 $script:Tray = New-Object System.Windows.Forms.NotifyIcon
 $script:Tray.Icon = [System.Drawing.SystemIcons]::Information
@@ -207,7 +331,7 @@ $folderItem.add_Click({ Start-Process explorer.exe $AppRoot })
 $exitItem.add_Click({ $script:ExitRequested = $true })
 $script:Tray.add_DoubleClick({ Start-Process $script:Config.server })
 
-if([string]::IsNullOrWhiteSpace((Unprotect-JlrToken ([string]$script:Config.tokenProtected)))){
+if([string]::IsNullOrWhiteSpace($script:AuthToken)){
   Pair-JlrCompanion | Out-Null
 }
 
@@ -216,17 +340,17 @@ Show-JlrBalloon "JLR Tracker Companion" "Running in the Windows tray. Watching E
 try {
   while(-not $script:ExitRequested){
     [System.Windows.Forms.Application]::DoEvents()
+    $pending = @()
+    $checkAt = Get-Date
     foreach($snapshot in @(Get-JlrLocalSnapshots)){
       $key = [string]$snapshot.characterName
       $value = [string]$snapshot.system
       $lastSent = $script:LastSentAt[$key]
-      $heartbeatDue = (-not $lastSent) -or (((Get-Date) - [datetime]$lastSent).TotalSeconds -ge 30)
+      $heartbeatDue = (-not $lastSent) -or (($checkAt - [datetime]$lastSent).TotalSeconds -ge 30)
       if($script:LastReported[$key] -eq $value -and -not $heartbeatDue){ continue }
-      if(Send-JlrLocation $snapshot){
-        $script:LastReported[$key] = $value
-        $script:LastSentAt[$key] = Get-Date
-      }
+      $pending += $snapshot
     }
+    if($pending.Count -gt 0){ Send-JlrLocations $pending | Out-Null }
     for($i=0;$i -lt 20 -and -not $script:ExitRequested;$i++){
       [System.Windows.Forms.Application]::DoEvents()
       Start-Sleep -Milliseconds 100
