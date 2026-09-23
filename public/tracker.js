@@ -746,6 +746,7 @@
 
   window.jlrPlayFighterAlarm=playVoiceAlert;
   window.jlrStopFighterAlarm=stopVoiceAlert;
+  window.jlrStopVoice=stopVoiceAlert;
   window.jlrUnlockFighterAlarm=unlockAlarm;
   window.jlrSpeakEvent=speakEvent;
   window.jlrVoiceIsActive=voiceIsActive;
