@@ -5,6 +5,11 @@ import { performance } from 'node:perf_hooks';
 
 const source=fs.readFileSync(new URL('../public/tracker.js',import.meta.url),'utf8');
 const serverSource=fs.readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
+const appSource=fs.readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
+
+assert.match(appSource,/if\(!spoken\|\|!soundEnabled\)return false/,'VOICE OFF blocks conversational TTS');
+assert.match(appSource,/window\.jlrStopVoice\?\.\(\)/,'VOICE OFF immediately stops active Tracker audio');
+assert.match(source,/window\.jlrStopVoice=stopVoiceAlert/,'Tracker exposes a master voice stop hook');
 
 assert.match(serverSource,/C-N4OD -> "see, en four oh dee"/,'system codes use a pause instead of speaking the hyphen');
 assert.doesNotMatch(serverSource,/ch==='-'\?'tack'/,'system pronunciation must not say tack for hyphens');
