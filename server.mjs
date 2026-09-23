@@ -6894,6 +6894,90 @@ async function routeApi(req,res,url) {
     await save();
     return json(res,200,{paired:true,token,account:pairUser.displayName||'JLR pilot',server:requestBaseUrl(req)});
   }
+  if(req.method==='POST'&&url.pathname==='/api/companion/locations'){
+    const auth=companionAuth(req);
+    if(!auth)return json(res,401,{error:'COMPANION_AUTH_REQUIRED',message:'Companion pairing is missing or has been revoked.'});
+    let body;
+    try{body=await readBody(req,64_000)}
+    catch(err){return json(res,400,{error:'BAD_LOCATION_REPORT',message:String(err.message||err)})}
+    const reports=Array.isArray(body?.locations)?body.locations:null;
+    if(!reports||!reports.length||reports.length>100)return json(res,400,{error:'BAD_LOCATION_BATCH',message:'Send between 1 and 100 companion locations.'});
+
+    const prepared=[];
+    const errors=[];
+    for(const report of reports){
+      const ch=companionCharacterForUser(auth.user,report);
+      const characterName=companionText(report?.characterName,120);
+      const system=companionText(report?.system,96);
+      if(!ch){
+        errors.push({characterName,system,error:'CHARACTER_NOT_LINKED'});
+        continue;
+      }
+      if(!system){
+        errors.push({characterId:String(ch.characterId),characterName:String(ch.name||characterName||'Toon'),error:'SYSTEM_REQUIRED'});
+        continue;
+      }
+      prepared.push({report,ch,system});
+    }
+
+    let ids=new Map();
+    if(prepared.length){
+      try{ids=await resolveUniverseIds([...new Set(prepared.map(row=>row.system))])}
+      catch(err){return json(res,502,{error:'SYSTEM_LOOKUP_FAILED',message:String(err.message||err)})}
+    }
+
+    const valid=[];
+    const systemIds=[];
+    for(const row of prepared){
+      const systemId=String(ids.get(row.system)||'');
+      if(!/^\d+$/.test(systemId)){
+        errors.push({characterId:String(row.ch.characterId),characterName:String(row.ch.name||'Toon'),system:row.system,error:'UNKNOWN_SYSTEM'});
+        continue;
+      }
+      row.systemId=systemId;
+      valid.push(row);
+      systemIds.push(systemId);
+    }
+    if(systemIds.length)await ensureSystem([...new Set(systemIds)]).catch(()=>{});
+
+    const checkedAt=now();
+    for(const row of valid){
+      const canonical=state.esi.systemCache[row.systemId]?.name||row.system;
+      trackerLocationCache.set(String(row.ch.characterId),{
+        systemId:row.systemId,
+        system:canonical,
+        checkedAt,
+        observedAt:companionText(row.report?.observedAt,64)||null,
+        live:true,
+        source:'companion',
+        companionDeviceId:auth.device.id||null,
+        companionDeviceName:auth.device.deviceName||'Windows PC',
+      });
+    }
+
+    auth.device.lastSeenAt=checkedAt;
+    const companionPersistAge=Date.now()-Date.parse(auth.device.lastPersistedAt||auth.device.createdAt||'');
+    if(!Number.isFinite(companionPersistAge)||companionPersistAge>=5*60*1000){
+      auth.device.lastPersistedAt=checkedAt;
+      await save();
+    }
+
+    const activity=scanActivityPublic();
+    const results=[];
+    for(const row of valid){
+      try{results.push(await scoutLocationSnapshot(row.ch,auth.user,activity))}
+      catch(error){
+        errors.push({
+          characterId:String(row.ch.characterId),
+          characterName:String(row.ch.name||'Toon'),
+          system:row.system,
+          error:error?.code||'LOCATION_SNAPSHOT_FAILED',
+        });
+      }
+    }
+    return json(res,200,{ok:errors.length===0,results,errors,checkedAt});
+  }
+
   if(req.method==='POST'&&url.pathname==='/api/companion/location'){
     const auth=companionAuth(req);
     if(!auth)return json(res,401,{error:'COMPANION_AUTH_REQUIRED',message:'Companion pairing is missing or has been revoked.'});
