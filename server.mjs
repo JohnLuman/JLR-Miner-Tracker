@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { DOCTRINE_SEED_B64 } from './lib/doctrine-seed.mjs';
-import { parseProbeScan, parseA0Scan, parseIceScan } from './lib/probe-scan.mjs';
+import { parseProbeScan, parseA0Scan, parseIceScan, parseWormholeGasScan } from './lib/probe-scan.mjs';
 import { nearestTrackedSystems } from './lib/brain-location.mjs';
 import { positiveLedgerDeltas, dueRouteStops, fountainRouteDestination, brainLiveIntent } from './lib/brain-intel.mjs';
 import { parseThreatPaste, compactThreatStats, threatActivityLabels, fountainThreatTags, jlrThreatScore, threatIgnoreReason } from './lib/threat-scan.mjs';
@@ -98,6 +98,8 @@ const COMPANION_LOCATION_TTL_MS = 90 * 1000;
 const scoutLocationInFlight = new Map();
 const TEN_HOURS = 10 * 60 * 60 * 1000;
 const A0_REPORT_TTL = 12 * 60 * 60 * 1000;
+const WORMHOLE_GAS_REPORT_TTL = 12 * 60 * 60 * 1000;
+const WORMHOLE_GAS_RETENTION = 48 * 60 * 60 * 1000;
 const SESSION_TTL = 30 * 24 * 60 * 60 * 1000;
 const MARKET_REFRESH_MS = 24 * 60 * 60 * 1000;
 const ESI_AUTO_REFRESH_MS = 15 * 60 * 1000;
@@ -165,6 +167,15 @@ const GAS_TYPES = {
   'Malachite Cytoserocin':{compressedName:'Compressed Malachite Cytoserocin',volume:10,compressedVolume:1},
   'Malachite Mykoserocin':{compressedName:'Compressed Malachite Mykoserocin',volume:10,compressedVolume:1},
   'Lime Mykoserocin':{compressedName:'Compressed Lime Mykoserocin',volume:10,compressedVolume:1},
+  'Fullerite-C50':{compressedName:'Compressed Fullerite-C50',volume:1,compressedVolume:.1},
+  'Fullerite-C60':{compressedName:'Compressed Fullerite-C60',volume:1,compressedVolume:.1},
+  'Fullerite-C70':{compressedName:'Compressed Fullerite-C70',volume:1,compressedVolume:.1},
+  'Fullerite-C72':{compressedName:'Compressed Fullerite-C72',volume:2,compressedVolume:.2},
+  'Fullerite-C84':{compressedName:'Compressed Fullerite-C84',volume:2,compressedVolume:.2},
+  'Fullerite-C28':{compressedName:'Compressed Fullerite-C28',volume:2,compressedVolume:.2},
+  'Fullerite-C32':{compressedName:'Compressed Fullerite-C32',volume:5,compressedVolume:.5},
+  'Fullerite-C320':{compressedName:'Compressed Fullerite-C320',volume:5,compressedVolume:.5},
+  'Fullerite-C540':{compressedName:'Compressed Fullerite-C540',volume:10,compressedVolume:1},
 };
 const GAS_REGIONS = {
   Fountain:{
@@ -186,6 +197,30 @@ const GAS_REGIONS = {
       {name:'Wild Nebula',gas:'Malachite Mykoserocin',region:'Aridia',security:'High / Low-sec',units:2000,clouds:2,guarded:false,hazard:'No defenders • no cloud damage'},
       {name:'Helix Nebula',gas:'Lime Mykoserocin',region:'Aridia',security:'High / Low-sec',units:6000,clouds:3,guarded:false,hazard:'No defenders • no cloud damage'},
       {name:'Sister Nebula',gas:'Lime Mykoserocin',region:'Aridia',security:'High / Low-sec',units:2000,clouds:2,guarded:false,hazard:'No defenders • no cloud damage'},
+    ],
+  },
+  Wormhole:{
+    defaultGas:'Fullerite-C320',
+    gases:['Fullerite-C50','Fullerite-C60','Fullerite-C70','Fullerite-C72','Fullerite-C84','Fullerite-C28','Fullerite-C32','Fullerite-C320','Fullerite-C540'],
+    sites:[
+      {name:'Barren Perimeter Reservoir',gas:'Fullerite-C60',region:'Wormhole',security:'C1-C4 W-space',units:6000,clouds:1,guarded:true,hazard:'Sleepers after warp-in delay'},
+      {name:'Barren Perimeter Reservoir',gas:'Fullerite-C50',region:'Wormhole',security:'C1-C4 W-space',units:12000,clouds:1,guarded:true,hazard:'Sleepers after warp-in delay'},
+      {name:'Token Perimeter Reservoir',gas:'Fullerite-C70',region:'Wormhole',security:'C1-C4 W-space',units:6000,clouds:1,guarded:true,hazard:'Sleepers after warp-in delay'},
+      {name:'Token Perimeter Reservoir',gas:'Fullerite-C60',region:'Wormhole',security:'C1-C4 W-space',units:12000,clouds:1,guarded:true,hazard:'Sleepers after warp-in delay'},
+      {name:'Minor Perimeter Reservoir',gas:'Fullerite-C72',region:'Wormhole',security:'C1-C4 W-space',units:6000,clouds:1,guarded:true,hazard:'Sleepers after warp-in delay'},
+      {name:'Minor Perimeter Reservoir',gas:'Fullerite-C70',region:'Wormhole',security:'C1-C4 W-space',units:12000,clouds:1,guarded:true,hazard:'Sleepers after warp-in delay'},
+      {name:'Ordinary Perimeter Reservoir',gas:'Fullerite-C84',region:'Wormhole',security:'C1-C4 W-space',units:6000,clouds:1,guarded:true,hazard:'Sleepers after warp-in delay'},
+      {name:'Ordinary Perimeter Reservoir',gas:'Fullerite-C72',region:'Wormhole',security:'C1-C4 W-space',units:12000,clouds:1,guarded:true,hazard:'Sleepers after warp-in delay'},
+      {name:'Sizeable Perimeter Reservoir',gas:'Fullerite-C50',region:'Wormhole',security:'C1-C4 W-space',units:6000,clouds:1,guarded:true,hazard:'Sleepers after warp-in delay'},
+      {name:'Sizeable Perimeter Reservoir',gas:'Fullerite-C84',region:'Wormhole',security:'C1-C4 W-space',units:12000,clouds:1,guarded:true,hazard:'Sleepers after warp-in delay'},
+      {name:'Bountiful Frontier Reservoir',gas:'Fullerite-C32',region:'Wormhole',security:'C3-C6 W-space',units:4000,clouds:1,guarded:true,hazard:'Sleeper waves after warp-in delay'},
+      {name:'Bountiful Frontier Reservoir',gas:'Fullerite-C28',region:'Wormhole',security:'C3-C6 W-space',units:20000,clouds:1,guarded:true,hazard:'Sleeper waves after warp-in delay'},
+      {name:'Vast Frontier Reservoir',gas:'Fullerite-C28',region:'Wormhole',security:'C3-C6 W-space',units:4000,clouds:1,guarded:true,hazard:'Heavy Sleeper waves'},
+      {name:'Vast Frontier Reservoir',gas:'Fullerite-C32',region:'Wormhole',security:'C3-C6 W-space',units:20000,clouds:1,guarded:true,hazard:'Heavy Sleeper waves'},
+      {name:'Instrumental Core Reservoir',gas:'Fullerite-C320',region:'Wormhole',security:'C5-C6 / shattered',units:24000,clouds:1,guarded:true,hazard:'Heavy Sleepers • warp disruption'},
+      {name:'Instrumental Core Reservoir',gas:'Fullerite-C540',region:'Wormhole',security:'C5-C6 / shattered',units:2000,clouds:1,guarded:true,hazard:'Heavy Sleepers • warp disruption'},
+      {name:'Vital Core Reservoir',gas:'Fullerite-C320',region:'Wormhole',security:'C5-C6 / shattered',units:2000,clouds:1,guarded:true,hazard:'Heavy Sleeper wave'},
+      {name:'Vital Core Reservoir',gas:'Fullerite-C540',region:'Wormhole',security:'C5-C6 / shattered',units:24000,clouds:1,guarded:true,hazard:'Heavy Sleeper wave'},
     ],
   },
 };
@@ -431,7 +466,7 @@ function freshState() {
       typeCache: {}, systemCache: {}, dailyFleet: [], dailyFleetValuationVersion: LEDGER_VALUATION_VERSION, performanceSamples: [], hourlyObservations: {}, ledgerActivity: {}, ledgerFieldSnapshots: {}, fieldInference: {}, lastSyncAt: null, lastError: null,
     },
     market: {
-      prices: {}, minerals: {}, icePrices: {}, iceProducts: {}, gasPrices: {}, iceFields: [], a0Fields: [], a0Reports: {}, a0ScannedAt: null, t3Distances: {}, history: { ore:{}, ice:{} },
+      prices: {}, minerals: {}, icePrices: {}, iceProducts: {}, gasPrices: {}, iceFields: [], a0Fields: [], a0Reports: {}, a0ScannedAt: null, wormholeGasReports: {}, t3Distances: {}, history: { ore:{}, ice:{} },
       doctrine: {cnUpdatedAt:null,jitaUpdatedAt:null,historyUpdatedAt:null,updatedAt:null,structureId:null,structureName:null,cnByType:{},jitaByType:{},historyByType:{},lastError:null,refreshing:false},
       lastUpdatedAt: null, lastError: null,
       characterId: null, characterName: null, refreshTokenEnc: null, scopes: [], authorizedAt: null,
@@ -488,6 +523,7 @@ async function loadState() {
     parsed.market.a0Fields ||= [];
     parsed.market.a0Reports ||= {};
     parsed.market.a0ScannedAt ||= null;
+    parsed.market.wormholeGasReports ||= {};
     parsed.market.t3Distances ||= {};
     parsed.market.history ||= {ore:{},ice:{}};
     parsed.market.history.ore ||= {};
@@ -888,8 +924,8 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.125',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
-    source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
+    app:{name:'JLR Miner Tracker',version:'2.9.126',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
+    source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}])),wormholes:{reports:wormholeGasPublicReports(),reportHours:WORMHOLE_GAS_REPORT_TTL/3600000}},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans,
     trackerBrain:trackerBrainSnapshot(scans,ledgerDebug),
@@ -3620,9 +3656,9 @@ const TRACKER_APP_KNOWLEDGE = {
   },
   gas:{
     label:'Gas',
-    aliases:['gas','gas tab','gas mining','gas sites'],
-    description:'Gas is the dedicated gas-mining view. It separates gas opportunities from ore and ice and shows the gas types and known site information JLR uses for comparison, including regional site details and value information where available.',
-    panels:['gas types','site types','regional availability','site quantities','value information']
+    aliases:['gas','gas tab','gas mining','gas sites','wormhole gas','fullerite','j-space gas'],
+    description:'Gas is the dedicated gas-mining view. It separates gas opportunities from ore and ice, compares gas types, fleet output, known site quantities and market values, and includes a shared Wormhole Gas Tracker. In J-space, a complete Probe Scanner paste records the current known Fullerite gas signatures for that J-system, keeps the report current for 12 hours, and replaces that system’s previous signature list on the next complete scan.',
+    panels:['gas types','site types','regional availability','site quantities','value information','wormhole gas tracker','shared J-space probe scans','Fullerite signatures']
   },
   doctrine:{
     label:'Doctrine Market',
@@ -4010,6 +4046,66 @@ async function recordA0ProbeScan({characterName,systemId,system,text}){
 }
 
 
+function isWormholeSystemName(system){
+  return /^J\d{6}$/i.test(String(system||'').trim());
+}
+
+function wormholeGasPublicReports(){
+  state.market.wormholeGasReports ||= {};
+  const current=Date.now();
+  const rows=[];
+  let changed=false;
+  for(const [system,report] of Object.entries(state.market.wormholeGasReports)){
+    const scannedAt=Date.parse(String(report?.lastScanAt||''));
+    if(!Number.isFinite(scannedAt)||current-scannedAt>WORMHOLE_GAS_RETENTION){
+      delete state.market.wormholeGasReports[system];
+      changed=true;
+      continue;
+    }
+    rows.push({
+      ...report,
+      system,
+      due:current-scannedAt>=WORMHOLE_GAS_REPORT_TTL,
+      ageMs:Math.max(0,current-scannedAt),
+      nextUpdateAt:new Date(scannedAt+WORMHOLE_GAS_REPORT_TTL).toISOString(),
+    });
+  }
+  if(changed)save();
+  return rows.sort((a,b)=>Date.parse(b.lastScanAt||0)-Date.parse(a.lastScanAt||0));
+}
+
+function recordWormholeGasProbeScan({characterName,systemId,system,text}){
+  const scan=parseWormholeGasScan(text);
+  const tracked=isWormholeSystemName(system);
+  if(!tracked)return{tracked:false,recorded:false,scan};
+  if(!scan.valid)return{tracked:true,recorded:false,scan,status:'invalid'};
+
+  state.market.wormholeGasReports ||= {};
+  const lastScanAt=now();
+  const sites=(scan.sites||[]).map(site=>({
+    signatureId:site.signatureId||null,
+    siteName:String(site.siteName||'Gas Site'),
+  }));
+  state.market.wormholeGasReports[system]={
+    systemId:Number(systemId)||null,
+    system:String(system),
+    sites,
+    siteCount:sites.length,
+    lastScanAt,
+    nextUpdateAt:new Date(Date.parse(lastScanAt)+WORMHOLE_GAS_REPORT_TTL).toISOString(),
+    reportedBy:String(characterName||''),
+    scannerRowCount:Number(scan.scannerRowCount)||0,
+  };
+  return{
+    tracked:true,
+    recorded:true,
+    status:sites.length?'active':'clear',
+    scan,
+    report:{...state.market.wormholeGasReports[system],due:false},
+  };
+}
+
+
 function recordBoardScan({system,text,a0,t3Scan=null,definition=null}){
   const a0Parsed=parseA0Scan(text);
   const iceParsed=parseIceScan(text);
@@ -4128,6 +4224,7 @@ async function probeScanPreview(ch,text){
     }
   }
   const a0=await recordA0ProbeScan({characterName:ch.name,systemId,system,text});
+  const gasWormhole=recordWormholeGasProbeScan({characterName:ch.name,systemId,system,text});
   const boardScan=recordBoardScan({system,text,a0,t3Scan:scan,definition});
   return{
     characterId:String(ch.characterId),
@@ -4140,6 +4237,7 @@ async function probeScanPreview(ch,text){
     field:definition?state.fields[system]:null,
     correction,
     a0,
+    gasWormhole,
     boardScan,
     serverScan:scanActivityPublic()[system]||null,
   };
@@ -7702,16 +7800,27 @@ async function routeApi(req,res,url) {
     if(!(Array.isArray(ch.scopes)&&ch.scopes.includes(LOCATION_SCOPE)))return json(res,409,{error:'LOCATION_SCOPE_REQUIRED',message:'Update this toon’s EVE access before importing scans.'});
     try{
       const preview=await probeScanPreview(ch,scanText);
-      const valid=Boolean(preview.scan?.valid||preview.a0?.scan?.valid||preview.boardScan?.valid);
-      if((preview.tracked||preview.a0?.tracked||preview.boardScan?.boardTracked)&&!valid)return json(res,400,{error:'INVALID_SCAN',message:'This does not look like copied Probe Scanner rows. Copy the complete scanner list and try again.',preview});
+      const valid=Boolean(preview.scan?.valid||preview.a0?.scan?.valid||preview.gasWormhole?.scan?.valid||preview.boardScan?.valid);
+      if((preview.tracked||preview.a0?.tracked||preview.gasWormhole?.tracked||preview.boardScan?.boardTracked)&&!valid)return json(res,400,{error:'INVALID_SCAN',message:'This does not look like copied Probe Scanner rows. Copy the complete scanner list and try again.',preview});
       await save();
-      if(preview.correction?.applied||preview.a0?.tracked||preview.boardScan?.recorded)broadcast();
+      if(preview.correction?.applied||preview.a0?.tracked||preview.gasWormhole?.recorded||preview.boardScan?.recorded)broadcast();
       return json(res,200,{ok:true,...preview});
     }catch(err){
       if(err.code==='LOCATION_SCOPE_REQUIRED')return json(res,409,{error:err.code,message:err.message});
       throw err;
     }
   }
+  const wormholeGasMatch=url.pathname.match(/^\/api\/gas\/wormholes\/([^/]+)$/);
+  if(wormholeGasMatch&&req.method==='DELETE'){
+    const system=decodeURIComponent(wormholeGasMatch[1]);
+    state.market.wormholeGasReports ||= {};
+    if(!state.market.wormholeGasReports[system])return json(res,404,{error:'WORMHOLE_GAS_REPORT_NOT_FOUND',message:'That wormhole gas report is no longer tracked.'});
+    delete state.market.wormholeGasReports[system];
+    await save();
+    broadcast();
+    return json(res,200,{ok:true,system});
+  }
+
   const fm=url.pathname.match(/^\/api\/fields\/([^/]+)$/);
   if(fm&&req.method==='PUT'){const system=decodeURIComponent(fm[1]);const f=state.fields[system];if(!f)return json(res,404,{error:'UNKNOWN_SYSTEM'});const body=await readBody(req);const status=String(body.status||'');if(!['ready','picked','cleared'].includes(status))return json(res,400,{error:'BAD_STATUS'});if(f.status==='cleared'&&f.timerEndsAt&&Date.parse(f.timerEndsAt)>Date.now())return json(res,409,{error:'TIMER_ACTIVE',message:'The 10-hour timer is already running and cannot be restarted or changed.'});if(status==='cleared'&&body.confirm!==true)return json(res,409,{error:'CONFIRM_REQUIRED'});f.status=status;f.updatedAt=now();f.timerEndsAt=status==='cleared'?new Date(Date.now()+TEN_HOURS).toISOString():null;f.autoReopenedAt=null;f.autoReopenReason=null;f.autoReopenM3=null;if(status==='ready'||status==='cleared'){state.esi.fieldInference||={};const inf=state.esi.fieldInference[system];if(inf)state.esi.fieldInference[system]={...inf,minedM3SinceBaseline:0,minedM3SinceSite:0,activityStartedAt:null,depletionPct:null,needsScan:false,likelyDepleted:false};f.ledgerMinedM3=0;f.ledgerPickedAt=null;f.ledgerLastActivityAt=null;}if(status==='cleared'){state.scans||={};state.scans[system]={lastScanAt:f.updatedAt,scannerRowCount:Number(state.scans[system]?.scannerRowCount)||0,kinds:['t3'],source:'clear-report'}}await save();broadcast();return json(res,200,{ok:true,field:f})}
   const nm=url.pathname.match(/^\/api\/fields\/([^/]+)\/notes$/);

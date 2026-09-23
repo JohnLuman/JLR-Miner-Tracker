@@ -2002,3 +2002,42 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .brain-reply.diagnostic-report{white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;font-size:8px;max-height:320px;overflow:auto}
 .brain-mic-diagnostic.info{border-color:color-mix(in srgb,var(--theme-accent,var(--green)) 65%,var(--line));background:color-mix(in srgb,var(--theme-accent,var(--green)) 5%,var(--input-bg,#071710))}
 .brain-mic-diagnostic.info .brain-mic-diagnostic-head strong{color:var(--theme-accent,var(--green))}
+
+
+/* v2.9.126 shared wormhole gas tracking */
+.gas-wh-tracker-card{margin:6px 0;border-color:#315b54;background:linear-gradient(180deg,#101b19,#0d1615)}
+.gas-wh-head{gap:12px;align-items:center}
+.gas-wh-head>div:first-child{display:grid;gap:2px}
+.gas-wh-head small{color:#7fa99f}
+.gas-wh-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.gas-wh-actions select{min-width:170px;max-width:240px;border:1px solid #31564f;border-radius:6px;background:#0c1514;color:#d8efe8;padding:6px 8px;font:700 8px/1.2 var(--font-ui,inherit)}
+.gas-wh-summary{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 6px;padding:7px 9px;border:1px solid #284c45;border-radius:7px;background:#0e1816}
+.gas-wh-summary strong{font-size:9px;color:#84d9c0;letter-spacing:.04em}
+.gas-wh-summary span{font-size:7px;color:#8ea9a1}
+.gas-wh-tracker{display:grid;gap:6px}
+.gas-wh-system{border:1px solid #2b4d47;border-left:4px solid #55bb9e;border-radius:8px;background:#0e1816;padding:7px}
+.gas-wh-system.due{border-left-color:#d98b50;background:#191611}
+.gas-wh-system-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.gas-wh-system-head>div:first-child{min-width:0}
+.gas-wh-system-head strong{display:block;font-size:11px;color:#dff7ef}
+.gas-wh-system-head small{display:block;margin-top:1px;font-size:7px;color:#829c95}
+.gas-wh-system-actions{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+.gas-wh-state{border:1px solid #326c5d;border-radius:999px;background:#123229;color:#7fe0bd;padding:3px 7px;font-size:6px;font-weight:900;letter-spacing:.08em}
+.gas-wh-system.due .gas-wh-state{border-color:#744b2f;background:#321f12;color:#f0ae70}
+.gas-wh-remove{border:1px solid #53383a;border-radius:5px;background:#211315;color:#b9989a;padding:4px 6px;font-size:6px;font-weight:900;cursor:pointer}
+.gas-wh-remove:hover{border-color:#a65c62;color:#ffd0d3}
+.gas-wh-sites{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:5px}
+.gas-wh-site{display:grid;gap:3px;border:1px solid #27473f;border-radius:6px;background:#101d1a;padding:6px 7px}
+.gas-wh-site.selected-gas{border-color:#4f9f88;box-shadow:inset 0 0 0 1px rgba(88,195,163,.12)}
+.gas-wh-site>div{display:flex;align-items:center;gap:6px;min-width:0}
+.gas-wh-site strong{font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gas-wh-site small{font-size:7px;color:#8eaaa1}
+.gas-wh-sig{display:inline-flex;align-items:center;border:1px solid #3d6c5e;border-radius:4px;background:#122923;color:#77d0b5;padding:2px 4px;font:900 6px/1 var(--font-mono,monospace);letter-spacing:.05em}
+.gas-wh-empty-site{border:1px dashed #315049;border-radius:6px;padding:8px;color:#829c95;font-size:7px}
+@media(max-width:760px){
+  .gas-wh-head{align-items:flex-start;flex-direction:column}
+  .gas-wh-actions{width:100%;justify-content:flex-start}
+  .gas-wh-actions select{flex:1 1 170px;max-width:none}
+  .gas-wh-system-head{align-items:flex-start;flex-direction:column}
+  .gas-wh-sites{grid-template-columns:1fr}
+}

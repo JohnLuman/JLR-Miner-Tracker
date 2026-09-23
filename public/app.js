@@ -229,7 +229,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.125');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.126');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -319,7 +319,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR TRACKER MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.125'),
+      'Version: '+String(state?.app?.version||'2.9.126'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -1447,6 +1447,10 @@
     }
     if(preview?.a0?.tracked){
       parts.push(preview?.a0?.scan?.detected?'A zero rare asteroid site detected.':'No active A zero rare asteroid site detected.');
+    }
+    if(preview?.gasWormhole?.tracked){
+      const gasCount=Math.max(0,Number(preview?.gasWormhole?.scan?.detectedCount)||0);
+      parts.push(gasCount?gasCount+' wormhole gas signature'+(gasCount===1?'':'s')+' detected.':'No known wormhole gas signatures detected.');
     }
     return parts.join(' ');
   }
@@ -4877,6 +4881,58 @@
       $('iceFleetOutput').innerHTML=body+hidden+total;
     }
   }
+  function wormholeGasSiteDefinitions(siteName){
+    const sites=state?.source?.gas?.regions?.Wormhole?.sites;
+    return (Array.isArray(sites)?sites:[]).filter(site=>String(site.name||'')===String(siteName||''));
+  }
+  function renderWormholeGasTracker(){
+    const host=$('gasWormholeTracker'),summary=$('gasWormholeSummary');
+    if(!host||!summary)return;
+    const wormholes=state?.source?.gas?.wormholes||{};
+    const reports=Array.isArray(wormholes.reports)?wormholes.reports:[];
+    const signatures=reports.reduce((sum,row)=>sum+(Array.isArray(row?.sites)?row.sites.length:0),0);
+    const dueCount=reports.filter(row=>Boolean(row?.due)).length;
+    summary.innerHTML='<strong>'+fmt(reports.length)+' J-SPACE SYSTEM'+(reports.length===1?'':'S')+'</strong><span>'+
+      fmt(signatures)+' GAS SIGNATURE'+(signatures===1?'':'S')+' • '+(dueCount?fmt(dueCount)+' UPDATE'+(dueCount===1?'':'S')+' DUE':'ALL CURRENT')+
+      ' • complete scans replace that system\'s previous list</span>';
+    if(!reports.length){
+      host.innerHTML='<div class="visual-empty">No wormhole gas scans shared yet. Enter a J-system, copy the complete Probe Scanner list, then use PASTE WH SCAN.</div>';
+      return;
+    }
+    host.innerHTML=reports.map(report=>{
+      const system=String(report?.system||'J-space');
+      const due=Boolean(report?.due);
+      const sites=Array.isArray(report?.sites)?report.sites:[];
+      const reporter=String(report?.reportedBy||'fleet');
+      const siteHtml=sites.length?sites.map(site=>{
+        const definitions=wormholeGasSiteDefinitions(site?.siteName);
+        const gasMix=definitions.map(def=>{
+          const short=String(def.gas||'').replace(/^Fullerite-/i,'');
+          return short+' '+fmt(Number(def.units)||0);
+        }).join(' • ');
+        const selectedGas=gasRegion==='Wormhole'&&definitions.some(def=>String(def.gas)===String(gasType));
+        return '<div class="gas-wh-site'+(selectedGas?' selected-gas':'')+'">'+
+          '<div><span class="gas-wh-sig">'+esc(site?.signatureId||'SIG')+'</span><strong>'+esc(site?.siteName||'Gas Site')+'</strong></div>'+
+          '<small>'+esc(gasMix||'Wormhole Fullerite site')+'</small>'+
+        '</div>';
+      }).join(''):'<div class="gas-wh-empty-site">No known wormhole gas signatures in the latest complete scan.</div>';
+      return '<article class="gas-wh-system '+(due?'due':'fresh')+'">'+
+        '<div class="gas-wh-system-head"><div><strong>'+esc(system)+'</strong><small>scanned '+esc(ago(report?.lastScanAt))+' • '+esc(reporter)+'</small></div>'+
+          '<div class="gas-wh-system-actions"><span class="gas-wh-state">'+(due?'UPDATE DUE':'CURRENT')+'</span>'+
+          '<button class="gas-wh-remove" data-system="'+esc(system)+'" type="button" title="Remove this wormhole from the shared gas tracker">REMOVE</button></div></div>'+
+        '<div class="gas-wh-sites">'+siteHtml+'</div>'+
+      '</article>';
+    }).join('');
+  }
+  function applyPreviewWormholeGas(preview){
+    const report=preview?.gasWormhole?.report;
+    if(!report||!state?.source?.gas)return false;
+    state.source.gas.wormholes ||= {reports:[],reportHours:12};
+    const reports=Array.isArray(state.source.gas.wormholes.reports)?state.source.gas.wormholes.reports:[];
+    state.source.gas.wormholes.reports=[report,...reports.filter(row=>String(row?.system||'')!==String(report.system||''))];
+    renderWormholeGasTracker();
+    return true;
+  }
   function renderGasHuffing(){
     if(!state||!$('gasFleetOutput'))return;
     const gasData=state.source?.gas||null;
@@ -4918,7 +4974,7 @@
     const compressedJita=Number(market.compressed?.jita?.buy);
     const compressedCn=Number(market.compressed?.cn?.buy);
     const uptime=Math.min(100,Math.max(1,Number(fleetSettings.uptime)||100))/100;
-    const gasFamily=/Mykoserocin/i.test(gasType)?'MYKOSEROCIN':'CYTOSEROCIN';
+    const gasFamily=/^Fullerite-/i.test(gasType)?'FULLERITE':(/Mykoserocin/i.test(gasType)?'MYKOSEROCIN':'CYTOSEROCIN');
 
     $('gasRegionEyebrow').textContent=gasRegion.toUpperCase()+' • '+gasFamily;
     $('gasRawLabel').textContent='RAW JITA / UNIT';
@@ -5019,6 +5075,7 @@
         '<div><span>Residue</span><strong>'+(Number(spec.residueChance)>0?Math.round(Number(spec.residueChance)*100)+'% ×'+Number(spec.residueMultiplier):'NONE')+'</strong></div>'+
       '</div>'
     ).join('');
+    renderWormholeGasTracker();
   }
 
   function renderRanking(){
@@ -5084,6 +5141,16 @@
     const selected=chars.find(c=>String(c.characterId)===String(scanCharacterId));
     button.disabled=!selected||scanBusy;
     button.textContent=scanBusy?'CHECKING…':selected&&!selected.locationAccess?'UPDATE ACCESS':'📋 PASTE SCAN';
+    const gasSelect=$('gasScanCharacter'),gasButton=$('gasPasteScan');
+    if(gasSelect){
+      gasSelect.innerHTML=select.innerHTML;
+      gasSelect.value=scanCharacterId;
+      gasSelect.disabled=!chars.length||scanBusy;
+    }
+    if(gasButton){
+      gasButton.disabled=!selected||scanBusy;
+      gasButton.textContent=scanBusy?'CHECKING…':selected&&!selected.locationAccess?'UPDATE ACCESS':'📋 PASTE WH SCAN';
+    }
     if(selected&&!selected.locationAccess)setScanStatus('One-time EVE location access is required.','warning');
   }
   function renderCharacters(){
@@ -5505,7 +5572,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.125',
+          version:state?.app?.version||'2.9.126',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
@@ -5647,6 +5714,7 @@
       const scanRequestAt=Date.now();
       const preview=await api('/api/scans/preview',{method:'POST',body:JSON.stringify({characterId:selected.characterId,text})});
       const appliedScan=applyPreviewBoardScan(preview);
+      const appliedWormholeGas=applyPreviewWormholeGas(preview);
       if(preview?.tracked&&preview?.scan?.valid){
         const recordedAt=Date.parse(preview?.serverScan?.lastScanAt||preview?.boardScan?.lastScanAt||'');
         const fresh=Number.isFinite(recordedAt)&&recordedAt>=scanRequestAt-5000;
@@ -5655,14 +5723,14 @@
           throw new Error('FIELD-SCAN-E01: Probe Scanner rows were recognized, but the Fields board timestamp was not committed. T3='+String(Boolean(parser.t3))+' ICE='+String(Boolean(parser.ice))+' A0='+String(Boolean(parser.a0))+'.');
         }
       }
-      if(preview?.boardScan?.recorded||preview?.a0?.scan?.valid){
+      if(preview?.boardScan?.recorded||preview?.a0?.scan?.valid||preview?.gasWormhole?.scan?.valid){
         scoutVoiceCooldown.delete(String(preview.system));
         if(scoutPromptKey===String(selected.characterId)+':'+String(preview.system)){
           $('brainScanPrompt')?.classList.add('hidden');
           scoutPromptKey='';
         }
       }
-      if(preview?.boardScan?.recorded||preview?.tracked||preview?.a0?.tracked){
+      if(preview?.boardScan?.recorded||preview?.tracked||preview?.a0?.tracked||preview?.gasWormhole?.recorded){
         speakJlr('scan',{system:preview.system},scanVoiceFallback(preview));
       }
       if(preview.a0?.tracked){
@@ -5673,8 +5741,18 @@
           setScanStatus(`${preview.system}: A0 checked — no active site detected. Update due again in 12 hours.`,'success');
         }
       }
+      if(preview?.gasWormhole?.recorded){
+        const gasCount=Math.max(0,Number(preview?.gasWormhole?.scan?.detectedCount)||0);
+        const gasMessage=gasCount
+          ?preview.system+': '+gasCount+' wormhole gas signature'+(gasCount===1?'':'s')+' tracked for 12 hours.'
+          :preview.system+': wormhole gas scan current — no known gas signatures detected.';
+        setScanStatus(gasMessage,'success');
+        toast(gasMessage);
+        if(appliedWormholeGas)renderGasHuffing();
+      }
       if(!preview.tracked){
         if(preview.a0?.tracked)return;
+        if(preview.gasWormhole?.recorded)return;
         if(preview.boardScan?.recorded){
           const ice=preview.boardScan.ice;
           if(ice){
@@ -5687,8 +5765,8 @@
           }
           return;
         }
-        setScanStatus(`${preview.characterName} is in ${preview.system}, which is not on the tracked T3/ICE/A0 board.`,'warning');
-        toast(`No tracked T3, ICE, or A0 field for ${preview.system}.`);
+        setScanStatus(`${preview.characterName} is in ${preview.system}, which is not on the tracked T3/ICE/A0/GAS board.`,'warning');
+        toast(`No tracked T3, ICE, A0, or wormhole gas field for ${preview.system}.`);
         return;
       }
       chooseSystem(preview.system);
@@ -5887,6 +5965,39 @@
     gasType=$('gasTypeSelect').value||'';
     localStorage.setItem('jlrGasType',gasType);
     renderGasHuffing();
+  });
+  $('gasScanCharacter')?.addEventListener('change',()=>{
+    scanCharacterId=String($('gasScanCharacter').value||'');
+    localStorage.setItem('jlrScanCharacter',scanCharacterId);
+    renderScanCharacters();
+  });
+  $('gasPasteScan')?.addEventListener('click',async()=>{
+    const selected=(me?.characters||[]).find(ch=>String(ch.characterId)===String(scanCharacterId));
+    if(selected&&!selected.locationAccess){location.href='/auth/eve/start?intent=link';return}
+    try{
+      if(!navigator.clipboard?.readText)throw new Error('Clipboard access unavailable');
+      const text=await navigator.clipboard.readText();
+      if(!text.trim())throw new Error('Clipboard is empty');
+      await analyzeProbeScan(text);
+    }catch{openScanPaste()}
+  });
+  document.addEventListener('click',async event=>{
+    const button=event.target instanceof Element?event.target.closest('.gas-wh-remove[data-system]'):null;
+    if(!button)return;
+    const system=String(button.dataset.system||'');
+    if(!system)return;
+    if(!confirm('Remove '+system+' from the shared wormhole gas tracker?'))return;
+    button.disabled=true;
+    try{
+      await api('/api/gas/wormholes/'+encodeURIComponent(system),{method:'DELETE'});
+      const wormholes=state?.source?.gas?.wormholes;
+      if(wormholes&&Array.isArray(wormholes.reports))wormholes.reports=wormholes.reports.filter(row=>String(row?.system||'')!==system);
+      renderWormholeGasTracker();
+      toast(system+' removed from wormhole gas tracking.');
+    }catch(error){
+      button.disabled=false;
+      toast(error.message||'Could not remove wormhole gas report.');
+    }
   });
 
   function readBoosterCalc(){
