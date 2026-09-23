@@ -16,6 +16,10 @@ assert.match(app,/brainCompanionFeedTrack/,'Brain shows a live companion movemen
 assert.match(app,/locationSource==='companion'/,'Auto Follow labels companion-fed locations');
 assert.match(server,/companionLocationsForUser/,'companion status exposes fresh toon locations');
 assert.match(server,/companionDeviceName/,'companion location cache keeps the paired device name');
+assert.match(server,/function companionActiveForUser/,'paired companion health is tracked at account level');
+assert.match(server,/COMPANION_WAITING/,'healthy companion suppresses ESI location fallback');
+assert.match(app,/WAITING FOR COMPANION/,'Auto Follow shows companion wait state instead of an ESI error');
+assert.match(app,/ESI fallback /,'Brain shows whether ESI fallback is on standby or active');
 assert.match(app,/NOISE_SUPPRESS/);
 assert.match(ps,/Encoding\]::Unicode/,'EVE chat logs are read as UTF-16LE/Unicode');
 assert.match(ps,/Channel changed to Local/);
