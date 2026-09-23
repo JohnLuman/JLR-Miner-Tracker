@@ -419,11 +419,18 @@
       const payload=await api('/api/companion/pair/start',{method:'POST',body:'{}'});
       const code=String(payload?.code||'');
       if(codeEl)codeEl.textContent=code||'—';
-      if(expiry)expiry.textContent=code?'Expires in 10 minutes. Enter this code in JLR Tracker Companion.':'Pair code was not returned.';
+      if(expiry)expiry.textContent=code?'Expires in 10 minutes.':'Pair code was not returned.';
       if(status)status.textContent='PAIR CODE READY';
-      try{if(code)await navigator.clipboard.writeText(code)}catch{}
-      toast(code?'Companion pair code copied: '+code:'Could not create a companion pair code.');
+      toast(code?'Companion pair code ready.':'Could not create a companion pair code.');
     }catch(error){toast(String(error?.message||error))}
+  }
+  async function copyCompanionPairCode(){
+    const code=String($('brainCompanionCode')?.textContent||'').trim();
+    if(!code||code==='—'){toast('Create a pair code first.');return}
+    try{
+      await navigator.clipboard.writeText(code);
+      toast('Pair code copied.');
+    }catch(error){toast('Could not copy the pair code.')}
   }
   async function revokeCompanionDevices(){
     try{
@@ -2002,10 +2009,12 @@
         </section>
 
         <section class="brain-card">
-          <div class="brain-card-head"><strong>DESKTOP COMPANION</strong><small>RIFT-style local EVE movement tracking</small></div>
-          <div class="brain-question-hint">Runs in the Windows tray and reads only your local EVE Local chat logs. It reports toon + solar-system changes to your JLR account so Tracker can follow you even after this browser closes.</div>
+          <div class="brain-card-head"><strong>DESKTOP COMPANION</strong></div>
           <div class="brain-follow-head"><strong id="brainCompanionStatus">CHECKING…</strong><small id="brainCompanionDetail">Checking paired Windows devices.</small></div>
-          <div class="brain-reply"><span>PAIR CODE</span><strong id="brainCompanionCode">—</strong><small id="brainCompanionExpiry">Create a one-time code, then enter it in the companion.</small></div>
+          <div class="brain-companion-code">
+            <div><span>PAIR CODE</span><strong id="brainCompanionCode">—</strong><small id="brainCompanionExpiry"></small></div>
+            <button id="brainCompanionCopy" class="board-tool" type="button">COPY CODE</button>
+          </div>
           <div class="tracker-assist-actions">
             <button id="brainCompanionPair" class="orb purple" type="button">CREATE PAIR CODE</button>
             <button id="brainCompanionRefresh" class="board-tool" type="button">REFRESH</button>
@@ -5261,6 +5270,10 @@
     if(!target)return;
     if(target.closest('#brainCompanionPair')){
       await createCompanionPairCode();
+      return;
+    }
+    if(target.closest('#brainCompanionCopy')){
+      await copyCompanionPairCode();
       return;
     }
     if(target.closest('#brainCompanionRefresh')){
