@@ -3656,9 +3656,9 @@ const TRACKER_APP_KNOWLEDGE = {
   },
   gas:{
     label:'Gas',
-    aliases:['gas','gas tab','gas mining','gas sites'],
-    description:'Gas is the dedicated gas-mining view. It separates gas opportunities from ore and ice and shows the gas types and known site information JLR uses for comparison, including regional site details and value information where available.',
-    panels:['gas types','site types','regional availability','site quantities','value information']
+    aliases:['gas','gas tab','gas mining','gas sites','wormhole gas','fullerite','j-space gas'],
+    description:'Gas is the dedicated gas-mining view. It separates gas opportunities from ore and ice, compares gas types, fleet output, known site quantities and market values, and includes a shared Wormhole Gas Tracker. In J-space, a complete Probe Scanner paste records the current known Fullerite gas signatures for that J-system, keeps the report current for 12 hours, and replaces that system’s previous signature list on the next complete scan.',
+    panels:['gas types','site types','regional availability','site quantities','value information','wormhole gas tracker','shared J-space probe scans','Fullerite signatures']
   },
   doctrine:{
     label:'Doctrine Market',
