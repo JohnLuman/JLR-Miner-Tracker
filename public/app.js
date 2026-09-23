@@ -213,7 +213,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.110');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.111');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -303,7 +303,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR TRACKER MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.110'),
+      'Version: '+String(state?.app?.version||'2.9.111'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -465,7 +465,13 @@
         return;
       }
 
-      brainSetListen('TRACKER THINKING','Answering your JLR question…');
+      const liveLookup=/\b(closest|nearest|where is|location|what system|which system|nearby)\b/.test(command);
+      brainSetListen('TRACKER THINKING',liveLookup?'Checking live EVE location and routes…':'Answering your JLR question…');
+      if(liveLookup){
+        // This phrase is pre-warmed server-side so Tracker can acknowledge the
+        // request while the live ESI/location and route calls are running.
+        speakBrainAnswer('Checking E S I.','brain',{text:'Checking E S I.'}).catch(()=>{});
+      }
       const response=await api('/api/tracker/brain/ask',{
         method:'POST',
         body:JSON.stringify({question:command}),
@@ -5176,7 +5182,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.110',
+          version:state?.app?.version||'2.9.111',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
