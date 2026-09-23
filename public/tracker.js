@@ -1,7 +1,7 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.123';
-  const CORE_URL='/tracker-core.js?v=2.9.123';
+  const ALARM_VERSION='2.9.124';
+  const CORE_URL='/tracker-core.js?v=2.9.124';
 
   let alarmContext=null;
   let alarmSource=null;
@@ -14,6 +14,9 @@
   let lastVoiceMode='unknown';
   let voiceQueue=[];
   let voiceQueueRunning=false;
+  let voiceQueueActiveSince=0;
+  let voiceQueueLastProgressAt=Date.now();
+  let voiceRecoveryCount=0;
   const autoVoiceTabId=Math.random().toString(36).slice(2)+Date.now().toString(36);
   let autoVoiceKey='';
 
@@ -51,6 +54,73 @@
     }catch(error){}
   },15_000);
   window.addEventListener('pagehide',releaseAutoVoice);
+
+  async function warmVoiceRuntime(reason='voice warmup'){
+    const context=ensureAlarmContext();
+    if(context&&context.state==='suspended'){
+      try{await context.resume()}catch(error){}
+    }else if(context&&context.state==='closed'){
+      alarmContext=null;
+      const fresh=ensureAlarmContext();
+      if(fresh&&fresh.state==='suspended'){
+        try{await fresh.resume()}catch(error){}
+      }
+    }
+    if('speechSynthesis' in window){
+      try{window.speechSynthesis.getVoices()}catch(error){}
+    }
+    return true;
+  }
+
+  async function recoverVoiceTransport(reason='voice recovery'){
+    voiceRecoveryCount++;
+    voiceQueueLastProgressAt=Date.now();
+    if(activeFetch){
+      try{activeFetch.abort()}catch(error){}
+      activeFetch=null;
+    }
+    for(const controller of brainFetches){
+      try{controller.abort()}catch(error){}
+    }
+    brainFetches.clear();
+    if(alarmSource){
+      try{alarmSource.stop()}catch(error){}
+      alarmSource=null;
+    }
+    if(activeMediaElement){
+      try{
+        activeMediaElement.pause();
+        activeMediaElement.removeAttribute('src');
+        activeMediaElement.load();
+      }catch(error){}
+      activeMediaElement=null;
+    }
+    if(activeBrainObjectUrl){
+      try{URL.revokeObjectURL(activeBrainObjectUrl)}catch(error){}
+      activeBrainObjectUrl=null;
+    }
+    if('speechSynthesis' in window){
+      try{window.speechSynthesis.cancel()}catch(error){}
+      activeUtterance=null;
+    }
+    window.jlrVoiceLastError='';
+    reportVoiceMode('recovering',reason);
+    await warmVoiceRuntime(reason);
+    return true;
+  }
+
+  function voiceRuntimeStatus(){
+    return{
+      queueRunning:Boolean(voiceQueueRunning),
+      queued:voiceQueue.length,
+      activeForMs:voiceQueueActiveSince?Math.max(0,Date.now()-voiceQueueActiveSince):0,
+      lastProgressMs:Math.max(0,Date.now()-voiceQueueLastProgressAt),
+      recoveryCount:voiceRecoveryCount,
+      audioContext:alarmContext?.state||'none',
+      activeFetch:Boolean(activeFetch||brainFetches.size),
+      activeAudio:Boolean(activeMediaElement||alarmSource||activeUtterance),
+    };
+  }
 
   function reportVoiceMode(mode,detail){
     lastVoiceMode=mode;
@@ -334,24 +404,31 @@
   async function processVoiceQueue(){
     if(voiceQueueRunning)return;
     voiceQueueRunning=true;
+    voiceQueueActiveSince=Date.now();
+    voiceQueueLastProgressAt=Date.now();
     try{
       while(voiceQueue.length){
         const item=voiceQueue.shift();
         const generation=alarmGeneration;
         let started=false;
+        voiceQueueLastProgressAt=Date.now();
         try{
           started=Boolean(await item.run(generation));
         }catch(error){
           console.warn(item.label+' failed.',error);
           started=false;
         }
+        voiceQueueLastProgressAt=Date.now();
         try{item.resolve(started);}catch(error){}
         // playStreamUrl resolves as soon as speech starts. Keep this queue slot
         // until the actual audio/utterance ends so the next event cannot cut it off.
         if(started)await waitForVoiceIdle(generation);
+        voiceQueueLastProgressAt=Date.now();
       }
     }finally{
       voiceQueueRunning=false;
+      voiceQueueActiveSince=0;
+      voiceQueueLastProgressAt=Date.now();
       if(voiceQueue.length)processVoiceQueue();
     }
   }
@@ -403,6 +480,11 @@
 
   async function playCustomEndpoint(url,generation,detail){
     const controller=new AbortController();
+    let timedOut=false;
+    const timeout=setTimeout(()=>{
+      timedOut=true;
+      try{controller.abort()}catch(error){}
+    },125000);
     activeFetch=controller;
     try{
       const response=await fetch(url,{
@@ -429,11 +511,15 @@
     }catch(error){
       if(activeFetch===controller)activeFetch=null;
       if(generation!==alarmGeneration)return false;
-      const message=String(error&&error.message||error||'JLR custom voice failed.');
+      const message=timedOut
+        ?'JLR custom voice request timed out and was reset.'
+        :String(error&&error.message||error||'JLR custom voice failed.');
       window.jlrVoiceLastError=message;
       reportVoiceMode('error',message);
       console.error((detail||'JLR custom voice')+' failed.',error);
       return false;
+    }finally{
+      clearTimeout(timeout);
     }
   }
 
@@ -487,6 +573,11 @@
   async function fetchBufferedBrainAudio(text,generation,detail){
     if(generation!==alarmGeneration)return null;
     const controller=new AbortController();
+    let timedOut=false;
+    const timeout=setTimeout(()=>{
+      timedOut=true;
+      try{controller.abort()}catch(error){}
+    },90000);
     brainFetches.add(controller);
     try{
       const response=await fetch('/api/voice/event',{
@@ -518,11 +609,14 @@
       return{blob:new Blob([bytes],{type:mime}),profile};
     }catch(error){
       if(generation!==alarmGeneration)return null;
-      if(error?.name==='AbortError')return null;
-      const message=String(error&&error.message||error||'JLR conversational voice failed.');
+      if(error?.name==='AbortError'&&!timedOut)return null;
+      const message=timedOut
+        ?'JLR conversational voice request timed out and was reset.'
+        :String(error&&error.message||error||'JLR conversational voice failed.');
       console.error((detail||'JLR conversational custom voice')+' failed.',error);
       return{error:message};
     }finally{
+      clearTimeout(timeout);
       brainFetches.delete(controller);
     }
   }
@@ -669,14 +763,20 @@
       if(system)endpoint='/api/voice/stream/field?system='+encodeURIComponent(system);
     }
 
-    // Unlock immediately if this call came from the user's first gesture, but
-    // queue normal announcements instead of stopping the sentence already playing.
-    unlockAlarm();
+    // Resume any browser audio state that may have been suspended while the PC
+    // or tab was idle before this request enters the queue.
+    await warmVoiceRuntime('voice request');
     return enqueueVoiceTask(async function(generation){
       if(kind==='brain'||kind==='repeat'){
         const text=String(payload&&payload.text||fallback||'').trim();
         if(!text)return false;
-        return playCustomBrainText(text,generation,'JLR '+kind+' custom voice');
+        let ok=await playCustomBrainText(text,generation,'JLR '+kind+' custom voice');
+        if(!ok&&generation===alarmGeneration&&!payload?.automatic){
+          await recoverVoiceTransport('manual conversational voice retry');
+          if(generation!==alarmGeneration)return false;
+          ok=await playCustomBrainText(text,generation,'JLR '+kind+' custom voice retry');
+        }
+        return ok;
       }
       if(endpoint){
         const joiner=endpoint.includes('?')?'&':'?';
@@ -752,6 +852,28 @@
   window.jlrVoiceIsActive=voiceIsActive;
   window.jlrAutoVoiceAllowed=autoVoiceAllowed;
   window.jlrReleaseAutoVoice=releaseAutoVoice;
+  window.jlrWarmVoice=warmVoiceRuntime;
+  window.jlrRecoverVoice=recoverVoiceTransport;
+  window.jlrVoiceRuntimeStatus=voiceRuntimeStatus;
+
+  setInterval(function(){
+    if(!voiceQueueRunning)return;
+    if(Date.now()-voiceQueueLastProgressAt<180000)return;
+    console.warn('JLR voice queue watchdog resetting a stale voice transport.');
+    void recoverVoiceTransport('voice queue watchdog');
+  },30000);
+
+  const resumeVoiceRuntime=function(){
+    if(document.visibilityState&&document.visibilityState!=='visible')return;
+    if(voiceQueueRunning&&Date.now()-voiceQueueLastProgressAt>=120000){
+      void recoverVoiceTransport('page resumed after long idle');
+    }else{
+      void warmVoiceRuntime('page resumed');
+    }
+  };
+  document.addEventListener('visibilitychange',resumeVoiceRuntime);
+  window.addEventListener('pageshow',resumeVoiceRuntime);
+  window.addEventListener('online',resumeVoiceRuntime);
 
   if('speechSynthesis' in window){
     window.speechSynthesis.onvoiceschanged=function(){window.speechSynthesis.getVoices();};
