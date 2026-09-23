@@ -17,7 +17,8 @@ assert.match(ps,/Encoding\]::Unicode/,'EVE chat logs are read as UTF-16LE/Unicod
 assert.match(ps,/Channel changed to Local/);
 assert.match(ps,/Listener:/);
 assert.match(ps,/\/api\/companion\/location/);
-assert.match(ps,/ProtectedData/,'pair token is protected with Windows DPAPI');
+assert.match(ps,/ConvertFrom-SecureString/,'pair token is protected with Windows DPAPI through SecureString');
+assert.match(ps,/SecureStringToBSTR/,'protected pair token can be restored for API calls');
 assert.match(ps,/LastSentAt/,'companion heartbeats unchanged locations');
 assert.match(ps,/TotalSeconds -ge 30/,'companion heartbeat interval is 30 seconds');
 assert.match(cmd,/JLR-Tracker-Companion\.ps1/);
