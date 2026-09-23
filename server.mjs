@@ -7418,8 +7418,11 @@ async function routeApi(req,res,url) {
     let answer;
     if(supportOverride?.text){
       const focusSystem=trackerSpeechSafe(supportOverride.focusSystem,80);
+      const originSystem=trackerSpeechSafe(supportOverride.originSystem,80);
+      const jumps=Number.isFinite(Number(supportOverride.jumps))?Number(supportOverride.jumps):null;
       let voiceText=trackerSpeechSafe(supportOverride.voiceText||supportOverride.text,1200);
       if(focusSystem&&voiceText)voiceText=voiceText.split(focusSystem).join(trackerSpokenSystem(focusSystem));
+      if(originSystem&&voiceText)voiceText=voiceText.split(originSystem).join(trackerSpokenSystem(originSystem));
       answer={
         handled:true,
         topic:trackerSpeechSafe(supportOverride.topic,80)||'support-context',
@@ -7427,6 +7430,8 @@ async function routeApi(req,res,url) {
         voiceText,
         generatedAt:now(),
         focusSystem:focusSystem||undefined,
+        jumps,
+        originSystem:originSystem||undefined,
         supportContext:true,
       };
     }else{
