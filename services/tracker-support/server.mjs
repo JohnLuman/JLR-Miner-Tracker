@@ -13,6 +13,16 @@ const STATE_FILE=String(process.env.TRACKER_SUPPORT_STATE_FILE||path.join(__dirn
 const SESSION_TTL_MS=Math.max(60_000,Number(process.env.TRACKER_SUPPORT_SESSION_TTL_MS)||12*60*60*1000);
 const FOCUS_TTL_MS=Math.max(60_000,Number(process.env.TRACKER_SUPPORT_FOCUS_TTL_MS)||30*60*1000);
 const MAX_SESSIONS=Math.max(100,Number(process.env.TRACKER_SUPPORT_MAX_SESSIONS)||5000);
+const MAIN_APP_URL=String(process.env.TRACKER_SUPPORT_MAIN_URL||'http://JLR-Miner-Tracker.railway.internal:8080').trim().replace(/\/+$/,'');
+const GPT_SOVITS_URL=String(process.env.GPT_SOVITS_URL||'http://127.0.0.1:9880/tts').trim();
+const VOICE_DIR=String(process.env.TRACKER_SUPPORT_VOICE_DIR||'/data/voice').trim();
+const VOICE_REFERENCE_FILE=path.join(VOICE_DIR,'core-reference.wav');
+const VOICE_REFERENCE_META=path.join(VOICE_DIR,'core-reference.json');
+const VOICE_CACHE_DIR=path.join(VOICE_DIR,'cache');
+const VOICE_MAX_TEXT=700;
+const VOICE_MAX_AUDIO_BYTES=8_000_000;
+const VOICE_FETCH_TIMEOUT_MS=Math.max(15_000,Number(process.env.TRACKER_SUPPORT_VOICE_TIMEOUT_MS)||120_000);
+const voiceJobs=new Map();
 const VOICE_PACK_FILE=String(process.env.TRACKER_SUPPORT_VOICE_PACK_FILE||path.join(path.dirname(STATE_FILE),'voice','JLR_Voice_Worker_v3_PATCH.zip')).trim();
 const UPLOAD_TOKEN=String(process.env.TRACKER_SUPPORT_UPLOAD_TOKEN||'').trim();
 const VOICE_PACK_MAX_BYTES=20*1024*1024;
@@ -132,18 +142,177 @@ async function receiveVoicePack(req){
   }
 }
 
+async function voiceReferenceStatus(){
+  try{
+    const [st,metaRaw]=await Promise.all([
+      fsp.stat(VOICE_REFERENCE_FILE),
+      fsp.readFile(VOICE_REFERENCE_META,'utf8'),
+    ]);
+    const meta=JSON.parse(metaRaw);
+    return{
+      present:st.isFile()&&st.size>100_000,
+      bytes:st.isFile()?st.size:0,
+      text:String(meta?.text||'').replace(/\s+/g,' ').trim().slice(0,220),
+      fetchedAt:meta?.fetchedAt||null,
+    };
+  }catch{return{present:false,bytes:0,text:'',fetchedAt:null}}
+}
+async function ensureVoiceReference({force=false}={}){
+  const current=await voiceReferenceStatus();
+  if(current.present&&!force)return current;
+  if(!MAIN_APP_URL)throw new Error('Main JLR private URL is not configured.');
+  const response=await fetch(MAIN_APP_URL+'/api/internal/support/voice-reference',{
+    headers:{
+      'authorization':'Bearer '+SHARED_SECRET,
+      'accept':'audio/wav',
+      'user-agent':'JLR-Tracker-Support/voice-reference',
+    },
+    signal:AbortSignal.timeout(10_000),
+  });
+  if(!response.ok)throw new Error('Main JLR voice reference HTTP '+response.status);
+  const mime=String(response.headers.get('content-type')||'').toLowerCase();
+  if(!mime.startsWith('audio/'))throw new Error('Main JLR voice reference returned '+(mime||'invalid content type'));
+  const bytes=Buffer.from(await response.arrayBuffer());
+  if(bytes.length<100_000||bytes.length>2_000_000)throw new Error('Main JLR voice reference size is invalid: '+bytes.length);
+  let text='';
+  try{text=decodeURIComponent(String(response.headers.get('x-jlr-reference-text')||''))}catch{}
+  text=String(text||'').replace(/\s+/g,' ').trim().slice(0,220);
+  await fsp.mkdir(VOICE_DIR,{recursive:true});
+  const tmp=VOICE_REFERENCE_FILE+'.tmp';
+  await fsp.writeFile(tmp,bytes);
+  await fsp.rename(tmp,VOICE_REFERENCE_FILE);
+  await fsp.writeFile(VOICE_REFERENCE_META,JSON.stringify({
+    text,
+    lang:String(response.headers.get('x-jlr-reference-lang')||'en').slice(0,16)||'en',
+    voice:'core',
+    bytes:bytes.length,
+    fetchedAt:new Date().toISOString(),
+  }),'utf8');
+  return await voiceReferenceStatus();
+}
+async function gptSovitsReachable(){
+  const base=GPT_SOVITS_URL.replace(/\/tts\/?$/,'');
+  try{
+    const response=await fetch(base+'/docs',{signal:AbortSignal.timeout(1200)});
+    return response.ok;
+  }catch{return false}
+}
+function cleanVoiceText(value){
+  return String(value||'').replace(/[\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim().slice(0,VOICE_MAX_TEXT);
+}
+async function synthesizeVoice(request={}){
+  const text=cleanVoiceText(request?.text);
+  if(!text)throw new Error('text is required');
+  const reference=await ensureVoiceReference();
+  if(!reference.present)throw new Error('JLR core voice reference is unavailable.');
+  const voice='core';
+  const seed=crypto.createHash('sha256').update(JSON.stringify({
+    text,voice,ref:reference.fetchedAt||reference.bytes,
+    topK:15,topP:.95,temperature:.75,repetitionPenalty:1.35,
+  })).digest('hex');
+  const audioFile=path.join(VOICE_CACHE_DIR,seed+'.wav');
+  try{
+    const bytes=await fsp.readFile(audioFile);
+    if(bytes.length>0&&bytes.length<=VOICE_MAX_AUDIO_BYTES)return{bytes,mime:'audio/wav',cached:true,voice};
+  }catch{}
+  if(voiceJobs.has(seed))return await voiceJobs.get(seed);
+  const job=(async()=>{
+    await fsp.mkdir(VOICE_CACHE_DIR,{recursive:true});
+    let meta={text:'',lang:'en'};
+    try{meta=JSON.parse(await fsp.readFile(VOICE_REFERENCE_META,'utf8'))}catch{}
+    const payload={
+      text,
+      text_lang:'en',
+      ref_audio_path:VOICE_REFERENCE_FILE,
+      aux_ref_audio_paths:[],
+      prompt_text:String(meta?.text||'').slice(0,220),
+      prompt_lang:String(meta?.lang||'en')||'en',
+      top_k:15,
+      top_p:.95,
+      temperature:.75,
+      text_split_method:'cut5',
+      batch_size:1,
+      speed_factor:1.0,
+      fragment_interval:.3,
+      seed:20260922,
+      media_type:'wav',
+      streaming_mode:0,
+      parallel_infer:true,
+      repetition_penalty:1.35,
+    };
+    let response;
+    try{
+      response=await fetch(GPT_SOVITS_URL,{
+        method:'POST',
+        headers:{'content-type':'application/json','accept':'audio/wav'},
+        body:JSON.stringify(payload),
+        signal:AbortSignal.timeout(VOICE_FETCH_TIMEOUT_MS),
+      });
+    }catch(error){
+      throw new Error('GPT-SoVITS fetch failed: '+String(error?.message||error));
+    }
+    if(!response.ok){
+      const detail=(await response.text().catch(()=>'' )).slice(0,500);
+      throw new Error('GPT-SoVITS HTTP '+response.status+(detail?': '+detail:''));
+    }
+    const mime=String(response.headers.get('content-type')||'audio/wav').split(';')[0].trim().toLowerCase();
+    if(!mime.startsWith('audio/'))throw new Error('GPT-SoVITS returned '+(mime||'invalid content type'));
+    const bytes=Buffer.from(await response.arrayBuffer());
+    if(!bytes.length||bytes.length>VOICE_MAX_AUDIO_BYTES)throw new Error('GPT-SoVITS returned invalid audio size '+bytes.length);
+    await fsp.writeFile(audioFile,bytes);
+    return{bytes,mime,cached:false,voice};
+  })().finally(()=>voiceJobs.delete(seed));
+  voiceJobs.set(seed,job);
+  return await job;
+}
+function sendVoiceAudio(res,audio){
+  res.writeHead(200,{
+    'content-type':audio.mime||'audio/wav',
+    'content-length':audio.bytes.length,
+    'cache-control':'private, no-store',
+    'x-jlr-worker-cache':audio.cached?'HIT':'MISS',
+    'x-jlr-voice-profile':audio.voice||'core',
+    'x-jlr-streaming':'buffered',
+  });
+  res.end(audio.bytes);
+}
+async function voiceHealth(){
+  const reference=await voiceReferenceStatus();
+  const engine=await gptSovitsReachable();
+  return{
+    voice_ready:Boolean(reference.present&&engine),
+    voice_engine:'GPT-SoVITS',
+    voice_engine_reachable:engine,
+    reference_exists:Boolean(reference.present&&engine),
+    reference_pack:reference.present,
+    reference_pack_version:'railway-core-v1',
+    voice_profiles:['core'],
+    system_pronunciations:0,
+    streaming:false,
+    streaming_modes:[0],
+    stable_streaming:false,
+  };
+}
+
 await loadState();
 
 const startedAt=Date.now();
 const server=http.createServer(async(req,res)=>{
   const url=new URL(req.url||'/', 'http://tracker-support.local');
   if(req.method==='GET'&&url.pathname==='/health'){
+    const voice=await voiceHealth().catch(()=>({
+      voice_ready:false,voice_engine:'GPT-SoVITS',voice_engine_reachable:false,
+      reference_exists:false,reference_pack:false,voice_profiles:['core'],
+      streaming:false,streaming_modes:[0],stable_streaming:false,system_pronunciations:0,
+    }));
     return json(res,200,{
       ok:true,
       service:'jlr-tracker-support',
+      version:'2.0.0',
       sessions:store.size,
       uptimeSeconds:Math.floor((Date.now()-startedAt)/1000),
       persistence:Boolean(STATE_FILE),
+      ...voice,
     });
   }
   if(req.method==='GET'&&url.pathname==='/admin/voice-pack/status'){
@@ -156,6 +325,18 @@ const server=http.createServer(async(req,res)=>{
     catch(error){return json(res,400,{error:String(error?.message||error)})}
   }
   if(!authorized(req))return json(res,401,{error:'UNAUTHORIZED'});
+  if(req.method==='POST'&&(url.pathname==='/synthesize'||url.pathname==='/synthesize-stream')){
+    let body;
+    try{body=await readBody(req,20_000)}
+    catch(error){return json(res,400,{error:'BAD_VOICE_REQUEST',message:String(error?.message||error)})}
+    try{
+      const audio=await synthesizeVoice(body);
+      return sendVoiceAudio(res,audio);
+    }catch(error){
+      console.warn('Support GPT-SoVITS synthesis failed:',String(error?.message||error));
+      return json(res,503,{error:'TTS_FAILED',message:String(error?.message||error)});
+    }
+  }
   if(req.method==='POST'&&url.pathname==='/v1/resolve'){
     let body;
     try{body=await readBody(req)}
@@ -185,7 +366,12 @@ const server=http.createServer(async(req,res)=>{
   return json(res,404,{error:'NOT_FOUND'});
 });
 
-server.listen(PORT,'0.0.0.0',()=>console.log('JLR Tracker Support listening on '+PORT));
+server.listen(PORT,'0.0.0.0',()=>{
+  console.log('JLR Tracker Support listening on '+PORT);
+  setTimeout(()=>ensureVoiceReference().then(ref=>{
+    console.log('JLR core voice reference '+(ref.present?'ready':'missing')+' ('+ref.bytes+' bytes)');
+  }).catch(error=>console.warn('JLR voice reference warmup deferred:',String(error?.message||error))),1500).unref?.();
+});
 
 async function shutdown(){
   try{if(saveTimer)clearTimeout(saveTimer);await saveState()}catch(error){}
