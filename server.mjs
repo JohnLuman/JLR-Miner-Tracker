@@ -504,7 +504,22 @@ async function writeState(value = state) {
   await fsp.rename(tmp, STATE_FILE);
 }
 let saveChain = Promise.resolve();
-function save() { saveChain = saveChain.then(() => writeState()).catch(console.error); return saveChain; }
+let saveRequested = false;
+let saveRunning = false;
+function save() {
+  saveRequested = true;
+  if (saveRunning) return saveChain;
+  saveRunning = true;
+  saveChain = saveChain.catch(()=>{}).then(async()=>{
+    do {
+      saveRequested = false;
+      await writeState();
+    } while (saveRequested);
+  }).catch(console.error).finally(()=>{
+    saveRunning = false;
+  });
+  return saveChain;
+}
 
 async function loadTokenKey() {
   const env = String(process.env.TOKEN_ENCRYPTION_KEY || '').trim();
@@ -866,6 +881,8 @@ function publicState() {
   resetExpired(false);
   const daily = state.esi.dailyFleet;
   const today = dateUTC(); const weekStart = mondayUTC();
+  const scans = scanActivityPublic();
+  const ledgerDebug = miningLedgerDebug();
   const sum = (predicate) => daily.filter(predicate).reduce((a,x)=>({m3:a.m3+Number(x.m3||0),jbv:a.jbv+Number(x.jbv||0),unpricedM3:a.unpricedM3+Number(x.unpricedM3||0)}),{m3:0,jbv:0,unpricedM3:0});
   const todayActual = sum(x=>x.date===today); const weekActual = sum(x=>x.date>=weekStart);
   const marketOres=effectiveOres();
@@ -874,14 +891,18 @@ function publicState() {
     app:{name:'JLR Miner Tracker',version:'2.9.122',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
-    scans:scanActivityPublic(),
-    trackerBrain:trackerBrainSnapshot(),
+    scans,
+    trackerBrain:trackerBrainSnapshot(scans,ledgerDebug),
     market:{lastUpdatedAt:state.market.lastUpdatedAt,lastError:state.market.lastError,privateLastError:state.market.privateLastError||null,refreshing:marketRefreshInProgress,valuation:'MAX REFINE',maxRefineYield:MAX_REFINE_YIELD,jita:'Jita IV - Moon 4 - Caldari Navy Assembly Plant',jitaBuyBasis:state.market.jitaBuyBasis||'unavailable',janiceConfigured:Boolean(JANICE_API_KEY),janiceLastError:state.market.janiceLastError||null,local:CN_SYSTEM_NAME,titanBridgeRangeLy:TITAN_BRIDGE_RANGE_LY,history:marketHistoryPublic(),privateAccess:Boolean(state.market.refreshTokenEnc),marketCharacterName:state.market.characterName||null,structureName:state.market.structureName||null},
-    esi:{configured:Boolean(EVE_CLIENT_ID),linkedCharacters:Object.keys(state.characters).length,lastSyncAt:state.esi.lastSyncAt,lastError:/temporarily unavailable\s*\(HTTP\s*\d+\)/i.test(String(state.esi.lastError||''))?null:state.esi.lastError,syncing:syncInProgress||manualSyncCount>0,ledgerDebug:miningLedgerDebug(),scheduler:{...autoSyncPlan(Object.keys(state.characters).length||1),active:esiCharacterSyncActive,queued:esiCharacterSyncWaiters.length,backoffUntil:esiBackoffUntil>Date.now()?new Date(esiBackoffUntil).toISOString():null},actual:{today:todayActual,week:weekActual,basis:{day:'UTC',exactTypeId:true,exactGrade:true,valuationVersion:LEDGER_VALUATION_VERSION}},performance:{daily:daily.slice(0,90).map(row=>({date:String(row.date||''),m3:Number(row.m3||0),jbv:Number(row.jbv||0),unpricedM3:Number(row.unpricedM3||0),ores:row.ores&&typeof row.ores==='object'?row.ores:{}})),samples:(state.esi.performanceSamples||[]).slice(-672)}},
+    esi:{configured:Boolean(EVE_CLIENT_ID),linkedCharacters:Object.keys(state.characters).length,lastSyncAt:state.esi.lastSyncAt,lastError:/temporarily unavailable\s*\(HTTP\s*\d+\)/i.test(String(state.esi.lastError||''))?null:state.esi.lastError,syncing:syncInProgress||manualSyncCount>0,ledgerDebug,scheduler:{...autoSyncPlan(Object.keys(state.characters).length||1),active:esiCharacterSyncActive,queued:esiCharacterSyncWaiters.length,backoffUntil:esiBackoffUntil>Date.now()?new Date(esiBackoffUntil).toISOString():null},actual:{today:todayActual,week:weekActual,basis:{day:'UTC',exactTypeId:true,exactGrade:true,valuationVersion:LEDGER_VALUATION_VERSION}},performance:{daily:daily.slice(0,90).map(row=>({date:String(row.date||''),m3:Number(row.m3||0),jbv:Number(row.jbv||0),unpricedM3:Number(row.unpricedM3||0),ores:row.ores&&typeof row.ores==='object'?row.ores:{}})),samples:(state.esi.performanceSamples||[]).slice(-672)}},
     serverNow:now(),
   };
 }
 function broadcast() {
+  if(!sseClients.size){
+    resetExpired(false);
+    return;
+  }
   const msg=`event: state\ndata: ${JSON.stringify(publicState())}\n\n`;
   for (const res of [...sseClients]) { try{res.write(msg)}catch{sseClients.delete(res)} }
 }
@@ -2807,7 +2828,7 @@ async function characterAccess(ch){
   return pending;
 }
 
-async function scoutLocationSnapshot(ch,user=null){
+async function scoutLocationSnapshot(ch,user=null,activity=null){
   const id=String(ch.characterId);
   let location=trackerLocationCache.get(id);
   const cachedAge=Date.now()-Date.parse(location?.checkedAt||'');
@@ -2850,7 +2871,7 @@ async function scoutLocationSnapshot(ch,user=null){
   const ice=(state.market?.iceFields||[]).find(row=>row.system===system)||null;
   const a0=(state.market?.a0Fields||[]).find(row=>row.system===system)||state.market?.a0Reports?.[system]||null;
   const tracked=Boolean(t3||ice||a0);
-  const scan=scanActivityPublic()[system]||null;
+  const scan=(activity||scanActivityPublic())[system]||null;
   const ledger=scan?.ledger||null;
   const lastScanAt=scan?.lastScanAt||null;
   const scanMs=Date.parse(lastScanAt||'');
@@ -3091,10 +3112,8 @@ function trackerBrainWhySystem(system){
   };
 }
 
-function trackerBrainSnapshot(){
+function trackerBrainSnapshot(scans=scanActivityPublic(),debug=miningLedgerDebug()){
   const issues=[];
-  const scans=scanActivityPublic();
-  const debug=miningLedgerDebug();
   const live=trackerLiveStatus();
 
   const add=(issue)=>{
