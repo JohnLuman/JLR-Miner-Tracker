@@ -31,3 +31,7 @@ assert.deepEqual(brainLiveIntent('on way to anywhere in Fountain'),{kind:'route'
 assert.deepEqual(brainLiveIntent('how much I made this hour total'),{kind:'earnings',period:'current'});
 assert.deepEqual(brainLiveIntent('give me a status briefing'),{kind:'general'});
 console.log('Brain intel tests passed');
+
+assert.deepEqual(brainLiveIntent('Tracker, next system'),{kind:'nearest',updatesOnly:true});
+assert.deepEqual(brainLiveIntent('next field'),{kind:'nearest',updatesOnly:true});
+assert.deepEqual(brainLiveIntent('another scan stop'),{kind:'nearest',updatesOnly:true});
