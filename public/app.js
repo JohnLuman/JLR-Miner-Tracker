@@ -229,7 +229,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.124');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.125');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -319,7 +319,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR TRACKER MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.124'),
+      'Version: '+String(state?.app?.version||'2.9.125'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -581,7 +581,7 @@
       brainSetListen('TRACKER THINKING','Checking JLR data and EVE location when needed…');
       const response=await api('/api/tracker/brain/ask',{
         method:'POST',
-        body:JSON.stringify({question:command,characterId:scanCharacterId,payoutPct:Number(fleetSettings.payout)}),
+        body:JSON.stringify({question:command,characterId:scanCharacterId,payoutPct:Number(fleetSettings.payout),currentTab:activeTab}),
       });
       const answer=String(response?.text||'I do not have an answer for that yet.');
       const spokenAnswer=String(response?.voiceText||answer);
@@ -5505,7 +5505,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.124',
+          version:state?.app?.version||'2.9.125',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
