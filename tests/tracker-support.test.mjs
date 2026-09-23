@@ -1,0 +1,45 @@
+import assert from 'node:assert/strict';
+import {TrackerSessionStore,trackerSupportAnswerContext} from '../services/tracker-support/core.mjs';
+
+let now=1_000_000;
+const store=new TrackerSessionStore({nowFn:()=>now,focusTtlMs:30*60*1000,ttlMs:12*60*60*1000});
+
+const answer={
+  handled:true,
+  topic:'nearest-system',
+  text:'Closest tracked system needing a scan update: Y-2ANO. 3 jumps from John Luman in C-N4OD. Its last Probe Scanner copy is out of date.',
+  voiceText:'Y-2ANO is closest. 3 jumps.',
+  closest:{system:'Y-2ANO',jumps:3},
+  location:{system:'C-N4OD'},
+};
+store.remember('a'.repeat(48),{question:'Tracker, next system',currentTab:'fields',answer});
+
+const distance=store.resolve('a'.repeat(48),{question:'How far is it?',currentTab:'fields'});
+assert.equal(distance.contextUsed,true);
+assert.equal(distance.answerOverride.focusSystem,'Y-2ANO');
+assert.match(distance.answerOverride.text,/3 jumps from C-N4OD/);
+
+const isolated=store.resolve('b'.repeat(48),{question:'How far is it?',currentTab:'fields'});
+assert.equal(isolated.answerOverride,null,'different users never share focus context');
+
+const why=store.resolve('a'.repeat(48),{question:'Why that system?',currentTab:'fields'});
+assert.equal(why.answerOverride.topic,'support-context-why');
+assert.match(why.answerOverride.text,/Probe Scanner copy is out of date/);
+
+const rewritten=store.resolve('a'.repeat(48),{question:'Tell me more about that system',currentTab:'fields'});
+assert.equal(rewritten.question,'Tell me more about Y-2ANO');
+
+const context=trackerSupportAnswerContext(answer);
+assert.equal(context.focusSystem,'Y-2ANO');
+assert.equal(context.jumps,3);
+assert.equal(context.originSystem,'C-N4OD');
+
+now+=31*60*1000;
+const expiredFocus=store.resolve('a'.repeat(48),{question:'How far is it?',currentTab:'fields'});
+assert.equal(expiredFocus.answerOverride,null,'stale conversational focus is not reused');
+
+const snapshot=store.exportState();
+const restored=new TrackerSessionStore({nowFn:()=>now});
+restored.importState(snapshot);
+assert.equal(restored.size,1);
+console.log('Tracker support session tests passed.');
