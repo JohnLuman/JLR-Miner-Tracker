@@ -5,8 +5,9 @@ import { performance } from 'node:perf_hooks';
 
 const source=fs.readFileSync(new URL('../public/tracker.js',import.meta.url),'utf8');
 
-function voiceHarness(fail=false){
+function voiceHarness(fail=false,sharedStorage=new Map()){
   const events=[];
+  const listeners=new Map();
   let requests=0;
   class Audio{
     constructor(){this.listeners=new Map();this.stopped=false}
@@ -25,7 +26,12 @@ function voiceHarness(fail=false){
     removeAttribute(){}
     load(){}
   }
-  const window={dispatchEvent(){}};
+  const window={dispatchEvent(){},addEventListener(name,listener){listeners.set(name,listener)}};
+  const localStorage={
+    getItem(key){return sharedStorage.get(key)??null},
+    setItem(key,value){sharedStorage.set(key,String(value))},
+    removeItem(key){sharedStorage.delete(key)},
+  };
   const document={
     addEventListener(){},getElementById(){return null},
     documentElement:{},head:{appendChild(){}},
@@ -47,11 +53,11 @@ function voiceHarness(fail=false){
     };
   };
   vm.runInNewContext(source,{
-    window,document,fetch,Audio,Blob,URL,Headers,AbortController,performance,
+    window,document,localStorage,fetch,Audio,Blob,URL,Headers,AbortController,performance,
     MutationObserver:class{observe(){}},CustomEvent:class{},Element:class{},
-    setTimeout,clearTimeout,console:{...console,error(){}},queueMicrotask,
+    setTimeout,clearTimeout,setInterval(){},console:{...console,error(){}},queueMicrotask,
   });
-  return{window,events,get requests(){return requests}};
+  return{window,events,listeners,get requests(){return requests}};
 }
 
 const happy=voiceHarness();
@@ -70,4 +76,16 @@ const broken=voiceHarness(true);
 assert.equal(await broken.window.jlrSpeakEvent('brain',{text:'Test failure.'}),false);
 assert.match(broken.window.jlrVoiceLastError,/Worker unavailable/);
 assert.equal(broken.events.includes('play'),false);
+
+const sharedStorage=new Map();
+const firstTab=voiceHarness(false,sharedStorage);
+const secondTab=voiceHarness(false,sharedStorage);
+firstTab.window.jlrVoiceAccountId='pilot-1';
+secondTab.window.jlrVoiceAccountId='pilot-1';
+assert.equal(await firstTab.window.jlrSpeakEvent('brain',{text:'Scan update due.',automatic:true}),true);
+assert.equal(await secondTab.window.jlrSpeakEvent('brain',{text:'Scan update due.',automatic:true}),false);
+assert.equal(secondTab.requests,0,'another tab does not announce the same automatic update');
+assert.equal(await secondTab.window.jlrSpeakEvent('brain',{text:'Answer my direct question.'}),true,'manual questions still speak in either tab');
+firstTab.listeners.get('pagehide')();
+assert.equal(await secondTab.window.jlrSpeakEvent('brain',{text:'Scan update due.',automatic:true}),true,'the second tab takes over when the first closes');
 console.log('Brain voice queue tests passed.');

@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { DOCTRINE_SEED_B64 } from './lib/doctrine-seed.mjs';
 import { parseProbeScan, parseA0Scan, parseIceScan } from './lib/probe-scan.mjs';
 import { nearestTrackedSystems } from './lib/brain-location.mjs';
-import { positiveLedgerDeltas, dueRouteStops, fountainRouteDestination } from './lib/brain-intel.mjs';
+import { positiveLedgerDeltas, dueRouteStops, fountainRouteDestination, brainLiveIntent } from './lib/brain-intel.mjs';
 import { parseThreatPaste, compactThreatStats, threatActivityLabels, fountainThreatTags, jlrThreatScore, threatIgnoreReason } from './lib/threat-scan.mjs';
 import {
   BASE_T3_ORE_REPROCESSING,
@@ -795,7 +795,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.114',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.115',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -3257,8 +3257,14 @@ async function trackerBrainNearestSystems(originSystemId,{updatesOnly=false,limi
     ...(state.market?.a0Fields||[]).map(row=>row.system),
     ...Object.keys(state.market?.a0Reports||{}),
   ].filter(Boolean));
+  const eligible=[...names].filter(system=>{
+    const field=state.fields?.[system];
+    const respawning=field?.status==='cleared'&&Date.parse(field.timerEndsAt||'')>Date.now();
+    const ledger=activity[system]?.ledger;
+    return !updatesOnly||!respawning||Boolean(ledger?.needsScan||ledger?.likelyDepleted);
+  });
   return nearestTrackedSystems(originSystemId,{
-    names:[...names],activity,updatesOnly,limit,
+    names:eligible,activity,updatesOnly,limit,
     resolveIds:resolveUniverseIds,
     routeJumps:async(origin,id,system)=>{
       try{
@@ -3375,11 +3381,11 @@ async function trackerBrainRouteAnswer(user,raw,options){
 
 async function trackerBrainLiveAnswer(user,question,options={}){
   const raw=trackerSpeechSafe(question,900);
+  const intent=brainLiveIntent(raw);
+  if(intent.kind==='earnings')return trackerBrainHourlyEarnings(user,options.payoutPct,intent.period);
+  if(intent.kind==='route')return trackerBrainRouteAnswer(user,raw,options);
+  if(intent.kind==='general')return trackerBrainAnswer(user,question);
   const q=trackerBrainNormalize(raw);
-  if(/\b(?:how much|what(?:'s| is)?|total|made|earned|earnings|income|payout)\b/.test(q)&&/\b(?:this hour|current hour|last hour|past hour|hourly|so far this hour)\b/.test(q))return trackerBrainHourlyEarnings(user,options.payoutPct,/\blast hour\b/.test(q)?'last':/\bpast hour\b/.test(q)?'past':'current');
-  if(/\b(?:heading|headed|going|travelling|traveling|flying|on (?:my |the )?way|en route|route)\b/.test(q)&&/\b(?:to|toward|towards)\b/.test(q))return trackerBrainRouteAnswer(user,raw,options);
-  const locationIntent=/\b(closest|nearest|where is|where s|location|what system|which system|nearby|near )\b/.test(q);
-  if(!locationIntent)return trackerBrainAnswer(user,question);
 
   const explicitOther=/\b(?:where is|where s|location of)\b/.test(q)&&!(/\b(?:my|me|i|closest|nearest)\b/.test(q));
   const linked=(user?.characterIds||[]).map(id=>state.characters[String(id)]).filter(Boolean);
@@ -3408,7 +3414,7 @@ async function trackerBrainLiveAnswer(user,question,options={}){
       :'I could not get '+ch.name+' location from E S I right now.',generatedAt:now(),errorCode:error?.code||'ESI_LOCATION_FAILED'};
   }
 
-  const wantsNearest=/\b(closest|nearest|nearby|near )\b/.test(q);
+  const wantsNearest=intent.kind==='nearest';
   if(!wantsNearest){
     const text=location.stale
       ?ch.name+' was last seen in '+location.system+' within fifteen minutes. E S I did not return a live location.'
@@ -3417,7 +3423,7 @@ async function trackerBrainLiveAnswer(user,question,options={}){
     return{handled:true,topic:'toon-location',text,voiceText,generatedAt:now(),location};
   }
 
-  const updatesOnly=/\b(updates?|updating|scans?|stale|refresh|due)\b/.test(q);
+  const updatesOnly=Boolean(intent.updatesOnly);
   let nearest={candidates:1,rows:[]};
   try{
     nearest=await trackerBrainNearestSystems(location.systemId,{updatesOnly,limit:1});
@@ -3435,7 +3441,10 @@ async function trackerBrainLiveAnswer(user,question,options={}){
 
   const first=nearest.rows[0];
   const qualifier=updatesOnly?' tracked system needing a scan update':' tracked mining system';
+  const ledgerDue=Boolean(first.activity?.ledger?.needsScan||first.activity?.ledger?.likelyDepleted);
+  const reason=updatesOnly?(ledgerDue?' Mining ledger activity flags another scan.':first.activity?.lastScanAt?' Its last Probe Scanner copy is out of date.':' No Probe Scanner copy is recorded for that system.'):'';
   const text='Closest'+qualifier+': '+first.system+'. '+first.jumps+' jump'+(first.jumps===1?'':'s')+' from '+ch.name+' in '+location.system+'.'
+    +reason
     +(location.stale?' Location is from the last successful E S I check, not a live response.':'');
   const voiceText=trackerSpokenSystem(first.system)+' is closest. '+first.jumps+' jump'+(first.jumps===1?'':'s')+'.'
     +(location.stale?' This uses the last E S I location.':'');
@@ -3448,7 +3457,7 @@ function trackerBrainAnswer(user,question){
   const snapshot=trackerBrainSnapshot();
   const linked=(user?.characterIds||[]).map(String).filter(Boolean);
   const primaryName=trackerBrainPrimaryName(user);
-  const appVersion='2.9.114';
+  const appVersion='2.9.115';
 
   const voiceSummary=(text,max=120)=>{
     const clean=trackerSpeechSafe(text,1200).replace(/\s+/g,' ').trim();
@@ -6709,7 +6718,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.114',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.115',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -6737,7 +6746,7 @@ async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname==='/api/tracker/speech/diagnostics'){
     const voiceWorker=await trackerVoiceHealth().catch(err=>({configured:Boolean(TRACKER_TTS_WORKER_URL),reachable:false,message:String(err?.message||err)}));
     return json(res,200,{
-      version:'2.9.114',
+      version:'2.9.115',
       modelCached:Boolean(voskModelArchive),
       modelBytes:voskModelArchive?.length||0,
       modelSource:voskModelSource||null,
@@ -7298,22 +7307,13 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.114 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.115 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>{
   Promise.all([
     loadVoskRuntimeAsset(VOSK_RUNTIME_FILES['/vendor/vosk/vosk-0.0.8.js']),
     loadVoskModelArchive(),
   ]).catch(err=>console.warn('Tracker speech runtime warmup deferred:',String(err?.message||err)));
 },1_500).unref();
-setTimeout(()=>{
-  if(!trackerVoiceConfigured())return;
-  const text='Checking E S I.';
-  // Match /api/voice/event's Brain key so the first live-location reply starts
-  // with already synthesized CORE audio rather than a fresh worker job.
-  const cacheKey='brain-'+crypto.createHash('sha1').update(text).digest('hex').slice(0,20)+'-core';
-  trackerVoiceWorkerAudio(text,cacheKey,'core',60_000)
-    .catch(err=>console.warn('Tracker conversational acknowledgement warmup deferred:',String(err?.message||err)));
-},3_500).unref();
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
 setInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': tracker-heartbeat\n\n')}catch{trackerLiveClients.delete(res)}}},20_000).unref();
 setInterval(()=>resetExpired(true),15_000).unref();

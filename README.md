@@ -51,7 +51,7 @@ JLR requests these ESI scopes:
 - `esi-corporations.read_contacts.v1` — corporation standings used by THREAT SCAN
 - `esi-alliances.read_contacts.v1` — alliance standings used by THREAT SCAN
 
-When Brain Auto Follow is on, an open dashboard checks linked toons' locations in batches of up to four every 30 seconds (the selected scan toon is checked every round). Only that account sees the current locations. The server briefly caches them in memory; they are not saved to character history or broadcast to the fleet. Turn Auto Follow off in Brain to stop these checks. Probe Scanner imports also check the chosen toon's location; ESI cannot read the scanner list, so the pilot must still copy and paste it. Skills and saved fittings are shown only to the JLR account that linked that character.
+When Brain Auto Follow is on, an open dashboard checks linked toons' locations in batches of up to four every 30 seconds (the selected scan toon is checked every round). If the same account has multiple tabs open, one tab handles automatic spoken announcements; the other tabs still show scan prompts. Only that account sees the current locations. The server briefly caches them in memory; they are not saved to character history or broadcast to the fleet. Turn Auto Follow off in Brain to stop these checks. Probe Scanner imports also check the chosen toon's location; ESI cannot read the scanner list, so the pilot must still copy and paste it. Skills and saved fittings are shown only to the JLR account that linked that character.
 
 Characters authorized before v2.2 need to use **Authorize** once so EVE can grant the two new read-only scopes.
 

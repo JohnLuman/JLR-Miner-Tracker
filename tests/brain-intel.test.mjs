@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { positiveLedgerDeltas, dueRouteStops, fountainRouteDestination } from '../lib/brain-intel.mjs';
+import { positiveLedgerDeltas, dueRouteStops, fountainRouteDestination, brainLiveIntent } from '../lib/brain-intel.mjs';
 
 const old=[{date:'2026-09-23',solar_system_id:1,type_id:74521,quantity:100},{date:'2026-09-23',solar_system_id:2,type_id:74521,quantity:20}];
 const next=[{date:'2026-09-23',solar_system_id:1,type_id:74521,quantity:145},{date:'2026-09-23',solar_system_id:2,type_id:74521,quantity:12},{date:'2026-09-23',solar_system_id:1,type_id:74522,quantity:7}];
@@ -20,4 +20,14 @@ assert.deepEqual(dueRouteStops([1,3],tracked),[],'never suggest a detour as an o
 assert.equal(fountainRouteDestination('I am heading to C-N, what systems could I stop by and scan?'),'C-N4OD');
 assert.equal(fountainRouteDestination('On my way to 1-SMEB. Which systems need a scan?'),'1-SMEB');
 assert.equal(fountainRouteDestination('on way to anywhere in fountain'),'','ask for a destination instead of guessing');
+for(const question of [
+  'Tracker what system is closest that needs an update?',
+  'which systems need a scan update on Tracker',
+  'where should I go to update a field',
+  'find me a close system due for scanning',
+])assert.deepEqual(brainLiveIntent(question),{kind:'nearest',updatesOnly:true},question);
+assert.deepEqual(brainLiveIntent('where is my toon'),{kind:'location'});
+assert.deepEqual(brainLiveIntent('on way to anywhere in Fountain'),{kind:'route'});
+assert.deepEqual(brainLiveIntent('how much I made this hour total'),{kind:'earnings',period:'current'});
+assert.deepEqual(brainLiveIntent('give me a status briefing'),{kind:'general'});
 console.log('Brain intel tests passed');

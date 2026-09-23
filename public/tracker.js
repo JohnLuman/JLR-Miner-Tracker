@@ -1,7 +1,7 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.114';
-  const CORE_URL='/tracker-core.js?v=2.9.114';
+  const ALARM_VERSION='2.9.115';
+  const CORE_URL='/tracker-core.js?v=2.9.115';
 
   let alarmContext=null;
   let alarmSource=null;
@@ -14,6 +14,43 @@
   let lastVoiceMode='unknown';
   let voiceQueue=[];
   let voiceQueueRunning=false;
+  const autoVoiceTabId=Math.random().toString(36).slice(2)+Date.now().toString(36);
+  let autoVoiceKey='';
+
+  // Only one open tab per signed-in account announces automatic updates. The
+  // shared lease contains a tab ID and expiry, never a toon or system name.
+  function autoVoiceAllowed(){
+    const account=String(window.jlrVoiceAccountId||'').trim();
+    if(!account)return true;
+    const key='jlrAutoVoiceOwner:'+account;
+    const now=Date.now();
+    try{
+      const current=JSON.parse(localStorage.getItem(key)||'null');
+      if(current?.tab!==autoVoiceTabId&&Number(current?.expiresAt)>now)return false;
+      localStorage.setItem(key,JSON.stringify({tab:autoVoiceTabId,expiresAt:now+90_000}));
+      if(JSON.parse(localStorage.getItem(key)||'null')?.tab!==autoVoiceTabId)return false;
+      autoVoiceKey=key;
+    }catch(error){ /* Private storage unavailable: keep local voice usable. */ }
+    return true;
+  }
+
+  function releaseAutoVoice(){
+    if(!autoVoiceKey)return;
+    try{
+      if(JSON.parse(localStorage.getItem(autoVoiceKey)||'null')?.tab===autoVoiceTabId)localStorage.removeItem(autoVoiceKey);
+    }catch(error){}
+    autoVoiceKey='';
+  }
+
+  setInterval(function(){
+    if(!autoVoiceKey)return;
+    try{
+      const current=JSON.parse(localStorage.getItem(autoVoiceKey)||'null');
+      if(current?.tab!==autoVoiceTabId){autoVoiceKey='';return;}
+      localStorage.setItem(autoVoiceKey,JSON.stringify({tab:autoVoiceTabId,expiresAt:Date.now()+90_000}));
+    }catch(error){}
+  },15_000);
+  window.addEventListener('pagehide',releaseAutoVoice);
 
   function reportVoiceMode(mode,detail){
     lastVoiceMode=mode;
@@ -401,6 +438,7 @@
   }
 
   async function playVoiceAlert(loss){
+    if(!loss?.test&&!autoVoiceAllowed())return false;
     stopVoiceAlert();
     const generation=alarmGeneration;
     const isTest=Boolean(loss&&loss.test);
@@ -612,6 +650,7 @@
   async function speakEvent(type,payload,localFallback){
     const fallback=String(localFallback||'Tracker voice notification.');
     const kind=String(type||'');
+    if(payload?.automatic&&!autoVoiceAllowed())return false;
     let endpoint='';
     if(kind==='startup')endpoint='/api/voice/stream/startup';
     else if(kind==='briefing')endpoint='/api/voice/stream/briefing?force=1';
@@ -710,6 +749,8 @@
   window.jlrUnlockFighterAlarm=unlockAlarm;
   window.jlrSpeakEvent=speakEvent;
   window.jlrVoiceIsActive=voiceIsActive;
+  window.jlrAutoVoiceAllowed=autoVoiceAllowed;
+  window.jlrReleaseAutoVoice=releaseAutoVoice;
 
   if('speechSynthesis' in window){
     window.speechSynthesis.onvoiceschanged=function(){window.speechSynthesis.getVoices();};

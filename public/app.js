@@ -218,7 +218,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.114');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.115');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -308,7 +308,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR TRACKER MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.114'),
+      'Version: '+String(state?.app?.version||'2.9.115'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -458,30 +458,7 @@
         return;
       }
 
-      // Location/nearest-system questions must win over generic words such as
-      // "where", "which" and "update". Previously a question like
-      // "closest system to Toon so I can update the app" was intercepted by
-      // the generic briefing handler and dumped the whole update list.
-      const liveLookup=/\b(closest|nearest|where is|where's|location|what system|which system|nearby|near me|near my|this hour|current hour|last hour|past hour|hourly|heading|headed|on (?:my |the )?way|en route|route to|going to|flying to)\b/.test(command);
-      if(liveLookup){
-        brainSetListen('TRACKER THINKING','Checking live EVE location and routes…');
-        speakBrainAnswer('Checking E S I.','brain',{text:'Checking E S I.'}).catch(()=>{});
-        const response=await api('/api/tracker/brain/ask',{
-          method:'POST',
-          body:JSON.stringify({question:command,characterId:scanCharacterId,payoutPct:Number(fleetSettings.payout)}),
-        });
-        const answer=String(response?.text||'I could not determine the closest system.');
-        const spokenAnswer=String(response?.voiceText||answer);
-        if($('brainReply')){
-          $('brainReply').classList.remove('diagnostic-report');
-          $('brainReply').textContent=answer;
-        }
-        brainConversationUntil=Date.now()+brainConversationMs();
-        await speakBrainAnswer(spokenAnswer,'brain',{text:spokenAnswer});
-        return;
-      }
-
-      if(/\b(which|where|highest|priority|first)\b/.test(command)&&state?.trackerBrain?.issues?.length){
+      if(/\b(?:highest priority|first priority|top priority|which issue)\b/.test(command)&&state?.trackerBrain?.issues?.length){
         const issue=state.trackerBrain.issues.find(row=>row.system)||state.trackerBrain.issues[0];
         if(issue?.system)brainLastSystem=String(issue.system);
         const answer=String(issue?.voice||issue?.reason||issue?.title||'No priority issue.');
@@ -489,12 +466,13 @@
         await speakBrainAnswer(answer,'brain',{text:answer});
         return;
       }
-      if(/\b(status|brief|attention|changed|anything else|status update|give me an update|what needs update)\b/.test(command)){
+      if(/\b(?:brief|briefing|status update|give me an update|what changed|anything else|what needs attention)\b/.test(command)
+        &&!/\b(?:closest|nearest|nearby|scan|system|field)\b/.test(command)){
         await brainSpeakBriefing();
         return;
       }
 
-      brainSetListen('TRACKER THINKING','Answering your JLR question…');
+      brainSetListen('TRACKER THINKING','Checking JLR data and EVE location when needed…');
       const response=await api('/api/tracker/brain/ask',{
         method:'POST',
         body:JSON.stringify({question:command,characterId:scanCharacterId,payoutPct:Number(fleetSettings.payout)}),
@@ -1294,7 +1272,7 @@
     if(!status||!list||!me)return;
     const chars=(me.characters||[]).filter(c=>c.locationAccess);
     status.textContent=scoutFollowEnabled
-      ?'Following '+chars.length+' location-enabled toon'+(chars.length===1?'':'s')+' while this page is open • checks spread across the roster'
+      ?'Following '+chars.length+' location-enabled toon'+(chars.length===1?'':'s')+' while this page is open • one tab gives spoken updates'
       :'Auto follow is off.';
     list.innerHTML=scoutFollowEnabled?chars.map(ch=>{
       const row=scoutLocations.get(String(ch.characterId));
@@ -1311,7 +1289,6 @@
     if($('brainScanPromptText'))$('brainScanPromptText').textContent=String(snapshot.characterName||'Toon')+' is in '+snapshot.system+'. Could you send a new Probe Scanner copy when it is safe?';
     panel.dataset.characterId=String(snapshot.characterId);
     const key=String(snapshot.characterId)+':'+String(snapshot.system);
-    scoutVoiceCooldown.set(String(snapshot.system),Date.now());
     if(scoutPromptKey!==key){scoutPromptKey=key;toast('🛰 '+snapshot.characterName+': '+snapshot.system+' needs a scan update.')}
   }
 
@@ -1351,9 +1328,10 @@
       renderScoutFollow();
       if(prompt){
         scoutShowPrompt(prompt);
-        if(soundEnabled&&window.jlrVoiceUserActivated===true&&!brainVoiceActive()){
+        if(soundEnabled&&window.jlrVoiceUserActivated===true&&!brainVoiceActive()&&window.jlrAutoVoiceAllowed?.()!==false){
+          scoutVoiceCooldown.set(String(prompt.system),Date.now());
           const text=scoutFallbackText(prompt);
-          await speakBrainAnswer(text,'brain',{text});
+          await speakBrainAnswer(text,'brain',{text,automatic:true});
         }
       }
     }catch(error){
@@ -1389,12 +1367,13 @@
         setTimeout(queueStartupGreeting,400);
         return;
       }
+      if(window.jlrAutoVoiceAllowed?.()===false){startupGreetingQueued=false;return;}
       try{
         if(typeof window.jlrUnlockFighterAlarm==='function')window.jlrUnlockFighterAlarm();
       }catch(error){}
       const primary=(me?.characters||[]).find(character=>String(character.characterId)===String(me?.primaryCharacterId));
       const mainName=String(primary?.name||me?.displayName||'pilot');
-      const played=await speakJlr('startup',{},'Welcome back, '+mainName+'. Tracker is online.');
+      const played=await speakJlr('startup',{automatic:true},'Welcome back, '+mainName+'. Tracker is online.');
       if(played){
         const mode=String(window.jlrVoiceMode||'unknown');
         toast(mode==='custom'?'🔊 TRACKER CUSTOM VOICE ONLINE.':mode==='fallback'?'⚠ Custom voice unavailable.':'🔊 Tracker voice played.');
@@ -1402,6 +1381,7 @@
         // whether the Scout's current system needs a spoken update.
         setTimeout(()=>pollScoutLocation(true),9000);
       }else{
+        window.jlrReleaseAutoVoice?.();
         startupGreetingQueued=false;
         toast('⚠ Tracker voice did not start. Click again or use the Tracker voice test.');
         setTimeout(queueStartupGreeting,700);
@@ -1686,6 +1666,7 @@
   $('soundStatus').addEventListener('click',async()=>{
     soundEnabled=!soundEnabled;
     localStorage.setItem('jlrSoundEnabled',String(soundEnabled));
+    if(!soundEnabled)window.jlrReleaseAutoVoice?.();
     if(soundEnabled){
       unlockAudio();
       if(audio?.state==='suspended'){
@@ -5070,7 +5051,7 @@
 
   function renderAll(){if(!state)return;renderFleet();renderTop();renderTrackerBrain();renderSelect();renderBoards();renderHits();renderFleetPerformance();renderMiningVisuals();renderIceMining();renderGasHuffing();if(doctrineMarket)renderDoctrineMarket();renderRanking();renderTimers();renderSelected();renderNotes();renderScanCharacters();renderCharacters();renderCalculator();renderMerIntel();}
 
-  async function refreshMe(){const p=await api('/api/me');me=p.user;if(me){$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;syncDoctrineTabAccess();syncTrackerTabAccess()}return p.authenticated}
+  async function refreshMe(){const p=await api('/api/me');if(me?.id&&me.id!==p.user?.id)window.jlrReleaseAutoVoice?.();me=p.user;if(me){window.jlrVoiceAccountId=String(me.id||'');$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;syncDoctrineTabAccess();syncTrackerTabAccess()}return p.authenticated}
   async function loadState(){
     const [nextState,myLedger]=await Promise.all([
       api('/api/state'),
@@ -5128,7 +5109,7 @@
     }
     const systems=[...queued];
     if(systems.length>1){
-      speakJlr('briefing',{},'Tracker has multiple mining updates that need attention.');
+      speakJlr('briefing',{automatic:true},'Tracker has multiple mining updates that need attention.');
       return;
     }
     for(const system of systems){
@@ -5138,7 +5119,7 @@
       let fallback='Mining detected in '+system+'. Field marked picked.';
       if(mined>0)fallback+=' About '+Math.round(mined).toLocaleString()+' cubic meters reported mined.';
       if(Number.isFinite(pct)&&pct>=80)fallback+=' Estimated depletion '+Math.round(pct)+' percent. Scan recommended.';
-      speakJlr('field',{system},fallback);
+      speakJlr('field',{system,automatic:true},fallback);
     }
   }
 
@@ -5173,6 +5154,7 @@
     if(target?.id==='brainVoiceEnabled'){
       soundEnabled=target.value==='on';
       localStorage.setItem('jlrSoundEnabled',String(soundEnabled));
+      if(!soundEnabled)window.jlrReleaseAutoVoice?.();
       updateSoundStatus();
     }else if(target?.id==='brainFollowEnabled'){
       scoutFollowEnabled=target.value==='on';
@@ -5264,7 +5246,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.114',
+          version:state?.app?.version||'2.9.115',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
@@ -5331,7 +5313,7 @@
 
   function addToon(){location.href='/auth/eve/start?intent=link'}
   $('addToon').addEventListener('click',addToon);$('addToonTop').addEventListener('click',addToon);
-  $('logout').addEventListener('click',async()=>{try{await api('/auth/logout',{method:'POST',body:'{}'})}catch{}location.href='/' });
+  $('logout').addEventListener('click',async()=>{window.jlrReleaseAutoVoice?.();try{await api('/auth/logout',{method:'POST',body:'{}'})}catch{}location.href='/' });
   $('compactMode').addEventListener('click',()=>applyMode('compact'));$('expandedMode').addEventListener('click',()=>applyMode('expanded'));
   $('themeSelect').value=activeTheme;
   $('themeSelect').addEventListener('change',()=>applyTheme($('themeSelect').value));
@@ -5727,7 +5709,7 @@
       if(!config.ssoConfigured){$('setupWarning').classList.remove('hidden');$('setupWarning').textContent='Login is not configured yet.';}
       const auth=await fetch('/api/me',{credentials:'same-origin'}).then(r=>r.json());
       if(!auth.authenticated){showLogin();return}
-      me=auth.user;syncDoctrineTabAccess();syncTrackerTabAccess();initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');queueStartupGreeting();await loadMerIntel();await loadState();connectSse();startScoutLocationWatch();
+      me=auth.user;window.jlrVoiceAccountId=String(me.id||'');syncDoctrineTabAccess();syncTrackerTabAccess();initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');queueStartupGreeting();await loadMerIntel();await loadState();connectSse();startScoutLocationWatch();
       await refreshBrainMicrophones();
       setTimeout(()=>startBrainListening(),1200);
       const params=new URLSearchParams(location.search);if(params.get('linked'))toast('Mining toon connected.');if(params.get('login'))toast('Logged in.');if(params.get('market')==='authorized')toast('John market access authorized.');if(params.get('error'))toast(decodeURIComponent(params.get('error')));if(params.toString())history.replaceState({},'',location.pathname);
