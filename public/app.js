@@ -344,6 +344,20 @@
       'Voice first audio ms: '+String(window.jlrVoiceFirstAudioMs??'unknown'),
       'Voice last error: '+String(window.jlrVoiceLastError||'none'),
     ];
+    try{
+      const runtime=window.jlrVoiceRuntimeStatus?.();
+      if(runtime){
+        lines.push('Voice queue running: '+String(Boolean(runtime.queueRunning)));
+        lines.push('Voice queued: '+String(runtime.queued??0));
+        lines.push('Voice queue active ms: '+String(runtime.activeForMs??0));
+        lines.push('Voice last progress ms: '+String(runtime.lastProgressMs??0));
+        lines.push('Voice recovery count: '+String(runtime.recoveryCount??0));
+        lines.push('Voice audio context: '+String(runtime.audioContext||'none'));
+        lines.push('Voice fetch active: '+String(Boolean(runtime.activeFetch)));
+        lines.push('Voice audio active: '+String(Boolean(runtime.activeAudio)));
+      }
+    }catch(error){}
+
     if(serverDiag){
       lines.push('Server speech model cached: '+String(Boolean(serverDiag.modelCached)));
       lines.push('Server model bytes: '+String(serverDiag.modelBytes||0));
