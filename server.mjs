@@ -784,7 +784,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.110',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.111',systemCount:SYSTEM_DEFS.length,privacy:'Shared field state, system scan timestamps, and fleet-level mining totals only. Character location is read during Probe Scanner import; the character location itself is not retained.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}]))},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans:scanActivityPublic(),
@@ -2791,6 +2791,8 @@ function trackerSpeechCleanup(text){
     .replace(/\bESI\b/g,'E S I')
     .replace(/\bEVE\b/g,'Eve')
     .replace(/\bISK\b/g,'isk')
+    .replace(/\bmetrics\b/gi,'metricks')
+    .replace(/\bmetric\b/gi,'metrick')
     .replace(/\s+/g,' ')
     .replace(/\s+([,.!?])/g,'$1')
     .trim();
@@ -3165,15 +3167,170 @@ function trackerBrainPrimaryName(user){
   return trackerSpeechSafe(primary?.name||user?.displayName||'pilot',80)||'pilot';
 }
 
+
+function trackerBrainNormalize(value){
+  return String(value||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
+}
+
+function trackerBrainMentionedCharacter(user,question){
+  const q=trackerBrainNormalize(question);
+  const linked=(user?.characterIds||[]).map(id=>state.characters[String(id)]).filter(Boolean);
+  const exact=linked
+    .map(ch=>({ch,key:trackerBrainNormalize(ch.name)}))
+    .filter(row=>row.key&&q.includes(row.key))
+    .sort((a,b)=>b.key.length-a.key.length)[0];
+  if(exact)return exact.ch;
+
+  // Speech recognition can miss a short word in a multi-word EVE name.
+  const qTokens=new Set(q.split(' ').filter(Boolean));
+  let best=null,bestScore=0;
+  for(const ch of linked){
+    const tokens=trackerBrainNormalize(ch.name).split(' ').filter(Boolean);
+    if(!tokens.length)continue;
+    const hits=tokens.filter(token=>qTokens.has(token)).length;
+    const score=hits/tokens.length;
+    if(hits>=2&&score>bestScore){best=ch;bestScore=score}
+  }
+  return bestScore>=0.66?best:null;
+}
+
+async function trackerBrainCharacterLocation(ch){
+  const cached=ch?.trackerLocationCache||null;
+  try{
+    const {access,identity}=await characterAccess(ch);
+    if(!identity.scopes.includes(LOCATION_SCOPE)){
+      const error=new Error(ch.name+' has not granted EVE location access.');
+      error.code='LOCATION_SCOPE_REQUIRED';
+      throw error;
+    }
+    const {data}=await esiGet(`https://esi.evetech.net/latest/characters/${ch.characterId}/location/?datasource=tranquility`,access);
+    const systemId=String(data?.solar_system_id||'');
+    if(!systemId)throw new Error('EVE did not return a current solar system for '+ch.name+'.');
+    await ensureSystem([systemId]);
+    const system=state.esi.systemCache[systemId]?.name||('System '+systemId);
+    const row={systemId,system,checkedAt:now(),live:true};
+    ch.trackerLocationCache=row;
+    return row;
+  }catch(error){
+    const age=Date.now()-Date.parse(cached?.checkedAt||'');
+    if(cached?.systemId&&Number.isFinite(age)&&age<15*60*1000){
+      return{...cached,live:false,stale:true,liveError:String(error?.message||error)};
+    }
+    throw error;
+  }
+}
+
+async function trackerBrainNearestSystems(originSystemId,{updatesOnly=false,limit=3}={}){
+  const activity=scanActivityPublic();
+  const names=new Set([
+    ...SYSTEM_DEFS.map(row=>row.system),
+    ...(state.market?.iceFields||[]).map(row=>row.system),
+    ...(state.market?.a0Fields||[]).map(row=>row.system),
+    ...Object.keys(state.market?.a0Reports||{}),
+  ].filter(Boolean));
+
+  let candidates=[...names].filter(system=>{
+    if(!updatesOnly)return true;
+    const row=activity[system]||null;
+    return Boolean(row?.due||row?.ledger?.needsScan||row?.ledger?.likelyDepleted);
+  });
+  if(updatesOnly&&!candidates.length)candidates=[...names];
+  if(!candidates.length)return[];
+
+  const ids=await resolveUniverseIds(candidates);
+  const rows=[];
+  const queue=candidates.map(system=>({system,id:Number(ids.get(system))||0})).filter(row=>row.id>0);
+  const concurrency=6;
+  let cursor=0;
+  const workers=Array.from({length:Math.min(concurrency,queue.length)},async()=>{
+    while(cursor<queue.length){
+      const index=cursor++;
+      const row=queue[index];
+      try{
+        if(Number(originSystemId)===row.id){
+          rows.push({...row,jumps:0,due:Boolean(activity[row.system]?.due),activity:activity[row.system]||null});
+          continue;
+        }
+        const {data}=await esiGet(`https://esi.evetech.net/latest/route/${Number(originSystemId)}/${row.id}/?datasource=tranquility&flag=shortest`);
+        const route=Array.isArray(data)?data:[];
+        if(route.length){
+          rows.push({...row,jumps:Math.max(0,route.length-1),due:Boolean(activity[row.system]?.due),activity:activity[row.system]||null});
+        }
+      }catch(error){
+        console.warn('Tracker nearest-system route lookup failed',row.system,String(error?.message||error));
+      }
+    }
+  });
+  await Promise.all(workers);
+  return rows.sort((a,b)=>a.jumps-b.jumps||Number(b.due)-Number(a.due)||a.system.localeCompare(b.system)).slice(0,Math.max(1,Number(limit)||3));
+}
+
+async function trackerBrainLiveAnswer(user,question){
+  const raw=trackerSpeechSafe(question,900);
+  const q=trackerBrainNormalize(raw);
+  const locationIntent=/\b(closest|nearest|where is|where s|location|what system|which system|nearby|near )\b/.test(q);
+  if(!locationIntent)return trackerBrainAnswer(user,question);
+
+  const ch=trackerBrainMentionedCharacter(user,raw);
+  if(!ch){
+    const names=(user?.characterIds||[]).map(id=>state.characters[String(id)]?.name).filter(Boolean).slice(0,8);
+    const text=names.length
+      ?'I could not match that name to one of your linked toons. Linked toons include '+names.join(', ')+'.'
+      :'I could not find a linked EVE character on this account.';
+    return{handled:true,topic:'toon-location',text,voiceText:'I could not match that name to one of your linked toons.',generatedAt:now()};
+  }
+
+  let location;
+  try{
+    location=await trackerBrainCharacterLocation(ch);
+  }catch(error){
+    const detail=String(error?.message||error);
+    const text=error?.code==='LOCATION_SCOPE_REQUIRED'
+      ?ch.name+' needs EVE location permission before Tracker can check where it is. Use Update EVE Access on the Toons tab.'
+      :'I could not pull '+ch.name+' location from EVE right now. '+detail;
+    return{handled:true,topic:'toon-location-error',text,voiceText:error?.code==='LOCATION_SCOPE_REQUIRED'
+      ?ch.name+' needs EVE location permission first.'
+      :'I could not get '+ch.name+' location from E S I right now.',generatedAt:now(),errorCode:error?.code||'ESI_LOCATION_FAILED'};
+  }
+
+  const wantsNearest=/\b(closest|nearest|nearby|near )\b/.test(q);
+  if(!wantsNearest){
+    const stale=location.stale?' using the last location seen within fifteen minutes':'';
+    const text=ch.name+' is currently in '+location.system+stale+'.';
+    return{handled:true,topic:'toon-location',text,voiceText:ch.name+' is in '+trackerSpokenSystem(location.system)+'.',generatedAt:now(),location};
+  }
+
+  const updatesOnly=/\b(update|scan|stale|needs update|need update|refresh)\b/.test(q);
+  let nearest=[];
+  try{
+    nearest=await trackerBrainNearestSystems(location.systemId,{updatesOnly,limit:3});
+  }catch(error){
+    console.warn('Tracker nearest-system lookup failed',String(error?.message||error));
+  }
+  if(!nearest.length){
+    const text='I found '+ch.name+' in '+location.system+', but E S I could not calculate routes to the tracked systems.';
+    return{handled:true,topic:'nearest-system-error',text,voiceText:'I found '+ch.name+', but route lookup failed.',generatedAt:now(),location};
+  }
+
+  const first=nearest[0];
+  const alternatives=nearest.slice(1).map(row=>row.system+' at '+row.jumps+' jump'+(row.jumps===1?'':'s')).join(', ');
+  const qualifier=updatesOnly?' tracked system needing a scan update':' tracked mining system';
+  const text=first.system+' is the closest'+qualifier+' to '+ch.name+' from '+location.system+' at '+first.jumps+' jump'+(first.jumps===1?'':'s')+'.'
+    +(alternatives?' Next closest: '+alternatives+'.':'')
+    +(location.stale?' Location is from the last successful E S I check, not a live response.':'');
+  const voiceText=trackerSpokenSystem(first.system)+' is closest at '+first.jumps+' jump'+(first.jumps===1?'':'s')+' from '+trackerSpokenSystem(location.system)+'.';
+  return{handled:true,topic:'nearest-system',text,voiceText,generatedAt:now(),location,nearest,updatesOnly};
+}
+
 function trackerBrainAnswer(user,question){
   const raw=trackerSpeechSafe(question,900);
   const q=raw.toLowerCase().replace(/[^a-z0-9%+\-/. ]+/g,' ').replace(/\s+/g,' ').trim();
   const snapshot=trackerBrainSnapshot();
   const linked=(user?.characterIds||[]).map(String).filter(Boolean);
   const primaryName=trackerBrainPrimaryName(user);
-  const appVersion='2.9.110';
+  const appVersion='2.9.111';
 
-  const voiceSummary=(text,max=170)=>{
+  const voiceSummary=(text,max=120)=>{
     const clean=trackerSpeechSafe(text,1200).replace(/\s+/g,' ').trim();
     if(clean.length<=max)return clean;
     const sentences=clean.match(/[^.!?]+[.!?]+|[^.!?]+$/g)||[clean];
@@ -3190,7 +3347,7 @@ function trackerBrainAnswer(user,question){
   const answer=(topic,text,extra={})=>{
     const safeText=trackerSpeechSafe(text,1200);
     const requestedVoice=extra&&typeof extra.voiceText==='string'?extra.voiceText:'';
-    const voiceText=trackerSpeechSafe(requestedVoice||voiceSummary(safeText),200)
+    const voiceText=trackerSpeechSafe(requestedVoice||voiceSummary(safeText),150)
       .replace(/[,;:]+/g,' ')
       .replace(/\s+/g,' ')
       .trim();
@@ -6407,7 +6564,7 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.110',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.111',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -6435,7 +6592,7 @@ async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname==='/api/tracker/speech/diagnostics'){
     const voiceWorker=await trackerVoiceHealth().catch(err=>({configured:Boolean(TRACKER_TTS_WORKER_URL),reachable:false,message:String(err?.message||err)}));
     return json(res,200,{
-      version:'2.9.110',
+      version:'2.9.111',
       modelCached:Boolean(voskModelArchive),
       modelBytes:voskModelArchive?.length||0,
       modelSource:voskModelSource||null,
@@ -6479,7 +6636,7 @@ async function routeApi(req,res,url) {
     catch(err){return json(res,400,{error:'BAD_BRAIN_QUESTION',message:String(err.message||err)})}
     const question=trackerSpeechSafe(body?.question,900);
     if(!question)return json(res,400,{error:'QUESTION_REQUIRED',message:'Ask Tracker a question first.'});
-    return json(res,200,trackerBrainAnswer(user,question));
+    return json(res,200,await trackerBrainLiveAnswer(user,question));
   }
   if(req.method==='GET'&&url.pathname==='/api/tracker/feedback'){
     const userId=String(user?.id||'');
@@ -6552,7 +6709,7 @@ async function routeApi(req,res,url) {
     if(!voiceText)return json(res,400,{error:'VOICE_TEXT_REQUIRED',message:'Tracker voice text was empty.'});
     const cacheKey='brain-'+crypto.createHash('sha1').update(voiceText).digest('hex').slice(0,20);
     try{
-      return await streamTrackerVoiceToResponse(res,voiceText,cacheKey,{priority:'urgent',voice:'core',streamingMode:3});
+      return await streamTrackerVoiceToResponse(res,voiceText,cacheKey,{priority:'normal',voice:'core',streamingMode:2});
     }catch(err){
       console.warn('Tracker conversational custom voice failed',String(err.message||err));
       return json(res,503,{error:err?.code||'JLR_CUSTOM_VOICE_UNAVAILABLE',message:String(err.message||err)});
@@ -6563,7 +6720,7 @@ async function routeApi(req,res,url) {
     if(!voiceText)return json(res,400,{error:'VOICE_TEXT_REQUIRED',message:'Tracker voice text was empty.'});
     const cacheKey='brain-live-'+crypto.createHash('sha1').update(voiceText).digest('hex').slice(0,20);
     try{
-      return await streamTrackerVoiceToResponse(res,voiceText,cacheKey,{priority:'urgent',voice:'core',streamingMode:3});
+      return await streamTrackerVoiceToResponse(res,voiceText,cacheKey,{priority:'normal',voice:'core',streamingMode:2});
     }catch(err){
       console.warn('Tracker conversational live voice failed',String(err.message||err));
       return json(res,503,{error:err?.code||'JLR_CUSTOM_VOICE_UNAVAILABLE',message:String(err.message||err)});
@@ -6979,13 +7136,20 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.110 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.111 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>{
   Promise.all([
     loadVoskRuntimeAsset(VOSK_RUNTIME_FILES['/vendor/vosk/vosk-0.0.8.js']),
     loadVoskModelArchive(),
   ]).catch(err=>console.warn('Tracker speech runtime warmup deferred:',String(err?.message||err)));
 },1_500).unref();
+setTimeout(()=>{
+  if(!trackerVoiceConfigured())return;
+  const text='Checking E S I.';
+  const cacheKey='brain-live-'+crypto.createHash('sha1').update(text).digest('hex').slice(0,20);
+  trackerVoiceWorkerAudio(text,cacheKey,'core',60_000)
+    .catch(err=>console.warn('Tracker conversational acknowledgement warmup deferred:',String(err?.message||err)));
+},3_500).unref();
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
 setInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': tracker-heartbeat\n\n')}catch{trackerLiveClients.delete(res)}}},20_000).unref();
 setInterval(()=>resetExpired(true),15_000).unref();
