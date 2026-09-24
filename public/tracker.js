@@ -307,6 +307,7 @@
         if(reason)console.warn('JLR streaming voice unavailable; using browser fallback.',reason);
         try{audio.pause();audio.removeAttribute('src');audio.load()}catch(error){}
         cleanupAsCurrent();
+        window.jlrVoiceLastError=String(reason?.message||reason||'Streaming voice unavailable.');
         window.jlrVoiceTransport='browser-fallback';
         const ok=playFallbackText(fallback,generation);
         finish(ok);
