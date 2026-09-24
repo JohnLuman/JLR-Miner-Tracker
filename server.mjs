@@ -315,7 +315,6 @@ const trackerIntelShipGroupCache = new Map();
 const TRACKER_INTEL_DEFAULT_REGION_ID = 10000058; // Fountain
 const TRACKER_INTEL_HOT_CACHE_MS = 60 * 60 * 1000;
 const TRACKER_INTEL_REGION_CATALOG_MS = 60 * 60 * 1000;
-const TRACKER_INTEL_REPORT_TTL_MS = 6 * 60 * 60 * 1000;
 const TRACKER_INTEL_HISTORY_TTL_MS = 72 * 60 * 60 * 1000;
 let trackerIntelRefreshPromise = null;
 let zkillInitArchiveRefreshPromise = null;
@@ -7261,219 +7260,6 @@ async function trackerIntelRegionHotZones(region,{force=false}={}){
 }
 
 
-function trackerIntelObservationTime(value){
-  const parsed=Date.parse(String(value||''));
-  const nowMs=Date.now();
-  if(!Number.isFinite(parsed))return now();
-  // The map/Agency feed is live data. Reject impossible future timestamps and
-  // ancient samples so stale local files cannot masquerade as current intel.
-  const bounded=Math.min(nowMs+60_000,Math.max(nowMs-6*60*60*1000,parsed));
-  return new Date(bounded).toISOString();
-}
-
-function trackerIntelMeaningfulChange(kind,previousValue,nextValue){
-  if(!Number.isFinite(Number(previousValue)))return true;
-  const delta=Math.abs(Number(nextValue)-Number(previousValue));
-  return kind==='interference'?delta>=0.1:delta>=1;
-}
-
-async function trackerIntelIngestPublicMap(auth,body={}){
-  const ess=Array.isArray(body?.ess)?body.ess:[];
-  const interference=Array.isArray(body?.interference)?body.interference:[];
-  if(ess.length>500||interference.length>500||ess.length+interference.length>750){
-    throw new Error('Public map update is too large.');
-  }
-  if(!ess.length&&!interference.length){
-    return{ok:true,accepted:0,ess:0,interference:0,changes:[]};
-  }
-
-  const all=[...ess.map(row=>({kind:'ess',row})),...interference.map(row=>({kind:'interference',row}))];
-  const names=[...new Set(all.map(item=>companionText(item.row?.system,96)).filter(Boolean))];
-  let nameIds=new Map();
-  if(names.length){
-    try{nameIds=await resolveUniverseIds(names)}
-    catch(error){console.warn('Tracker public-map name resolution failed:',String(error?.message||error))}
-  }
-
-  const prepared=[];
-  for(const item of all){
-    const raw=item.row||{};
-    let systemId=Number(raw.systemId)||0;
-    const requestedName=companionText(raw.system,96);
-    if(!systemId&&requestedName)systemId=Number(nameIds.get(requestedName))||0;
-    if(systemId<30_000_000||systemId>39_999_999)continue;
-    if(item.kind==='ess'){
-      const value=Number(raw.mainValue??raw.value);
-      if(!Number.isFinite(value)||value<0||value>1e15)continue;
-      const reserveValue=Number(raw.reserveValue);
-      const payoutAt=Date.parse(String(raw.payoutAt||'' ));
-      prepared.push({
-        kind:item.kind,systemId,requestedName,value,
-        reserveValue:Number.isFinite(reserveValue)&&reserveValue>=0&&reserveValue<=1e16?reserveValue:null,
-        payoutAt:Number.isFinite(payoutAt)?new Date(payoutAt).toISOString():null,
-        observedAt:trackerIntelObservationTime(raw.observedAt||body?.observedAt),
-      });
-    }else{
-      const value=Number(raw.value??raw.interference);
-      if(!Number.isFinite(value)||value<0||value>100)continue;
-      prepared.push({
-        kind:item.kind,systemId,requestedName,value:Math.round(value*1000)/1000,
-        observedAt:trackerIntelObservationTime(raw.observedAt||body?.observedAt),
-      });
-    }
-  }
-  if(!prepared.length)return{ok:true,accepted:0,ess:0,interference:0,changes:[]};
-
-  const ids=[...new Set(prepared.map(row=>String(row.systemId)))];
-  await ensureSystem(ids).catch(()=>{});
-  const intel=trackerIntelPrune();
-  const changes=[];
-  let essAccepted=0,interferenceAccepted=0;
-
-  for(const item of prepared){
-    const key=String(item.systemId);
-    const collection=item.kind==='ess'?intel.essReports:intel.interferenceReports;
-    const row=collection[key]&&typeof collection[key]==='object'
-      ?collection[key]
-      :{systemId:item.systemId,system:item.requestedName||String(item.systemId),history:[],activeSince:null,changedAt:null};
-    row.systemId=item.systemId;
-    row.system=state.esi.systemCache[key]?.name||item.requestedName||row.system||key;
-    row.history=Array.isArray(row.history)?row.history:[];
-    const previous=[...row.history].reverse().find(entry=>entry?.source==='eve-client-public')||null;
-    const changed=trackerIntelMeaningfulChange(item.kind,Number(previous?.value),item.value);
-    const observedAt=item.observedAt;
-
-    if(item.kind==='interference'){
-      const previousActive=Number(previous?.value)>0;
-      if(item.value>0){
-        row.activeSince=previousActive?(row.activeSince||previous?.activeSince||previous?.at||observedAt):observedAt;
-      }else{
-        row.activeSince=null;
-      }
-      if(changed)row.changedAt=observedAt;
-      interferenceAccepted++;
-    }else{
-      essAccepted++;
-      if(changed)row.changedAt=observedAt;
-    }
-
-    const lastAt=Date.parse(previous?.at||'');
-    const heartbeatDue=!Number.isFinite(lastAt)||Date.parse(observedAt)-lastAt>=5*60*1000;
-    if(changed||heartbeatDue||!previous){
-      const entry={
-        value:item.value,
-        at:observedAt,
-        source:'eve-client-public',
-        deviceId:auth?.device?.id||null,
-        deviceName:auth?.device?.deviceName||'JLR Tracker Companion',
-      };
-      if(item.kind==='ess'){
-        entry.reserveValue=item.reserveValue;
-        entry.payoutAt=item.payoutAt;
-      }else{
-        entry.activeSince=row.activeSince;
-      }
-      row.history.push(entry);
-      row.history=row.history
-        .filter(entry=>Date.parse(entry?.at||'')>=Date.now()-TRACKER_INTEL_HISTORY_TTL_MS)
-        .slice(-100);
-    }
-    row.lastObservedAt=observedAt;
-    row.source='eve-client-public';
-    collection[key]=row;
-
-    if(changed&&previous){
-      changes.push({
-        kind:item.kind,
-        systemId:item.systemId,
-        system:row.system,
-        previous:Number(previous.value),
-        value:item.value,
-        changedAt:observedAt,
-        activeSince:row.activeSince||null,
-      });
-    }
-  }
-
-  const observedAt=prepared.map(row=>Date.parse(row.observedAt)).filter(Number.isFinite).sort((a,b)=>b-a)[0]||Date.now();
-  intel.publicMapCollector={
-    ...(intel.publicMapCollector||{}),
-    lastSeenAt:new Date(observedAt).toISOString(),
-    lastEssAt:essAccepted?new Date(observedAt).toISOString():(intel.publicMapCollector?.lastEssAt||null),
-    lastInterferenceAt:interferenceAccepted?new Date(observedAt).toISOString():(intel.publicMapCollector?.lastInterferenceAt||null),
-    deviceId:auth?.device?.id||null,
-    deviceName:auth?.device?.deviceName||'JLR Tracker Companion',
-  };
-  auth.device.lastSeenAt=now();
-  auth.device.publicMapLastSeenAt=intel.publicMapCollector.lastSeenAt;
-  await save();
-  return{
-    ok:true,
-    accepted:essAccepted+interferenceAccepted,
-    ess:essAccepted,
-    interference:interferenceAccepted,
-    changes,
-    observedAt:intel.publicMapCollector.lastSeenAt,
-  };
-}
-
-function trackerIntelRising(history){
-  const rows=(Array.isArray(history)?history:[]).slice().sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
-  const last=rows.at(-1)||null;
-  const prior=rows.at(-2)||null;
-  const delta=last&&prior?Number(last.value)-Number(prior.value):0;
-  let risingSince=null;
-  if(last&&prior&&delta>0){
-    risingSince=prior.at;
-    for(let i=rows.length-2;i>0;i--){
-      if(Number(rows[i].value)>Number(rows[i-1].value))risingSince=rows[i-1].at;
-      else break;
-    }
-  }
-  return{delta:Number.isFinite(delta)?delta:0,risingSince};
-}
-
-async function trackerIntelObservedRows(kind,originSystemId){
-  const intel=trackerIntelPrune();
-  const collection=kind==='ess'?intel.essReports:intel.interferenceReports;
-  const cutoff=Date.now()-TRACKER_INTEL_REPORT_TTL_MS;
-  const rows=[];
-  for(const row of Object.values(collection||{})){
-    const history=(Array.isArray(row?.history)?row.history:[])
-      .filter(entry=>entry?.source==='eve-client-public'&&Date.parse(entry?.at||'')>=cutoff)
-      .sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
-    const latest=history.at(-1);
-    if(!latest)continue;
-    const trend=kind==='interference'?trackerIntelRising(history):{delta:0,risingSince:null};
-    rows.push({
-      systemId:Number(row.systemId)||0,
-      system:String(row.system||row.systemId||'Unknown'),
-      value:Math.max(0,Number(latest.value)||0),
-      reserveValue:kind==='ess'&&Number.isFinite(Number(latest.reserveValue))?Math.max(0,Number(latest.reserveValue)):null,
-      payoutAt:kind==='ess'&&latest.payoutAt?String(latest.payoutAt):null,
-      observedAt:latest.at,
-      reportedAt:latest.at,
-      changedAt:row.changedAt||latest.at,
-      activeSince:kind==='interference'&&Number(latest.value)>0?(row.activeSince||latest.activeSince||latest.at):null,
-      source:'eve-client-public',
-      samples:history.length,
-      delta:trend.delta,
-      risingSince:trend.risingSince,
-    });
-  }
-  const limited=rows.sort((a,b)=>Date.parse(b.observedAt)-Date.parse(a.observedAt)).slice(0,100);
-  if(originSystemId){
-    await doctrineMapLimit(limited,8,async row=>{
-      row.jumps=await routeJumps(originSystemId,row.systemId);
-      if(!Number.isFinite(row.jumps))row.jumps=null;
-      return row;
-    });
-  }else{
-    for(const row of limited)row.jumps=null;
-  }
-  return limited;
-}
-
 async function trackerIntelSnapshot(user,{force=false,regionId=TRACKER_INTEL_DEFAULT_REGION_ID}={}){
   const [location,regions]=await Promise.all([
     trackerIntelCurrentLocation(user),
@@ -7488,18 +7274,12 @@ async function trackerIntelSnapshot(user,{force=false,regionId=TRACKER_INTEL_DEF
   }
   const region=await trackerIntelRegionById(selectedId);
   const cachedHotZones=await trackerIntelRegionHotZones(region,{force});
-  // Jump counts are user/location-specific. Clone the persisted regional
-  // snapshot before decorating it so one pilot cannot contaminate the shared cache.
   const hotZones={
     ...cachedHotZones,
     systems:(Array.isArray(cachedHotZones?.systems)?cachedHotZones.systems:[]).map(row=>({...row})),
     bestHoursUtc:(Array.isArray(cachedHotZones?.bestHoursUtc)?cachedHotZones.bestHoursUtc:[]).map(row=>({...row})),
   };
   const originSystemId=location?.systemId||null;
-  const [essReports,interferenceReports]=await Promise.all([
-    trackerIntelObservedRows('ess',originSystemId),
-    trackerIntelObservedRows('interference',originSystemId),
-  ]);
   if(originSystemId){
     await doctrineMapLimit(hotZones.systems.slice(0,30),8,async row=>{
       row.jumps=await routeJumps(originSystemId,row.systemId);
@@ -7526,36 +7306,10 @@ async function trackerIntelSnapshot(user,{force=false,regionId=TRACKER_INTEL_DEF
     defaultRegionId:TRACKER_INTEL_DEFAULT_REGION_ID,
     regions,
     hotZones,
-    essReports,
-    interferenceReports,
-    reportTtlHours:TRACKER_INTEL_REPORT_TTL_MS/3600000,
     hotZoneRefreshMinutes:TRACKER_INTEL_HOT_CACHE_MS/60000,
-    sources:(()=>{
-      const collector=trackerIntelStore().publicMapCollector||{};
-      const freshMs=5*60*1000;
-      const essAge=Date.now()-Date.parse(collector.lastEssAt||'');
-      const interferenceAge=Date.now()-Date.parse(collector.lastInterferenceAt||'');
-      return{
-        hotZones:{automatic:true,source:'ESI system activity + zKillboard',refreshMinutes:TRACKER_INTEL_HOT_CACHE_MS/60000},
-        ess:{
-          automatic:Number.isFinite(essAge)&&essAge<freshMs,
-          source:'JLR Companion public EVE client map/Agency feed',
-          status:Number.isFinite(essAge)&&essAge<freshMs?'online':'waiting',
-          lastObservedAt:collector.lastEssAt||null,
-        },
-        interference:{
-          automatic:Number.isFinite(interferenceAge)&&interferenceAge<freshMs,
-          source:'JLR Companion public EVE client map feed',
-          status:Number.isFinite(interferenceAge)&&interferenceAge<freshMs?'online':'waiting',
-          lastObservedAt:collector.lastInterferenceAt||null,
-        },
-        collector:{
-          lastSeenAt:collector.lastSeenAt||null,
-          deviceId:collector.deviceId||null,
-          deviceName:collector.deviceName||null,
-        },
-      };
-    })(),
+    sources:{
+      hotZones:{automatic:true,source:'ESI system activity + zKillboard',refreshMinutes:TRACKER_INTEL_HOT_CACHE_MS/60000},
+    },
   };
 }
 
@@ -8144,16 +7898,6 @@ async function routeApi(req,res,url) {
       }
     }
     return json(res,200,{ok:errors.length===0,results,errors,checkedAt});
-  }
-
-  if(req.method==='POST'&&url.pathname==='/api/companion/tracker-map'){
-    const auth=companionAuth(req);
-    if(!auth)return json(res,401,{error:'COMPANION_AUTH_REQUIRED',message:'Companion pairing is missing or has been revoked.'});
-    let body;
-    try{body=await readBody(req,512_000)}
-    catch(err){return json(res,400,{error:'BAD_PUBLIC_MAP_REPORT',message:String(err.message||err)})}
-    try{return json(res,200,await trackerIntelIngestPublicMap(auth,body))}
-    catch(err){return json(res,400,{error:'BAD_PUBLIC_MAP_REPORT',message:String(err.message||err)})}
   }
 
   if(req.method==='POST'&&url.pathname==='/api/companion/location'){
