@@ -2277,3 +2277,32 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .doctrine-nyx-buyback:hover{transform:translateY(-1px);filter:brightness(1.08);border-color:#ffb047;box-shadow:0 12px 30px #0009,0 0 21px #ff951f55}
 .doctrine-nyx-buyback:focus-visible{outline:2px solid #ffc76d;outline-offset:2px}
 @media(max-width:1260px){.doctrine-side-column{order:-1}.doctrine-side-column>.doctrine-shopping{position:relative;top:auto}.doctrine-nyx-buyback{max-width:520px;justify-self:center;width:100%}}
+
+
+/* v2.9.142 — compact Fleet Performance information design */
+.fleet-command-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.fleet-live-card,.fleet-trend-card{grid-column:auto;width:100%;max-width:none;justify-self:stretch}
+.fleet-live-card .fleet-activity-chart,.fleet-trend-card .market-line-chart{min-height:0;height:205px}
+.fleet-live-card .fleet-chart-svg,.fleet-trend-card .market-line-svg{max-height:205px;height:205px}
+.mining-visual-grid-single{grid-template-columns:1fr!important}
+.mining-visual-grid-single>.mining-visual-card{width:100%}
+.fleet-performance{min-height:0;gap:6px}
+.fleet-perf-kpis{gap:4px}
+.fleet-perf-kpis>div{padding:5px 6px}
+.fleet-perf-kpis strong{font-size:12px}
+.fleet-performance-summary-line{display:grid;grid-template-columns:minmax(130px,1fr) auto auto;gap:8px;align-items:center;padding:6px 8px;border:1px solid #28323a;border-radius:7px;background:#0a0f13}
+.fleet-performance-summary-line>span{color:#83919c;font-size:6px;font-weight:950;letter-spacing:.08em}
+.fleet-performance-summary-line>strong{font-size:9px;white-space:nowrap}
+.fleet-performance-summary-line>b{min-width:52px;border:1px solid #3b4b58;border-radius:999px;padding:3px 6px;text-align:center;color:#d6dee5;font:900 8px/1 Oxanium,Segoe UI,sans-serif}
+.fleet-performance-summary-line>b.good{border-color:#2f7855;color:#85e7ad;background:#0d1c16}.fleet-performance-summary-line>b.low{border-color:#78434a;color:#ff9da5;background:#211216}
+.fleet-perf-list.compact{grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}
+.fleet-perf-row.compact{display:grid;grid-template-columns:minmax(125px,1.2fr) minmax(62px,.55fr) minmax(72px,.68fr) minmax(64px,.58fr);gap:5px;align-items:center;padding:5px 6px;min-height:42px}
+.fleet-perf-cell{min-width:0;text-align:right;border-left:1px solid #28303a;padding-left:5px}.fleet-perf-cell span{display:block;color:#6f7c87;font-size:5.5px;font-weight:950;letter-spacing:.06em}.fleet-perf-cell strong{display:block;margin-top:2px;font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.fleet-perf-cell small{display:block;margin-top:1px;color:var(--muted);font-size:5.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.fleet-perf-cell.ledger strong{color:#a6f2f6}.fleet-perf-cell.pct strong{color:#d6c9ee}
+.fleet-perf-footer{padding-top:5px;font-size:6px}
+.ore-mix-composition{display:flex;width:100%;height:10px;border:1px solid #303640;border-radius:999px;overflow:hidden;background:#090c10}
+.ore-mix-composition>i{display:block;height:100%;min-width:1px}
+.ore-mix-compact-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px 8px}
+.ore-mix-compact-row{display:grid;grid-template-columns:8px minmax(0,1fr) auto 42px;gap:5px;align-items:center;padding:4px 5px;border-bottom:1px solid #242a31;min-width:0}.ore-mix-compact-row strong{font-size:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ore-mix-compact-row b{font-size:7px;font-weight:900;white-space:nowrap}.ore-mix-compact-row small{text-align:right;color:var(--muted);font-size:6px}.ore-mix-swatch{width:7px;height:7px;border-radius:2px}
+.mix-a{background:#d88a21}.mix-b{background:#30a7b8}.mix-c{background:#8b6fd1}.mix-d{background:#58a66f}.mix-e{background:#c55f75}.mix-f{background:#6f8dbf}.mix-g{background:#b0a456}.mix-h{background:#827f88}
+@media(max-width:1100px){.fleet-command-grid{grid-template-columns:1fr}.fleet-live-card,.fleet-trend-card{grid-column:auto}.fleet-perf-list.compact{grid-template-columns:1fr}}
+@media(max-width:680px){.fleet-live-card .fleet-activity-chart,.fleet-trend-card .market-line-chart,.fleet-live-card .fleet-chart-svg,.fleet-trend-card .market-line-svg{height:auto;max-height:none}.fleet-performance-summary-line{grid-template-columns:1fr auto}.fleet-performance-summary-line>strong{grid-column:1/-1;grid-row:2}.fleet-perf-row.compact{grid-template-columns:minmax(110px,1fr) repeat(3,minmax(54px,.55fr))}.ore-mix-compact-list{grid-template-columns:1fr}}
