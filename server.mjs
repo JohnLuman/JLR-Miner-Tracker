@@ -3222,7 +3222,7 @@ async function scoutLocationSnapshot(ch,user=null,activity=null){
   const needsScan=tracked&&(stale||ledgerNeedsScan)&&(!respawning||ledgerNeedsScan);
   return{
     characterId:String(ch.characterId),
-    characterName:String(ch.name||'Scout'),
+    characterName:String(ch.name||'Adam toon'),
     systemId,
     system,
     spokenSystem:trackerSpokenSystem(system),
@@ -4259,7 +4259,7 @@ function trackerBrainAnswer(user,question,options={}){
 
   if(/\b(what can you do|what do you do|help me|help|capabilities|commands|what can i ask|what should i ask)\b/.test(q)){
     return answer('capabilities',
-      'I can use your current JLR context to answer short follow-ups, find the next scan update while you are working Fields or Scout, explain Fleet Performance variance, check linked-toon location, find scan stops on a Fountain route, estimate observed mining payout, and explain JLR tabs, data and workflows. You do not need to repeat the selected system or toon when Adam already has that context.',
+      'I can use your current JLR context to answer short follow-ups, find the next scan update while you are working Fields or Adam, explain Fleet Performance variance, check toon location, find scan stops on a Fountain route, estimate observed mining payout, and explain JLR tabs, data and workflows. You do not need to repeat the selected system or toon when Adam already has that context.',
       {voiceText:'I can check observed mining payout this hour, Fountain route scan stops, and linked toon locations, and I can ask for new scans when needed.'}
     );
   }
