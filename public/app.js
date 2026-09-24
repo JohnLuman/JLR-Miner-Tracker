@@ -379,20 +379,31 @@
     ];
   }
   function renderAdamContext(){
+    const context=adamContextSnapshot();
+    const contextText=adamContextLabel(context);
     const label=$('adamContextLabel');
-    if(label)label.textContent=adamContextLabel();
+    if(label)label.textContent=contextText;
+    const quickLabel=$('adamQuickContext');
+    if(quickLabel)quickLabel.textContent=contextText;
     const suggestions=$('adamSuggestions');
     if(suggestions)suggestions.innerHTML=adamSuggestions().map(text=>'<button class="adam-suggestion" type="button" data-adam-question="'+esc(text)+'">'+esc(text)+'</button>').join('');
   }
   async function askAdamText(question){
     const text=String(question||'').trim();
     if(!text||adamAskBusy)return;
-    const input=$('adamQuestion');
-    const button=$('adamAsk');
-    const reply=$('adamReply');
+    const inputs=[$('adamQuestion'),$('adamQuickQuestion')].filter(Boolean);
+    const buttons=[$('adamAsk'),$('adamQuickAsk')].filter(Boolean);
+    const replies=[$('adamReply'),$('adamQuickReply')].filter(Boolean);
     adamAskBusy=true;
-    if(button){button.disabled=true;button.textContent='THINKING…';}
-    if(reply){reply.classList.add('loading');reply.textContent='Checking JLR context…';}
+    for(const button of buttons){
+      button.disabled=true;
+      button.dataset.idleText=button.dataset.idleText||button.textContent;
+      button.textContent='THINKING…';
+    }
+    for(const reply of replies){
+      reply.classList.add('loading');
+      reply.textContent='Checking JLR context…';
+    }
     try{
       const context=adamContextSnapshot();
       const response=await api('/api/tracker/brain/ask',{
@@ -408,14 +419,24 @@
       const answer=String(response?.text||'I do not have an answer for that yet.');
       if(response?.focusSystem)brainLastSystem=String(response.focusSystem);
       else if(response?.closest?.system)brainLastSystem=String(response.closest.system);
-      if(reply){reply.classList.remove('loading');reply.textContent=answer;}
-      if(input)input.value='';
+      for(const reply of replies){
+        reply.classList.remove('loading');
+        reply.textContent=answer;
+      }
+      for(const input of inputs)input.value='';
       adamRecordAction('adam-question',{system:response?.focusSystem||response?.closest?.system||'',detail:String(response?.topic||'answer')});
     }catch(error){
-      if(reply){reply.classList.remove('loading');reply.textContent=String(error?.message||error||'Adam could not answer that.');}
+      const message=String(error?.message||error||'Adam could not answer that.');
+      for(const reply of replies){
+        reply.classList.remove('loading');
+        reply.textContent=message;
+      }
     }finally{
       adamAskBusy=false;
-      if(button){button.disabled=false;button.textContent='ASK ADAM';}
+      for(const button of buttons){
+        button.disabled=false;
+        button.textContent=button.dataset.idleText||'ASK';
+      }
       renderAdamContext();
     }
   }
@@ -1763,7 +1784,7 @@
     if($('scoutGlobalAlertText'))$('scoutGlobalAlertText').textContent=text;
     const key=String(snapshot.characterId)+':'+String(snapshot.system);
     const tab=document.querySelector('.app-tab[data-tab="brain"]');
-    if(tab){tab.classList.add('scout-update');tab.textContent='ADAM • UPDATE';}
+    if(tab){tab.classList.add('scout-update');tab.textContent='⚠ ADAM • UPDATE';}
     document.title='⚠ SCAN UPDATE • JLR';
     if(scoutPromptKey!==key){scoutPromptKey=key;toast('🛰 '+snapshot.characterName+': '+snapshot.system+' needs a scan update.')}
   }
@@ -6071,6 +6092,28 @@
       await askAdamText($('adamQuestion')?.value||'');
       return;
     }
+    if(target.closest('#adamQuickToggle')){
+      const panel=$('adamQuickPanel');
+      if(panel){
+        const opening=panel.classList.contains('hidden');
+        panel.classList.toggle('hidden',!opening);
+        $('adamQuickToggle')?.setAttribute('aria-expanded',String(opening));
+        if(opening){
+          renderAdamContext();
+          setTimeout(()=>$('adamQuickQuestion')?.focus(),0);
+        }
+      }
+      return;
+    }
+    if(target.closest('#adamQuickClose')){
+      $('adamQuickPanel')?.classList.add('hidden');
+      $('adamQuickToggle')?.setAttribute('aria-expanded','false');
+      return;
+    }
+    if(target.closest('#adamQuickAsk')){
+      await askAdamText($('adamQuickQuestion')?.value||'');
+      return;
+    }
     if(target.closest('#scoutCheckNow')){
       await pollScoutLocation(true);
       await loadScoutTargets(true);
@@ -6181,7 +6224,7 @@
   });
 
   document.addEventListener('keydown',event=>{
-    if(event.target?.id!=='adamQuestion')return;
+    if(!['adamQuestion','adamQuickQuestion'].includes(event.target?.id))return;
     if(event.key==='Enter'&&!event.shiftKey){
       event.preventDefault();
       void askAdamText(event.target.value||'');
