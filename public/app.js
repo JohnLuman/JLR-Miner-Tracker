@@ -1820,7 +1820,9 @@
         }
         if(snapshot.needsScan){
           if(id===String(scanCharacterId)&&!scanBusy)setScanStatus(snapshot.system+': SCAN UPDATE NEEDED','warning');
-          if(scoutShouldSpeak(snapshot,entered)&&!prompt)prompt=snapshot;
+          // Visual Scout/Adam attention is independent of the retired voice cooldown.
+          // Keep the global alert active for any due tracked system until a fresh scan clears it.
+          if(!prompt)prompt=snapshot;
         }else if(id===String(scanCharacterId)&&entered&&!scanBusy){
           setScanStatus(snapshot.system+(snapshot.tracked?': scan status current.':' — not on a tracked mining board.'),snapshot.tracked?'success':'');
         }
@@ -6579,16 +6581,16 @@
         const abyssal=chars.reduce((n,c)=>n+(Number(c.abyssalStripCount)||0),0);
         button.textContent='SYNCED ✓';
         toast(`${saved} saved fits • ${mining} mining fits${abyssal?` • ${abyssal} Abyssal`:''}`);
-        setTimeout(()=>{button.textContent='SYNC EVE DATA';button.disabled=false},2200);
+        setTimeout(()=>{button.textContent='↻ SYNC EVE DATA';button.disabled=false},2200);
       }else{
         button.textContent='SYNC STILL RUNNING';
         toast('EVE data sync is taking longer than expected.');
-        setTimeout(()=>{button.textContent='SYNC EVE DATA';button.disabled=false},3000);
+        setTimeout(()=>{button.textContent='↻ SYNC EVE DATA';button.disabled=false},3000);
       }
     }catch(e){
       button.textContent='SYNC FAILED';
       toast(e.message);
-      setTimeout(()=>{button.textContent='SYNC EVE DATA';button.disabled=false},3000);
+      setTimeout(()=>{button.textContent='↻ SYNC EVE DATA';button.disabled=false},3000);
     }
   });
 
