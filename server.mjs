@@ -312,9 +312,12 @@ const trackerAccessCache = new Map();
 const trackerIntelRegionCache = new Map();
 const trackerIntelHotCache = new Map();
 const trackerIntelShipGroupCache = new Map();
-const TRACKER_INTEL_HOT_CACHE_MS = 3 * 60 * 1000;
+const TRACKER_INTEL_DEFAULT_REGION_ID = 10000058; // Fountain
+const TRACKER_INTEL_HOT_CACHE_MS = 30 * 60 * 1000;
+const TRACKER_INTEL_REGION_CATALOG_MS = 24 * 60 * 60 * 1000;
 const TRACKER_INTEL_REPORT_TTL_MS = 6 * 60 * 60 * 1000;
 const TRACKER_INTEL_HISTORY_TTL_MS = 72 * 60 * 60 * 1000;
+let trackerIntelRefreshPromise = null;
 let zkillInitArchiveRefreshPromise = null;
 const zkillCorpLeaderboardCache = new Map();
 const zkillCorpStatsCache = new Map();
@@ -475,7 +478,14 @@ function freshState() {
     characters: {},
     scans: {},
     pvpLifetimeDamage: {},
-    trackerIntel: { essReports: {}, interferenceReports: {}, hotZoneHistory: [] },
+    trackerIntel: {
+      regionCatalog: [],
+      regionCatalogUpdatedAt: null,
+      regionHotZones: {},
+      essReports: {},
+      interferenceReports: {},
+      hotZoneHistory: [],
+    },
     fields: Object.fromEntries(SYSTEM_DEFS.map((d) => [d.system, {
       status: 'ready', cherryPicked: false, timerEndsAt: null, notes: [], updatedAt: null,
       autoReopenedAt: null, autoReopenReason: null, autoReopenM3: null,
@@ -508,6 +518,9 @@ async function loadState() {
     parsed.scans ||= {};
     parsed.pvpLifetimeDamage ||= {};
     parsed.trackerIntel = { ...base.trackerIntel, ...(parsed.trackerIntel || {}) };
+    if(!Array.isArray(parsed.trackerIntel.regionCatalog))parsed.trackerIntel.regionCatalog=[];
+    parsed.trackerIntel.regionCatalogUpdatedAt ||= null;
+    parsed.trackerIntel.regionHotZones ||= {};
     parsed.trackerIntel.essReports ||= {};
     parsed.trackerIntel.interferenceReports ||= {};
     if(!Array.isArray(parsed.trackerIntel.hotZoneHistory))parsed.trackerIntel.hotZoneHistory=[];
@@ -1054,7 +1067,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.133',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.134',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}])),wormholes:{reports:wormholeGasPublicReports(),reportHours:WORMHOLE_GAS_REPORT_TTL/3600000}},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans,
@@ -6952,7 +6965,13 @@ async function trackerCorporationIdentity(){
 
 
 function trackerIntelStore(){
-  state.trackerIntel ||= {essReports:{},interferenceReports:{},hotZoneHistory:[]};
+  state.trackerIntel ||= {
+    regionCatalog:[],regionCatalogUpdatedAt:null,regionHotZones:{},
+    essReports:{},interferenceReports:{},hotZoneHistory:[],
+  };
+  if(!Array.isArray(state.trackerIntel.regionCatalog))state.trackerIntel.regionCatalog=[];
+  state.trackerIntel.regionCatalogUpdatedAt ||= null;
+  state.trackerIntel.regionHotZones ||= {};
   state.trackerIntel.essReports ||= {};
   state.trackerIntel.interferenceReports ||= {};
   if(!Array.isArray(state.trackerIntel.hotZoneHistory))state.trackerIntel.hotZoneHistory=[];
@@ -6967,13 +6986,13 @@ function trackerIntelPrune(){
     for(const [systemId,row] of Object.entries(collection)){
       row.history=(Array.isArray(row?.history)?row.history:[])
         .filter(entry=>Date.parse(entry?.at||'')>=historyCutoff)
-        .slice(-40);
+        .slice(-100);
       if(!row.history.length)delete collection[systemId];
     }
   }
   intel.hotZoneHistory=(intel.hotZoneHistory||[])
     .filter(row=>Date.parse(row?.at||'')>=historyCutoff)
-    .slice(-240);
+    .slice(-8000);
   return intel;
 }
 
@@ -7011,30 +7030,65 @@ async function trackerIntelCurrentLocation(user){
   return null;
 }
 
+async function trackerIntelRegionCatalog({force=false}={}){
+  const intel=trackerIntelStore();
+  const cachedAt=Date.parse(intel.regionCatalogUpdatedAt||'');
+  if(!force&&intel.regionCatalog.length&&Number.isFinite(cachedAt)&&Date.now()-cachedAt<TRACKER_INTEL_REGION_CATALOG_MS){
+    return intel.regionCatalog;
+  }
+  const {data}=await esiGet('https://esi.evetech.net/latest/universe/regions/?datasource=tranquility');
+  const ids=[...new Set((Array.isArray(data)?data:[]).map(Number).filter(id=>id>0))];
+  const names=await resolveUniverseNames(ids);
+  const catalog=ids.map(regionId=>({
+    regionId,
+    regionName:String(names.get(regionId)||regionId),
+  })).sort((a,b)=>{
+    if(a.regionId===TRACKER_INTEL_DEFAULT_REGION_ID)return-1;
+    if(b.regionId===TRACKER_INTEL_DEFAULT_REGION_ID)return 1;
+    return a.regionName.localeCompare(b.regionName);
+  });
+  intel.regionCatalog=catalog;
+  intel.regionCatalogUpdatedAt=now();
+  await save();
+  return catalog;
+}
+
+async function trackerIntelRegionById(regionId){
+  const id=Number(regionId)||0;
+  if(!id)throw new Error('A valid EVE region ID is required.');
+  const key='region:'+id;
+  const cached=trackerIntelRegionCache.get(key);
+  if(cached&&Date.now()-cached.at<TRACKER_INTEL_REGION_CATALOG_MS)return cached.data;
+  const region=(await esiGet('https://esi.evetech.net/latest/universe/regions/'+id+'/?datasource=tranquility')).data;
+  const constellationIds=(Array.isArray(region?.constellations)?region.constellations:[]).map(Number).filter(value=>value>0);
+  const constellationRows=await doctrineMapLimit(constellationIds,8,async constellationId=>{
+    try{return (await esiGet('https://esi.evetech.net/latest/universe/constellations/'+constellationId+'/?datasource=tranquility')).data}
+    catch{return null}
+  });
+  const systemIds=[...new Set(constellationRows.flatMap(row=>Array.isArray(row?.systems)?row.systems:[]).map(Number).filter(value=>value>0))];
+  const data={
+    regionId:id,
+    regionName:String(region?.name||id),
+    systemIds,
+  };
+  trackerIntelRegionCache.set(key,{at:Date.now(),data});
+  return data;
+}
+
 async function trackerIntelRegionForSystem(systemId){
-  const key=String(systemId||'');
+  const id=Number(systemId)||0;
+  if(!id)throw new Error('A valid EVE solar system ID is required.');
+  const key='system:'+id;
   const cached=trackerIntelRegionCache.get(key);
   if(cached&&Date.now()-cached.at<6*60*60*1000)return cached.data;
-  const system=(await esiGet('https://esi.evetech.net/latest/universe/systems/'+encodeURIComponent(key)+'/?datasource=tranquility')).data;
+  const system=(await esiGet('https://esi.evetech.net/latest/universe/systems/'+id+'/?datasource=tranquility')).data;
   const constellationId=Number(system?.constellation_id)||0;
   if(!constellationId)throw new Error('EVE did not return the current constellation.');
   const constellation=(await esiGet('https://esi.evetech.net/latest/universe/constellations/'+constellationId+'/?datasource=tranquility')).data;
   const regionId=Number(constellation?.region_id)||0;
   if(!regionId)throw new Error('EVE did not return the current region.');
-  const region=(await esiGet('https://esi.evetech.net/latest/universe/regions/'+regionId+'/?datasource=tranquility')).data;
-  const constellationIds=(Array.isArray(region?.constellations)?region.constellations:[]).map(Number).filter(id=>id>0);
-  const constellationRows=await Promise.all(constellationIds.map(async id=>{
-    try{return (await esiGet('https://esi.evetech.net/latest/universe/constellations/'+id+'/?datasource=tranquility')).data}
-    catch{return null}
-  }));
-  const systemIds=[...new Set(constellationRows.flatMap(row=>Array.isArray(row?.systems)?row.systems:[]).map(Number).filter(id=>id>0))];
-  const data={
-    regionId,
-    regionName:String(region?.name||regionId),
-    systemId:Number(key),
-    systemName:String(system?.name||key),
-    systemIds,
-  };
+  const region=await trackerIntelRegionById(regionId);
+  const data={...region,systemId:id,systemName:String(system?.name||id)};
   trackerIntelRegionCache.set(key,{at:Date.now(),data});
   return data;
 }
@@ -7070,8 +7124,18 @@ function trackerIntelHuntScore(row){
 
 async function trackerIntelRegionHotZones(region,{force=false}={}){
   const regionId=Number(region?.regionId)||0;
-  const cached=trackerIntelHotCache.get(regionId);
-  if(!force&&cached&&Date.now()-cached.at<TRACKER_INTEL_HOT_CACHE_MS)return cached.data;
+  if(!regionId)throw new Error('Region is required for Tracker hot zones.');
+  const intel=trackerIntelStore();
+  const memory=trackerIntelHotCache.get(regionId);
+  if(!force&&memory&&Date.now()-memory.at<TRACKER_INTEL_HOT_CACHE_MS)return memory.data;
+
+  const persisted=intel.regionHotZones?.[String(regionId)]||null;
+  const persistedAt=Date.parse(persisted?.fetchedAt||persisted?.generatedAt||'');
+  if(!force&&persisted&&Number.isFinite(persistedAt)&&Date.now()-persistedAt<TRACKER_INTEL_HOT_CACHE_MS){
+    trackerIntelHotCache.set(regionId,{at:persistedAt,data:persisted});
+    return persisted;
+  }
+
   const regionSystems=new Set((region?.systemIds||[]).map(Number));
   const [killsResult,firstLossPage]=await Promise.all([
     esiGet('https://esi.evetech.net/latest/universe/system_kills/?datasource=tranquility'),
@@ -7082,9 +7146,10 @@ async function trackerIntelRegionHotZones(region,{force=false}={}){
     const second=await zkillJson('https://zkillboard.com/api/losses/regionID/'+regionId+'/pastSeconds/3600/page/2/').catch(()=>[]);
     if(Array.isArray(second))lossRows=lossRows.concat(second);
   }
+
   const bySystem=new Map();
-  const ensureRow=id=>{
-    const key=Number(id)||0;
+  const ensureRow=systemId=>{
+    const key=Number(systemId)||0;
     if(!key||!regionSystems.has(key))return null;
     if(!bySystem.has(key))bySystem.set(key,{
       systemId:key,npcKills:0,shipKills:0,podKills:0,pvpLosses:0,rattingLosses:0,
@@ -7128,7 +7193,6 @@ async function trackerIntelRegionHotZones(region,{force=false}={}){
   }
   active.sort((a,b)=>b.huntScore-a.huntScore||b.npcKills-a.npcKills||a.system.localeCompare(b.system));
 
-  const intel=trackerIntelPrune();
   const hourStamp=new Date();
   hourStamp.setUTCMinutes(0,0,0);
   const hourIso=hourStamp.toISOString();
@@ -7142,9 +7206,9 @@ async function trackerIntelRegionHotZones(region,{force=false}={}){
         pvpLosses:row.pvpLosses,rattingLosses:row.rattingLosses,blobLosses:row.blobLosses,
       })),
     });
-    intel.hotZoneHistory=intel.hotZoneHistory.slice(-240);
-    save();
   }
+  trackerIntelPrune();
+
   const regionHistory=(intel.hotZoneHistory||[]).filter(row=>Number(row?.regionId)===regionId);
   const historyHours=[...new Set(regionHistory.map(row=>new Date(row.at).getUTCHours()))];
   const hourStats=new Map();
@@ -7161,8 +7225,11 @@ async function trackerIntelRegionHotZones(region,{force=false}={}){
     .sort((a,b)=>b.score-a.score)
     .slice(0,3);
 
+  const stamp=now();
   const data={
-    generatedAt:now(),
+    generatedAt:stamp,
+    fetchedAt:stamp,
+    refreshMinutes:Math.round(TRACKER_INTEL_HOT_CACHE_MS/60000),
     regionId,
     regionName:region.regionName,
     systems:active.slice(0,80),
@@ -7170,7 +7237,9 @@ async function trackerIntelRegionHotZones(region,{force=false}={}){
     bestHoursUtc:historyHours.length>=4?bestHoursUtc:[],
     zkillLossesSampled:lossRows.length,
   };
+  intel.regionHotZones[String(regionId)]=data;
   trackerIntelHotCache.set(regionId,{at:Date.now(),data});
+  await save();
   return data;
 }
 
@@ -7190,14 +7259,14 @@ function trackerIntelRising(history){
   return{delta:Number.isFinite(delta)?delta:0,risingSince};
 }
 
-async function trackerIntelReportedRows(kind,originSystemId){
+async function trackerIntelObservedRows(kind,originSystemId){
   const intel=trackerIntelPrune();
   const collection=kind==='ess'?intel.essReports:intel.interferenceReports;
   const cutoff=Date.now()-TRACKER_INTEL_REPORT_TTL_MS;
   const rows=[];
   for(const row of Object.values(collection||{})){
     const history=(Array.isArray(row?.history)?row.history:[])
-      .filter(entry=>Date.parse(entry?.at||'')>=cutoff)
+      .filter(entry=>entry?.source==='eve-client-public'&&Date.parse(entry?.at||'')>=cutoff)
       .sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
     const latest=history.at(-1);
     if(!latest)continue;
@@ -7206,78 +7275,105 @@ async function trackerIntelReportedRows(kind,originSystemId){
       systemId:Number(row.systemId)||0,
       system:String(row.system||row.systemId||'Unknown'),
       value:Math.max(0,Number(latest.value)||0),
+      observedAt:latest.at,
       reportedAt:latest.at,
+      source:'eve-client-public',
       samples:history.length,
       delta:trend.delta,
       risingSince:trend.risingSince,
     });
   }
-  const limited=rows.sort((a,b)=>Date.parse(b.reportedAt)-Date.parse(a.reportedAt)).slice(0,60);
-  await Promise.all(limited.map(async row=>{
-    row.jumps=await routeJumps(originSystemId,row.systemId);
-    if(!Number.isFinite(row.jumps))row.jumps=null;
-  }));
+  const limited=rows.sort((a,b)=>Date.parse(b.observedAt)-Date.parse(a.observedAt)).slice(0,100);
+  if(originSystemId){
+    await doctrineMapLimit(limited,8,async row=>{
+      row.jumps=await routeJumps(originSystemId,row.systemId);
+      if(!Number.isFinite(row.jumps))row.jumps=null;
+      return row;
+    });
+  }else{
+    for(const row of limited)row.jumps=null;
+  }
   return limited;
 }
 
-async function trackerIntelSnapshot(user,{force=false}={}){
-  const location=await trackerIntelCurrentLocation(user);
-  if(!location)return{
-    generatedAt:now(),
-    location:null,
-    locationError:'No live linked-toon location is available. Keep the desktop companion running or update EVE location access.',
-    hotZones:null,
-    essReports:[],
-    interferenceReports:[],
-  };
-  const region=await trackerIntelRegionForSystem(location.systemId);
-  const hotZones=await trackerIntelRegionHotZones(region,{force});
-  const [essReports,interferenceReports]=await Promise.all([
-    trackerIntelReportedRows('ess',location.systemId),
-    trackerIntelReportedRows('interference',location.systemId),
+async function trackerIntelSnapshot(user,{force=false,regionId=TRACKER_INTEL_DEFAULT_REGION_ID}={}){
+  const [location,regions]=await Promise.all([
+    trackerIntelCurrentLocation(user),
+    trackerIntelRegionCatalog({force:false}),
   ]);
-  await Promise.all(hotZones.systems.slice(0,30).map(async row=>{
-    row.jumps=await routeJumps(location.systemId,row.systemId);
-    if(!Number.isFinite(row.jumps))row.jumps=null;
-  }));
+  const validIds=new Set(regions.map(row=>Number(row.regionId)));
+  let selectedId=Number(regionId)||TRACKER_INTEL_DEFAULT_REGION_ID;
+  if(!validIds.has(selectedId)){
+    selectedId=validIds.has(TRACKER_INTEL_DEFAULT_REGION_ID)
+      ?TRACKER_INTEL_DEFAULT_REGION_ID
+      :Number(regions[0]?.regionId)||TRACKER_INTEL_DEFAULT_REGION_ID;
+  }
+  const region=await trackerIntelRegionById(selectedId);
+  const hotZones=await trackerIntelRegionHotZones(region,{force});
+  const originSystemId=location?.systemId||null;
+  const [essReports,interferenceReports]=await Promise.all([
+    trackerIntelObservedRows('ess',originSystemId),
+    trackerIntelObservedRows('interference',originSystemId),
+  ]);
+  if(originSystemId){
+    await doctrineMapLimit(hotZones.systems.slice(0,30),8,async row=>{
+      row.jumps=await routeJumps(originSystemId,row.systemId);
+      if(!Number.isFinite(row.jumps))row.jumps=null;
+      return row;
+    });
+  }else{
+    for(const row of hotZones.systems.slice(0,30))row.jumps=null;
+  }
+  let currentRegion=null;
+  if(location){
+    try{
+      const current=await trackerIntelRegionForSystem(location.systemId);
+      currentRegion={regionId:current.regionId,regionName:current.regionName};
+    }catch{}
+  }
   return{
     generatedAt:now(),
     location,
+    locationError:location?null:'No live linked-toon location is available. Jump distances will appear when the desktop companion or ESI location is available.',
+    currentRegion,
     region:{regionId:region.regionId,regionName:region.regionName},
+    selectedRegion:{regionId:region.regionId,regionName:region.regionName},
+    defaultRegionId:TRACKER_INTEL_DEFAULT_REGION_ID,
+    regions,
     hotZones,
     essReports,
     interferenceReports,
     reportTtlHours:TRACKER_INTEL_REPORT_TTL_MS/3600000,
+    hotZoneRefreshMinutes:TRACKER_INTEL_HOT_CACHE_MS/60000,
+    sources:{
+      hotZones:{automatic:true,source:'ESI system activity + zKillboard',refreshMinutes:TRACKER_INTEL_HOT_CACHE_MS/60000},
+      ess:{automatic:false,source:'eve-client-public',status:'collector-required'},
+      interference:{automatic:false,source:'eve-client-public',status:'collector-required'},
+    },
   };
 }
 
-async function trackerIntelRecordReport(user,kind,value){
-  const location=await trackerIntelCurrentLocation(user);
-  if(!location)throw new Error('A live linked-toon location is required before reporting Tracker intel.');
-  const intel=trackerIntelPrune();
-  const key=String(location.systemId);
-  const collection=kind==='ess'?intel.essReports:intel.interferenceReports;
-  const numeric=Number(value);
-  if(kind==='ess'){
-    if(!Number.isFinite(numeric)||numeric<1||numeric>1e15)throw new Error('ESS value must be a positive ISK amount.');
-  }else if(kind==='interference'){
-    if(!Number.isFinite(numeric)||numeric<0||numeric>100)throw new Error('Interference must be between 0 and 100 percent.');
-  }else{
-    throw new Error('Unknown Tracker intel report type.');
-  }
-  const row=collection[key]&&typeof collection[key]==='object'
-    ?collection[key]
-    :{systemId:Number(location.systemId),system:location.system,history:[]};
-  row.system=location.system;
-  row.systemId=Number(location.systemId);
-  row.history=Array.isArray(row.history)?row.history:[];
-  row.history.push({value:numeric,at:now(),userId:String(user?.id||'')});
-  row.history=row.history
-    .filter(entry=>Date.parse(entry?.at||'')>=Date.now()-TRACKER_INTEL_HISTORY_TTL_MS)
-    .slice(-40);
-  collection[key]=row;
-  await save();
-  return{ok:true,kind,systemId:row.systemId,system:row.system,value:numeric,reportedAt:row.history.at(-1)?.at||now()};
+async function refreshTrackerIntelRegionalCaches(){
+  if(trackerIntelRefreshPromise)return trackerIntelRefreshPromise;
+  const pending=(async()=>{
+    const intel=trackerIntelStore();
+    const ids=[...new Set([
+      TRACKER_INTEL_DEFAULT_REGION_ID,
+      ...Object.keys(intel.regionHotZones||{}).map(Number).filter(id=>id>0),
+    ])];
+    for(let index=0;index<ids.length;index++){
+      const regionId=ids[index];
+      try{
+        const region=await trackerIntelRegionById(regionId);
+        await trackerIntelRegionHotZones(region,{force:true});
+      }catch(error){
+        console.warn('Tracker regional hot-zone refresh failed',regionId,String(error?.message||error));
+      }
+      if(index<ids.length-1)await sleep(1200);
+    }
+  })().finally(()=>{if(trackerIntelRefreshPromise===pending)trackerIntelRefreshPromise=null;});
+  trackerIntelRefreshPromise=pending;
+  return pending;
 }
 
 async function trackerAccessForUser(user,{force=false}={}){
@@ -7709,7 +7805,7 @@ async function routeApi(req,res,url) {
     });
     return res.end(ref.audio);
   }
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.133',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.134',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -7928,7 +8024,7 @@ async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname==='/api/tracker/speech/diagnostics'){
     const voiceWorker=await trackerVoiceHealth().catch(err=>({configured:Boolean(TRACKER_TTS_WORKER_URL),reachable:false,message:String(err?.message||err)}));
     return json(res,200,{
-      version:'2.9.133',
+      version:'2.9.134',
       modelCached:Boolean(voskModelArchive),
       modelBytes:voskModelArchive?.length||0,
       modelSource:voskModelSource||null,
@@ -8280,29 +8376,14 @@ async function routeApi(req,res,url) {
     catch(err){return json(res,503,{error:'TRACKER_ACCESS_CHECK_FAILED',message:'Tracker access could not be verified with EVE right now.'})}
     if(!access.allowed)return json(res,403,{error:'TRACKER_CORPORATION_REQUIRED',message:'Tracker is restricted to the configured corporation.'});
     const force=url.searchParams.get('refresh')==='1';
-    try{return json(res,200,{...(await trackerIntelSnapshot(user,{force})),access:{corporationName:access.corporationName}})}
+    const regionId=Number(url.searchParams.get('regionId'))||TRACKER_INTEL_DEFAULT_REGION_ID;
+    try{return json(res,200,{...(await trackerIntelSnapshot(user,{force,regionId})),access:{corporationName:access.corporationName}})}
     catch(err){
       console.warn('Tracker intel failed',String(err.message||err));
       return json(res,502,{error:'TRACKER_INTEL_FAILED',message:String(err.message||err)});
     }
   }
-  if(req.method==='POST'&&url.pathname==='/api/tracker/intel/report'){
-    if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
-    let access;
-    try{access=await trackerAccessForUser(user)}
-    catch(err){return json(res,503,{error:'TRACKER_ACCESS_CHECK_FAILED',message:'Tracker access could not be verified with EVE right now.'})}
-    if(!access.allowed)return json(res,403,{error:'TRACKER_CORPORATION_REQUIRED',message:'Tracker is restricted to the configured corporation.'});
-    let body;
-    try{body=await readBody(req,4_000)}
-    catch(err){return json(res,400,{error:'BAD_TRACKER_INTEL_REPORT',message:String(err.message||err)})}
-    const kind=String(body?.kind||'').trim().toLowerCase();
-    try{
-      const report=await trackerIntelRecordReport(user,kind,body?.value);
-      return json(res,201,{...report,snapshot:await trackerIntelSnapshot(user,{force:false})});
-    }catch(err){
-      return json(res,400,{error:'TRACKER_INTEL_REPORT_FAILED',message:String(err.message||err)});
-    }
-  }
+
   if(req.method==='GET'&&url.pathname==='/api/tracker/heavy-fighters/voice/status'){
     let access;
     try{access=await trackerAccessForUser(user)}
@@ -8579,7 +8660,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.133 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.134 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>{
   Promise.all([
     loadVoskRuntimeAsset(VOSK_RUNTIME_FILES['/vendor/vosk/vosk-0.0.8.js']),
@@ -8598,6 +8679,8 @@ async function runAutomaticSyncLoop(){
 setTimeout(runAutomaticSyncLoop,5_000).unref();
 setInterval(()=>refreshFountainThreatActivity(false).catch(console.error),FOUNTAIN_THREAT_CACHE_MS).unref();
 setTimeout(()=>refreshFountainThreatActivity(false).catch(console.error),2_500).unref();
+setTimeout(()=>refreshTrackerIntelRegionalCaches().catch(console.error),12_000).unref();
+setInterval(()=>refreshTrackerIntelRegionalCaches().catch(console.error),TRACKER_INTEL_HOT_CACHE_MS).unref();
 setInterval(()=>buildInitZkillLeaderboard(false).catch(console.error),ZKILL_ARCHIVE_REFRESH_MS).unref();
 setTimeout(()=>{
   if(zkillInitLeaderboardCache.data)zkillInitLeaderboardCache.updatedAt=Date.now();
