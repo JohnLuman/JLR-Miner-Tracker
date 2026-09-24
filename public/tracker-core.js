@@ -113,6 +113,7 @@
     return fmt(value)+'/100';
   }
   function trackerIntelJumpLabel(value){
+    if(value===null||value===undefined||value==='')return '—';
     const n=Number(value);
     return Number.isFinite(n)?n+'J':'—';
   }
