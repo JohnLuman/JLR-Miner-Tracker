@@ -9,6 +9,7 @@ assert.match(server,/LEDGER_CACHE_FILE = path\.join\(DATA_DIR, 'ledger-cache\.js
 assert.match(server,/const restoredLedgerCache = await loadLedgerCache\(state\.characters\)/,'ledger cache is restored before serving requests');
 assert.match(server,/const ledgerRowsByCharacter = restoredLedgerCache\.rowsByCharacter/,'restored rows seed the live ledger map');
 assert.match(server,/const ledgerSnapshotAtByCharacter = restoredLedgerCache\.snapshotAtByCharacter/,'restored baseline timestamps survive restarts');
+assert.match(server,/if\(ledgerRowsByCharacter\.size\)rebuildDailyFleetFromLedgerCache\(\)/,'restored ledger rows rebuild payout totals immediately after restart');
 assert.match(server,/async function loadLedgerCache\(characters=\{\}\)/,'ledger cache has a restart restore path');
 assert.match(server,/function saveLedgerCache\(\)/,'ledger cache has a persistent write path');
 assert.match(server,/await saveLedgerCache\(\)/,'successful ledger refreshes persist the restart cache');
@@ -18,7 +19,7 @@ assert.match(server,/publishing available ledger totals/,'partial fleet coverage
 assert.match(server,/if\(miningLedgerDebug\(\)\.cacheComplete\)rebuildDailyFleetFromLedgerCache\(\)/,'market refresh cannot independently rebuild fleet totals from a partial cache');
 assert.match(server,/Mining ledger cache empty: 0\//,'zero cached ledgers still preserve the previous fleet payout');
 
-assert.equal(pkg.version,'2.9.138','ledger restart protection is versioned');
-assert.ok(index.includes('/app.js?v=2.9.138'),'browser loads the ledger restart fix');
+assert.equal(pkg.version,'2.9.139','ledger restart protection is versioned');
+assert.ok(index.includes('/app.js?v=2.9.139'),'browser loads the ledger restart fix');
 
 console.log('Ledger restart cache regression tests passed.');

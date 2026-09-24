@@ -15,6 +15,7 @@ import {
   BASE_T3_ORE_REPROCESSING,
   aggregateTrackedT3Ledger,
   janiceImmediateBuyPrices,
+  t3OreVariant,
   trackedT3OreVariant,
 } from './lib/ledger-valuation.mjs';
 
@@ -156,7 +157,7 @@ const FOUNTAIN_THREAT_CACHE_MS = 60 * 60 * 1000;
 const FOUNTAIN_THREAT_MAX_PAGES = 15;
 // Perfect null-sec refine: T2 rigged Tatara + max skills + RX-804 implant.
 const MAX_REFINE_YIELD = 0.90628105568;
-const LEDGER_VALUATION_VERSION = 2;
+const LEDGER_VALUATION_VERSION = 3;
 const ORE_REPROCESSING = BASE_T3_ORE_REPROCESSING;
 const ORE_TYPE_NAME={Mordinium:'Mordunium'};
 const REFINING_MINERALS=[...new Set(Object.values(ORE_REPROCESSING).flatMap(x=>Object.keys(x.minerals)))];
@@ -285,6 +286,9 @@ const characterAccessTokenCache = new Map();
 const userSyncPromises = new Map();
 const ledgerRowsByCharacter = restoredLedgerCache.rowsByCharacter;
 const ledgerSnapshotAtByCharacter = restoredLedgerCache.snapshotAtByCharacter;
+// Rebuild immediately from the durable ledger cache so a deployment publishes
+// the new type-ID payout semantics without waiting for the next ESI cycle.
+if(ledgerRowsByCharacter.size)rebuildDailyFleetFromLedgerCache();
 const universeNameCache = new Map();
 const trackerLiveClients = new Set();
 let heavyFighterTypeIdsCache = {at:0,ids:null,promise:null};
@@ -1021,7 +1025,7 @@ function miningLedgerDebug(){
   const today=dateUTC();
   const linkedCharacters=Object.keys(state.characters).length;
   const cachedCharacters=[...ledgerRowsByCharacter.keys()].filter(id=>state.characters[id]).length;
-  let totalRows=0,todayRows=0,trackedSystemRows=0,matchedT3Rows=0,unmatchedSystemRows=0,unmatchedOreRows=0,matchedM3=0;
+  let totalRows=0,todayRows=0,trackedSystemRows=0,matchedT3Rows=0,outsideTrackedSystemRows=0,unresolvedSystemRows=0,unmatchedOreRows=0,matchedM3=0;
 
   for(const rows of ledgerRowsByCharacter.values()){
     for(const row of Array.isArray(rows)?rows:[]){
@@ -1030,14 +1034,11 @@ function miningLedgerDebug(){
       todayRows++;
 
       const system=state.esi.systemCache[String(row?.solar_system_id)]?.name||'';
-      const definition=SYSTEM_MAP.get(system);
-      if(!definition){
-        unmatchedSystemRows++;
-        continue;
-      }
-      trackedSystemRows++;
+      if(!system)unresolvedSystemRows++;
+      else if(SYSTEM_MAP.has(system))trackedSystemRows++;
+      else outsideTrackedSystemRows++;
 
-      const variant=trackedT3OreVariant(definition.ore,row?.type_id);
+      const variant=t3OreVariant(row?.type_id);
       if(!variant){
         unmatchedOreRows++;
         continue;
@@ -1060,7 +1061,11 @@ function miningLedgerDebug(){
     todayRows,
     trackedSystemRows,
     matchedT3Rows,
-    unmatchedSystemRows,
+    outsideTrackedSystemRows,
+    unresolvedSystemRows,
+    // Backward-compatible field name; this now means an unresolved system ID,
+    // not a valid row mined outside one of JLR's tracked field systems.
+    unmatchedSystemRows:unresolvedSystemRows,
     unmatchedOreRows,
     matchedM3,
   };
@@ -1077,7 +1082,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.138',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.139',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}])),wormholes:{reports:wormholeGasPublicReports(),reportHours:WORMHOLE_GAS_REPORT_TTL/3600000}},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans,
@@ -7783,7 +7788,7 @@ async function routeApi(req,res,url) {
     });
     return res.end(ref.audio);
   }
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.138',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.139',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -8002,7 +8007,7 @@ async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname==='/api/tracker/speech/diagnostics'){
     const voiceWorker=await trackerVoiceHealth().catch(err=>({configured:Boolean(TRACKER_TTS_WORKER_URL),reachable:false,message:String(err?.message||err)}));
     return json(res,200,{
-      version:'2.9.138',
+      version:'2.9.139',
       modelCached:Boolean(voskModelArchive),
       modelBytes:voskModelArchive?.length||0,
       modelSource:voskModelSource||null,

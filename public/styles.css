@@ -2187,3 +2187,22 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
   .fleet-chart-svg,.market-line-svg{max-height:none}
   .ice-kpis,.gas-ops-grid,.calc-results,.boost-stats,.actual-grid,.fleet-perf-kpis,.ore-mix-kpis{grid-template-columns:1fr}
 }
+
+
+/* v2.9.139 — balanced operations summary */
+.information-kpis{grid-template-columns:repeat(4,minmax(0,1fr));max-width:1120px;gap:6px}
+.information-kpis .kpi-primary{grid-column:span 2;min-height:82px;padding:9px 11px}
+.information-kpis .kpi-secondary{grid-column:span 1;display:block;opacity:.9;min-height:64px;padding:7px 9px}
+.app.compact .information-kpis .kpi-secondary,.app.expanded .information-kpis .kpi-secondary{display:block}
+.app.compact .information-kpis .kpi-primary,.app.expanded .information-kpis .kpi-primary{grid-column:span 2}
+.kpi-title-row{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+.information-kpis .kpi-title-row>span{min-width:0;font-size:8px;color:#aaaeb9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.information-kpis .kpi-title-row>.kpi-badge{display:inline-flex;flex:0 0 auto;align-items:center;margin:0;padding:3px 6px;border:1px solid #39404a;border-radius:999px;background:#141720;color:#9ea5b0;font:900 7px/1 "Share Tech Mono",monospace;letter-spacing:.05em;white-space:nowrap}
+.information-kpis .kpi-title-row>.kpi-badge.partial{border-color:#8b6a35;background:#211c13;color:#e0b966}
+.information-kpis .kpi-primary>strong{font-size:21px}
+.information-kpis .kpi-secondary strong{font-size:14px}
+.information-kpis .fleet-target-kpi .kpi-meter{max-width:180px;margin-top:6px}
+@media(max-width:760px){
+  .information-kpis{grid-template-columns:1fr}
+  .information-kpis .kpi-primary,.information-kpis .kpi-secondary,.app.compact .information-kpis .kpi-primary,.app.expanded .information-kpis .kpi-primary{grid-column:auto}
+}
