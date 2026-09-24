@@ -1,7 +1,7 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.125';
-  const CORE_URL='/tracker-core.js?v=2.9.125';
+  const ALARM_VERSION='2.9.131';
+  const CORE_URL='/tracker-core.js?v=2.9.131';
 
   let alarmContext=null;
   let alarmSource=null;
