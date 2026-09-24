@@ -233,7 +233,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.127');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.128');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -304,7 +304,7 @@
     if($('brainMicErrorStage'))$('brainMicErrorStage').textContent=row.stage;
     if($('brainMicErrorDetail'))$('brainMicErrorDetail').textContent=row.detail;
   }
-  function brainSetMicError(error,recovery='Click TALK TO TRACKER to retry.'){
+  function brainSetMicError(error,recovery='Click TALK TO ADAM to retry.'){
     const code=String(error?.jlrCode||'MIC-E999');
     const stage=String(error?.jlrStage||error?.name||'UNKNOWN');
     const detail=String(error?.message||error||'Tracker microphone failed.').trim();
@@ -322,8 +322,8 @@
     const localModel=Boolean(brainLocalModel);
     const track=brainMicTrack;
     const lines=[
-      'JLR TRACKER MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.127'),
+      'JLR ADAM MIC DIAGNOSTICS',
+      'Version: '+String(state?.app?.version||'2.9.128'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -410,7 +410,7 @@
     panel?.classList.add('info');
     if($('brainMicErrorCode'))$('brainMicErrorCode').textContent='DIAGNOSTICS';
     if($('brainMicErrorStage'))$('brainMicErrorStage').textContent='LIVE REPORT';
-    if($('brainMicErrorDetail'))$('brainMicErrorDetail').textContent='Live Tracker microphone and custom-voice diagnostics are shown below. Use COPY DIAGNOSTICS to copy the full report.';
+    if($('brainMicErrorDetail'))$('brainMicErrorDetail').textContent='Live Adam microphone and custom-voice diagnostics are shown below. Use COPY DIAGNOSTICS to copy the full report.';
   }
   function brainDiagnosticsVoiceSummary(){
     const mic=brainMicTrack?.readyState||'none';
@@ -526,7 +526,7 @@
     brainConversationUntil=Date.now()+brainConversationMs();
     try{
       if(/\b(diagnostic|diagnostics|diag|voice report|mic report|microphone report|speech report|system report|troubleshoot|troubleshooting)\b/.test(command)){
-        brainSetListen('TRACKER DIAGNOSTICS','Collecting microphone and custom-voice status…');
+        brainSetListen('ADAM DIAGNOSTICS','Collecting microphone and custom-voice status…');
         const report=await runBrainMicDiagnostic(false);
         showBrainDiagnostics(report);
         const summary=brainDiagnosticsVoiceSummary();
@@ -582,7 +582,7 @@
         return;
       }
 
-      brainSetListen('TRACKER THINKING','Checking JLR data and EVE location when needed…');
+      brainSetListen('ADAM THINKING','Checking JLR data and EVE location when needed…');
       const response=await api('/api/tracker/brain/ask',{
         method:'POST',
         body:JSON.stringify({question:command,characterId:scanCharacterId,payoutPct:Number(fleetSettings.payout),currentTab:activeTab}),
@@ -732,7 +732,7 @@
     brainMicWakeDebounceUntil=Date.now()+1500;
     brainConversationUntil=Date.now()+brainConversationMs();
     brainRecordMicDiag('MIC-I501','WAKE_PARTIAL','Wake word heard in partial transcript: '+heard);
-    brainSetListen('TRACKER AWAKE','Wake word detected. Ask your question.');
+    brainSetListen('ADAM AWAKE','Wake word detected. Ask your question.');
     if($('brainReply'))$('brainReply').textContent='Listening…';
   }
   function handleBrainTranscript(transcript){
@@ -1002,7 +1002,7 @@
       setTimeout(()=>{
         if(session!==brainLocalSession||brainLocalRecognizer!==recognizer)return;
         if(brainMicAudioFrames===0){
-          brainSetMicError(brainMicCodeError('MIC-E204','AUDIO_PIPELINE','Microphone track is live, but no Web Audio frames are arriving.'),'Choose another microphone or click TALK TO TRACKER to reopen it.');
+          brainSetMicError(brainMicCodeError('MIC-E204','AUDIO_PIPELINE','Microphone track is live, but no Web Audio frames are arriving.'),'Choose another microphone or click TALK TO ADAM to reopen it.');
         }
       },5000);
     }catch(error){
@@ -1010,7 +1010,7 @@
       stopBrainLocalCapture(false);
       const name=String(error?.name||'');
       if(name==='NotAllowedError'||name==='SecurityError'){
-        brainSetMicError(brainMicCodeError('MIC-E201','MIC_PERMISSION','Microphone permission was blocked.'),'Allow microphone access, then click TALK TO TRACKER.');
+        brainSetMicError(brainMicCodeError('MIC-E201','MIC_PERMISSION','Microphone permission was blocked.'),'Allow microphone access, then click TALK TO ADAM.');
         return;
       }
       if((name==='NotFoundError'||name==='OverconstrainedError')&&brainMicDeviceId!=='default'){
@@ -1024,7 +1024,7 @@
         return;
       }
       console.warn('JLR local speech engine failed.',error);
-      brainSetMicError(error,'Click TALK TO TRACKER to retry, then use COPY DIAGNOSTICS if it fails again.');
+      brainSetMicError(error,'Click TALK TO ADAM to retry, then use COPY DIAGNOSTICS if it fails again.');
     }
   }
   async function ensureBrainLongRunHealth(reason='watchdog'){
@@ -1111,7 +1111,7 @@
       if(startToken!==brainMicStartToken)return;
       const name=String(error?.name||'');
       if(name==='NotAllowedError'||name==='SecurityError'){
-        brainSetMicError(brainMicCodeError('MIC-E201','MIC_PERMISSION','Microphone permission was blocked.'),'Allow microphone access, then click TALK TO TRACKER.');
+        brainSetMicError(brainMicCodeError('MIC-E201','MIC_PERMISSION','Microphone permission was blocked.'),'Allow microphone access, then click TALK TO ADAM.');
         return;
       }
       if((name==='NotFoundError'||name==='OverconstrainedError')&&brainMicDeviceId!=='default'){
@@ -1166,7 +1166,7 @@
       const code=String(event?.error||'microphone error');
       if(code==='not-allowed'||code==='service-not-allowed'){
         recognition.__jlrRetry=false;
-        brainSetMicError(brainMicCodeError('MIC-E201','MIC_PERMISSION','Microphone permission was blocked.'),'Allow microphone access, then click TALK TO TRACKER.');
+        brainSetMicError(brainMicCodeError('MIC-E201','MIC_PERMISSION','Microphone permission was blocked.'),'Allow microphone access, then click TALK TO ADAM.');
         return;
       }
       if(code==='audio-capture'){
@@ -1277,7 +1277,7 @@
     return {bug:'BUG',suggestion:'FEATURE IDEA',speech:'SPEECH / VOICE',data:'DATA / ESI',ui:'UI / UX',other:'OTHER'}[String(type||'')]||'FEEDBACK';
   }
   function feedbackAreaLabel(area){
-    return {general:'GENERAL',fields:'FIELDS',brain:'BRAIN',fleet:'FLEET & FITS',performance:'FLEET PERFORMANCE',ice:'ICE',gas:'GAS',doctrine:'DOCTRINE MARKET',pvp:'INIT PVP',tracker:'TRACKER',threat:'THREAT SCAN',mer:'MER INTEL',toons:'TOONS'}[String(area||'')]||String(area||'GENERAL').toUpperCase();
+    return {general:'GENERAL',fields:'FIELDS',brain:'ADAM',fleet:'FLEET & FITS',performance:'FLEET PERFORMANCE',ice:'ICE',gas:'GAS',doctrine:'DOCTRINE MARKET',pvp:'INIT PVP',tracker:'TRACKER',threat:'THREAT SCAN',mer:'MER INTEL',toons:'TOONS'}[String(area||'')]||String(area||'GENERAL').toUpperCase();
   }
   function renderFeedbackHub(){
     const source=$('feedbackDraftSource');
@@ -1342,7 +1342,7 @@
         <span class="tracker-assist-priority ${esc(issue.priority||'info')}">${esc(String(issue.priority||'info').toUpperCase())}</span>
         <strong>${esc(issue.title||'Tracker update')}</strong>
         <small>${esc(issue.reason||'')}</small>
-      </button>`).join(''):'<div class="visual-empty">No active Brain decisions require attention.</div>';
+      </button>`).join(''):'<div class="visual-empty">No active Adam decisions require attention.</div>';
     }
   }
 
@@ -2130,22 +2130,22 @@
     assistant.innerHTML=`
       <div class="tracker-brain-head">
         <div class="tracker-brain-title">
-          <span class="eyebrow">TRACKER BRAIN // OPERATIONS ASSISTANT</span>
+          <span class="eyebrow">ADAM // TRACKER OPERATIONS ASSISTANT</span>
           <div class="tracker-brain-title-row">
-            <strong>TRACKER CONTROL ROOM</strong>
+            <strong>ADAM CONTROL ROOM</strong>
             <span id="trackerBrainStatus" class="status-pill">● ONLINE</span>
           </div>
         </div>
         <div class="tracker-assist-actions">
           <button id="trackerBriefMe" class="orb purple" type="button">▶ BRIEF ME</button>
           <button id="trackerRepeatLast" class="orb green" type="button">↻ REPEAT LAST</button>
-          <button id="trackerMicToggle" class="orb blue" type="button">TALK TO TRACKER</button>
+          <button id="trackerMicToggle" class="orb blue" type="button">TALK TO ADAM</button>
         </div>
       </div>
 
       <div class="tracker-brain-grid">
         <section class="brain-card">
-          <div class="brain-card-head"><strong>VOICE SETTINGS</strong><small>How Tracker behaves for you</small></div>
+          <div class="brain-card-head"><strong>VOICE SETTINGS</strong><small>How Adam behaves for you</small></div>
           <div class="brain-setting-grid">
             <label class="brain-setting brain-mic-setting"><span>MICROPHONE</span><select id="brainMicDevice"><option value="default">DETECTING MICROPHONES…</option></select></label>
             <label class="brain-setting"><span>VOICE</span><select id="brainVoiceEnabled"><option value="on">ON</option><option value="off">OFF</option></select></label>
@@ -2175,11 +2175,11 @@
         </section>
 
         <section class="brain-card brain-talk-card">
-          <div class="brain-card-head"><strong>TALK TO TRACKER</strong><small>Natural voice interaction</small></div>
+          <div class="brain-card-head"><strong>TALK TO ADAM</strong><small>Natural voice interaction</small></div>
           <div class="brain-question-hint">Try: “Adam, how much have I made this hour?” • “Adam, heading to C-N, where can I stop and scan?” • “Adam, where is my closest scan?”</div>
           <div id="brainListenPanel" class="brain-listen-panel">
             <span class="brain-listen-orb">●</span>
-            <div><strong id="brainListenStatus">MIC STARTING</strong><small id="brainListenHint">Tracker is arming the microphone and waiting for “Adam”.</small></div>
+            <div><strong id="brainListenStatus">MIC STARTING</strong><small id="brainListenHint">Adam is arming the microphone and waiting for “Adam”.</small></div>
           </div>
           <div class="brain-mic-level-row">
             <span>MIC SIGNAL</span>
@@ -2187,7 +2187,7 @@
             <b id="brainMicLevelText">QUIET</b>
           </div>
           <div id="brainHeard" class="brain-heard">Standby.</div>
-          <div id="brainReply" class="brain-reply">Tracker ready.</div>
+          <div id="brainReply" class="brain-reply">Adam ready.</div>
           <div id="brainScanPrompt" class="brain-scan-prompt hidden" role="status"><span id="brainScanPromptText"></span><button id="brainScanOpen" class="board-tool" type="button">OPEN SCANNER</button></div>
           <div class="brain-follow-head"><strong>LINKED TOONS</strong><small id="brainFollowStatus">Checking location access…</small></div>
           <div id="brainFollowList" class="brain-follow-list"></div>
@@ -2214,12 +2214,12 @@
         </section>
 
         <section class="brain-card">
-          <div class="brain-card-head"><strong>SPEECH HISTORY</strong><small>Recent Tracker announcements</small></div>
+          <div class="brain-card-head"><strong>SPEECH HISTORY</strong><small>Recent Adam announcements</small></div>
           <div id="brainSpeechHistory" class="brain-speech-history"></div>
         </section>
 
         <section class="brain-card">
-          <div class="brain-card-head"><strong>CURRENT BRAIN DECISIONS</strong><small>What Tracker is acting on</small></div>
+          <div class="brain-card-head"><strong>CURRENT ADAM DECISIONS</strong><small>What Adam is acting on</small></div>
           <div id="brainDecisionList" class="brain-decision-list"></div>
         </section>
       </div>`;
@@ -2254,7 +2254,7 @@
               <label><span>AREA</span><select id="feedbackArea">
                 <option value="general">GENERAL</option>
                 <option value="fields">FIELDS</option>
-                <option value="brain">BRAIN</option>
+                <option value="brain">ADAM</option>
                 <option value="fleet">FLEET & FITS</option>
                 <option value="performance">FLEET PERFORMANCE</option>
                 <option value="ice">ICE</option>
@@ -2278,7 +2278,7 @@
             <label class="feedback-field"><span>DETAILS</span><textarea id="feedbackMessage" maxlength="2000" placeholder="Tell us what happened, what you want changed, or how the idea should work."></textarea></label>
 
             <div class="feedback-detail-grid">
-              <label class="feedback-field"><span>STEPS TO REPRODUCE <small>optional</small></span><textarea id="feedbackSteps" maxlength="1500" placeholder="1. Open Brain&#10;2. Select microphone&#10;3. ..."></textarea></label>
+              <label class="feedback-field"><span>STEPS TO REPRODUCE <small>optional</small></span><textarea id="feedbackSteps" maxlength="1500" placeholder="1. Open Adam&#10;2. Select microphone&#10;3. ..."></textarea></label>
               <label class="feedback-field"><span>EXPECTED RESULT <small>optional</small></span><textarea id="feedbackExpected" maxlength="1000" placeholder="What should have happened instead?"></textarea></label>
             </div>
 
@@ -5672,7 +5672,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.127',
+          version:state?.app?.version||'2.9.128',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),

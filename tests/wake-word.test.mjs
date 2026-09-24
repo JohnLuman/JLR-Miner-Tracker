@@ -10,13 +10,16 @@ assert.ok((app.match(/\\badam\\b/g)||[]).length>=2,'partial and final speech tra
 assert.ok(!app.includes('/\\btracker\\b/.exec(lower)'),'Tracker is no longer accepted as the wake word');
 assert.ok(app.includes("replace(/^adam[\\s,.:;-]*/,'')"),'Adam is stripped from the start of a spoken command');
 assert.ok(!app.includes("replace(/^tracker[\\s,.:;-]*/,'')"),'old Tracker command prefix is removed');
-assert.ok(app.includes('Try: “Adam, how much have I made this hour?”'),'Brain examples use Adam');
-assert.ok(app.includes('waiting for “Adam”'),'Brain mic hint names Adam');
+assert.ok(app.includes('Try: “Adam, how much have I made this hour?”'),'Adam examples use Adam');
+assert.ok(app.includes('waiting for “Adam”'),'Adam mic hint names Adam');
 assert.ok(server.includes('wake word Adam'),'server help describes Adam as the wake word');
 assert.ok(server.includes('say adam'),'server voice-help intent recognizes questions about saying Adam');
 
-assert.equal(pkg.version,'2.9.127','package version is the Adam wake-word release');
-assert.ok(server.includes("version:'2.9.127'"),'server public version is 2.9.127');
-assert.ok(index.includes('/app.js?v=2.9.127'),'browser cachebuster loads the Adam build');
+assert.equal(pkg.version,'2.9.128','package version is the Adam wake-word release');
+assert.ok(server.includes("version:'2.9.128'"),'server public version is 2.9.128');
+assert.ok(index.includes('/app.js?v=2.9.128'),'browser cachebuster loads the Adam build');
+assert.ok(index.includes('data-tab="brain" type="button">ADAM</button>'),'Brain tab is presented as Adam');
+assert.ok(app.includes('ADAM // TRACKER OPERATIONS ASSISTANT'),'Adam is the user-facing assistant identity');
+assert.ok(app.includes('TALK TO ADAM'),'voice controls use Adam naming');
 
 console.log('Adam wake-word regression tests passed.');

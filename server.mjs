@@ -36,9 +36,10 @@ const EVE_CLIENT_ID = String(process.env.EVE_CLIENT_ID || '').trim();
 const EVE_CLIENT_SECRET = String(process.env.EVE_CLIENT_SECRET || '').trim();
 const ESI_USER_AGENT = String(process.env.ESI_USER_AGENT || 'JLR-Miner-Tracker/2.2').trim();
 const ESI_COMPAT_DATE = String(process.env.ESI_COMPATIBILITY_DATE || '2026-09-16').trim();
+const TRACKER_SUPPORT_SHARED_SECRET = String(process.env.TRACKER_SUPPORT_SHARED_SECRET || '').trim();
 const trackerSupport = createTrackerSupportClient({
   baseUrl: process.env.TRACKER_SUPPORT_URL,
-  secret: process.env.TRACKER_SUPPORT_SHARED_SECRET,
+  secret: TRACKER_SUPPORT_SHARED_SECRET,
   userKeySecret: process.env.TRACKER_SUPPORT_USER_KEY_SECRET,
   timeoutMs: num(process.env.TRACKER_SUPPORT_TIMEOUT_MS, 900),
 });
@@ -138,8 +139,8 @@ const TRACKER_R2Z2_REQUEST_GAP_MS = 120;
 const TRACKER_R2Z2_ERROR_WAIT_MS = 5 * 1000;
 const TRACKER_LIVE_RETENTION_MS = 24 * 60 * 60 * 1000;
 const TRACKER_R2Z2_ENABLED = String(process.env.TRACKER_R2Z2_ENABLED || 'true').trim().toLowerCase() !== 'false';
-const TRACKER_TTS_WORKER_URL = String(process.env.TRACKER_TTS_WORKER_URL || '').trim().replace(/\/$/,'');
-const TRACKER_TTS_WORKER_TOKEN = String(process.env.TRACKER_TTS_WORKER_TOKEN || '').trim();
+const TRACKER_TTS_WORKER_URL = String(process.env.TRACKER_SUPPORT_URL || process.env.TRACKER_TTS_WORKER_URL || '').trim().replace(/\/$/,'');
+const TRACKER_TTS_WORKER_TOKEN = String(TRACKER_SUPPORT_SHARED_SECRET || process.env.TRACKER_TTS_WORKER_TOKEN || '').trim();
 const TRACKER_VOICE_CACHE_VERSION = String(process.env.TRACKER_VOICE_CACHE_VERSION || 'v3-speaker-20260922-core-unified').trim() || 'v3-speaker-20260922-core-unified';
 const TRACKER_TTS_TIMEOUT_MS = clamp(process.env.TRACKER_TTS_TIMEOUT_MS,3_000,60_000,20_000);
 const TRACKER_TTS_CACHE_DIR = path.join(DATA_DIR,'tracker-voice-cache');
@@ -618,6 +619,44 @@ function sameOrigin(req) {
   const origin = req.headers.origin; if (!origin) return true;
   try { return new URL(origin).origin === new URL(requestBaseUrl(req)).origin; } catch { return false; }
 }
+function trackerSupportInternalAuth(req){
+  if(TRACKER_SUPPORT_SHARED_SECRET.length<24)return false;
+  const raw=String(req.headers.authorization||'');
+  const match=raw.match(/^Bearer\s+(.+)$/i);
+  if(!match)return false;
+  const supplied=Buffer.from(match[1].trim());
+  const expected=Buffer.from(TRACKER_SUPPORT_SHARED_SECRET);
+  return supplied.length===expected.length&&crypto.timingSafeEqual(supplied,expected);
+}
+async function trackerCoreVoiceReference(){
+  let names=[];
+  try{names=await fsp.readdir(TRACKER_TTS_CACHE_DIR)}
+  catch{return null}
+  const candidates=[];
+  for(const name of names.filter(name=>name.endsWith('.json')).slice(-2500)){
+    try{
+      const meta=JSON.parse(await fsp.readFile(path.join(TRACKER_TTS_CACHE_DIR,name),'utf8'));
+      if(String(meta?.voice||'').toLowerCase()!=='core')continue;
+      if(!String(meta?.mime||'').toLowerCase().startsWith('audio/wav'))continue;
+      const transcript=String(meta?.text||'').replace(/\s+/g,' ').trim();
+      if(transcript.length<24||transcript.length>220)continue;
+      const stem=name.slice(0,-5);
+      const audioPath=path.join(TRACKER_TTS_CACHE_DIR,stem+'.audio');
+      const st=await fsp.stat(audioPath);
+      if(!st.isFile()||st.size<100_000||st.size>2_000_000)continue;
+      candidates.push({
+        audioPath,
+        bytes:st.size,
+        transcript,
+        createdMs:Date.parse(meta?.createdAt||'')||st.mtimeMs||0,
+      });
+    }catch{}
+  }
+  candidates.sort((a,b)=>b.createdMs-a.createdMs);
+  const pick=candidates[0]||null;
+  if(!pick)return null;
+  return{...pick,audio:await fsp.readFile(pick.audioPath)};
+}
 
 
 function companionText(value,max=120){
@@ -931,7 +970,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.127',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.128',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}])),wormholes:{reports:wormholeGasPublicReports(),reportHours:WORMHOLE_GAS_REPORT_TTL/3600000}},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans,
@@ -3730,9 +3769,9 @@ const TRACKER_APP_KNOWLEDGE = {
     panels:['T3 field cards','scan freshness','ledger activity','cherry-picked state','ten-hour respawn timers','system distance and target ordering']
   },
   brain:{
-    label:'Brain',
-    aliases:['brain','tracker brain','talk to tracker','assistant'],
-    description:'Brain is the control room for Tracker. It handles wake-word speech, text answers, briefings, microphone diagnostics, voice controls, current-toon location context, desktop-companion status, and app explanations. Tracker can use the current tab as context, so questions like what is this tab can be answered without repeating the tab name.',
+    label:'Adam',
+    aliases:['adam','brain','tracker brain','talk to adam','talk to tracker','assistant'],
+    description:'Adam is the control room assistant for JLR Tracker. It handles wake-word speech, text answers, briefings, microphone diagnostics, voice controls, current-toon location context, desktop-companion status, and app explanations. Tracker can use the current tab as context, so questions like what is this tab can be answered without repeating the tab name.',
     panels:['Talk to Tracker','microphone and voice controls','desktop companion','live companion feed','diagnostics','briefing and question responses']
   },
   fleet:{
@@ -3774,7 +3813,7 @@ const TRACKER_APP_KNOWLEDGE = {
   tracker:{
     label:'Heavy Fighter Tracker',
     aliases:['tracker tab','heavy fighter tracker','heavy fighters','fighter losses'],
-    description:'Heavy Fighter Tracker watches the live R2Z2 kill feed for Heavy Fighter losses. Qualifying losses can trigger a JLR alert with fighter type, system, value and kill details. The live feed and its access controls are separate from Brain even though both use the Tracker name.',
+    description:'Heavy Fighter Tracker watches the live R2Z2 kill feed for Heavy Fighter losses. Qualifying losses can trigger a JLR alert with fighter type, system, value and kill details. The live feed and its access controls are separate from Adam even though both are part of JLR Tracker.',
     panels:['live Heavy Fighter losses','alert state','loss details','system and value','killboard links']
   },
   threat:{
@@ -3899,7 +3938,7 @@ function trackerBrainAnswer(user,question,options={}){
   const snapshot=trackerBrainSnapshot();
   const linked=(user?.characterIds||[]).map(String).filter(Boolean);
   const primaryName=trackerBrainPrimaryName(user);
-  const appVersion='2.9.125';
+  const appVersion='2.9.128';
 
   const voiceSummary=(text,max=120)=>{
     const clean=trackerSpeechSafe(text,1200).replace(/\s+/g,' ').trim();
@@ -4045,7 +4084,7 @@ function trackerBrainAnswer(user,question,options={}){
 
   if(/\b(mic|microphone|voice|speech|wake word|say adam|say tracker|talk to tracker|not hearing|error code)\b/.test(q)){
     return answer('voice',
-      'Talk to Tracker listens locally for the wake word Adam, then keeps a short conversation window open for follow-up questions. The microphone selector chooses the input device, the signal meter shows whether audio is arriving, and Copy Diagnostics records the speech engine, model, audio and error-code state without including EVE tokens.'
+      'Talk to Adam listens locally for the wake word Adam, then keeps a short conversation window open for follow-up questions. The microphone selector chooses the input device, the signal meter shows whether audio is arriving, and Copy Diagnostics records the speech engine, model, audio and error-code state without including EVE tokens.'
     );
   }
 
@@ -5235,7 +5274,7 @@ function jlrPrimaryCharacterName(user){
 function jlrStartupVoiceText(user){
   const name=jlrPrimaryCharacterName(user);
   const briefing=trackerBrainBriefing(user,{force:false}).text;
-  return 'Welcome back, '+name+'. Tracker is online. '+briefing;
+  return 'Welcome back, '+name+'. Adam is online. '+briefing;
 }
 
 
@@ -7230,7 +7269,21 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.127',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/internal/support/voice-reference'){
+    if(!trackerSupportInternalAuth(req))return json(res,401,{error:'SUPPORT_AUTH_REQUIRED'});
+    const ref=await trackerCoreVoiceReference();
+    if(!ref)return json(res,404,{error:'CORE_VOICE_REFERENCE_UNAVAILABLE'});
+    res.writeHead(200,{
+      'Content-Type':'audio/wav',
+      'Content-Length':ref.audio.length,
+      'Cache-Control':'private, no-store',
+      'X-JLR-Reference-Text':encodeURIComponent(ref.transcript).slice(0,1200),
+      'X-JLR-Reference-Lang':'en',
+      'X-JLR-Reference-Voice':'core',
+    });
+    return res.end(ref.audio);
+  }
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.128',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -7449,7 +7502,7 @@ async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname==='/api/tracker/speech/diagnostics'){
     const voiceWorker=await trackerVoiceHealth().catch(err=>({configured:Boolean(TRACKER_TTS_WORKER_URL),reachable:false,message:String(err?.message||err)}));
     return json(res,200,{
-      version:'2.9.127',
+      version:'2.9.128',
       modelCached:Boolean(voskModelArchive),
       modelBytes:voskModelArchive?.length||0,
       modelSource:voskModelSource||null,
@@ -7509,7 +7562,7 @@ async function routeApi(req,res,url) {
     try{body=await readBody(req,8_000)}
     catch(err){return json(res,400,{error:'BAD_BRAIN_QUESTION',message:String(err.message||err)})}
     const question=trackerSpeechSafe(body?.question,900);
-    if(!question)return json(res,400,{error:'QUESTION_REQUIRED',message:'Ask Tracker a question first.'});
+    if(!question)return json(res,400,{error:'QUESTION_REQUIRED',message:'Ask Adam a question first.'});
     const currentTab=trackerSpeechSafe(body?.currentTab,40);
     const supportResolution=await trackerSupport.resolveQuestion({
       userId:user.id,
@@ -8063,7 +8116,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.125 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.128 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>{
   Promise.all([
     loadVoskRuntimeAsset(VOSK_RUNTIME_FILES['/vendor/vosk/vosk-0.0.8.js']),
