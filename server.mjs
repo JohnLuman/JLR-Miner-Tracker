@@ -3185,7 +3185,7 @@ async function scoutLocationSnapshot(ch,user=null,activity=null){
   if(!companionFresh){
     const {access,identity}=await characterAccess(ch);
     if(!identity.scopes.includes(LOCATION_SCOPE)){
-      const error=new Error('This Scout toon needs EVE location access.');
+      const error=new Error('This Adam travel toon needs EVE location access.');
       error.code='LOCATION_SCOPE_REQUIRED';
       throw error;
     }
@@ -3195,7 +3195,7 @@ async function scoutLocationSnapshot(ch,user=null,activity=null){
         inFlight=(async()=>{
           const {data}=await esiGet(`https://esi.evetech.net/latest/characters/${id}/location/?datasource=tranquility`,access);
           const systemId=String(data?.solar_system_id||'');
-          if(!systemId)throw new Error('EVE did not return the Scout toon’s current solar system.');
+          if(!systemId)throw new Error('EVE did not return the Adam travel toon’s current solar system.');
           await ensureSystem([systemId]);
           const system=state.esi.systemCache[systemId]?.name||`System ${systemId}`;
           const row={systemId,system,checkedAt:now(),live:true,source:'esi'};
@@ -3710,7 +3710,7 @@ async function trackerBrainCharacterLocation(ch,user=null){
   }
 }
 
-async function trackerBrainNearestSystems(originSystemId,{updatesOnly=false,limit=1,fieldOnly=false}={}){
+async function trackerBrainNearestSystems(originSystemId,{updatesOnly=false,limit=1,fieldOnly=false,availableOnly=false}={}){
   const activity=scanActivityPublic();
   const names=new Set((fieldOnly
     ?SYSTEM_DEFS.map(row=>row.system)
@@ -3724,6 +3724,7 @@ async function trackerBrainNearestSystems(originSystemId,{updatesOnly=false,limi
     const field=state.fields?.[system];
     const respawning=field?.status==='cleared'&&Date.parse(field.timerEndsAt||'')>Date.now();
     const ledger=activity[system]?.ledger;
+    if(availableOnly&&respawning)return false;
     return !updatesOnly||!respawning||Boolean(ledger?.needsScan||ledger?.likelyDepleted);
   });
   return nearestTrackedSystems(originSystemId,{
@@ -3940,8 +3941,8 @@ const TRACKER_APP_KNOWLEDGE = {
   brain:{
     label:'Adam',
     aliases:['adam','brain','tracker brain','talk to adam','talk to tracker','assistant'],
-    description:'Adam is JLRs context assistant. It uses the current tab, selected system, selected toon, fleet review state, recent scan workflow, and prior answers so short follow-ups such as next one, why this, or what changed can refer to what you are already doing. Scout location tracking and the optional desktop companion remain inside the Adam workspace.',
-    panels:['Ask Adam','current JLR context','Scout location tracking','desktop companion','recent workflow context','question responses']
+    description:'Adam is JLRs context assistant. It uses the current tab, selected system, selected toon, fleet review state, recent scan workflow, and prior answers so short follow-ups such as next one, why this, or what changed can refer to what you are already doing. Adam location tracking and the optional desktop companion remain inside the Adam workspace.',
+    panels:['Ask Adam','current JLR context','Adam location tracking','desktop companion','recent workflow context','question responses']
   },
   fleet:{
     label:'Fleet & Fits',
@@ -4358,7 +4359,7 @@ function trackerBrainAnswer(user,question,options={}){
 
   if(/\b(mic|microphone|voice|speech|wake word|say adam|say tracker|talk to tracker|not hearing|error code)\b/.test(q)){
     return answer('voice',
-      'Adam currently uses typed questions rather than the retired live microphone pipeline. He carries JLR context between questions, including the current tab, selected system or toon, recent scan workflow and Fleet Performance state. Scout location tracking continues to work without a microphone.'
+      'Adam currently uses typed questions rather than the retired live microphone pipeline. He carries JLR context between questions, including the current tab, selected system or toon, recent scan workflow and Fleet Performance state. Adam location tracking continues to work without a microphone.'
     );
   }
 
@@ -8191,7 +8192,7 @@ async function routeApi(req,res,url) {
   }
   if(req.method==='GET'&&url.pathname==='/api/scout/location'){
     const characterId=String(url.searchParams.get('characterId')||'');
-    if(!characterId||!user.characterIds.map(String).includes(characterId))return json(res,404,{error:'CHARACTER_NOT_LINKED',message:'That Scout toon is not linked to your account.'});
+    if(!characterId||!user.characterIds.map(String).includes(characterId))return json(res,404,{error:'CHARACTER_NOT_LINKED',message:'That Adam travel toon is not available on your account.'});
     const ch=state.characters[characterId];
     if(!ch)return json(res,404,{error:'CHARACTER_NOT_LINKED'});
     try{return json(res,200,await scoutLocationSnapshot(ch,user))}
@@ -8228,7 +8229,17 @@ async function routeApi(req,res,url) {
     if(!ch)return json(res,404,{error:'CHARACTER_NOT_LINKED'});
     try{
       const location=await scoutLocationSnapshot(ch,user);
-      const nearest=await trackerBrainNearestSystems(location.systemId,{updatesOnly:true,limit:5,fieldOnly:true});
+      const [nearest,nearestMiningResult]=await Promise.all([
+        trackerBrainNearestSystems(location.systemId,{updatesOnly:true,limit:5,fieldOnly:true}),
+        trackerBrainNearestSystems(location.systemId,{updatesOnly:false,limit:1,fieldOnly:true,availableOnly:true}),
+      ]);
+      const nearestMiningRow=nearestMiningResult.rows?.[0]||null;
+      const nearestMining=nearestMiningRow?{
+        system:nearestMiningRow.system,
+        jumps:nearestMiningRow.jumps,
+        lastScanAt:nearestMiningRow.activity?.lastScanAt||null,
+        status:state.fields?.[nearestMiningRow.system]?.status||'unknown',
+      }:null;
       const targets=nearest.rows.map(row=>{
         const activity=row.activity||{};
         const ledger=activity.ledger||null;
@@ -8244,7 +8255,7 @@ async function routeApi(req,res,url) {
           ledgerNeedsScan:Boolean(ledger?.needsScan||ledger?.likelyDepleted),
         };
       });
-      return json(res,200,{characterId,characterName:ch.name,location,targets,candidates:nearest.candidates,checkedAt:now()});
+      return json(res,200,{characterId,characterName:ch.name,location,nearestMining,targets,candidates:nearest.candidates,checkedAt:now()});
     }catch(error){
       if(error?.code==='LOCATION_SCOPE_REQUIRED'||error?.code==='COMPANION_WAITING')return json(res,409,{error:error.code,message:error.message});
       return json(res,502,{error:'SCOUT_TARGETS_FAILED',message:String(error.message||error)});
@@ -8433,7 +8444,7 @@ async function routeApi(req,res,url) {
     if(!system||(!SYSTEM_MAP.has(system)&&!(state.market?.iceFields||[]).some(row=>row.system===system)&&!(state.market?.a0Fields||[]).some(row=>row.system===system)&&!state.market?.a0Reports?.[system])){
       return json(res,400,{error:'UNTRACKED_SYSTEM',message:'That system is not on a JLR mining board.'});
     }
-    if(!scout)return json(res,404,{error:'SCOUT_CHARACTER_REQUIRED',message:'A linked Scout character is required for this voice announcement.'});
+    if(!scout)return json(res,404,{error:'SCOUT_CHARACTER_REQUIRED',message:'An Adam travel toon is required for this announcement.'});
     const scan=scanActivityPublic()[system]||null;
     const scanMs=Date.parse(scan?.lastScanAt||'');
     const due=!Number.isFinite(scanMs)||Date.now()-scanMs>=A0_REPORT_TTL||Boolean(scan?.ledger?.needsScan||scan?.ledger?.likelyDepleted);
@@ -8441,7 +8452,7 @@ async function routeApi(req,res,url) {
     const voiceText=jlrScoutVoiceText(scout.name,system);
     try{return await streamTrackerVoiceToResponse(res,voiceText,`scout-${system}-${Math.floor(Date.now()/900000)}`,{priority:'normal',voice:'core'})}
     catch(err){
-      console.warn('JLR Scout voice stream failed',system,String(err.message||err));
+      console.warn('JLR Adam travel announcement failed',system,String(err.message||err));
       return json(res,503,{error:err?.code||'JLR_VOICE_UNAVAILABLE',message:String(err.message||err)});
     }
   }
