@@ -108,8 +108,10 @@
         <button id="adamQuickClose" class="adam-quick-close" type="button" aria-label="Close Adam">×</button>
       </div>
       <div class="adam-quick-conversation">
+        <div id="adamQuickUserMessage" class="adam-message adam-message-user hidden"><span>YOU</span><p id="adamQuickUserText"></p></div>
         <div class="adam-message adam-message-adam"><span>ADAM</span><p id="adamQuickReply">I’m here. Ask me about the tab you’re working in.</p></div>
       </div>
+      <div id="adamQuickNearest" class="adam-quick-nearest hidden"></div>
       <div class="adam-quick-row">
         <input id="adamQuickQuestion" maxlength="900" autocomplete="off" placeholder="Ask Adam naturally…">
         <button id="adamQuickAsk" type="button" aria-label="Send question to Adam">↵</button>
