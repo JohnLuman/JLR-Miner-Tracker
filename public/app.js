@@ -233,7 +233,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.139');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.140');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -323,7 +323,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR ADAM MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.139'),
+      'Version: '+String(state?.app?.version||'2.9.140'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -2240,6 +2240,14 @@
             <span>What happened • where it happened • what you expected • whether it blocks you</span>
           </div>
         </header>
+
+        <a class="jlr-donate-banner jlr-donate-banner-feedback" href="https://www.paypal.com/ncp/payment/J7UYHR2RJFS6N" target="_blank" rel="noopener noreferrer" aria-label="Donate to help keep JLR online and mining">
+          <span class="jlr-donate-orb" aria-hidden="true"></span>
+          <span class="jlr-donate-brand"><strong>JLR</strong><small>SERVER</small></span>
+          <span class="jlr-donate-divider" aria-hidden="true"></span>
+          <span class="jlr-donate-main"><strong>DONATE</strong><small>HELP KEEP JLR ONLINE AND MINING</small></span>
+          <span class="jlr-donate-arrow" aria-hidden="true">›</span>
+        </a>
 
         <div class="feedback-layout">
           <section class="glass feedback-compose">
@@ -5734,7 +5742,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.139',
+          version:state?.app?.version||'2.9.140',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),

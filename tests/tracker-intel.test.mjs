@@ -42,10 +42,10 @@ assert.match(trackerCss,/max-width:1080px/,'Hot Zones is capped instead of stret
 assert.doesNotMatch(tracker,/tracker-intel-valuebar/,'Hot Zones does not render misleading full-width red bars');
 assert.match(trackerCss,/tracker-region-picker/,'region selector is styled');
 
-assert.equal(pkg.version,'2.9.139','Hot Zones-only Tracker release is versioned');
-assert.ok(index.includes('/tracker.css?v=2.9.139'),'browser loads Tracker intel CSS');
-assert.ok(index.includes('/tracker.js?v=2.9.139'),'browser loads Tracker loader');
-assert.ok(index.includes('/app.js?v=2.9.139'),'browser loads matching app release');
-assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.139/,'Tracker core cache is busted');
+assert.equal(pkg.version,'2.9.140','Hot Zones-only Tracker release is versioned');
+assert.ok(index.includes('/tracker.css?v=2.9.140'),'browser loads Tracker intel CSS');
+assert.ok(index.includes('/tracker.js?v=2.9.140'),'browser loads Tracker loader');
+assert.ok(index.includes('/app.js?v=2.9.140'),'browser loads matching app release');
+assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.140/,'Tracker core cache is busted');
 
 console.log('Tracker regional intel tests passed.');
