@@ -12,10 +12,11 @@ assert.match(server,/const ledgerSnapshotAtByCharacter = restoredLedgerCache\.sn
 assert.match(server,/async function loadLedgerCache\(characters=\{\}\)/,'ledger cache has a restart restore path');
 assert.match(server,/function saveLedgerCache\(\)/,'ledger cache has a persistent write path');
 assert.match(server,/await saveLedgerCache\(\)/,'successful ledger refreshes persist the restart cache');
-assert.match(server,/if\(cacheComplete\)\{\s*rebuildDailyFleetFromLedgerCache\(\);/s,'fleet totals rebuild only from a complete linked-character cache');
+assert.match(server,/if\(cacheComplete\|\|\(fullCycle&&cachedConnectedIds\.length>0\)\)\{\s*rebuildDailyFleetFromLedgerCache\(\);/s,'full fleet cycles publish available cached ledgers even when one linked toon has never synced');
 assert.doesNotMatch(server,/if\(fullCycle\|\|cacheComplete\)/,'a failed full cycle can no longer zero a valid payout');
-assert.match(server,/preserving previous dailyFleet totals/,'partial ESI cycles explicitly preserve the last complete payout');
-assert.match(server,/if\(miningLedgerDebug\(\)\.cacheComplete\)rebuildDailyFleetFromLedgerCache\(\)/,'market refresh cannot rebuild fleet totals from a partial cache');
+assert.match(server,/publishing available ledger totals/,'partial fleet coverage is published instead of freezing the app payout at zero');
+assert.match(server,/if\(miningLedgerDebug\(\)\.cacheComplete\)rebuildDailyFleetFromLedgerCache\(\)/,'market refresh cannot independently rebuild fleet totals from a partial cache');
+assert.match(server,/Mining ledger cache empty: 0\//,'zero cached ledgers still preserve the previous fleet payout');
 
 assert.equal(pkg.version,'2.9.136','ledger restart protection is versioned');
 assert.ok(index.includes('/app.js?v=2.9.136'),'browser loads the ledger restart fix');
