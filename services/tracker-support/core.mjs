@@ -20,6 +20,78 @@ function focusFromAnswer(answer){
   return{system,jumps,originSystem};
 }
 
+function finite(value){
+  const n=Number(value);
+  return Number.isFinite(n)?n:null;
+}
+function cleanAction(row){
+  if(!row||typeof row!=='object')return null;
+  const kind=clean(row.kind,60);
+  if(!kind)return null;
+  return{
+    kind,
+    at:finite(row.at),
+    tab:clean(row.tab,40),
+    system:clean(row.system,80),
+    characterName:clean(row.characterName,120),
+    detail:clean(row.detail,160),
+  };
+}
+function cleanContext(value){
+  const input=value&&typeof value==='object'?value:{};
+  const performance=input.performance&&typeof input.performance==='object'?input.performance:{};
+  return{
+    currentTab:clean(input.currentTab,40),
+    workflow:clean(input.workflow,60),
+    selectedSystem:clean(input.selectedSystem,80),
+    selectedCharacterId:clean(input.selectedCharacterId,40),
+    selectedCharacterName:clean(input.selectedCharacterName,120),
+    selectedFleetCount:finite(input.selectedFleetCount),
+    selectedMetric:clean(input.selectedMetric,60),
+    targetOre:clean(input.targetOre,120),
+    historyMetric:clean(input.historyMetric,30),
+    historyDays:finite(input.historyDays),
+    fieldStatus:clean(input.fieldStatus,40),
+    performance:{
+      latestRate:finite(performance.latestRate),
+      previousRate:finite(performance.previousRate),
+      targetRate:finite(performance.targetRate),
+      activeToons:finite(performance.activeToons),
+      sampledToons:finite(performance.sampledToons),
+      sampleAt:clean(performance.sampleAt,40),
+    },
+    recentActions:(Array.isArray(input.recentActions)?input.recentActions:[])
+      .map(cleanAction).filter(Boolean).slice(-8),
+  };
+}
+function mergeContext(previous,current){
+  const a=cleanContext(previous);
+  const b=cleanContext(current);
+  const pick=(next,prior)=>next!==''&&next!==null&&next!==undefined?next:prior;
+  return{
+    currentTab:pick(b.currentTab,a.currentTab),
+    workflow:pick(b.workflow,a.workflow),
+    selectedSystem:pick(b.selectedSystem,a.selectedSystem),
+    selectedCharacterId:pick(b.selectedCharacterId,a.selectedCharacterId),
+    selectedCharacterName:pick(b.selectedCharacterName,a.selectedCharacterName),
+    selectedFleetCount:pick(b.selectedFleetCount,a.selectedFleetCount),
+    selectedMetric:pick(b.selectedMetric,a.selectedMetric),
+    targetOre:pick(b.targetOre,a.targetOre),
+    historyMetric:pick(b.historyMetric,a.historyMetric),
+    historyDays:pick(b.historyDays,a.historyDays),
+    fieldStatus:pick(b.fieldStatus,a.fieldStatus),
+    performance:{
+      latestRate:pick(b.performance.latestRate,a.performance.latestRate),
+      previousRate:pick(b.performance.previousRate,a.performance.previousRate),
+      targetRate:pick(b.performance.targetRate,a.performance.targetRate),
+      activeToons:pick(b.performance.activeToons,a.performance.activeToons),
+      sampledToons:pick(b.performance.sampledToons,a.performance.sampledToons),
+      sampleAt:pick(b.performance.sampleAt,a.performance.sampleAt),
+    },
+    recentActions:b.recentActions.length?b.recentActions:a.recentActions,
+  };
+}
+
 export class TrackerSessionStore{
   constructor({ttlMs=12*60*60*1000,focusTtlMs=30*60*1000,maxSessions=5000,maxTurns=12,nowFn=Date.now}={}){
     this.ttlMs=Math.max(60_000,Number(ttlMs)||0);
@@ -45,12 +117,12 @@ export class TrackerSessionStore{
     this.prune();
     let row=this.sessions.get(key);
     if(!row){
-      row={updatedAt:this.now(),lastTab:'',lastTopic:'',focus:null,turns:[]};
+      row={updatedAt:this.now(),lastTab:'',lastTopic:'',focus:null,lastContext:{},turns:[]};
       this.sessions.set(key,row);
     }
     return row;
   }
-  resolve(userKey,{question,currentTab}={}){
+  resolve(userKey,{question,currentTab,context}={}){
     const q=clean(question,900);
     const tab=clean(currentTab,40);
     const key=clean(userKey,160);
@@ -60,12 +132,36 @@ export class TrackerSessionStore{
     row.updatedAt=this.now();
     if(tab)row.lastTab=tab;
 
+    const ctx=mergeContext(row.lastContext,context);
+    if(tab)ctx.currentTab=tab;
+    const effectiveTab=tab||ctx.currentTab||row.lastTab||'';
     const lower=q.toLowerCase();
     const focus=row.focus;
     const focusFresh=Boolean(focus?.system)&&this.now()-Number(focus?.at||0)<=this.focusTtlMs;
     const hasSystem=Boolean(explicitSystem(q));
+    const recentScan=ctx.workflow==='scan-update'||ctx.recentActions.some(action=>action.kind==='scan-updated');
     let answerOverride=null;
     let resolvedQuestion=q;
+
+    if(!hasSystem){
+      const shortNext=/^(?:next|next one|next system|next field|where next|what next|another one|another system)[\s?.!]*$/i.test(q);
+      if(shortNext&&(effectiveTab==='fields'||effectiveTab==='brain'||recentScan)){
+        resolvedQuestion='closest tracked system needing a scan update';
+      }else if(effectiveTab==='performance'&&/^(?:why(?: is)? (?:this|it)(?: so)? low|why did (?:this|it) drop|what changed|what happened|explain (?:this|it)|why)[\s?.!]*$/i.test(q)){
+        resolvedQuestion='explain recent fleet performance variance';
+      }
+
+      if(ctx.selectedSystem){
+        resolvedQuestion=resolvedQuestion
+          .replace(/\b(?:this|that) system\b/ig,ctx.selectedSystem)
+          .replace(/\bthat field\b/ig,ctx.selectedSystem);
+      }
+      if(ctx.selectedCharacterName){
+        resolvedQuestion=resolvedQuestion
+          .replace(/\b(?:this|that) toon\b/ig,ctx.selectedCharacterName)
+          .replace(/\b(?:this|that) character\b/ig,ctx.selectedCharacterName);
+      }
+    }
 
     if(focusFresh&&!hasSystem){
       if(/\b(?:what|which) system (?:was|is) (?:that|it)\b|\bwhere was that\b/.test(lower)){
@@ -105,14 +201,16 @@ export class TrackerSessionStore{
 
     return{
       question:resolvedQuestion,
-      currentTab:tab||row.lastTab||'',
+      currentTab:effectiveTab,
       answerOverride,
       contextUsed:Boolean(answerOverride||resolvedQuestion!==q),
       focusSystem:focusFresh?focus.system:'',
+      selectedSystem:ctx.selectedSystem||'',
+      workflow:ctx.workflow||'',
       lastTopic:clean(row.lastTopic,80),
     };
   }
-  remember(userKey,{question,currentTab,answer}={}){
+  remember(userKey,{question,currentTab,answer,context}={}){
     const row=this.get(userKey);
     if(!row)return null;
     const t=this.now();
@@ -126,6 +224,8 @@ export class TrackerSessionStore{
     row.updatedAt=t;
     if(tab)row.lastTab=tab;
     if(topic)row.lastTopic=topic;
+    row.lastContext=mergeContext(row.lastContext,context);
+    if(tab)row.lastContext.currentTab=tab;
     if(focus.system){
       row.focus={
         system:focus.system,
@@ -136,7 +236,7 @@ export class TrackerSessionStore{
         at:t,
       };
     }
-    row.turns.push({at:t,question:q,tab,topic,focusSystem:focus.system||''});
+    row.turns.push({at:t,question:q,tab,topic,focusSystem:focus.system||'',workflow:row.lastContext?.workflow||'',selectedSystem:row.lastContext?.selectedSystem||''});
     if(row.turns.length>this.maxTurns)row.turns=row.turns.slice(-this.maxTurns);
     this.prune();
     return this.publicSession(userKey);
@@ -154,6 +254,7 @@ export class TrackerSessionStore{
         originSystem:row.focus.originSystem||'',
         at:row.focus.at||0,
       }:null,
+      context:cleanContext(row.lastContext),
       turns:Array.isArray(row.turns)?row.turns.slice(-this.maxTurns):[],
     };
   }
