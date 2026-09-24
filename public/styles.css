@@ -3373,3 +3373,49 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
   .adam-nearest-mining{align-items:flex-start;flex-direction:column}
   .adam-copy-system{width:100%}
 }
+
+
+/* v2.9.144-adam-organic2 — user/Adam dialogue + quick nearest mine */
+.adam-message-user{
+  margin-bottom:10px;
+}
+.adam-message-user>span{
+  color:#7f8a97;
+}
+.adam-message-user>p{
+  color:#aeb6c0;
+  font-weight:600;
+}
+.adam-quick-nearest{
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr) auto auto;
+  align-items:center;
+  gap:7px;
+  padding:7px 10px;
+  border-top:1px solid #243028;
+  background:#0d1712;
+}
+.adam-quick-nearest>span{
+  color:#7ea88e;
+  font:800 6.5px/1 "Segoe UI",Arial,sans-serif;
+  letter-spacing:.05em;
+}
+.adam-quick-nearest>strong{
+  color:#dff1e5;
+  font:900 11px/1 Oxanium,"Segoe UI",sans-serif;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.adam-quick-nearest>small{
+  color:#8da497;
+  font:800 7px/1 "Segoe UI",Arial,sans-serif;
+}
+.adam-quick-nearest .adam-copy-system{
+  min-height:26px;
+  padding:4px 7px;
+}
+@media(max-width:520px){
+  .adam-quick-nearest{grid-template-columns:auto minmax(0,1fr) auto}
+  .adam-quick-nearest>span{grid-column:1/-1}
+}
