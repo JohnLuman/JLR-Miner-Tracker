@@ -450,8 +450,6 @@
         ?await window.jlrUnlockFighterAlarm()
         :false;
       syncTrackerStream();
-      loadVoiceStatus();
-      scheduleVoiceStatus(30000);
       if('Notification' in window&&Notification.permission==='default'){
         try{await Notification.requestPermission();}catch(e){}
       }
@@ -466,7 +464,6 @@
       }
       syncTrackerStream();
       schedule();
-      scheduleVoiceStatus();
       toast('Heavy Fighter alerts disarmed.');
     }
     render();
@@ -476,7 +473,7 @@
     const played=typeof window.jlrPlayFighterAlarm==='function'
       ?await window.jlrPlayFighterAlarm({test:true})
       :false;
-    if(!played)toast(window.jlrVoiceLastError?'CUSTOM VOICE TEST FAILED: '+window.jlrVoiceLastError:'Custom voice test did not play. Check the worker and Railway logs.');
+    toast(played?'Heavy Fighter loss alarm test started.':'Alarm could not start. Click ARM ALERTS first to unlock browser audio.');
   }
   function stopAlarm(){
     const stopped=typeof window.jlrStopFighterAlarm==='function'
@@ -484,6 +481,26 @@
       :false;
     toast(stopped?'Tracker alarm stopped.':'No Tracker alarm is currently playing.');
   }
+  function compactLossRow(row){
+    if(!row)return'';
+    const fresh=trackerFreshIds.has(String(row.killmailId));
+    return '<a class="tracker-compact-loss'+(fresh?' fresh':'')+'" href="'+esc(row.href||(trackerData&&trackerData.sourceUrl)||'#')+'" target="_blank" rel="noopener noreferrer">'+
+      '<div><span>'+(fresh?'NEW LOSS':'LOSS')+'</span><strong>'+esc(row.shipTypeName||'Heavy Fighter')+'</strong><small>'+esc(row.systemName||'Unknown system')+' • '+esc(ago(row.killmailTime))+'</small></div>'+
+      '<b>'+fmt(row.totalValue||0)+' ISK</b>'+
+    '</a>';
+  }
+  function trackerOverviewHtml(losses,status,sourceUrl){
+    const recent=(Array.isArray(losses)?losses:[]).slice(0,7);
+    const recentHtml=recent.map(compactLossRow).join('')||'<div class="tracker-intel-empty">No Heavy Fighter losses in the current 24-hour feed.</div>';
+    return '<section class="tracker-overview-grid">'+
+      '<article class="glass tracker-intel-card tracker-intel-hot">'+trackerHotZonesHtml()+'</article>'+
+      '<article class="glass tracker-loss-overview">'+
+        '<div class="tracker-loss-overview-head"><div><span>HEAVY FIGHTER LOSSES</span><strong>RECENT LOSSES</strong><small>'+esc(status)+'</small></div><a href="'+esc(sourceUrl)+'" target="_blank" rel="noopener noreferrer">GROUP 1653 ↗</a></div>'+
+        '<div class="tracker-compact-loss-list">'+recentHtml+'</div>'+
+      '</article>'+
+    '</section>';
+  }
+
   function lossCard(row){
     const victim=row&&row.victim||{};
     const finalBlow=row&&row.finalBlow||null;
@@ -526,17 +543,6 @@
     const liveDetail=live.caughtUp
       ?'R2Z2 at live edge • '+fmt(live.edgeWaitSeconds||6)+'s edge checks'
       :(live.lastError?String(live.lastError).slice(0,90):'connecting to R2Z2 live sequence');
-    const voice=trackerVoiceStatus||{};
-    const voiceLabel=trackerVoiceChecking&&!voice.checkedAt?'CHECKING':(voice.reachable?'ONLINE':(voice.configured?'OFFLINE':'NOT SET'));
-    const voiceDetail=voice.reachable
-      ?((voice.referencePack?'JLR VOICE V3':'GPT-SoVITS '+(voice.streaming?'STREAMING':'BUFFERED'))+
-        (voice.workerVersion?' • worker v'+esc(voice.workerVersion):'')+
-        (voice.cacheVersion?' • '+esc(voice.cacheVersion):'')+
-        (voice.systemPronunciations?' • '+fmt(voice.systemPronunciations)+' system refs':'')+
-        (voice.stableStreaming?' • stable mode':'')+
-        (Number.isFinite(Number(voice.latencyMs))?' • '+fmt(voice.latencyMs)+' ms health':''))
-      :(voice.configured?'Browser fallback active':'Voice worker not configured');
-    const voiceClass=voice.reachable?' voice-online':(voice.configured?' voice-offline':'');
     const status=trackerError
       ?trackerError
       :trackerLoading
@@ -558,11 +564,11 @@
           '<div>'+
             '<span class="tracker-eyebrow">zKILLBOARD R2Z2 LIVE • GROUP 1653</span>'+
             '<h2>TRACKER</h2>'+
-            '<p>Near-live Heavy Fighter loss watch with dynamic JLR custom-voice announcements and automatic browser fallback.</p>'+
+            '<p>Near-live Heavy Fighter loss watch with a dedicated local alarm, browser notification, and compact regional activity context.</p>'+
           '</div>'+
           '<div class="tracker-actions">'+
             '<button id="trackerArm" class="tracker-arm '+(trackerArmed?'armed':'off')+'" type="button" aria-pressed="'+String(trackerArmed)+'">'+(trackerArmed?'LOUD ALERTS ARMED':'ARM LOUD ALERTS')+'</button>'+
-            '<button id="trackerTest" class="orb red" type="button">▶ TEST JLR CUSTOM VOICE</button>'+
+            '<button id="trackerTest" class="orb red" type="button">▶ TEST LOSS ALARM</button>'+
             '<button id="trackerStop" class="orb silver" type="button">■ STOP ALARM</button>'+
             '<button id="trackerRefresh" class="orb silver" type="button" '+(trackerLoading?'disabled':'')+'>'+(trackerLoading?'CHECKING…':'REFRESH NOW')+'</button>'+
           '</div>'+
@@ -572,11 +578,10 @@
           '<article class="glass"><span>24H FEED</span><strong>'+fmt(losses.length)+'</strong><small>latest Heavy Fighter losses returned</small></article>'+
           '<article class="glass"><span>LATEST LOSS</span><strong>'+(latest?esc(ago(latest.killmailTime).toUpperCase()):'—')+'</strong><small>'+(latest?esc(latest.systemName||'Unknown system'):'waiting for a loss')+'</small></article>'+
           '<article class="glass"><span>LIVE INGEST</span><strong>'+esc(liveLabel)+'</strong><small>'+esc(liveDetail)+'</small></article>'+
-          '<article class="glass'+voiceClass+'"><span>CUSTOM VOICE</span><strong>'+esc(voiceLabel)+'</strong><small>'+esc(voiceDetail)+(trackerVoiceLastMode==='fallback'?' • last alert used fallback':trackerVoiceLastMode==='custom'?' • last alert custom':'')+'</small></article>'+
         '</section>'+
-        trackerIntelHtml()+
+        trackerOverviewHtml(losses,status,sourceUrl)+
         '<section class="glass tracker-feed-head">'+
-          '<div><strong>HEAVY FIGHTER LOSSES</strong><span>'+esc(status)+'</span></div>'+
+          '<div><strong>FULL 24H LOSS HISTORY</strong><span>'+esc(status)+'</span></div>'+
           '<a href="'+esc(sourceUrl)+'" target="_blank" rel="noopener noreferrer">OPEN GROUP 1653 ↗</a>'+
         '</section>'+
         '<section class="tracker-feed">'+body+'</section>'+
@@ -630,8 +635,6 @@
       setTimeout(function(){
         render();
         syncTrackerStream();
-        loadVoiceStatus();
-        scheduleVoiceStatus(30000);
         if(!trackerData&&!trackerLoading)loadTracker(false,false);
         if(!trackerIntel&&!trackerIntelLoading)loadTrackerIntel(false);
         else scheduleTrackerIntel(60_000);
