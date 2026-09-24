@@ -170,7 +170,7 @@
       ?'<div class="tracker-intel-insight"><span>TOP '+esc(metricName)+' SIGNAL</span><strong>'+esc(top.system||top.systemId)+'</strong><b>'+esc(trackerIntelMetricLabel(top,trackerHotMode))+'</b><em>'+esc(trackerIntelJumpLabel(top.jumps))+'</em></div>'
       :top?'<div class="tracker-intel-insight quiet"><span>NO '+esc(metricName)+' SIGNAL</span><strong>No activity for this filter in the current snapshot</strong></div>':'';
     return '<div class="tracker-intel-head"><div class="tracker-region-head"><span>REGION HOT ZONES</span>'+
-      '<label class="tracker-region-picker tracker-region-title"><select id="trackerHotRegion" aria-label="Hot zone region">'+trackerRegionOptionsHtml()+'</select></label>'+
+      '<div class="tracker-region-select-row"><label class="tracker-region-picker tracker-region-title"><select id="trackerHotRegion" aria-label="Hot zone region">'+trackerRegionOptionsHtml()+'</select></label><b class="tracker-hourly-badge">AUTO • 60 MIN</b></div>'+
       '<small>'+esc(originText)+'</small></div></div>'+
       topSignal+
       '<div class="tracker-intel-filters">'+filters+'</div><div class="tracker-intel-list">'+body+'</div>'+
