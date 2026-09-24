@@ -23,6 +23,12 @@ RUN git init \
 RUN sed -i 's/tput cuu1 && tput el/true/g' install.sh \
     && /opt/conda/bin/conda run -n gptsovits bash install.sh --device CPU --source HF
 
+# requirements.txt can replace CPU torchaudio with a CUDA-linked PyPI wheel.
+# Reinstall torchaudio from PyTorch's CPU index and prove imports work at build time.
+RUN /opt/conda/bin/conda run -n gptsovits python -m pip uninstall -y torchaudio \
+    && /opt/conda/bin/conda run -n gptsovits python -m pip install --no-cache-dir torchaudio --index-url https://download.pytorch.org/whl/cpu \
+    && /opt/conda/bin/conda run -n gptsovits python -c "import torch, torchaudio; print('CPU voice runtime', torch.__version__, torchaudio.__version__, 'cuda=', torch.cuda.is_available())"
+
 WORKDIR /app
 COPY package.json ./
 COPY core.mjs server.mjs start.sh tts-cpu.yaml ./
