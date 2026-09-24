@@ -115,3 +115,11 @@
 .tracker-region-picker select{min-width:165px;max-width:230px;background:#0d0d13;color:#f4f0f6;border:1px solid #514853;border-radius:6px;padding:7px 28px 7px 8px;font:800 8px Oxanium,Segoe UI,sans-serif}
 .tracker-region-picker select:focus{outline:1px solid #b33c4c;border-color:#b33c4c}
 @media(max-width:760px){.tracker-intel-head{flex-direction:column}.tracker-region-picker{width:100%}.tracker-region-picker select{flex:1;max-width:none}}
+
+
+/* v2.9.135 — live public-map intel clocks */
+.tracker-live-clock{font-variant-numeric:tabular-nums;font-weight:900;color:#f4f0f6;letter-spacing:.03em}
+.tracker-intel-row.rising .tracker-live-clock{color:#ffd07a}
+.tracker-region-head{min-width:0}
+.tracker-region-title{display:block;margin-top:3px}
+.tracker-region-title select{min-width:190px;font-size:13px;font-weight:900;padding:5px 28px 5px 7px}
