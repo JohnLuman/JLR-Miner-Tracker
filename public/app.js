@@ -379,6 +379,10 @@
     const buttons=[$('adamAsk'),$('adamQuickAsk')].filter(Boolean);
     const replies=[$('adamReply'),$('adamQuickReply')].filter(Boolean);
     adamAskBusy=true;
+    if($('adamUserText'))$('adamUserText').textContent=text;
+    $('adamUserMessage')?.classList.remove('hidden');
+    if($('adamQuickUserText'))$('adamQuickUserText').textContent=text;
+    $('adamQuickUserMessage')?.classList.remove('hidden');
     for(const button of buttons){
       button.disabled=true;
       button.dataset.idleText=button.dataset.idleText||button.textContent;
@@ -1658,6 +1662,7 @@
     const host=$('scoutTargetList');
     const summary=$('scoutTargetSummary');
     const nearest=$('adamNearestMining');
+    const quickNearest=$('adamQuickNearest');
     if(!host)return;
     const selected=(me?.characters||[]).find(ch=>String(ch.characterId)===String(scoutSelectedCharacterId));
     const location=scoutLocations.get(String(scoutSelectedCharacterId));
@@ -1673,6 +1678,15 @@
         nearest.innerHTML='<div class="adam-nearest-copy"><span>NEAREST MINING SYSTEM</span><strong>'+esc(scoutNearestMining.system)+'</strong><small>'+Number(scoutNearestMining.jumps||0)+' jump'+(Number(scoutNearestMining.jumps||0)===1?'':'s')+' from '+esc(location?.system||'current location')+' • available tracked field</small></div><button class="adam-copy-system" type="button" data-copy-system="'+esc(scoutNearestMining.system)+'">COPY SYSTEM</button>';
       }else{
         nearest.innerHTML='<div class="adam-nearest-copy"><span>NEAREST MINING SYSTEM</span><strong>—</strong><small>No available tracked mining field could be ranked from this location.</small></div>';
+      }
+    }
+    if(quickNearest){
+      if(scoutNearestMining?.system){
+        quickNearest.classList.remove('hidden');
+        quickNearest.innerHTML='<span>NEAREST MINE</span><strong>'+esc(scoutNearestMining.system)+'</strong><small>'+Number(scoutNearestMining.jumps||0)+'J</small><button class="adam-copy-system" type="button" data-copy-system="'+esc(scoutNearestMining.system)+'">COPY</button>';
+      }else{
+        quickNearest.classList.add('hidden');
+        quickNearest.innerHTML='';
       }
     }
     if(scoutTargetsLoading){
@@ -1765,7 +1779,7 @@
         :locationError==='COMPANION_WAITING'?'WAITING FOR COMPANION'
         :locationError?'Location fallback failed • retrying':'Waiting for location check';
       return '<div class="brain-follow-row"><strong>'+esc(ch.name)+'</strong><span'+(row?.needsScan?' class="scan-due"':'')+'>'+detail+'</span></div>';
-    }).join(''):'<div class="brain-follow-row">Enable Auto Follow to watch your linked toons.</div>';
+    }).join(''):'<div class="brain-follow-row">Enable Auto Follow to watch your toons.</div>';
     renderScoutTargets();
   }
 
@@ -2457,6 +2471,7 @@
         <section class="brain-card adam-query-card">
           <div class="brain-card-head"><strong>ADAM</strong><small>Ask naturally — Adam already has the working context</small></div>
           <div class="adam-conversation">
+            <div id="adamUserMessage" class="adam-message adam-message-user hidden"><span>YOU</span><p id="adamUserText"></p></div>
             <div class="adam-message adam-message-adam"><span>ADAM</span><p id="adamReply">I’m here. Ask me about what you’re looking at, what changed, or where to go next.</p></div>
           </div>
           <div class="adam-question-row">
@@ -2557,7 +2572,7 @@
                   <label><span>AREA</span><select id="feedbackArea">
                     <option value="general">GENERAL</option>
                     <option value="fields">FIELDS</option>
-                    <option value="brain">ADAM / SCOUT</option>
+                    <option value="brain">ADAM</option>
                     <option value="fleet">FLEET & FITS</option>
                     <option value="performance">FLEET PERFORMANCE</option>
                     <option value="ice">ICE</option>
@@ -6194,6 +6209,10 @@
         $('adamQuickToggle')?.setAttribute('aria-expanded',String(opening));
         if(opening){
           renderAdamContext();
+          if(scoutFollowEnabled){
+            void pollScoutLocation(true);
+            void loadScoutTargets(true);
+          }
           setTimeout(()=>$('adamQuickQuestion')?.focus(),0);
         }
       }
@@ -6803,7 +6822,7 @@
       const auth=await fetch('/api/me',{credentials:'same-origin'}).then(r=>r.json());
       if(!auth.authenticated){showLogin();return}
       me=auth.user;window.jlrVoiceAccountId=String(me.id||'');syncDoctrineTabAccess();syncTrackerTabAccess();initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');brainMicWanted=false;localStorage.setItem('jlrBrainMicArmed','false');stopBrainLocalCapture(false);stopBrainMicStream();await loadMerIntel();await loadState();await refreshFleetPerformanceSnapshot(true);renderFleetPerformance();connectSse();startScoutLocationWatch();
-      const params=new URLSearchParams(location.search);if(params.get('linked'))toast('Mining toon connected.');if(params.get('login'))toast('Logged in.');if(params.get('market')==='authorized')toast('John market access authorized.');if(params.get('error'))toast(decodeURIComponent(params.get('error')));if(params.toString())history.replaceState({},'',location.pathname);
+      const params=new URLSearchParams(location.search);if(params.get('linked'))toast('Toon connected.');if(params.get('login'))toast('Logged in.');if(params.get('market')==='authorized')toast('John market access authorized.');if(params.get('error'))toast(decodeURIComponent(params.get('error')));if(params.toString())history.replaceState({},'',location.pathname);
     }catch(e){console.error(e);showLogin();$('setupWarning').classList.remove('hidden');$('setupWarning').textContent=`JLR could not load: ${e.message}`}
   }
   document.addEventListener('visibilitychange',()=>{
