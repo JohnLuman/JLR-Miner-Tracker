@@ -175,10 +175,22 @@ const ICE_REPROCESSING = {
 const ICE_PRODUCTS=[...new Set(Object.values(ICE_REPROCESSING).flatMap(x=>Object.keys(x.products)))];
 const ICE_TRACK_PAYOUT = {'Blue Ice IV-Grade':0.95,'Glare Crust':0.75,'Dark Glitter':0.75,Gelidus:0.75,Krystallos:0.75};
 const GAS_TYPES = {
+  'Amber Cytoserocin':{compressedName:'Compressed Amber Cytoserocin',volume:10,compressedVolume:1},
+  'Azure Cytoserocin':{compressedName:'Compressed Azure Cytoserocin',volume:10,compressedVolume:1},
   'Celadon Cytoserocin':{compressedName:'Compressed Celadon Cytoserocin',volume:10,compressedVolume:1},
+  'Golden Cytoserocin':{compressedName:'Compressed Golden Cytoserocin',volume:10,compressedVolume:1},
+  'Lime Cytoserocin':{compressedName:'Compressed Lime Cytoserocin',volume:10,compressedVolume:1},
   'Malachite Cytoserocin':{compressedName:'Compressed Malachite Cytoserocin',volume:10,compressedVolume:1},
-  'Malachite Mykoserocin':{compressedName:'Compressed Malachite Mykoserocin',volume:10,compressedVolume:1},
+  'Vermillion Cytoserocin':{compressedName:'Compressed Vermillion Cytoserocin',volume:10,compressedVolume:1},
+  'Viridian Cytoserocin':{compressedName:'Compressed Viridian Cytoserocin',volume:10,compressedVolume:1},
+  'Amber Mykoserocin':{compressedName:'Compressed Amber Mykoserocin',volume:10,compressedVolume:1},
+  'Azure Mykoserocin':{compressedName:'Compressed Azure Mykoserocin',volume:10,compressedVolume:1},
+  'Celadon Mykoserocin':{compressedName:'Compressed Celadon Mykoserocin',volume:10,compressedVolume:1},
+  'Golden Mykoserocin':{compressedName:'Compressed Golden Mykoserocin',volume:10,compressedVolume:1},
   'Lime Mykoserocin':{compressedName:'Compressed Lime Mykoserocin',volume:10,compressedVolume:1},
+  'Malachite Mykoserocin':{compressedName:'Compressed Malachite Mykoserocin',volume:10,compressedVolume:1},
+  'Vermillion Mykoserocin':{compressedName:'Compressed Vermillion Mykoserocin',volume:10,compressedVolume:1},
+  'Viridian Mykoserocin':{compressedName:'Compressed Viridian Mykoserocin',volume:10,compressedVolume:1},
   'Fullerite-C50':{compressedName:'Compressed Fullerite-C50',volume:1,compressedVolume:.1},
   'Fullerite-C60':{compressedName:'Compressed Fullerite-C60',volume:1,compressedVolume:.1},
   'Fullerite-C70':{compressedName:'Compressed Fullerite-C70',volume:1,compressedVolume:.1},
@@ -189,52 +201,74 @@ const GAS_TYPES = {
   'Fullerite-C320':{compressedName:'Compressed Fullerite-C320',volume:5,compressedVolume:.5},
   'Fullerite-C540':{compressedName:'Compressed Fullerite-C540',volume:10,compressedVolume:1},
 };
-const GAS_REGIONS = {
-  Fountain:{
-    defaultGas:'Celadon Cytoserocin',
-    gases:['Celadon Cytoserocin'],
-    sites:[
-      {name:'Flowing Nebula',gas:'Celadon Cytoserocin',region:'Fountain',security:'Null-sec',units:2000,clouds:1,guarded:false,hazard:'1,000 Thermal cloud damage'},
-      {name:'Peacock Nebula',gas:'Celadon Cytoserocin',region:'Fountain / Pegasus',security:'Null-sec',units:6000,clouds:2,guarded:false,hazard:'1,000 EM + 1,000 Thermal cloud damage'},
-      {name:'Thick Nebula',gas:'Celadon Cytoserocin',region:'Fountain / Pegasus',security:'Null-sec',units:1000,clouds:1,guarded:true,hazard:'NPC guarded'},
-      {name:'Diamond Nebula',gas:'Celadon Cytoserocin',region:'Fountain / Pegasus',security:'Null-sec',units:6000,clouds:2,guarded:true,hazard:'Multiple NPC waves'},
-    ],
-  },
-  Aridia:{
-    defaultGas:'Malachite Cytoserocin',
-    gases:['Malachite Cytoserocin','Malachite Mykoserocin','Lime Mykoserocin'],
-    sites:[
-      {name:'Crimson Nebula',gas:'Malachite Cytoserocin',region:'Aridia',security:'Low-sec',units:1000,clouds:2,guarded:false,hazard:'No defenders • no cloud damage'},
-      {name:'Blackeye Nebula',gas:'Malachite Mykoserocin',region:'Aridia',security:'High / Low-sec',units:6000,clouds:3,guarded:false,hazard:'No defenders • no cloud damage'},
-      {name:'Wild Nebula',gas:'Malachite Mykoserocin',region:'Aridia',security:'High / Low-sec',units:2000,clouds:2,guarded:false,hazard:'No defenders • no cloud damage'},
-      {name:'Helix Nebula',gas:'Lime Mykoserocin',region:'Aridia',security:'High / Low-sec',units:6000,clouds:3,guarded:false,hazard:'No defenders • no cloud damage'},
-      {name:'Sister Nebula',gas:'Lime Mykoserocin',region:'Aridia',security:'High / Low-sec',units:2000,clouds:2,guarded:false,hazard:'No defenders • no cloud damage'},
-    ],
-  },
-  Wormhole:{
-    defaultGas:'Fullerite-C320',
-    gases:['Fullerite-C50','Fullerite-C60','Fullerite-C70','Fullerite-C72','Fullerite-C84','Fullerite-C28','Fullerite-C32','Fullerite-C320','Fullerite-C540'],
-    sites:[
-      {name:'Barren Perimeter Reservoir',gas:'Fullerite-C60',region:'Wormhole',security:'C1-C4 W-space',units:6000,clouds:1,guarded:true,hazard:'Sleepers after warp-in delay'},
-      {name:'Barren Perimeter Reservoir',gas:'Fullerite-C50',region:'Wormhole',security:'C1-C4 W-space',units:12000,clouds:1,guarded:true,hazard:'Sleepers after warp-in delay'},
-      {name:'Token Perimeter Reservoir',gas:'Fullerite-C70',region:'Wormhole',security:'C1-C4 W-space',units:6000,clouds:1,guarded:true,hazard:'Sleepers after warp-in delay'},
-      {name:'Token Perimeter Reservoir',gas:'Fullerite-C60',region:'Wormhole',security:'C1-C4 W-space',units:12000,clouds:1,guarded:true,hazard:'Sleepers after warp-in delay'},
-      {name:'Minor Perimeter Reservoir',gas:'Fullerite-C72',region:'Wormhole',security:'C1-C4 W-space',units:6000,clouds:1,guarded:true,hazard:'Sleepers after warp-in delay'},
-      {name:'Minor Perimeter Reservoir',gas:'Fullerite-C70',region:'Wormhole',security:'C1-C4 W-space',units:12000,clouds:1,guarded:true,hazard:'Sleepers after warp-in delay'},
-      {name:'Ordinary Perimeter Reservoir',gas:'Fullerite-C84',region:'Wormhole',security:'C1-C4 W-space',units:6000,clouds:1,guarded:true,hazard:'Sleepers after warp-in delay'},
-      {name:'Ordinary Perimeter Reservoir',gas:'Fullerite-C72',region:'Wormhole',security:'C1-C4 W-space',units:12000,clouds:1,guarded:true,hazard:'Sleepers after warp-in delay'},
-      {name:'Sizeable Perimeter Reservoir',gas:'Fullerite-C50',region:'Wormhole',security:'C1-C4 W-space',units:6000,clouds:1,guarded:true,hazard:'Sleepers after warp-in delay'},
-      {name:'Sizeable Perimeter Reservoir',gas:'Fullerite-C84',region:'Wormhole',security:'C1-C4 W-space',units:12000,clouds:1,guarded:true,hazard:'Sleepers after warp-in delay'},
-      {name:'Bountiful Frontier Reservoir',gas:'Fullerite-C32',region:'Wormhole',security:'C3-C6 W-space',units:4000,clouds:1,guarded:true,hazard:'Sleeper waves after warp-in delay'},
-      {name:'Bountiful Frontier Reservoir',gas:'Fullerite-C28',region:'Wormhole',security:'C3-C6 W-space',units:20000,clouds:1,guarded:true,hazard:'Sleeper waves after warp-in delay'},
-      {name:'Vast Frontier Reservoir',gas:'Fullerite-C28',region:'Wormhole',security:'C3-C6 W-space',units:4000,clouds:1,guarded:true,hazard:'Heavy Sleeper waves'},
-      {name:'Vast Frontier Reservoir',gas:'Fullerite-C32',region:'Wormhole',security:'C3-C6 W-space',units:20000,clouds:1,guarded:true,hazard:'Heavy Sleeper waves'},
-      {name:'Instrumental Core Reservoir',gas:'Fullerite-C320',region:'Wormhole',security:'C5-C6 / shattered',units:24000,clouds:1,guarded:true,hazard:'Heavy Sleepers • warp disruption'},
-      {name:'Instrumental Core Reservoir',gas:'Fullerite-C540',region:'Wormhole',security:'C5-C6 / shattered',units:2000,clouds:1,guarded:true,hazard:'Heavy Sleepers • warp disruption'},
-      {name:'Vital Core Reservoir',gas:'Fullerite-C320',region:'Wormhole',security:'C5-C6 / shattered',units:2000,clouds:1,guarded:true,hazard:'Heavy Sleeper wave'},
-      {name:'Vital Core Reservoir',gas:'Fullerite-C540',region:'Wormhole',security:'C5-C6 / shattered',units:24000,clouds:1,guarded:true,hazard:'Heavy Sleeper wave'},
-    ],
-  },
+const GAS_SITE_CATALOG = [
+  // Cytoserocin / booster-gas home regions.
+  {name:'Foggy Nebula',gas:'Amber Cytoserocin',regions:['Vale of the Silent'],security:'Null-sec',units:3000,clouds:2,guarded:true,hazard:'EM + Thermal cloud damage • NPC waves'},
+  {name:'Shimmering Nebula',gas:'Amber Cytoserocin',regions:['Vale of the Silent'],security:'Null-sec',units:9000,clouds:1,guarded:true,hazard:'Thermal cloud damage • heavy NPC waves'},
+  {name:'Crystal Nebula',gas:'Azure Cytoserocin',regions:['Wicked Creek'],security:'Null-sec',units:2000,clouds:5,guarded:false,hazard:'Thermal cloud damage'},
+  {name:'Glistening Nebula',gas:'Azure Cytoserocin',regions:['Wicked Creek'],security:'Null-sec',units:6000,clouds:2,guarded:true,hazard:'EM + Thermal cloud damage • NPC waves'},
+  {name:'Flowing Nebula',gas:'Celadon Cytoserocin',regions:['Fountain'],security:'Null-sec',units:2000,clouds:1,guarded:false,hazard:'Thermal cloud damage'},
+  {name:'Diamond Nebula',gas:'Celadon Cytoserocin',regions:['Fountain'],security:'Null-sec',units:6000,clouds:2,guarded:true,hazard:'EM + Thermal cloud damage • NPC waves'},
+  {name:'Phoenix Nebula',gas:'Celadon Cytoserocin',regions:['Solitude'],security:'Low-sec',units:1000,clouds:2,guarded:false,hazard:'No defenders'},
+  {name:'Profiteer Nebula',gas:'Golden Cytoserocin',regions:['Lonetrek'],security:'Low-sec',units:1000,clouds:2,guarded:false,hazard:'No defenders'},
+  {name:'Swarm Nebula',gas:'Golden Cytoserocin',regions:['Tenal'],security:'Null-sec',units:1000,clouds:5,guarded:false,hazard:'Thermal cloud damage'},
+  {name:'Gaseous Nebula',gas:'Golden Cytoserocin',regions:['Tenal'],security:'Null-sec',units:9000,clouds:1,guarded:true,hazard:'EM + Thermal cloud damage • Guristas defenders'},
+  {name:'Duo Nebula',gas:'Lime Cytoserocin',regions:['Catch'],security:'Null-sec',units:3000,clouds:2,guarded:false,hazard:'EM + Thermal cloud damage'},
+  {name:'Leopard Nebula',gas:'Lime Cytoserocin',regions:['Catch'],security:'Null-sec',units:18000,clouds:1,guarded:true,hazard:'Thermal cloud damage • heavy Sansha defenders'},
+  {name:'Emerald Nebula',gas:'Lime Cytoserocin',regions:['Derelik'],security:'K-space',units:1200,clouds:2,guarded:false,hazard:'No defenders'},
+  {name:'Crimson Nebula',gas:'Malachite Cytoserocin',regions:['Aridia'],security:'Low-sec',units:1000,clouds:2,guarded:false,hazard:'No defenders'},
+  {name:'Hidden Nebula',gas:'Malachite Cytoserocin',regions:['Delve'],security:'Null-sec',units:6000,clouds:2,guarded:false,hazard:'EM + Thermal cloud damage'},
+  {name:'Hazy Nebula',gas:'Malachite Cytoserocin',regions:['Delve'],security:'Null-sec',units:18000,clouds:1,guarded:true,hazard:'EM + Thermal cloud damage • Blood Raider defenders'},
+  {name:'Cardinal Nebula',gas:'Vermillion Cytoserocin',regions:['Feythabolis'],security:'Null-sec',units:6000,clouds:2,guarded:true,hazard:'EM + Thermal cloud damage • NPC waves'},
+  {name:'Saintly Nebula',gas:'Vermillion Cytoserocin',regions:['Heimatar'],security:'Low-sec',units:500,clouds:2,guarded:false,hazard:'Low-sec booster gas site'},
+  {name:'Pale Nebula',gas:'Viridian Cytoserocin',regions:['Cloud Ring'],security:'Null-sec',units:3000,clouds:2,guarded:false,hazard:'Thermal cloud damage'},
+
+  // Mykoserocin sites span broader K-space region groups.
+  {name:'Diablo Nebula',gas:'Amber Mykoserocin',regions:['Black Rise','Cache','Malpais','Oasa','Perrigen Falls','The Forge','The Kalevala Expanse','Vale of the Silent'],security:'High / Low / Null-sec',units:6000,clouds:3,guarded:false,hazard:'No defenders'},
+  {name:'Eagle Nebula',gas:'Azure Mykoserocin',regions:['Derelik','Devoid','Heimatar','Metropolis','Molden Heath','The Bleak Lands','Tenerifis'],security:'High / Low / Null-sec',units:6000,clouds:3,guarded:false,hazard:'No defenders'},
+  {name:'Ghost Nebula',gas:'Azure Mykoserocin',regions:['Derelik','Heimatar','Molden Heath','The Bleak Lands','Great Wildlands'],security:'High / Low / Null-sec',units:2000,clouds:2,guarded:false,hazard:'No defenders'},
+  {name:'Calabash Nebula',gas:'Celadon Mykoserocin',regions:['Domain','Essence','Fountain','Genesis','Outer Ring','Placid','Solitude','Syndicate','Venal'],security:'High / Low / Null-sec',units:2000,clouds:2,guarded:false,hazard:'No defenders'},
+  {name:'Ring Nebula',gas:'Golden Mykoserocin',regions:['Black Rise','Lonetrek','Malpais','Oasa','Perrigen Falls','The Kalevala Expanse','The Spire','Vale of the Silent'],security:'High / Low / Null-sec',units:6000,clouds:3,guarded:false,hazard:'No defenders'},
+  {name:'Smoking Nebula',gas:'Golden Mykoserocin',regions:['Black Rise','Etherium Reach','Everyshore','Lonetrek','Outer Passage','Perrigen Falls','Sinq Laison','The Spire'],security:'High / Low / Null-sec',units:2000,clouds:2,guarded:false,hazard:'No defenders'},
+  {name:'Helix Nebula',gas:'Lime Mykoserocin',regions:['Aridia','Curse','Derelik','Immensea','Kador','Khanid','Kor-Azor','Solitude','Tenerifis','Wicked Creek'],security:'High / Low / Null-sec',units:6000,clouds:3,guarded:false,hazard:'No defenders'},
+  {name:'Wild Nebula',gas:'Malachite Mykoserocin',regions:['Aridia','Great Wildlands','Immensea','Khanid','Kor-Azor','Tenerifis'],security:'High / Low / Null-sec',units:2000,clouds:2,guarded:false,hazard:'No defenders'},
+  {name:'Flame Nebula',gas:'Vermillion Mykoserocin',regions:['Derelik','Great Wildlands','Heimatar','Immensea','The Bleak Lands'],security:'High / Low / Null-sec',units:2000,clouds:2,guarded:false,hazard:'No defenders'},
+  {name:'Pipe Nebula',gas:'Vermillion Mykoserocin',regions:['Curse','Derelik','Heimatar','The Bleak Lands','Wicked Creek'],security:'High / Low / Null-sec',units:6000,clouds:3,guarded:false,hazard:'No defenders'},
+  {name:'Bright Nebula',gas:'Viridian Mykoserocin',regions:['Essence','Fountain','Genesis','Outer Ring','Placid','Syndicate','Venal'],security:'High / Low / Null-sec',units:2000,clouds:2,guarded:false,hazard:'No defenders'},
+  {name:'Sparking Nebula',gas:'Viridian Mykoserocin',regions:['Domain','Essence','Fountain','Genesis','Placid','Syndicate','Tenal','Venal'],security:'High / Low / Null-sec',units:6000,clouds:3,guarded:false,hazard:'No defenders'},
+];
+
+const GAS_KSPACE_REGIONS = [...new Set(GAS_SITE_CATALOG.flatMap(site=>site.regions))].sort((a,b)=>a.localeCompare(b));
+const GAS_REGIONS = Object.fromEntries(GAS_KSPACE_REGIONS.map(region=>{
+  const sites=GAS_SITE_CATALOG
+    .filter(site=>site.regions.includes(region))
+    .map(site=>({name:site.name,gas:site.gas,region,security:site.security,units:site.units,clouds:site.clouds,guarded:site.guarded,hazard:site.hazard}));
+  const gases=[...new Set(sites.map(site=>site.gas))].sort((a,b)=>a.localeCompare(b));
+  return [region,{defaultGas:gases[0]||'',gases,sites}];
+}));
+GAS_REGIONS.Wormhole={
+  defaultGas:'Fullerite-C320',
+  gases:['Fullerite-C50','Fullerite-C60','Fullerite-C70','Fullerite-C72','Fullerite-C84','Fullerite-C28','Fullerite-C32','Fullerite-C320','Fullerite-C540'],
+  sites:[
+    {name:'Barren Perimeter Reservoir',gas:'Fullerite-C60',region:'Wormhole',security:'C1-C4 W-space',units:6000,clouds:1,guarded:true,hazard:'Sleepers after warp-in delay'},
+    {name:'Barren Perimeter Reservoir',gas:'Fullerite-C50',region:'Wormhole',security:'C1-C4 W-space',units:12000,clouds:1,guarded:true,hazard:'Sleepers after warp-in delay'},
+    {name:'Token Perimeter Reservoir',gas:'Fullerite-C70',region:'Wormhole',security:'C1-C4 W-space',units:6000,clouds:1,guarded:true,hazard:'Sleepers after warp-in delay'},
+    {name:'Token Perimeter Reservoir',gas:'Fullerite-C60',region:'Wormhole',security:'C1-C4 W-space',units:12000,clouds:1,guarded:true,hazard:'Sleepers after warp-in delay'},
+    {name:'Minor Perimeter Reservoir',gas:'Fullerite-C72',region:'Wormhole',security:'C1-C4 W-space',units:6000,clouds:1,guarded:true,hazard:'Sleepers after warp-in delay'},
+    {name:'Minor Perimeter Reservoir',gas:'Fullerite-C70',region:'Wormhole',security:'C1-C4 W-space',units:12000,clouds:1,guarded:true,hazard:'Sleepers after warp-in delay'},
+    {name:'Ordinary Perimeter Reservoir',gas:'Fullerite-C84',region:'Wormhole',security:'C1-C4 W-space',units:6000,clouds:1,guarded:true,hazard:'Sleepers after warp-in delay'},
+    {name:'Ordinary Perimeter Reservoir',gas:'Fullerite-C72',region:'Wormhole',security:'C1-C4 W-space',units:12000,clouds:1,guarded:true,hazard:'Sleepers after warp-in delay'},
+    {name:'Sizeable Perimeter Reservoir',gas:'Fullerite-C50',region:'Wormhole',security:'C1-C4 W-space',units:6000,clouds:1,guarded:true,hazard:'Sleepers after warp-in delay'},
+    {name:'Sizeable Perimeter Reservoir',gas:'Fullerite-C84',region:'Wormhole',security:'C1-C4 W-space',units:12000,clouds:1,guarded:true,hazard:'Sleepers after warp-in delay'},
+    {name:'Bountiful Frontier Reservoir',gas:'Fullerite-C32',region:'Wormhole',security:'C3-C6 W-space',units:4000,clouds:1,guarded:true,hazard:'Sleeper waves after warp-in delay'},
+    {name:'Bountiful Frontier Reservoir',gas:'Fullerite-C28',region:'Wormhole',security:'C3-C6 W-space',units:20000,clouds:1,guarded:true,hazard:'Sleeper waves after warp-in delay'},
+    {name:'Vast Frontier Reservoir',gas:'Fullerite-C28',region:'Wormhole',security:'C3-C6 W-space',units:4000,clouds:1,guarded:true,hazard:'Heavy Sleeper waves'},
+    {name:'Vast Frontier Reservoir',gas:'Fullerite-C32',region:'Wormhole',security:'C3-C6 W-space',units:20000,clouds:1,guarded:true,hazard:'Heavy Sleeper waves'},
+    {name:'Instrumental Core Reservoir',gas:'Fullerite-C320',region:'Wormhole',security:'C5-C6 / shattered',units:24000,clouds:1,guarded:true,hazard:'Heavy Sleepers • warp disruption'},
+    {name:'Instrumental Core Reservoir',gas:'Fullerite-C540',region:'Wormhole',security:'C5-C6 / shattered',units:2000,clouds:1,guarded:true,hazard:'Heavy Sleepers • warp disruption'},
+    {name:'Vital Core Reservoir',gas:'Fullerite-C320',region:'Wormhole',security:'C5-C6 / shattered',units:2000,clouds:1,guarded:true,hazard:'Heavy Sleeper wave'},
+    {name:'Vital Core Reservoir',gas:'Fullerite-C540',region:'Wormhole',security:'C5-C6 / shattered',units:24000,clouds:1,guarded:true,hazard:'Heavy Sleeper wave'},
+  ],
 };
 const TITAN_BRIDGE_RANGE_LY = 6;
 const LIGHT_YEAR_METERS = 9.4607304725808e15;
