@@ -307,7 +307,7 @@
   function adamWorkflow(){
     const cutoff=Date.now()-30*60*1000;
     const recent=adamRecentActions.filter(row=>Number(row?.at||0)>=cutoff);
-    if(recent.some(row=>row.kind==='scan-updated'))return'scan-update';
+    if((activeTab==='fields'||activeTab==='brain')&&recent.some(row=>row.kind==='scan-updated'))return'scan-update';
     if(activeTab==='performance')return'performance-review';
     if(activeTab==='fleet')return'fleet-setup';
     if(activeTab==='fields')return'field-review';
