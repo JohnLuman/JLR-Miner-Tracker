@@ -259,19 +259,11 @@
       </div>
       <div class="fleet-command-grid">
         <article class="fleet-command-card fleet-live-card">
-          <div class="visual-card-head"><strong>RECENT ACTIVITY RATE</strong><small>15-minute ESI samples • review the mining session after the fact</small></div>
+          <div class="visual-card-head"><strong>RATE OVER TIME</strong><small>How did fleet output change? • 15-minute ESI samples</small></div>
           <div id="fleetActivityChart" class="fleet-activity-chart"></div>
         </article>
-        <article class="fleet-command-card fleet-trend-card">
-          <div class="visual-card-head trend-head">
-            <div><strong>ORE VALUE TREND</strong><small>Jita vs C-N • last 30 days • ISK/m³</small></div>
-            <select id="oreTrendSelect" aria-label="Ore value trend"></select>
-          </div>
-          <div class="visual-legend"><span class="legend-jita">JITA</span><span class="legend-cn">C-N</span></div>
-          <div id="oreValueChart" class="market-line-chart"></div>
-        </article>
         <article class="fleet-command-card fleet-history-card">
-          <div class="visual-card-head"><strong id="fleetHistoryTitle">DAILY MINING VOLUME</strong><small id="fleetHistorySubtitle">last 7 days • hover for daily totals</small></div>
+          <div class="visual-card-head"><strong id="fleetHistoryTitle">DAILY OUTPUT</strong><small id="fleetHistorySubtitle">How much did the selected fleet mine each day? • last 7 days</small></div>
           <div id="fleetHistoryTotals" class="fleet-history-totals">
             <div><span id="fleetHistoryVolumeLabel">7D VOLUME</span><strong id="fleetHistoryVolume">—</strong><small id="fleetHistoryPeriod">selected history range</small></div>
             <div><span id="fleetHistoryValueLabel">7D PAYOUT</span><strong id="fleetHistoryValue">—</strong><small id="fleetHistoryValueSub">tracked T3 value × payout</small></div>
@@ -279,8 +271,16 @@
           <div id="fleetHistoryChart" class="fleet-history-chart"></div>
         </article>
         <article class="fleet-command-card fleet-ore-card">
-          <div class="visual-card-head"><strong>ORE MIX</strong><small id="fleetOreMixSubtitle">last 7 days • mined m³ by ore</small></div>
+          <div class="visual-card-head"><strong>MINED ORE MIX</strong><small id="fleetOreMixSubtitle">What made up the mined volume? • last 7 days</small></div>
           <div id="fleetOreMix" class="fleet-ore-mix"></div>
+        </article>
+        <article class="fleet-command-card fleet-trend-card">
+          <div class="visual-card-head trend-head">
+            <div><strong>MARKET VALUE TREND</strong><small>How did the selected ore value move? • Jita vs C-N • 30 days</small></div>
+            <select id="oreTrendSelect" aria-label="Ore value trend"></select>
+          </div>
+          <div class="visual-legend"><span class="legend-jita">JITA</span><span class="legend-cn">C-N</span></div>
+          <div id="oreValueChart" class="market-line-chart"></div>
         </article>
       </div>
       <div class="fleet-collection-note"><strong>AUTOMATIC DATA COLLECTION</strong><span>Activity samples are retained for 7 days. Daily mining and ore-mix history retain up to 90 days and refill from linked EVE mining ledgers after sync.</span></div>
