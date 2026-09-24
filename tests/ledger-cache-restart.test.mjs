@@ -14,9 +14,10 @@ assert.match(server,/async function loadLedgerCache\(characters=\{\}\)/,'ledger 
 assert.match(server,/function saveLedgerCache\(\)/,'ledger cache has a persistent write path');
 assert.match(server,/await saveLedgerCache\(\)/,'successful ledger refreshes persist the restart cache');
 assert.match(server,/const cacheHealthy=coverageRatio>=LEDGER_HEALTH_RATIO/,'ledger coverage has an explicit healthy threshold');
-assert.match(server,/if\(cacheComplete\|\|\(fullCycle&&cacheHealthy\)\)\{\s*rebuildDailyFleetFromLedgerCache\(\);/s,'full fleet cycles publish once at least 80% of linked ledgers are cached');
+assert.match(server,/if\(cacheComplete\|\|cacheHealthy\)\{\s*rebuildDailyFleetFromLedgerCache\(\);/s,'any successful sync publishes once at least 80% of linked ledgers are cached');
 assert.doesNotMatch(server,/if\(fullCycle\|\|cacheComplete\)/,'a failed full cycle can no longer zero a valid payout');
 assert.match(server,/healthy partial/,'healthy partial fleet coverage is published instead of freezing the app payout');
+assert.match(server,/matchedM3\|\|0\)>0&&Number\(todayActual\.m3\|\|0\)<=0/,'public state self-heals a stale current-day zero when raw T3 ledger rows exist');
 assert.match(server,/if\(miningLedgerDebug\(\)\.cacheHealthy\)rebuildDailyFleetFromLedgerCache\(\)/,'market refresh can rebuild totals once ledger coverage is healthy');
 assert.match(server,/Mining ledger cache below 80%:/,'sub-80% coverage preserves the previous fleet payout');
 assert.match(server,/const LEDGER_HEALTH_RATIO = 0\.80/,'80% coverage is the healthy threshold');
