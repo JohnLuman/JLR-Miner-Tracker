@@ -6458,7 +6458,15 @@
       const appliedScan=applyPreviewBoardScan(preview);
       const appliedWormholeGas=applyPreviewWormholeGas(preview);
       if(preview?.boardScan?.recorded||preview?.tracked||preview?.a0?.tracked||preview?.gasWormhole?.recorded){
-        adamRecordAction('scan-updated',{system:String(preview.system||''),characterName:String(preview.characterName||selected.name||''),detail:'Probe Scanner update accepted'});
+        const updatedSystem=String(preview.system||'');
+        adamRecordAction('scan-updated',{system:updatedSystem,characterName:String(preview.characterName||selected.name||''),detail:'Probe Scanner update accepted'});
+        if(updatedSystem&&scoutPromptKey.endsWith(':'+updatedSystem)){
+          scoutPromptKey='';
+          $('brainScanPrompt')?.classList.add('hidden');
+          $('scoutGlobalAlert')?.classList.add('hidden');
+          adamMarkCurrent();
+          document.title='JLR Miner Tracker';
+        }
       }
       if(preview?.tracked&&preview?.scan?.valid){
         const recordedAt=Date.parse(preview?.serverScan?.lastScanAt||preview?.boardScan?.lastScanAt||'');
