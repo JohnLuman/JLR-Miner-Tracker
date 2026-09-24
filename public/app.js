@@ -1648,7 +1648,7 @@
       return;
     }
 
-    const W=760,H=300,L=62,R=18,T=34,B=36;
+    const W=760,H=230,L=54,R=118,T=24,B=30;
     const pw=W-L-R,ph=H-T-B;
     let min=Math.min(...vals),max=Math.max(...vals);
     if(min===max){min*=.97;max*=1.03}
@@ -1657,23 +1657,21 @@
     const x=i=>rows.length<=1?L+pw/2:L+(i/(rows.length-1))*pw;
     const y=v=>T+(max-Number(v))/range*ph;
 
-    const ticks=5;
     let grid='';
+    const ticks=3;
     for(let i=0;i<=ticks;i++){
       const yy=T+(i/ticks)*ph;
       const value=max-(i/ticks)*range;
       grid+='<line x1="'+L+'" y1="'+yy.toFixed(1)+'" x2="'+(W-R)+'" y2="'+yy.toFixed(1)+'" class="market-grid"/>'+
-        '<text x="'+(L-8)+'" y="'+(yy+3).toFixed(1)+'" text-anchor="end" class="market-axis-label">'+esc(compactNumber(value))+'</text>';
+        '<text x="'+(L-7)+'" y="'+(yy+3).toFixed(1)+'" text-anchor="end" class="market-axis-label">'+esc(compactNumber(value))+'</text>';
     }
 
-    const labelCount=Math.min(6,rows.length);
-    const tickIndexes=new Set();
+    const labelCount=Math.min(5,rows.length),tickIndexes=new Set();
     if(rows.length===1)tickIndexes.add(0);
     else for(let i=0;i<labelCount;i++)tickIndexes.add(Math.round(i*(rows.length-1)/(labelCount-1)));
-    let xLabels='';
-    for(const i of tickIndexes){
-      xLabels+='<text x="'+x(i).toFixed(1)+'" y="'+(H-10)+'" text-anchor="middle" class="market-axis-label">'+esc(chartDateLabel(rows[i].date))+'</text>';
-    }
+    const xLabels=[...tickIndexes].map(i=>
+      '<text x="'+x(i).toFixed(1)+'" y="'+(H-8)+'" text-anchor="middle" class="market-axis-label">'+esc(chartDateLabel(rows[i].date))+'</text>'
+    ).join('');
 
     function seriesPath(key){
       let d='',started=false;
@@ -1685,53 +1683,48 @@
       }
       return d;
     }
-    function areaPaths(){
-      const paths=[];
-      let segment=[];
-      const flush=()=>{
-        if(segment.length<2){segment=[];return}
-        const top=segment.map(p=>x(p.i).toFixed(1)+' '+y(Math.max(p.jita,p.cn)).toFixed(1));
-        const bottom=[...segment].reverse().map(p=>x(p.i).toFixed(1)+' '+y(Math.min(p.jita,p.cn)).toFixed(1));
-        paths.push('M '+top.join(' L ')+' L '+bottom.join(' L ')+' Z');
-        segment=[];
-      };
-      rows.forEach((row,i)=>{
-        const j=Number(row.jita),n=Number(row.cn);
-        if(Number.isFinite(j)&&j>0&&Number.isFinite(n)&&n>0)segment.push({i,jita:j,cn:n});
-        else flush();
-      });
-      flush();
-      return paths;
+    function validPoints(key){
+      return rows.map((row,i)=>({i,v:Number(row[key]),date:row.date})).filter(p=>Number.isFinite(p.v)&&p.v>0);
     }
-    function dots(key,cls){
-      return rows.map((row,i)=>{
-        const v=Number(row[key]);
-        if(!(Number.isFinite(v)&&v>0))return'';
-        const label=chartDateLabel(row.date)+' • '+(key==='jita'?'Jita':'C-N')+' '+v.toFixed(decimals)+(unit?' '+unit:'');
-        return '<circle cx="'+x(i).toFixed(1)+'" cy="'+y(v).toFixed(1)+'" r="3.3" class="'+cls+'"><title>'+esc(label)+'</title></circle>';
-      }).join('');
+    function hoverTargets(key,label){
+      return validPoints(key).map(p=>
+        '<circle cx="'+x(p.i).toFixed(1)+'" cy="'+y(p.v).toFixed(1)+'" r="7" class="market-hit"><title>'+
+        esc(chartDateLabel(p.date)+' • '+label+' '+p.v.toFixed(decimals)+(unit?' '+unit:''))+'</title></circle>'
+      ).join('');
+    }
+    function deltaText(points){
+      if(points.length<2||points[0].v<=0)return'';
+      const delta=(points.at(-1).v-points[0].v)/points[0].v*100;
+      if(Math.abs(delta)<.05)return' • 0.0%';
+      return ' • '+(delta>0?'▲':'▼')+Math.abs(delta).toFixed(1)+'%';
     }
 
+    const jitaPoints=validPoints('jita'),cnPoints=validPoints('cn');
+    const jitaLast=jitaPoints.at(-1)||null,cnLast=cnPoints.at(-1)||null;
+    let jitaLabelY=jitaLast?y(jitaLast.v):0,cnLabelY=cnLast?y(cnLast.v):0;
+    if(jitaLast&&cnLast&&Math.abs(jitaLabelY-cnLabelY)<15){
+      if(jitaLabelY<=cnLabelY){jitaLabelY-=7;cnLabelY+=7}
+      else{jitaLabelY+=7;cnLabelY-=7}
+    }
+    const clampLabelY=value=>Math.max(T+7,Math.min(T+ph-4,value));
+    jitaLabelY=clampLabelY(jitaLabelY);cnLabelY=clampLabelY(cnLabelY);
+
     const jitaPath=seriesPath('jita'),cnPath=seriesPath('cn');
-    const areas=areaPaths().map(d=>'<path d="'+d+'" class="market-range-area"/>').join('');
+    const latestDots=(jitaLast?'<circle cx="'+x(jitaLast.i).toFixed(1)+'" cy="'+y(jitaLast.v).toFixed(1)+'" r="3.8" class="market-dot market-dot-jita"/>':'')+
+      (cnLast?'<circle cx="'+x(cnLast.i).toFixed(1)+'" cy="'+y(cnLast.v).toFixed(1)+'" r="3.8" class="market-dot market-dot-cn"/>':'');
+    const endLabels=(jitaLast?'<text x="'+(W-R+9)+'" y="'+jitaLabelY.toFixed(1)+'" class="market-end-label market-end-jita">JITA '+esc(compactNumber(jitaLast.v))+esc(deltaText(jitaPoints))+'</text>':'')+
+      (cnLast?'<text x="'+(W-R+9)+'" y="'+cnLabelY.toFixed(1)+'" class="market-end-label market-end-cn">C-N '+esc(compactNumber(cnLast.v))+esc(deltaText(cnPoints))+'</text>':'');
     const first=rows[0]?.date;
-    const last=rows[rows.length-1]?.date;
-    const monthLabel=last?new Date(last+'T00:00:00Z').toLocaleDateString(undefined,{month:'short',year:'numeric',timeZone:'UTC'}):'';
     const collecting=rows.length<30?'<div class="market-history-note">History started '+esc(chartDateLabel(first))+' • '+rows.length+' daily point'+(rows.length===1?'':'s')+' collected</div>':'';
 
     el.innerHTML='<div class="market-chart-shell">'+
-      '<div class="market-chart-month">'+esc(monthLabel)+'</div>'+
-      '<div class="market-chart-legend"><span class="legend-market-jita">Jita</span><span class="legend-market-cn">C-N</span><span class="legend-market-range">Price range</span></div>'+
-      '<svg class="market-line-svg" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Jita versus C-N 30 day market trend">'+
-        '<defs><pattern id="marketDots" width="18" height="18" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r=".7" class="market-bg-dot"/></pattern></defs>'+
-        '<rect x="'+L+'" y="'+T+'" width="'+pw+'" height="'+ph+'" class="market-bg-grid"/>'+
-        grid+xLabels+areas+
+      '<svg class="market-line-svg" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Jita versus C-N market trend">'+
+        grid+xLabels+
         (jitaPath?'<path d="'+jitaPath+'" class="market-line market-line-jita"/>':'')+
         (cnPath?'<path d="'+cnPath+'" class="market-line market-line-cn"/>':'')+
-        dots('jita','market-dot market-dot-jita')+dots('cn','market-dot market-dot-cn')+
-        '<text x="'+(W-R)+'" y="'+(T-10)+'" text-anchor="end" class="market-unit-label">'+esc(unit)+'</text>'+
-      '</svg>'+
-      collecting+
+        hoverTargets('jita','Jita')+hoverTargets('cn','C-N')+latestDots+endLabels+
+        '<text x="'+L+'" y="'+(T-9)+'" class="market-unit-label">'+esc(unit)+'</text>'+
+      '</svg>'+collecting+
     '</div>';
   }
   function updateSoundStatus(){
@@ -4668,28 +4661,37 @@
       el.innerHTML='<div class="visual-empty">Live activity history will begin after the next ESI ledger sync.</div>';
       return;
     }
-    const W=760,H=250,L=58,R=18,T=22,B=34,pw=W-L-R,ph=H-T-B;
+    const W=760,H=205,L=52,R=92,T=20,B=28,pw=W-L-R,ph=H-T-B;
     const values=rows.map(row=>Math.max(0,Number(row.actualM3PerHour)||0));
     const max=Math.max(1,Number(target)||0,...values)*1.12;
     const x=i=>rows.length<=1?L+pw/2:L+i/(rows.length-1)*pw;
     const y=v=>T+(1-Math.min(max,Math.max(0,Number(v)||0))/max)*ph;
     let grid='';
-    for(let i=0;i<=4;i++){
-      const yy=T+i/4*ph,value=max*(1-i/4);
-      grid+=`<line x1="${L}" y1="${yy.toFixed(1)}" x2="${W-R}" y2="${yy.toFixed(1)}" class="fleet-chart-grid"/><text x="${L-7}" y="${(yy+3).toFixed(1)}" text-anchor="end" class="fleet-chart-axis">${esc(compactNumber(value))}</text>`;
+    for(let i=0;i<=3;i++){
+      const yy=T+i/3*ph,value=max*(1-i/3);
+      grid+='<line x1="'+L+'" y1="'+yy.toFixed(1)+'" x2="'+(W-R)+'" y2="'+yy.toFixed(1)+'" class="fleet-chart-grid"/>'+
+        '<text x="'+(L-7)+'" y="'+(yy+3).toFixed(1)+'" text-anchor="end" class="fleet-chart-axis">'+esc(compactNumber(value))+'</text>';
     }
-    const points=rows.map((row,i)=>`${x(i).toFixed(1)} ${y(values[i]).toFixed(1)}`);
-    const line='M '+points.join(' L ');
-    const area=line+` L ${x(rows.length-1).toFixed(1)} ${T+ph} L ${x(0).toFixed(1)} ${T+ph} Z`;
-    const dots=rows.map((row,i)=>{
+    const line='M '+rows.map((row,i)=>x(i).toFixed(1)+' '+y(values[i]).toFixed(1)).join(' L ');
+    const targetLine=Number(target)>0
+      ?'<line x1="'+L+'" y1="'+y(target).toFixed(1)+'" x2="'+(W-R)+'" y2="'+y(target).toFixed(1)+'" class="fleet-target-line"/>'+
+       '<text x="'+(W-R+7)+'" y="'+Math.max(T+7,y(target)-4).toFixed(1)+'" class="fleet-target-label">TARGET '+esc(compactNumber(target))+'</text>'
+      :'';
+    const latestIndex=rows.length-1,latest=rows[latestIndex],latestValue=values[latestIndex];
+    const latestTitle=new Date(latest.at).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+
+      ' • '+fmt(latestValue,'m3')+' m³/hr • '+Number(latest.activeToons||0)+' active of '+Number(latest.sampledToons||0)+' sampled';
+    const hover=rows.map((row,i)=>{
       const when=new Date(row.at).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
-      const title=`${when} • ${fmt(values[i],'m3')} m³/hr • ${Number(row.activeToons||0)} active of ${Number(row.sampledToons||0)} sampled`;
-      return `<circle cx="${x(i).toFixed(1)}" cy="${y(values[i]).toFixed(1)}" r="3.2" class="fleet-activity-dot"><title>${esc(title)}</title></circle>`;
+      const title=when+' • '+fmt(values[i],'m3')+' m³/hr • '+Number(row.activeToons||0)+' active of '+Number(row.sampledToons||0)+' sampled';
+      return '<circle cx="'+x(i).toFixed(1)+'" cy="'+y(values[i]).toFixed(1)+'" r="7" class="fleet-chart-hit"><title>'+esc(title)+'</title></circle>';
     }).join('');
-    const targetLine=Number(target)>0?`<line x1="${L}" y1="${y(target).toFixed(1)}" x2="${W-R}" y2="${y(target).toFixed(1)}" class="fleet-target-line"/><text x="${W-R}" y="${(y(target)-5).toFixed(1)}" text-anchor="end" class="fleet-target-label">TARGET ${esc(compactNumber(target))} M³/HR</text>`:'';
+    const latestDot='<circle cx="'+x(latestIndex).toFixed(1)+'" cy="'+y(latestValue).toFixed(1)+'" r="4" class="fleet-activity-dot"><title>'+esc(latestTitle)+'</title></circle>';
+    const latestLabel='<text x="'+(W-R+7)+'" y="'+Math.max(T+8,Math.min(T+ph-2,y(latestValue)+3)).toFixed(1)+'" class="fleet-latest-label">'+esc(compactNumber(latestValue))+'</text>';
     const labelIndexes=[0,Math.floor((rows.length-1)/2),rows.length-1];
-    const labels=[...new Set(labelIndexes)].map(i=>`<text x="${x(i).toFixed(1)}" y="${H-10}" text-anchor="middle" class="fleet-chart-axis">${esc(new Date(rows[i].at).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}))}</text>`).join('');
-    el.innerHTML=`<svg class="fleet-chart-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Live fleet mining rate from recent ESI ledger samples">${grid}<path d="${area}" class="fleet-activity-area"/><path d="${line}" class="fleet-activity-line"/>${targetLine}${dots}${labels}<text x="${W-R}" y="${T-7}" text-anchor="end" class="fleet-chart-unit">M³/HR</text></svg>`;
+    const labels=[...new Set(labelIndexes)].map(i=>'<text x="'+x(i).toFixed(1)+'" y="'+(H-8)+'" text-anchor="middle" class="fleet-chart-axis">'+esc(new Date(rows[i].at).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}))+'</text>').join('');
+    el.innerHTML='<svg class="fleet-chart-svg" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Live fleet mining rate from recent ESI ledger samples">'+
+      grid+'<path d="'+line+'" class="fleet-activity-line"/>'+targetLine+hover+latestDot+latestLabel+labels+
+      '<text x="'+L+'" y="'+(T-7)+'" class="fleet-chart-unit">M³/HR</text></svg>';
   }
   function renderFleetDailyChart(el,rows,metric){
     if(!el)return;
@@ -4699,23 +4701,26 @@
       el.innerHTML='<div class="visual-empty">Daily history will fill from linked EVE mining ledgers.</div>';
       return;
     }
-    const W=760,H=250,L=58,R=16,T=22,B=34,pw=W-L-R,ph=H-T-B,max=Math.max(1,...values)*1.1;
-    const slot=pw/Math.max(1,rows.length),bar=Math.max(2,Math.min(28,slot*.68));
-    const y=value=>T+(1-value/max)*ph;
+    const W=760,H=205,L=52,R=16,T=20,B=28,pw=W-L-R,ph=H-T-B,max=Math.max(1,...values)*1.1;
+    const slot=pw/Math.max(1,rows.length),bar=Math.max(2,Math.min(22,slot*.62));
     let grid='';
-    for(let i=0;i<=4;i++){
-      const yy=T+i/4*ph,value=max*(1-i/4);
-      grid+=`<line x1="${L}" y1="${yy.toFixed(1)}" x2="${W-R}" y2="${yy.toFixed(1)}" class="fleet-chart-grid"/><text x="${L-7}" y="${(yy+3).toFixed(1)}" text-anchor="end" class="fleet-chart-axis">${esc(compactNumber(value))}</text>`;
+    for(let i=0;i<=3;i++){
+      const yy=T+i/3*ph,value=max*(1-i/3);
+      grid+='<line x1="'+L+'" y1="'+yy.toFixed(1)+'" x2="'+(W-R)+'" y2="'+yy.toFixed(1)+'" class="fleet-chart-grid"/>'+
+        '<text x="'+(L-7)+'" y="'+(yy+3).toFixed(1)+'" text-anchor="end" class="fleet-chart-axis">'+esc(compactNumber(value))+'</text>';
     }
+    const maxValue=Math.max(...values),bestIndex=values.lastIndexOf(maxValue),todayIndex=rows.length-1;
     const bars=rows.map((row,i)=>{
       const value=values[i],height=Math.max(value>0?1:0,(value/max)*ph),xx=L+i*slot+(slot-bar)/2,yy=T+ph-height;
-      const label=metric==='value'?`${fmt(value)} ISK payout`:`${fmt(value,'m3')} m³`;
-      return `<rect x="${xx.toFixed(1)}" y="${yy.toFixed(1)}" width="${bar.toFixed(1)}" height="${height.toFixed(1)}" rx="2" class="fleet-history-bar"><title>${esc(chartDateLabel(row.date)+' • '+label)}</title></rect>`;
+      const label=metric==='value'?fmt(value)+' ISK payout':fmt(value,'m3')+' m³';
+      const cls='fleet-history-bar'+(i===bestIndex?' best':'')+(i===todayIndex?' today':'');
+      return '<rect x="'+xx.toFixed(1)+'" y="'+yy.toFixed(1)+'" width="'+bar.toFixed(1)+'" height="'+height.toFixed(1)+'" rx="2" class="'+cls+'"><title>'+esc(chartDateLabel(row.date)+' • '+label+(i===bestIndex?' • best day':'')+(i===todayIndex?' • today':''))+'</title></rect>';
     }).join('');
-    const labelCount=Math.min(6,rows.length),indexes=new Set();
+    const labelCount=Math.min(5,rows.length),indexes=new Set();
     if(rows.length===1)indexes.add(0);else for(let i=0;i<labelCount;i++)indexes.add(Math.round(i*(rows.length-1)/(labelCount-1)));
-    const labels=[...indexes].map(i=>`<text x="${(L+i*slot+slot/2).toFixed(1)}" y="${H-10}" text-anchor="middle" class="fleet-chart-axis">${esc(chartDateLabel(rows[i].date))}</text>`).join('');
-    el.innerHTML=`<svg class="fleet-chart-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Daily fleet ${metric==='value'?'payout':'mining volume'} history">${grid}${bars}${labels}<text x="${W-R}" y="${T-7}" text-anchor="end" class="fleet-chart-unit">${metric==='value'?'ISK PAYOUT':'M³ MINED'}</text></svg>`;
+    const labels=[...indexes].map(i=>'<text x="'+(L+i*slot+slot/2).toFixed(1)+'" y="'+(H-8)+'" text-anchor="middle" class="fleet-chart-axis">'+esc(chartDateLabel(rows[i].date))+'</text>').join('');
+    el.innerHTML='<svg class="fleet-chart-svg" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Daily fleet '+(metric==='value'?'payout':'mining volume')+' history">'+
+      grid+bars+labels+'<text x="'+L+'" y="'+(T-7)+'" class="fleet-chart-unit">'+(metric==='value'?'ISK PAYOUT':'M³ MINED')+'</text></svg>';
   }
   function renderFleetOreMix(el,rows){
     if(!el)return;
