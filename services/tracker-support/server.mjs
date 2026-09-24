@@ -403,7 +403,7 @@ const server=http.createServer(async(req,res)=>{
     return json(res,200,{
       ok:true,
       service:'jlr-tracker-support',
-      version:'2.1.0',
+      version:'2.2.0',
       sessions:store.size,
       uptimeSeconds:Math.floor((Date.now()-startedAt)/1000),
       persistence:Boolean(STATE_FILE),
@@ -450,7 +450,7 @@ const server=http.createServer(async(req,res)=>{
     catch(error){return json(res,400,{error:String(error?.message||'BAD_REQUEST')})}
     const userKey=validUserKey(body?.userKey);
     if(!userKey)return json(res,400,{error:'USER_KEY_REQUIRED'});
-    return json(res,200,store.resolve(userKey,{question:body?.question,currentTab:body?.currentTab}));
+    return json(res,200,store.resolve(userKey,{question:body?.question,currentTab:body?.currentTab,context:body?.context}));
   }
   if(req.method==='POST'&&url.pathname==='/v1/remember'){
     let body;
@@ -458,7 +458,7 @@ const server=http.createServer(async(req,res)=>{
     catch(error){return json(res,400,{error:String(error?.message||'BAD_REQUEST')})}
     const userKey=validUserKey(body?.userKey);
     if(!userKey)return json(res,400,{error:'USER_KEY_REQUIRED'});
-    const session=store.remember(userKey,{question:body?.question,currentTab:body?.currentTab,answer:body?.answer});
+    const session=store.remember(userKey,{question:body?.question,currentTab:body?.currentTab,context:body?.context,answer:body?.answer});
     scheduleSave();
     return json(res,200,{ok:true,session});
   }
