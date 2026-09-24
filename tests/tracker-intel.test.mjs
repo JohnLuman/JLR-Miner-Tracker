@@ -9,7 +9,7 @@ const index=fs.readFileSync(new URL('../public/index.html',import.meta.url),'utf
 const pkg=JSON.parse(fs.readFileSync(new URL('../package.json',import.meta.url),'utf8'));
 
 assert.match(server,/TRACKER_INTEL_DEFAULT_REGION_ID = 10000058/,'Fountain is the default hot-zone region');
-assert.match(server,/TRACKER_INTEL_HOT_CACHE_MS = 30 \* 60 \* 1000/,'hot-zone snapshots refresh every hour');
+assert.match(server,/TRACKER_INTEL_HOT_CACHE_MS = 60 \* 60 \* 1000/,'hot-zone snapshots refresh every hour');
 assert.match(server,/regionCatalog:\s*\[\]/,'Tracker persists an ESI region catalog');
 assert.match(server,/regionHotZones:\s*\{\}/,'Tracker persists per-region hot-zone snapshots');
 assert.match(server,/async function trackerIntelRegionCatalog/,'all EVE regions are discovered through ESI');
@@ -51,6 +51,6 @@ assert.equal(pkg.version,'2.9.135','Tracker regional intel release is versioned'
 assert.ok(index.includes('/tracker.css?v=2.9.135'),'browser loads Tracker intel CSS');
 assert.ok(index.includes('/tracker.js?v=2.9.135'),'browser loads Tracker loader');
 assert.ok(index.includes('/app.js?v=2.9.135'),'browser loads matching app release');
-assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.134/,'Tracker core cache is busted');
+assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.135/,'Tracker core cache is busted');
 
 console.log('Tracker regional intel tests passed.');
