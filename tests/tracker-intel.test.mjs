@@ -40,10 +40,10 @@ assert.doesNotMatch(server,/trackerIntelIngestPublicMap/,'unused ESS/interferenc
 assert.match(trackerCss,/tracker-intel-grid-hot-only/,'Hot Zones expands to the full Tracker intel row');
 assert.match(trackerCss,/tracker-region-picker/,'region selector is styled');
 
-assert.equal(pkg.version,'2.9.137','Hot Zones-only Tracker release is versioned');
-assert.ok(index.includes('/tracker.css?v=2.9.137'),'browser loads Tracker intel CSS');
-assert.ok(index.includes('/tracker.js?v=2.9.137'),'browser loads Tracker loader');
-assert.ok(index.includes('/app.js?v=2.9.137'),'browser loads matching app release');
+assert.equal(pkg.version,'2.9.138','Hot Zones-only Tracker release is versioned');
+assert.ok(index.includes('/tracker.css?v=2.9.138'),'browser loads Tracker intel CSS');
+assert.ok(index.includes('/tracker.js?v=2.9.138'),'browser loads Tracker loader');
+assert.ok(index.includes('/app.js?v=2.9.138'),'browser loads matching app release');
 assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.137/,'Tracker core cache is busted');
 
 console.log('Tracker regional intel tests passed.');
