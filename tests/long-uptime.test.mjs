@@ -15,7 +15,8 @@ assert.match(app,/function ensureBrainLongRunHealth/,'microphone pipeline has a 
 assert.match(app,/LONG_UPTIME_RECOVERY/,'mic recovery is recorded in diagnostics');
 assert.match(app,/brainMicWatchdogLastFrameAt=Date\.now\(\)/,'local audio frames refresh watchdog health');
 assert.match(app,/track\.addEventListener\('ended'/,'ended microphone tracks restart automatically');
-assert.match(app,/startBrainLongUptimeWatchdog\(\)/,'long-uptime watchdog starts during boot');
+assert.doesNotMatch(app,/await refreshBrainMicrophones\(\);\s*startBrainLongUptimeWatchdog\(\)/,'live boot does not start the retired microphone watchdog');
+assert.match(app,/const ADAM_VOICE_ENABLED=false/,'retired microphone pipeline remains hard-disabled');
 assert.match(app,/Voice recovery count:/,'diagnostics expose automatic voice recoveries');
 
 console.log('Long-uptime Tracker regression tests passed.');
