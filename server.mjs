@@ -4892,7 +4892,16 @@ async function syncCharacter(ch,options={}){
   }
   const pending=(async()=>{
     await acquireEsiCharacterSyncSlot();
-    try{return await syncCharacterOnce(ch,options)}
+    try{
+      let result=await syncCharacterOnce(ch,options);
+      const errorText=String(result?.error||'');
+      const transient=!result?.ok&&!/ESI\s+(400|401|403)|scope|authorization|refresh token|invalid token/i.test(errorText);
+      if(transient){
+        await sleep(1200);
+        result=await syncCharacterOnce(ch,options);
+      }
+      return result;
+    }
     finally{releaseEsiCharacterSyncSlot()}
   })().finally(()=>characterSyncPromises.delete(key));
   characterSyncPromises.set(key,pending);
