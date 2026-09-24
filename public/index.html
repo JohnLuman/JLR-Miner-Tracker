@@ -225,7 +225,7 @@
 
     <section class="glass fleet-command-panel">
       <div class="section-title fleet-command-title">
-        <div><span class="eyebrow">ESI LIVE OPERATIONS</span><strong>FLEET PERFORMANCE</strong></div>
+        <div><span class="eyebrow">ESI FLEET REVIEW</span><strong>FLEET PERFORMANCE</strong></div>
         <div class="fleet-history-controls" aria-label="Fleet performance history controls">
           <div class="fleet-control-block">
             <span class="fleet-control-caption">HISTORY</span>
@@ -246,20 +246,20 @@
         </div>
       </div>
       <div id="fleetInsight" class="fleet-insight" aria-live="polite">
-        <div><span>NOW</span><strong id="fleetInsightText">Waiting for an active ledger interval</strong><small id="fleetInsightDetail">JLR will compare live mining rate with your selected fleet target.</small></div>
-        <div class="fleet-insight-meter" title="Live activity rate versus selected fleet target"><i id="fleetInsightMeter"></i><b id="fleetInsightPct">—</b></div>
+        <div><span>SESSION REVIEW</span><strong id="fleetInsightText">Waiting for a mining ledger sample</strong><small id="fleetInsightDetail">JLR will compare recent mining samples with your selected fleet target.</small><small id="fleetInsightReason" class="fleet-insight-reason">Contribution and rate variance will appear here.</small></div>
+        <div class="fleet-insight-meter" title="Recent activity rate versus selected fleet target"><i id="fleetInsightMeter"></i><b id="fleetInsightPct">—</b></div>
       </div>
       <div class="fleet-command-kpis information-fleet-kpis">
-        <article class="fleet-kpi-primary"><span>ACTIVE LEDGER RATE</span><strong id="fleetLiveRate">—</strong><small id="fleetLiveRateSub">waiting for a mining interval</small></article>
+        <article class="fleet-kpi-primary"><span>RECENT LEDGER RATE</span><strong id="fleetLiveRate">—</strong><small id="fleetLiveRateSub">waiting for a mining interval</small></article>
         <article class="fleet-kpi-primary"><span>EVE DAY T3 PAYOUT</span><strong id="fleetTodayPayout">—</strong><small id="fleetTodayPayoutSub">current UTC/EVE day • exact T3 ledger</small></article>
         <article class="fleet-kpi-primary"><span>EVE DAY T3 MINED</span><strong id="fleetTodayM3">—</strong><small>current UTC/EVE day • selected fleet</small></article>
-        <article class="fleet-kpi-secondary"><span>ACTIVE TOONS</span><strong id="fleetActiveToons">—</strong><small id="fleetActiveToonsSub">detected in latest sample</small></article>
+        <article class="fleet-kpi-secondary"><span>CONTRIBUTING TOONS</span><strong id="fleetActiveToons">—</strong><small id="fleetActiveToonsSub">detected in latest sample</small></article>
         <article class="fleet-kpi-secondary"><span id="fleetRangeTotalLabel">7D MINED</span><strong id="fleetRangeTotal">—</strong><small id="fleetRangeTotalSub">selected history range</small></article>
         <article class="fleet-kpi-secondary"><span>BEST DAY</span><strong id="fleetBestDay">—</strong><small id="fleetBestDaySub">no production history yet</small></article>
       </div>
       <div class="fleet-command-grid">
         <article class="fleet-command-card fleet-live-card">
-          <div class="visual-card-head"><strong>LIVE ACTIVITY RATE</strong><small>15-minute ESI samples • updates automatically</small></div>
+          <div class="visual-card-head"><strong>RECENT ACTIVITY RATE</strong><small>15-minute ESI samples • review the mining session after the fact</small></div>
           <div id="fleetActivityChart" class="fleet-activity-chart"></div>
         </article>
         <article class="fleet-command-card fleet-trend-card">
@@ -283,7 +283,7 @@
           <div id="fleetOreMix" class="fleet-ore-mix"></div>
         </article>
       </div>
-      <div class="fleet-collection-note"><strong>AUTOMATIC DATA COLLECTION</strong><span>Live samples are retained for 7 days. Daily mining and ore-mix history retain up to 90 days and refill from linked EVE mining ledgers after sync.</span></div>
+      <div class="fleet-collection-note"><strong>AUTOMATIC DATA COLLECTION</strong><span>Activity samples are retained for 7 days. Daily mining and ore-mix history retain up to 90 days and refill from linked EVE mining ledgers after sync.</span></div>
     </section>
 
     <section class="glass mining-visuals-panel">
