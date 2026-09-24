@@ -36,10 +36,12 @@
   let scoutFollowEnabled = localStorage.getItem('jlrScoutFollow') !== 'false';
   let scoutSelectedCharacterId = localStorage.getItem('jlrScoutCharacter') || '';
   let scoutTargets = [];
+  let scoutNearestMining = null;
   let scoutTargetsLoading = false;
   let scoutTargetsError = '';
   let scoutTargetsOriginSystem = '';
   let scoutPromptKey = '';
+  let adamCurrentTimer = null;
   const scoutVoiceCooldown = new Map();
   let merIntel = null;
   let merIntelError = '';
@@ -349,44 +351,26 @@
     else if(context.selectedCharacterName&&(context.currentTab==='fields'||context.currentTab==='brain'))parts.push(context.selectedCharacterName);
     return parts.join(' • ');
   }
-  function adamSuggestions(){
-    const context=adamContextSnapshot();
+  function adamPrompt(context=adamContextSnapshot()){
     const tab=context.currentTab;
-    if(tab==='performance')return[
-      'Why is this low?',
-      'What changed?',
-      'Explain recent activity rate'
-    ];
-    if(tab==='fields')return[
-      'Next one?',
-      'What needs a scan?',
-      'Explain this system'
-    ];
-    if(tab==='fleet')return[
-      'Explain this tab',
-      'What does boosted output mean?',
-      'How does JLR use my fits?'
-    ];
-    if(context.workflow==='scout-routing'||tab==='brain')return[
-      'Next system?',
-      'Where is my travel toon?',
-      'What needs attention?'
-    ];
-    return[
-      'Explain this tab',
-      'What needs attention?',
-      'What can you help with?'
-    ];
+    if(tab==='performance')return'Ask Adam what changed, why the rate moved, or what the ledger can actually prove…';
+    if(tab==='fields')return'Ask Adam where to go next, what this system needs, or anything about the scan workflow…';
+    if(tab==='fleet')return'Ask Adam about a fit, boost, miner, output target, or what you are looking at…';
+    if(tab==='toons')return'Ask Adam about a toon, ESI access, location readiness, or sync state…';
+    if(tab==='threat')return'Ask Adam about this threat view or what the current data means…';
+    if(context.workflow==='scout-routing'||tab==='brain')return'Ask Adam where to go, what is closest, or what needs attention…';
+    return'Ask Adam naturally about whatever you are looking at…';
   }
   function renderAdamContext(){
     const context=adamContextSnapshot();
     const contextText=adamContextLabel(context);
+    const prompt=adamPrompt(context);
     const label=$('adamContextLabel');
     if(label)label.textContent=contextText;
     const quickLabel=$('adamQuickContext');
     if(quickLabel)quickLabel.textContent=contextText;
-    const suggestions=$('adamSuggestions');
-    if(suggestions)suggestions.innerHTML=adamSuggestions().map(text=>'<button class="adam-suggestion" type="button" data-adam-question="'+esc(text)+'">'+esc(text)+'</button>').join('');
+    if($('adamQuestion'))$('adamQuestion').placeholder=prompt;
+    if($('adamQuickQuestion'))$('adamQuickQuestion').placeholder=prompt;
   }
   async function askAdamText(question){
     const text=String(question||'').trim();
@@ -1673,13 +1657,23 @@
   function renderScoutTargets(){
     const host=$('scoutTargetList');
     const summary=$('scoutTargetSummary');
+    const nearest=$('adamNearestMining');
     if(!host)return;
     const selected=(me?.characters||[]).find(ch=>String(ch.characterId)===String(scoutSelectedCharacterId));
     const location=scoutLocations.get(String(scoutSelectedCharacterId));
     if(summary){
       summary.textContent=location?.system
-        ?String(selected?.name||'Selected toon')+' • '+location.system+' • closest Field Tracker updates'
-        :'Select a location-enabled toon to rank nearby Field Tracker updates.';
+        ?String(selected?.name||'Selected toon')+' • '+location.system+' • closest scan updates'
+        :'Select a location-enabled toon to rank nearby scan updates.';
+    }
+    if(nearest){
+      if(scoutTargetsLoading){
+        nearest.innerHTML='<div class="adam-nearest-copy"><span>NEAREST MINING SYSTEM</span><strong>CHECKING…</strong><small>Calculating from the current Adam travel-toon location.</small></div>';
+      }else if(scoutNearestMining?.system){
+        nearest.innerHTML='<div class="adam-nearest-copy"><span>NEAREST MINING SYSTEM</span><strong>'+esc(scoutNearestMining.system)+'</strong><small>'+Number(scoutNearestMining.jumps||0)+' jump'+(Number(scoutNearestMining.jumps||0)===1?'':'s')+' from '+esc(location?.system||'current location')+' • available tracked field</small></div><button class="adam-copy-system" type="button" data-copy-system="'+esc(scoutNearestMining.system)+'">COPY SYSTEM</button>';
+      }else{
+        nearest.innerHTML='<div class="adam-nearest-copy"><span>NEAREST MINING SYSTEM</span><strong>—</strong><small>No available tracked mining field could be ranked from this location.</small></div>';
+      }
     }
     if(scoutTargetsLoading){
       host.innerHTML='<div class="visual-empty">Calculating closest update systems…</div>';
@@ -1690,7 +1684,7 @@
       return;
     }
     if(!scoutTargets.length){
-      host.innerHTML='<div class="visual-empty">No Field Tracker systems currently need a scan update.</div>';
+      host.innerHTML='<div class="visual-empty">No tracked systems currently need a scan update.</div>';
       return;
     }
     host.innerHTML=scoutTargets.map((row,index)=>{
@@ -1706,7 +1700,7 @@
     if(!me||scoutTargetsLoading)return;
     const chars=(me.characters||[]).filter(ch=>ch.locationAccess);
     if(!chars.length){
-      scoutTargets=[];scoutTargetsError='No linked toon currently has EVE location access.';renderScoutTargets();return;
+      scoutNearestMining=null;scoutTargets=[];scoutTargetsError='No toon currently has EVE location access.';renderScoutTargets();return;
     }
     if(!chars.some(ch=>String(ch.characterId)===String(scoutSelectedCharacterId))){
       const preferred=chars.find(ch=>String(ch.characterId)===String(scanCharacterId))
@@ -1727,8 +1721,10 @@
         scoutLocations.set(String(scoutSelectedCharacterId),response.location);
         scoutTargetsOriginSystem=String(response.location.system);
       }
+      scoutNearestMining=response?.nearestMining&&typeof response.nearestMining==='object'?response.nearestMining:null;
       scoutTargets=Array.isArray(response?.targets)?response.targets:[];
     }catch(error){
+      scoutNearestMining=null;
       scoutTargets=[];
       scoutTargetsError=String(error?.message||error||'Could not calculate nearby field updates.');
     }finally{
@@ -1773,6 +1769,21 @@
     renderScoutTargets();
   }
 
+  function adamMarkCurrent(){
+    const tab=document.querySelector('.app-tab[data-tab="brain"]');
+    if(!tab)return;
+    if(adamCurrentTimer)clearTimeout(adamCurrentTimer);
+    tab.classList.remove('scout-update');
+    tab.classList.add('adam-current');
+    tab.textContent='ADAM • CURRENT';
+    adamCurrentTimer=setTimeout(()=>{
+      if(tab.classList.contains('scout-update'))return;
+      tab.classList.remove('adam-current');
+      tab.textContent='ADAM';
+      adamCurrentTimer=null;
+    },8000);
+  }
+
   function scoutShowPrompt(snapshot){
     const panel=$('brainScanPrompt');
     const global=$('scoutGlobalAlert');
@@ -1784,7 +1795,7 @@
     if($('scoutGlobalAlertText'))$('scoutGlobalAlertText').textContent=text;
     const key=String(snapshot.characterId)+':'+String(snapshot.system);
     const tab=document.querySelector('.app-tab[data-tab="brain"]');
-    if(tab){tab.classList.add('scout-update');tab.textContent='⚠ ADAM • UPDATE';}
+    if(tab){if(adamCurrentTimer){clearTimeout(adamCurrentTimer);adamCurrentTimer=null}tab.classList.remove('adam-current');tab.classList.add('scout-update');tab.textContent='⚠ ADAM • UPDATE';}
     document.title='⚠ SCAN UPDATE • JLR';
     if(scoutPromptKey!==key){scoutPromptKey=key;toast('🛰 '+snapshot.characterName+': '+snapshot.system+' needs a scan update.')}
   }
@@ -1815,7 +1826,7 @@
           $('brainScanPrompt')?.classList.add('hidden');
           $('scoutGlobalAlert')?.classList.add('hidden');
           const scoutTab=document.querySelector('.app-tab[data-tab="brain"]');
-          if(scoutTab){scoutTab.classList.remove('scout-update');scoutTab.textContent='ADAM';}
+          if(scoutTab)adamMarkCurrent();
           document.title='JLR Miner Tracker';
         }
         if(snapshot.needsScan){
@@ -1833,7 +1844,7 @@
       if(selectedSnapshot?.system&&String(selectedSnapshot.system)!==String(scoutTargetsOriginSystem))void loadScoutTargets(true);
       if(prompt)scoutShowPrompt(prompt);
     }catch(error){
-      if(force)console.warn('Scout location check failed',error);
+      if(force)console.warn('Adam location check failed',error);
     }finally{
       scoutLocationBusy=false;
     }
@@ -1877,7 +1888,7 @@
         const mode=String(window.jlrVoiceMode||'unknown');
         toast(mode==='custom'?'🔊 TRACKER CUSTOM VOICE ONLINE.':mode==='fallback'?'⚠ Custom voice unavailable.':'🔊 Tracker voice played.');
         // Give the startup line room to finish, then immediately re-check
-        // whether the Scout's current system needs a spoken update.
+        // whether the Adam travel toon’s current system needs a spoken update.
         setTimeout(()=>pollScoutLocation(true),9000);
       }else{
         window.jlrReleaseAutoVoice?.();
@@ -2444,23 +2455,25 @@
       </div>
       <div class="tracker-brain-grid scout-ops-grid">
         <section class="brain-card adam-query-card">
-          <div class="brain-card-head"><strong>ASK ADAM</strong><small>Short follow-ups can use what you are already doing</small></div>
-          <div class="adam-question-row">
-            <textarea id="adamQuestion" rows="2" maxlength="900" placeholder="Ask about what you are looking at, what changed, or what to do next."></textarea>
-            <button id="adamAsk" class="orb green" type="button">ASK ADAM</button>
+          <div class="brain-card-head"><strong>ADAM</strong><small>Ask naturally — Adam already has the working context</small></div>
+          <div class="adam-conversation">
+            <div class="adam-message adam-message-adam"><span>ADAM</span><p id="adamReply">I’m here. Ask me about what you’re looking at, what changed, or where to go next.</p></div>
           </div>
-          <div id="adamSuggestions" class="adam-suggestions"></div>
-          <div id="adamReply" class="adam-reply">Adam is ready. He will use your current JLR context instead of making you repeat it.</div>
+          <div class="adam-question-row">
+            <textarea id="adamQuestion" rows="2" maxlength="900" placeholder="Ask Adam naturally…"></textarea>
+            <button id="adamAsk" class="adam-send" type="button" aria-label="Send question to Adam">SEND ↵</button>
+          </div>
         </section>
 
         <section class="brain-card scout-watch-card">
-          <div class="brain-card-head"><strong>SCOUT / TRAVEL WATCH</strong><small>Location-aware scan workflow</small></div>
+          <div class="brain-card-head"><strong>TRAVEL WATCH</strong><small>Location-aware scan workflow</small></div>
           <div class="brain-setting-grid scout-setting-grid">
             <label class="brain-setting"><span>TRAVEL TOON</span><select id="scoutCharacterSelect"><option value="">SELECT TOON</option></select></label>
             <label class="brain-setting"><span>AUTO FOLLOW TOONS</span><select id="brainFollowEnabled"><option value="on">ON</option><option value="off">OFF</option></select></label>
           </div>
           <div id="brainScanPrompt" class="brain-scan-prompt hidden" role="status"><span id="brainScanPromptText"></span><button id="brainScanOpen" class="board-tool" type="button">OPEN SCANNER</button></div>
-          <div class="brain-follow-head"><strong>CLOSEST FIELD UPDATES</strong><small id="scoutTargetSummary">Select a toon to calculate routes.</small></div>
+          <div id="adamNearestMining" class="adam-nearest-mining"><div class="adam-nearest-copy"><span>NEAREST MINING SYSTEM</span><strong>CHECKING…</strong><small>Calculating from the current Adam travel-toon location.</small></div></div>
+          <div class="brain-follow-head"><strong>CLOSEST SCAN UPDATES</strong><small id="scoutTargetSummary">Select a toon to calculate routes.</small></div>
           <div id="scoutTargetList" class="scout-target-list"><div class="visual-empty">Waiting for location…</div></div>
           <div class="brain-follow-head scout-linked-head"><strong>LINKED TOONS</strong><small id="brainFollowStatus">Checking location access…</small></div>
           <div id="brainFollowList" class="brain-follow-list"></div>
@@ -5755,7 +5768,7 @@
           :waitingLedger
             ?'Waiting for this toon’s first successful mining-ledger cache.'
             :!ch.locationAccess
-              ?'Location access is optional, but Scout / Adam routing cannot follow this toon yet.'
+              ?'Location access is optional, but Adam routing cannot follow this toon yet.'
               :'Skills, ledger and account access are current.';
 
       row.className='character-row toon-character-card toon-state-'+stateKey;
@@ -6150,15 +6163,23 @@
         adamRecordAction('scout-target',{system});
         applyTab('fields');
         chooseSystem(system);
-        toast('Scout target: '+system);
+        toast('Adam target: '+system);
       }
       return;
     }
-    const adamSuggestion=target.closest('.adam-suggestion[data-adam-question]');
-    if(adamSuggestion){
-      const question=String(adamSuggestion.dataset.adamQuestion||'').trim();
-      if($('adamQuestion'))$('adamQuestion').value=question;
-      await askAdamText(question);
+    const copySystem=target.closest('.adam-copy-system[data-copy-system]');
+    if(copySystem){
+      const system=String(copySystem.dataset.copySystem||'').trim();
+      if(system){
+        try{
+          await navigator.clipboard.writeText(system);
+          copySystem.textContent='COPIED ✓';
+          toast(system+' copied for EVE.');
+          setTimeout(()=>{if(copySystem.isConnected)copySystem.textContent='COPY SYSTEM'},1400);
+        }catch(error){
+          toast('Could not copy '+system+'.');
+        }
+      }
       return;
     }
     if(target.closest('#adamAsk')){
@@ -6192,7 +6213,7 @@
       await loadScoutTargets(true);
       const ch=(me?.characters||[]).find(row=>String(row.characterId)===String(scanCharacterId));
       adamRecordAction('location-check',{characterName:String(ch?.name||'')});
-      toast('Scout routes refreshed.');
+      toast('Adam routes refreshed.');
       return;
     }
     if(target.closest('#trackerRepeatLast')){
