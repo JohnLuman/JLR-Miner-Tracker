@@ -6,7 +6,7 @@ const app=fs.readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
 const index=fs.readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
 
 const tabs=[...index.matchAll(/data-tab="([^"]+)"/g)].map(m=>m[1]);
-const expected=['fields','brain','fleet','performance','ice','gas','doctrine','pvp','tracker','threat','mer','toons','feedback'];
+const expected=['fields','fleet','performance','tracker','ice','gas','doctrine','pvp','threat','mer','brain','toons','feedback'];
 assert.deepEqual(tabs,expected,'tab list changed; Tracker app knowledge must be updated with every tab');
 
 for(const tab of expected){
