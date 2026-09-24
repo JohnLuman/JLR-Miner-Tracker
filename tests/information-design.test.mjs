@@ -16,7 +16,7 @@ assert.match(index,/class="market-payout-pair"/,'Jita and C-N payout cards are b
 assert.match(fix=>fix,/.*/);
 assert.match(index,/MY TOONS PAYOUT • EVE DAY/,'personal payout is a primary KPI');
 assert.match(index,/class="kpi kpi-secondary"/,'secondary metrics remain available');
-assert.match(styles,/v2\.9\.142 — balanced operations summary/,'top summary uses the balanced 2-row layout');
+assert.match(styles,/v2\.9\.143 — balanced operations summary/,'top summary uses the balanced 2-row layout');
 assert.match(styles,/\.information-kpis\{grid-template-columns:repeat\(4,minmax\(0,1fr\)\);max-width:1040px/,'summary is capped and uses four equal columns');
 assert.match(styles,/\.information-kpis>\.market-payout-pair\{grid-column:span 2;display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/,'Jita and C-N are locked side-by-side in the payout pair');
 assert.match(index,/appLedgerCoverageBadge/,'app ledger coverage is a compact badge');
@@ -62,7 +62,7 @@ assert.ok(index.includes('/styles.css?v=2.9.143'),'main information-design CSS i
 assert.ok(index.includes('/tracker.css?v=2.9.143'),'Tracker information-design CSS is cache-busted');
 assert.ok(index.includes('/app.js?v=2.9.143'),'dashboard JS is cache-busted');
 assert.ok(index.includes('/tracker.js?v=2.9.143'),'Tracker loader is cache-busted');
-assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.142/,'Tracker core is cache-busted');
+assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.143/,'Tracker core is cache-busted');
 
 assert.match(styles,/\.app\.compact\{width:min\(1120px,calc\(100vw - 12px\)\);max-width:1120px\}/,'Compact app keeps a bounded design width');
 assert.match(styles,/\.app\.expanded\{width:min\(1600px,calc\(100vw - 12px\)\);max-width:1600px\}/,'Expanded app keeps a bounded design width');
