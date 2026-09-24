@@ -1439,7 +1439,7 @@
     return {bug:'BUG',suggestion:'FEATURE IDEA',speech:'SPEECH / VOICE',data:'DATA ISSUE',ui:'UI / UX',other:'OTHER'}[String(type||'')]||'FEEDBACK';
   }
   function feedbackAreaLabel(area){
-    return {general:'GENERAL',fields:'FIELDS',brain:'SCOUT',fleet:'FLEET & FITS',performance:'FLEET PERFORMANCE',ice:'ICE',gas:'GAS',doctrine:'DOCTRINE MARKET',pvp:'INIT PVP',tracker:'TRACKER',threat:'THREAT SCAN',mer:'MER INTEL',toons:'TOONS'}[String(area||'')]||String(area||'GENERAL').toUpperCase();
+    return {general:'GENERAL',fields:'FIELDS',brain:'ADAM',fleet:'FLEET & FITS',performance:'FLEET PERFORMANCE',ice:'ICE',gas:'GAS',doctrine:'DOCTRINE MARKET',pvp:'INIT PVP',tracker:'TRACKER',threat:'THREAT SCAN',mer:'MER INTEL',toons:'TOONS'}[String(area||'')]||String(area||'GENERAL').toUpperCase();
   }
   function renderFeedbackHub(){
     const source=$('feedbackDraftSource');
@@ -1510,7 +1510,7 @@
         <span class="tracker-assist-priority ${esc(issue.priority||'info')}">${esc(String(issue.priority||'info').toUpperCase())}</span>
         <strong>${esc(issue.title||'Tracker update')}</strong>
         <small>${esc(issue.reason||'')}</small>
-      </button>`).join(''):'<div class="visual-empty">No active Scout decisions require attention.</div>';
+      </button>`).join(''):'<div class="visual-empty">No current Adam recommendations require attention.</div>';
     }
   }
 
@@ -2505,7 +2505,7 @@
                   <label><span>AREA</span><select id="feedbackArea">
                     <option value="general">GENERAL</option>
                     <option value="fields">FIELDS</option>
-                    <option value="brain">SCOUT / TRACKING</option>
+                    <option value="brain">ADAM / SCOUT</option>
                     <option value="fleet">FLEET & FITS</option>
                     <option value="performance">FLEET PERFORMANCE</option>
                     <option value="ice">ICE</option>
@@ -6043,9 +6043,22 @@
       }
       return;
     }
+    const adamSuggestion=target.closest('.adam-suggestion[data-adam-question]');
+    if(adamSuggestion){
+      const question=String(adamSuggestion.dataset.adamQuestion||'').trim();
+      if($('adamQuestion'))$('adamQuestion').value=question;
+      await askAdamText(question);
+      return;
+    }
+    if(target.closest('#adamAsk')){
+      await askAdamText($('adamQuestion')?.value||'');
+      return;
+    }
     if(target.closest('#scoutCheckNow')){
       await pollScoutLocation(true);
       await loadScoutTargets(true);
+      const ch=(me?.characters||[]).find(row=>String(row.characterId)===String(scanCharacterId));
+      adamRecordAction('location-check',{characterName:String(ch?.name||'')});
       toast('Scout routes refreshed.');
       return;
     }
@@ -6147,6 +6160,14 @@
       brainLastSystem=decision.dataset.system;
       chooseSystem(brainLastSystem);
       return;
+    }
+  });
+
+  document.addEventListener('keydown',event=>{
+    if(event.target?.id!=='adamQuestion')return;
+    if(event.key==='Enter'&&!event.shiftKey){
+      event.preventDefault();
+      void askAdamText(event.target.value||'');
     }
   });
 
