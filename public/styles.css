@@ -2397,3 +2397,42 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
   .operations-summary-bar>.summary-cell{flex-basis:185px;min-height:66px}
   .operations-summary-bar>.summary-cell-payout{flex-basis:220px}
 }
+
+
+/* v2.9.144-compactbar1 — keep compact controls and summary on one row */
+/* Compact should be dense, not wrap the navigation into a second toolbar. */
+.app.compact .information-tabs{
+  flex-wrap:nowrap;
+  overflow-x:auto;
+  overflow-y:hidden;
+  white-space:nowrap;
+  scrollbar-width:thin;
+}
+.app.compact .information-tabs .app-tab{
+  flex:0 0 auto;
+  min-width:0;
+  padding-left:10px;
+  padding-right:10px;
+}
+.app.compact .information-tabs .app-tab-group-label{
+  flex:0 0 auto;
+  margin-left:4px;
+  padding-left:6px;
+  padding-right:2px;
+}
+
+/* Keep all six decision cells in one continuous bar in Compact mode too.
+   Give the two payout cells extra room for the accessibility-sized text. */
+@media(min-width:761px){
+  .app.compact .operations-summary-bar{
+    grid-template-columns:minmax(190px,1.45fr) minmax(190px,1.45fr) repeat(4,minmax(120px,1fr));
+    grid-auto-flow:column;
+    grid-auto-columns:minmax(120px,1fr);
+  }
+}
+@media(max-width:760px){
+  .app.compact .operations-summary-bar{
+    flex-wrap:nowrap;
+    overflow-x:auto;
+  }
+}
