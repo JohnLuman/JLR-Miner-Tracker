@@ -2503,3 +2503,60 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .app.compact .fleet-insight .fleet-insight-reason{
   font-size:8px!important;
 }
+
+
+/* v2.9.144-fleet-readability1 — readable fleet review typography */
+.fleet-command-panel .fleet-insight,
+.fleet-command-panel .fleet-command-kpis,
+.fleet-command-panel .fleet-command-card,
+.fleet-command-panel .fleet-history-controls,
+.fleet-command-panel .fleet-collection-note{
+  font-family:"Segoe UI",Arial,sans-serif;
+}
+.fleet-command-panel .fleet-insight>div:first-child span,
+.fleet-command-panel .fleet-control-caption,
+.fleet-command-panel .fleet-command-kpis article>span,
+.fleet-command-panel .visual-card-head small,
+.fleet-command-panel .fleet-history-totals span,
+.fleet-command-panel .ore-mix-kpis span{
+  font-family:"Segoe UI",Arial,sans-serif!important;
+  letter-spacing:.02em!important;
+  font-weight:700!important;
+}
+.fleet-command-panel .fleet-insight>div:first-child strong,
+.fleet-command-panel .fleet-command-kpis article>strong,
+.fleet-command-panel .visual-card-head strong,
+.fleet-command-panel .fleet-history-totals strong,
+.fleet-command-panel .ore-mix-kpis strong,
+.fleet-command-panel .ore-mix-compact-row strong,
+.fleet-command-panel .ore-mix-compact-row b{
+  font-family:"Segoe UI",Arial,sans-serif!important;
+  letter-spacing:0!important;
+  font-weight:700!important;
+}
+.fleet-command-panel .fleet-insight>div:first-child small,
+.fleet-command-panel .fleet-command-kpis article>small,
+.fleet-command-panel .fleet-history-totals small,
+.fleet-command-panel .ore-mix-kpis small,
+.fleet-command-panel .ore-mix-compact-row small,
+.fleet-command-panel .fleet-collection-note span{
+  font-family:"Segoe UI",Arial,sans-serif!important;
+  letter-spacing:0!important;
+  line-height:1.3!important;
+}
+.fleet-command-panel .fleet-chart-axis,
+.fleet-command-panel .fleet-chart-unit,
+.fleet-command-panel .fleet-target-label,
+.fleet-command-panel .fleet-latest-label{
+  font-family:"Segoe UI",Arial,sans-serif!important;
+  letter-spacing:0!important;
+  font-weight:600!important;
+}
+.app.expanded .fleet-command-panel .fleet-insight>div:first-child strong{font-size:16px}
+.app.expanded .fleet-command-panel .fleet-insight>div:first-child small{font-size:10px}
+.app.expanded .fleet-command-panel .fleet-command-kpis article>span{font-size:9px}
+.app.expanded .fleet-command-panel .fleet-command-kpis article>small{font-size:9px}
+.app.compact .fleet-command-panel .fleet-insight>div:first-child strong{font-size:13px}
+.app.compact .fleet-command-panel .fleet-insight>div:first-child small{font-size:8px}
+.app.compact .fleet-command-panel .fleet-command-kpis article>span{font-size:7.5px}
+.app.compact .fleet-command-panel .fleet-command-kpis article>small{font-size:7.5px}
