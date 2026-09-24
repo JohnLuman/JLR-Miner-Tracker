@@ -2574,3 +2574,23 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .fleet-latest-label{font-family:"Segoe UI",Arial,sans-serif!important;font-weight:700!important}
 .app.compact .fleet-command-card .visual-card-head>small,
 .app.compact .fleet-command-card .visual-card-head>div>small{font-size:7px}
+
+
+/* v2.9.144-fleet-states1 — explicit Fleet Performance data states */
+#fleetLiveStatus[data-state="ready"]{border-color:#355845;color:#9ed9b4;background:#102019}
+#fleetLiveStatus[data-state="waiting"]{border-color:#4b4f5b;color:#c3c8d0;background:#171920}
+#fleetLiveStatus[data-state="stale"]{border-color:#765f35;color:#e0c27f;background:#221c12}
+#fleetLiveStatus[data-state="partial"]{border-color:#725a32;color:#e2bb69;background:#211b12}
+#fleetLiveStatus[data-state="error"]{border-color:#7b3f49;color:#ff9da8;background:#241217}
+#fleetLiveStatus[data-state="empty"]{border-color:#41454f;color:#949aa5;background:#15171c}
+.fleet-state-empty{
+  display:grid;
+  place-items:center;
+  min-height:150px;
+  padding:18px;
+  text-align:center;
+  color:#aeb5bf;
+  font-family:"Segoe UI",Arial,sans-serif;
+  font-size:11px;
+  line-height:1.35;
+}
