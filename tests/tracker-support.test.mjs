@@ -60,6 +60,18 @@ const selectedSystem=firstTurn.resolve('e'.repeat(48),{
 });
 assert.equal(selectedSystem.question,'Explain K8L-X7','selected system resolves this-system references');
 
+const doctrineKey='f'.repeat(48);
+firstTurn.remember(doctrineKey,{
+  question:'Which doctrine item has the best ROI?',currentTab:'doctrine',
+  answer:{topic:'doctrine-roi',text:'High ROI Module has the best estimated ROI.',focusItem:'High ROI Module'},
+});
+const itemFollowup=firstTurn.resolve(doctrineKey,{question:'How many should I buy?',currentTab:'doctrine'});
+assert.match(itemFollowup.question,/High ROI Module/,'doctrine follow-up retains the item');
+const whyItem=firstTurn.resolve(doctrineKey,{question:'Why that item?',currentTab:'doctrine'});
+assert.equal(whyItem.answerOverride,null,'prior system answer must not override a doctrine item question');
+assert.match(whyItem.question,/High ROI Module/);
+assert.equal(trackerSupportAnswerContext({topic:'doctrine-item',focusItem:'High ROI Module'}).focusItem,'High ROI Module');
+
 const snapshot=store.exportState();
 const restored=new TrackerSessionStore({nowFn:()=>now});
 restored.importState(snapshot);

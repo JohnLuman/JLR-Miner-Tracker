@@ -118,6 +118,8 @@
   let brainLastSystem='';
   let adamAskBusy=false;
   let adamWorkingTab=localStorage.getItem('jlrAdamWorkingTab')||'fields';
+  let adamLastDoctrineItem='';
+  let adamLastDoctrineItemAt=0;
   let adamRecentActions=[];
   try{adamRecentActions=JSON.parse(localStorage.getItem('jlrAdamRecentActions')||'[]')}catch{}
   if(!Array.isArray(adamRecentActions))adamRecentActions=[];
@@ -339,6 +341,7 @@
       historyMetric:String(fleetHistoryMetric||''),
       historyDays:Number(fleetHistoryDays)||7,
       fieldStatus:selectedSystem&&state?.fields?.[selectedSystem]?String(state.fields[selectedSystem].status||''):'',
+      selectedDoctrineItem:Date.now()-adamLastDoctrineItemAt<30*60*1000?adamLastDoctrineItem:'',
       performance:adamPerformanceContext(),
       recentActions:adamRecentActions.filter(row=>Date.now()-Number(row?.at||0)<60*60*1000).slice(-8),
     };
@@ -358,6 +361,7 @@
     if(tab==='fleet')return'Ask Adam about a fit, boost, miner, output target, or what you are looking at…';
     if(tab==='toons')return'Ask Adam about a toon, ESI access, location readiness, or sync state…';
     if(tab==='threat')return'Ask Adam about this threat view or what the current data means…';
+    if(tab==='doctrine')return'Ask Adam which item has the best ROI, how much to buy, or what stock and sales show…';
     if(context.workflow==='scout-routing'||tab==='brain')return'Ask Adam where to go, what is closest, or what needs attention…';
     return'Ask Adam naturally about whatever you are looking at…';
   }
@@ -405,6 +409,7 @@
         }),
       });
       const answer=String(response?.text||'I do not have an answer for that yet.');
+      if(response?.focusItem){adamLastDoctrineItem=String(response.focusItem).slice(0,120);adamLastDoctrineItemAt=Date.now()}
       if(response?.focusSystem)brainLastSystem=String(response.focusSystem);
       else if(response?.closest?.system)brainLastSystem=String(response.closest.system);
       for(const reply of replies){

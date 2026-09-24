@@ -53,6 +53,7 @@ function cleanContext(value){
     historyMetric:clean(input.historyMetric,30),
     historyDays:finite(input.historyDays),
     fieldStatus:clean(input.fieldStatus,40),
+    selectedDoctrineItem:clean(input.selectedDoctrineItem,120),
     performance:{
       latestRate:finite(performance.latestRate),
       previousRate:finite(performance.previousRate),
@@ -81,6 +82,7 @@ function mergeContext(previous,current){
     historyMetric:pick(b.historyMetric,a.historyMetric),
     historyDays:pick(b.historyDays,a.historyDays),
     fieldStatus:pick(b.fieldStatus,a.fieldStatus),
+    selectedDoctrineItem:pick(b.selectedDoctrineItem,a.selectedDoctrineItem),
     performance:{
       latestRate:pick(b.performance.latestRate,a.performance.latestRate),
       previousRate:pick(b.performance.previousRate,a.performance.previousRate),
@@ -118,7 +120,7 @@ export class TrackerSessionStore{
     this.prune();
     let row=this.sessions.get(key);
     if(!row){
-      row={updatedAt:this.now(),lastTab:'',lastTopic:'',focus:null,lastContext:{},turns:[]};
+      row={updatedAt:this.now(),lastTab:'',lastTopic:'',focus:null,lastItem:null,lastContext:{},turns:[]};
       this.sessions.set(key,row);
     }
     return row;
@@ -132,6 +134,7 @@ export class TrackerSessionStore{
     const hasIncomingContext=Boolean(
       incoming.currentTab||incoming.workflow||incoming.selectedSystem||incoming.selectedCharacterId||
       incoming.selectedCharacterName||incoming.selectedMetric||incoming.targetOre||incoming.fieldStatus||
+      incoming.selectedDoctrineItem||
       incoming.recentActions.length||incoming.selectedFleetCount!==null||incoming.performance.latestRate!==null
     );
     const row=key?(this.sessions.get(key)||(hasIncomingContext?this.get(key):null)):null;
@@ -145,6 +148,7 @@ export class TrackerSessionStore{
     const lower=q.toLowerCase();
     const focus=row.focus;
     const focusFresh=Boolean(focus?.system)&&this.now()-Number(focus?.at||0)<=this.focusTtlMs;
+    const itemFresh=Boolean(row.lastItem?.item)&&this.now()-Number(row.lastItem?.at||0)<=this.focusTtlMs;
     const hasSystem=Boolean(explicitSystem(q));
     const recentScan=ctx.workflow==='scan-update'||ctx.recentActions.some(action=>action.kind==='scan-updated');
     let answerOverride=null;
@@ -193,7 +197,8 @@ export class TrackerSessionStore{
           jumps:Number.isFinite(focus.jumps)?focus.jumps:null,
           originSystem:focus.originSystem||'',
         };
-      }else if(/\bwhy (?:that|there|that one|that system)\b/.test(lower)&&focus.answerText){
+      }else if(/\bwhy (?:that|there|that one|that system)\b/.test(lower)&&focus.answerText
+        &&!(itemFresh&&(effectiveTab==='doctrine'||/\bitem\b/.test(lower)))){
         answerOverride={
           handled:true,
           topic:'support-context-why',
@@ -203,6 +208,15 @@ export class TrackerSessionStore{
         };
       }else if(/\bthat system\b/.test(lower)){
         resolvedQuestion=q.replace(/that system/ig,focus.system);
+      }
+    }
+
+    const item=itemFresh?row.lastItem.item:incoming.selectedDoctrineItem;
+    if(item&&(effectiveTab==='doctrine'||/\b(?:stock|price|profit|roi|margin|buy|sell|cost)\b/i.test(q))){
+      resolvedQuestion=resolvedQuestion.replace(/\b(?:that item|this item|that one)\b/ig,item)
+        .replace(/\b(?:its|it)\b/ig,word=>word.toLowerCase()==='its'?item+'’s':item);
+      if(/^(?:how many should i buy|how much should i buy|what(?:'s| is) (?:the )?(?:stock|price|profit|margin|cost))\??$/i.test(resolvedQuestion)){
+        resolvedQuestion+=' for '+item;
       }
     }
 
@@ -227,6 +241,7 @@ export class TrackerSessionStore{
     const text=clean(answer?.text,1000);
     const voiceText=clean(answer?.voiceText,600);
     const focus=focusFromAnswer(answer);
+    const focusItem=clean(answer?.focusItem,120);
 
     row.updatedAt=t;
     if(tab)row.lastTab=tab;
@@ -243,6 +258,7 @@ export class TrackerSessionStore{
         at:t,
       };
     }
+    if(focusItem)row.lastItem={item:focusItem,at:t};
     row.turns.push({at:t,question:q,tab,topic,focusSystem:focus.system||'',workflow:row.lastContext?.workflow||'',selectedSystem:row.lastContext?.selectedSystem||''});
     if(row.turns.length>this.maxTurns)row.turns=row.turns.slice(-this.maxTurns);
     this.prune();
@@ -261,6 +277,7 @@ export class TrackerSessionStore{
         originSystem:row.focus.originSystem||'',
         at:row.focus.at||0,
       }:null,
+      lastItem:row.lastItem?{item:row.lastItem.item,at:row.lastItem.at}:null,
       context:cleanContext(row.lastContext),
       turns:Array.isArray(row.turns)?row.turns.slice(-this.maxTurns):[],
     };
@@ -288,6 +305,7 @@ export function trackerSupportAnswerContext(answer){
     focusSystem:focus.system||'',
     jumps:Number.isFinite(focus.jumps)?focus.jumps:null,
     originSystem:focus.originSystem||'',
+    focusItem:clean(answer.focusItem,120),
     closest:answer.closest&&typeof answer.closest==='object'?{
       system:clean(answer.closest.system,80),
       jumps:Number.isFinite(Number(answer.closest.jumps))?Number(answer.closest.jumps):null,

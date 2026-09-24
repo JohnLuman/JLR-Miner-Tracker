@@ -9,6 +9,7 @@ import { DOCTRINE_SEED_B64 } from './lib/doctrine-seed.mjs';
 import { parseProbeScan, parseA0Scan, parseIceScan, parseWormholeGasScan } from './lib/probe-scan.mjs';
 import { nearestTrackedSystems } from './lib/brain-location.mjs';
 import { positiveLedgerDeltas, dueRouteStops, fountainRouteDestination, brainLiveIntent } from './lib/brain-intel.mjs';
+import { isDoctrineDataQuestion, answerDoctrineQuestion, answerMiningMarketQuestion } from './lib/adam-data.mjs';
 import { createTrackerSupportClient } from './lib/tracker-support-client.mjs';
 import { parseThreatPaste, compactThreatStats, threatActivityLabels, fountainThreatTags, jlrThreatScore, threatIgnoreReason } from './lib/threat-scan.mjs';
 import {
@@ -3853,12 +3854,98 @@ async function trackerBrainRouteAnswer(user,raw,options){
   }catch(error){console.warn('Tracker Fountain route lookup failed',String(error?.message||error));return{handled:true,topic:'route-error',text:'I could not verify a Fountain gate route from E S I right now. '+String(error?.message||error),voiceText:'I could not verify the Fountain route right now.',generatedAt:now()}}
 }
 
+async function trackerBrainDataAnswer(user,question,options={}){
+  const q=trackerBrainNormalize(question);
+  const tab=String(options.currentTab||options.context?.currentTab||'');
+  const context=trackerBrainContext(options.context);
+  const response=(topic,text,extra={})=>({handled:true,topic,text,voiceText:text,generatedAt:now(),...extra});
+
+  if(isDoctrineDataQuestion(question,tab)){
+    // The workbook and the market snapshot are protected even through Adam.
+    const access=await doctrineAccessForUser(user);
+    if(!access.allowed)return response('doctrine-access',access.message||'Doctrine Market access requires a linked INIT or INIT-blue character.');
+    doctrineRequested=true;
+    const cache=doctrineCache();
+    if(!doctrineRefreshPromise&&(
+      !doctrineTimestampFresh(cache.cnUpdatedAt,DOCTRINE_CN_REFRESH_MS)||
+      !doctrineTimestampFresh(cache.jitaUpdatedAt,DOCTRINE_JITA_REFRESH_MS)||
+      !doctrineTimestampFresh(cache.historyUpdatedAt,DOCTRINE_HISTORY_REFRESH_MS)
+    ))void refreshDoctrineMarket().catch(error=>console.warn('Doctrine refresh for Adam failed',String(error)));
+    const result=answerDoctrineQuestion({question,snapshot:await doctrineMarketSnapshot(),focusItem:context.selectedDoctrineItem});
+    return response(result.topic,result.text,{focusItem:result.focusItem||undefined,metrics:result.metrics||undefined});
+  }
+
+  const market=answerMiningMarketQuestion({
+    question,currentTab:tab,focusOre:context.targetOre,ores:effectiveOres(),
+    ice:Object.entries(ICE_REPROCESSING).map(([name])=>({name,market:state.market.icePrices?.[name]})),
+    gas:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{...row,market:state.market.gasPrices?.[name]}])),
+    updatedAt:state.market.lastUpdatedAt,
+  });
+  if(market)return response(market.topic,market.text);
+
+  const wantsBestField=/\b(?:best|highest|most valuable)\b/.test(q)&&/\b(?:field|system|site)\b/.test(q)
+    &&(tab==='fields'||/\b(?:t3|mining|mine|ore|field)\b/.test(q));
+  if(wantsBestField){
+    const scans=scanActivityPublic();
+    const available=effectiveSystems().filter(row=>{
+      const field=state.fields?.[row.system];
+      return field?.status==='ready'&&!field.cherryPicked&&scans?.[row.system]?.due===false;
+    }).sort((a,b)=>Number(b.siteJBV)-Number(a.siteJBV));
+    if(!available.length)return response('field-value','No tracked T3 field has both a ready state and a current confirmed scan. I cannot recommend a best field until a fresh scan confirms one.');
+    const best=available[0];
+    return response('field-value',best.system+' is the highest estimated Jita refined value among currently ready, recently scanned T3 fields: '+best.ore+', about '+Math.round(best.siteJBV).toLocaleString()+' ISK for the full site. That compares site value, not fleet ISK per hour, travel time or local threats.',{focusSystem:best.system});
+  }
+
+  const mentioned=SYSTEM_DEFS.find(row=>String(question).toUpperCase().includes(row.system))?.system;
+  const selected=/\b(?:this|that|selected|current) (?:system|field)\b/.test(q)&&tab==='fields'?context.selectedSystem:'';
+  const system=mentioned||selected;
+  if(system&&/\b(?:worth|value|isk)\b/.test(q)){
+    const definition=effectiveSystems().find(row=>row.system===system);
+    if(definition)return response('field-value',system+' has an estimated full-site Jita refined value of '+Math.round(definition.siteJBV).toLocaleString()+' ISK for '+definition.ore+'. That assumes the whole site is mined and does not account for travel, fleet yield, interruptions or current depletion.',{focusSystem:system});
+  }
+  if(system&&/\b(?:status|state|ready|scan|picked|cleared|respawn|timer|why|deplet|mined|what|how long)\b/.test(q)){
+    const detail=trackerBrainWhySystem(system);
+    if(detail)return response('field-detail',detail.system+' ('+detail.ore+'): '+detail.facts.join(' '),{focusSystem:detail.system,field:detail});
+  }
+
+  if((tab==='performance'||/\b(?:fleet performance|activity rate|measured rate)\b/.test(q))
+    &&/\b(?:current|now|actual|latest|how many|how much|compare|versus|vs|target|why|zero)\b/.test(q)){
+    const p=context.performance;
+    if(!p.sampleAt)return response('performance-live','I do not have a recent Fleet Performance ledger sample in this view yet. Open Fleet Performance after the ledger data loads and ask again.');
+    const rate=Number(p.latestRate)||0;
+    const target=Number(p.targetRate)||0;
+    const stale=Date.now()-Date.parse(p.sampleAt)>30*60*1000;
+    const zero=rate===0?(Number(p.sampledToons)>0?' No sampled toon had a positive mining-ledger change in that interval; ESI cannot tell whether mining stopped or a change has not appeared yet.':' No toons contributed to that interval, so zero does not establish that mining stopped.') :'';
+    return response('performance-live',`Latest ESI interval: ${Math.round(rate).toLocaleString()} m³/hr from ${Number(p.activeToons)||0} active of ${Number(p.sampledToons)||0} sampled toons (${p.sampleAt}). ${target>0?'Fitted target '+Math.round(target).toLocaleString()+' m³/hr; measured rate '+(rate/target*100).toFixed(0)+'% of target.':'No fitted fleet target is available.'}${zero}${stale?' The latest sample is over 30 minutes old.' :''} This is an interval estimate, not instant laser telemetry.`);
+  }
+
+  if(/\b(?:status|health|need attention|warnings)\b/.test(q)&&!/[a-z]+ (?:market|toon|character|field|system) status/.test(q)){
+    const snapshot=trackerBrainSnapshot();
+    const top=snapshot.issues.filter(row=>row.rank>=2).slice(0,3);
+    return response('app-status',snapshot.attentionCount
+      ?snapshot.attentionCount+' JLR items need attention. '+top.map(row=>row.title+': '+row.reason).join(' ')+' Use the relevant tab for details.'
+      :'JLR currently has no high or attention-priority issues in its tracked data.');
+  }
+  if(/\b(?:how many|count|number of)\b/.test(q)&&/\b(?:system|systems|field|fields)\b/.test(q)&&/\b(?:scan|update|stale|due)\b/.test(q)){
+    const due=Object.entries(scanActivityPublic()).filter(([,row])=>row?.due!==false);
+    return response('scan-count',due.length+' tracked systems currently need a scan update.'+(due.length?' First examples: '+due.slice(0,5).map(([system])=>system).join(', ')+'.':''));
+  }
+  if(/\b(?:how many|count|number of|list|which)\b/.test(q)&&/\b(?:toon|toons|character|characters)\b/.test(q)&&!/\b(?:nearest|closest|where|location)\b/.test(q)){
+    const linked=(user?.characterIds||[]).map(id=>state.characters[String(id)]?.name).filter(Boolean);
+    return response('linked-toons','Your JLR account has '+linked.length+' linked EVE character'+(linked.length===1?'':'s')+'.'+(linked.length?' '+linked.slice(0,15).join(', ')+(linked.length>15?' and '+(linked.length-15)+' more.':'.'):''));
+  }
+  return null;
+}
+
 async function trackerBrainLiveAnswer(user,question,options={}){
   const raw=trackerSpeechSafe(question,900);
   const intent=brainLiveIntent(raw);
   if(intent.kind==='earnings')return trackerBrainHourlyEarnings(user,options.payoutPct,intent.period);
   if(intent.kind==='route')return trackerBrainRouteAnswer(user,raw,options);
-  if(intent.kind==='general')return trackerBrainAnswer(user,question,options);
+  if(intent.kind==='general'){
+    const grounded=await trackerBrainDataAnswer(user,raw,options);
+    return grounded||trackerBrainAnswer(user,question,options);
+  }
   const q=trackerBrainNormalize(raw);
 
   const explicitOther=/\b(?:where is|where s|location of)\b/.test(q)&&!(/\b(?:my|me|i|closest|nearest)\b/.test(q));
@@ -4061,17 +4148,18 @@ const TRACKER_METRIC_KNOWLEDGE = [
 function trackerBrainKnowledgeLookup(question,currentTab=''){
   const q=trackerBrainNormalize(question);
   const tabKey=String(currentTab||'').trim().toLowerCase();
+  const explaining=/^(?:what is|what does|how does|explain|describe|tell me about|help me understand)\b/.test(q);
   for(const metric of TRACKER_METRIC_KNOWLEDGE){
-    if(metric.aliases.some(alias=>q.includes(alias)))return{kind:'metric',...metric};
+    if(explaining&&metric.aliases.some(alias=>q.includes(alias)))return{kind:'metric',...metric};
   }
 
   for(const [key,tab] of Object.entries(TRACKER_APP_KNOWLEDGE)){
-    if(tab.aliases.some(alias=>q===alias||q.includes(alias+' tab')||q.includes('the '+alias)||q.includes('about '+alias)||q.includes('explain '+alias)||q.includes('describe '+alias))){
+    if(tab.aliases.some(alias=>q===alias||explaining&&(q.includes(alias+' tab')||q.includes('the '+alias)||q.includes('about '+alias)||q.includes('explain '+alias)||q.includes('describe '+alias)))){
       return{kind:'tab',key,...tab};
     }
   }
 
-  const contextual=/\b(?:this|this tab|current tab|this page|screen|what am i looking at|what does this do|explain this|describe this|tell me about this)\b/.test(q);
+  const contextual=/^(?:what am i looking at|what does this (?:tab|page|screen) do|explain this (?:tab|page|screen)|describe this (?:tab|page|screen)|tell me about this (?:tab|page|screen))\b/.test(q);
   if(contextual&&TRACKER_APP_KNOWLEDGE[tabKey])return{kind:'tab',key:tabKey,...TRACKER_APP_KNOWLEDGE[tabKey]};
 
   return null;
@@ -4122,6 +4210,7 @@ function trackerBrainContext(value){
     historyMetric:trackerSpeechSafe(input.historyMetric,30),
     historyDays:finite(input.historyDays),
     fieldStatus:trackerSpeechSafe(input.fieldStatus,40),
+    selectedDoctrineItem:trackerSpeechSafe(input.selectedDoctrineItem,120),
     performance:{
       latestRate:finite(perf.latestRate),
       previousRate:finite(perf.previousRate),
@@ -4160,6 +4249,10 @@ function trackerBrainContextualQuestion(question,currentTab,context){
   }
   if(ctx.selectedCharacterName){
     out=out.replace(/\b(?:this|that) toon\b/ig,ctx.selectedCharacterName).replace(/\b(?:this|that) character\b/ig,ctx.selectedCharacterName);
+  }
+  if(ctx.selectedDoctrineItem&&(tab==='doctrine'||/\b(?:stock|price|profit|roi|margin|buy|sell|cost)\b/i.test(out))){
+    out=out.replace(/\b(?:that item|this item|that one)\b/ig,ctx.selectedDoctrineItem)
+      .replace(/\b(?:its|it)\b/ig,match=>match.toLowerCase()==='its'?ctx.selectedDoctrineItem+'’s':ctx.selectedDoctrineItem);
   }
   return out;
 }
@@ -4270,6 +4363,14 @@ function trackerBrainAnswer(user,question,options={}){
 
   if(/\b(version|build|release)\b/.test(q)){
     return answer('version','JLR Miner Tracker is running version '+appVersion+'.');
+  }
+
+  // A factual question without a supported data calculation should never
+  // receive a generic feature description that sounds like its answer.
+  if(/\b(?:which|best|highest|lowest|how much|how many|roi|return on investment|profit|margin|worth|current price|compare|should i buy)\b/.test(q)){
+    return answer('data-not-available',
+      'I cannot verify that answer from the data and context JLR currently exposes to Adam. Name the item, field, toon or metric you want compared, or open its tab so I can use the selected context.',
+      {handled:false});
   }
 
   if(/\b(field|fields|t3|respawn|cherry|cherry picked|ore site)\b/.test(q)){

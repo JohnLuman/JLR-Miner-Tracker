@@ -31,7 +31,7 @@ assert.match(styles,/\.jlr-donate-banner\{--donate-accent:var\(--theme-accent/,'
 assert.match(styles,/\.donate-top-link/,'global Donate control has a compact themed treatment');
 
 assert.match(index,/id="fleetInsight"/,'Fleet Performance has a decision-first live insight');
-assert.match(app,/LIVE RATE IS ABOVE THE SELECTED FLEET TARGET/,'Fleet insight interprets live rate versus target');
+assert.match(app,/Fleet rate met the fitted target/,'Fleet insight interprets live rate versus target');
 assert.match(app,/fleetInsightMeter/,'Fleet insight uses a compact target-comparison meter');
 assert.match(styles,/\.fleet-insight-meter/,'Fleet insight meter is styled');
 
@@ -49,7 +49,7 @@ assert.match(trackerCss,/\.fighter-loss-alarm-overlay/,'Heavy Fighter loss alarm
 assert.match(index,/id="scoutGlobalAlert"/,'Scout update requests are visible outside the Scout tab');
 assert.doesNotMatch(app,/NO MICROPHONE REQUIRED/,'Scout omits redundant microphone copy');
 assert.match(app,/id="scoutCharacterSelect"/,'Scout has a travel-toon selector');
-assert.match(app,/CLOSEST FIELD UPDATES/,'Scout exposes closest Field Tracker update targets');
+assert.match(app,/id="scoutTargetList"/,'Scout exposes closest Field Tracker update targets');
 
 assert.match(app,/appLedgerCoverageBadge/,'app ledger sync state is rendered as a badge');
 assert.match(app,/myLedgerCoverageBadge/,'personal ledger sync state is rendered as a badge');
@@ -59,7 +59,7 @@ assert.match(app,/fleetUptimeMeter/,'fleet target exposes the uptime assumption 
 assert.equal(pkg.version,'2.9.144');
 assert.ok(index.includes('/styles.css?v=2.9.144-adam-organic2'),'main information-design CSS is cache-busted');
 assert.ok(index.includes('/tracker.css?v=2.9.144-system-pass1'),'Tracker information-design CSS is cache-busted');
-assert.ok(index.includes('/app.js?v=2.9.144-adam-organic3'),'dashboard JS is cache-busted');
+assert.ok(index.includes('/app.js?v=2.9.144-adam-data1'),'dashboard JS is cache-busted');
 assert.ok(index.includes('/tracker.js?v=2.9.144-system-pass1'),'Tracker loader is cache-busted');
 assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.144-system-pass1/,'Tracker core is cache-busted');
 
@@ -79,7 +79,7 @@ assert.match(styles,/app-tab\.adam-current/,'Adam shows a calm current state aft
 assert.match(styles,/adam-nearest-mining/,'nearest mining system has a dedicated readable card');
 
 assert.match(index,/id="toonLinkedCount"/,'Toons tab has a linked-character summary');
-assert.match(app,/toon-state-ready/,'Toons tab renders explicit per-character data states');
+assert.match(app,/toon-state-'\+stateKey/,'Toons tab renders explicit per-character data states');
 assert.match(styles,/v2\.9\.144-system-pass1/,'system-wide UI pass is styled');
 assert.match(trackerCss,/tracker-hourly-badge/,'Tracker region selector shows its hourly refresh cadence');
 assert.match(styles,/\.market-end-label/,'market chart uses direct end labels');
