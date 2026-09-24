@@ -31,6 +31,6 @@ assert.equal(pkg.version,'2.9.133','Tracker intel release is versioned');
 assert.ok(index.includes('/tracker.css?v=2.9.133'),'browser loads Tracker intel CSS');
 assert.ok(index.includes('/tracker.js?v=2.9.133'),'browser loads Tracker loader');
 assert.ok(index.includes('/app.js?v=2.9.133'),'browser loads matching app release');
-assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.131/,'Tracker core cache is busted');
+assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.133/,'Tracker core cache is busted');
 
 console.log('Tracker intel add-on tests passed.');
