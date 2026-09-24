@@ -233,7 +233,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.129');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.130');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -323,7 +323,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR ADAM MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.129'),
+      'Version: '+String(state?.app?.version||'2.9.130'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -1289,6 +1289,7 @@
       area.dataset.seeded='1';
     }
     const recent=$('feedbackRecent');
+    if(recent)recent.classList.toggle('feedback-owner-full',feedbackOwner);
     const recentTitle=$('feedbackRecentTitle');
     const recentSubtitle=$('feedbackRecentSubtitle');
     if(recentTitle)recentTitle.textContent=feedbackOwner?'OWNER • ALL USER SUBMISSIONS':'MY RECENT SUBMISSIONS';
@@ -5682,7 +5683,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.129',
+          version:state?.app?.version||'2.9.130',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
