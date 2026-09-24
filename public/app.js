@@ -233,7 +233,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.128');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.129');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -323,7 +323,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR ADAM MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.128'),
+      'Version: '+String(state?.app?.version||'2.9.129'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -1289,20 +1289,26 @@
       area.dataset.seeded='1';
     }
     const recent=$('feedbackRecent');
+    const recentTitle=$('feedbackRecentTitle');
+    const recentSubtitle=$('feedbackRecentSubtitle');
+    if(recentTitle)recentTitle.textContent=feedbackOwner?'OWNER • ALL USER SUBMISSIONS':'MY RECENT SUBMISSIONS';
+    if(recentSubtitle)recentSubtitle.textContent=feedbackOwner
+      ?((feedbackOwnerCharacter||'OWNER ESI')+' VERIFIED • NEWEST FIRST')
+      :'Newest first';
     if(!recent)return;
     if(feedbackHistoryLoading){
-      recent.innerHTML='<div class="visual-empty">Loading your submissions…</div>';
+      recent.innerHTML='<div class="visual-empty">'+(feedbackOwner?'Loading all user submissions…':'Loading your submissions…')+'</div>';
       return;
     }
     if(!feedbackHistory.length){
-      recent.innerHTML='<div class="visual-empty">No feedback submitted from this account yet.</div>';
+      recent.innerHTML='<div class="visual-empty">'+(feedbackOwner?'No user feedback has been submitted yet.':'No feedback submitted from this account yet.')+'</div>';
       return;
     }
-    recent.innerHTML=feedbackHistory.slice(0,15).map(row=>`<article class="feedback-history-row">
+    recent.innerHTML=feedbackHistory.slice(0,feedbackOwner?100:15).map(row=>`<article class="feedback-history-row">
       <div class="feedback-history-top"><span class="feedback-kind ${esc(row.type||'other')}">${esc(feedbackTypeLabel(row.type))}</span><span class="feedback-status">${esc(String(row.status||'received').toUpperCase())}</span></div>
       <strong>${esc(row.title||row.message||'Feedback')}</strong>
       <p>${esc(row.message||'')}</p>
-      <small>${esc(feedbackAreaLabel(row.area))} • ${esc(String(row.impact||'normal').toUpperCase())} • ${esc(new Date(row.at).toLocaleString())}</small>
+      <small>${feedbackOwner&&row.displayName?('PILOT '+esc(row.displayName)+' • '):''}${esc(feedbackAreaLabel(row.area))} • ${esc(String(row.impact||'normal').toUpperCase())} • ${esc(new Date(row.at).toLocaleString())}</small>
     </article>`).join('');
   }
   async function loadFeedbackHistory(force=false){
@@ -1313,6 +1319,8 @@
     try{
       const payload=await api('/api/tracker/feedback');
       feedbackHistory=Array.isArray(payload?.rows)?payload.rows:[];
+      feedbackOwner=Boolean(payload?.owner);
+      feedbackOwnerCharacter=feedbackOwner?String(payload?.ownerCharacter||''):'';
     }catch(error){
       console.warn('Feedback history load failed',error);
       if(force)toast('Could not refresh feedback history.');
@@ -2029,6 +2037,8 @@
   let feedbackOpenedFrom=activeTab;
   let feedbackHistory=[];
   let feedbackHistoryLoading=false;
+  let feedbackOwner=false;
+  let feedbackOwnerCharacter='';
   function doctrineAllowed(){return Boolean(me?.doctrineMarketAccess?.allowed)}
   function trackerAllowed(){return Boolean(me?.trackerAccess?.allowed)}
   function syncTrackerTabAccess(){
@@ -2302,7 +2312,7 @@
               </div>
             </section>
             <section class="glass feedback-recent-card">
-              <div class="feedback-section-head"><div><strong>MY RECENT SUBMISSIONS</strong><small>Newest first</small></div><button id="feedbackRefresh" class="board-tool subtle" type="button">REFRESH</button></div>
+              <div class="feedback-section-head"><div><strong id="feedbackRecentTitle">MY RECENT SUBMISSIONS</strong><small id="feedbackRecentSubtitle">Newest first</small></div><button id="feedbackRefresh" class="board-tool subtle" type="button">REFRESH</button></div>
               <div id="feedbackRecent" class="feedback-recent"><div class="visual-empty">No submissions loaded yet.</div></div>
             </section>
           </aside>
@@ -5672,7 +5682,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.128',
+          version:state?.app?.version||'2.9.129',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
