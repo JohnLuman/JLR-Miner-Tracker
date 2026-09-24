@@ -27,10 +27,10 @@ assert.match(tracker,/PING CURRENT SYSTEM/,'interference report uses current-sys
 assert.match(tracker,/Signal interference increased in/,'interference increases can produce an Adam ping');
 assert.match(trackerCss,/tracker-intel-grid/,'Tracker intel panels are styled');
 
-assert.equal(pkg.version,'2.9.131','Tracker intel release is versioned');
-assert.ok(index.includes('/tracker.css?v=2.9.131'),'browser loads Tracker intel CSS');
-assert.ok(index.includes('/tracker.js?v=2.9.131'),'browser loads Tracker loader');
-assert.ok(index.includes('/app.js?v=2.9.131'),'browser loads matching app release');
+assert.equal(pkg.version,'2.9.132','Tracker intel release is versioned');
+assert.ok(index.includes('/tracker.css?v=2.9.132'),'browser loads Tracker intel CSS');
+assert.ok(index.includes('/tracker.js?v=2.9.132'),'browser loads Tracker loader');
+assert.ok(index.includes('/app.js?v=2.9.132'),'browser loads matching app release');
 assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.131/,'Tracker core cache is busted');
 
 console.log('Tracker intel add-on tests passed.');
