@@ -22,6 +22,11 @@ assert.match(index,/app-tab-group-label[^>]*>OPS</,'navigation has an Operations
 assert.match(index,/app-tab-group-label[^>]*>RESOURCES</,'navigation has a Resources group');
 assert.match(index,/app-tab-group-label[^>]*>INTEL</,'navigation has an Intel group');
 assert.match(index,/app-tab-group-label[^>]*>SYSTEM</,'navigation has a System group');
+assert.match(index,/id="donateTop"/,'global Donate control is present in the app header');
+assert.match(index,/paypal\.com\/ncp\/payment\/J7UYHR2RJFS6N/,'global Donate control uses the configured PayPal destination');
+assert.match(app,/jlr-donate-banner-feedback/,'Feedback hub contains the full Donate banner');
+assert.match(styles,/\.jlr-donate-banner\{--donate-accent:var\(--theme-accent/,'Donate banner inherits the active dashboard theme');
+assert.match(styles,/\.donate-top-link/,'global Donate control has a compact themed treatment');
 
 assert.match(index,/id="fleetInsight"/,'Fleet Performance has a decision-first live insight');
 assert.match(app,/LIVE RATE IS ABOVE THE SELECTED FLEET TARGET/,'Fleet insight interprets live rate versus target');
@@ -42,11 +47,11 @@ assert.match(app,/myLedgerCoverageBadge/,'personal ledger sync state is rendered
 assert.match(app,/outside tracked fields/,'ledger diagnostics distinguish payout rows from field attribution');
 assert.match(app,/fleetUptimeMeter/,'fleet target exposes the uptime assumption visually');
 
-assert.equal(pkg.version,'2.9.139');
-assert.ok(index.includes('/styles.css?v=2.9.139'),'main information-design CSS is cache-busted');
-assert.ok(index.includes('/tracker.css?v=2.9.139'),'Tracker information-design CSS is cache-busted');
-assert.ok(index.includes('/app.js?v=2.9.139'),'dashboard JS is cache-busted');
-assert.ok(index.includes('/tracker.js?v=2.9.139'),'Tracker loader is cache-busted');
+assert.equal(pkg.version,'2.9.140');
+assert.ok(index.includes('/styles.css?v=2.9.140'),'main information-design CSS is cache-busted');
+assert.ok(index.includes('/tracker.css?v=2.9.140'),'Tracker information-design CSS is cache-busted');
+assert.ok(index.includes('/app.js?v=2.9.140'),'dashboard JS is cache-busted');
+assert.ok(index.includes('/tracker.js?v=2.9.140'),'Tracker loader is cache-busted');
 assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.139/,'Tracker core is cache-busted');
 
 assert.match(styles,/\.app\.compact\{width:min\(1120px,calc\(100vw - 12px\)\);max-width:1120px\}/,'Compact app keeps a bounded design width');
