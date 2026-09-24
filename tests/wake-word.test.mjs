@@ -9,17 +9,19 @@ assert.match(app,/const ADAM_VOICE_ENABLED=false/,'Adam voice is hard-disabled i
 assert.match(app,/if\(!ADAM_VOICE_ENABLED\)return null/,'microphone acquisition is gated off');
 assert.doesNotMatch(app,/setTimeout\(\(\)=>startBrainListening\(\),1200\)/,'boot no longer starts microphone recognition');
 assert.doesNotMatch(app,/await refreshBrainMicrophones\(\);\s*startBrainLongUptimeWatchdog\(\)/,'boot no longer enumerates microphones or starts the mic watchdog');
-assert.match(index,/data-tab="brain" type="button">SCOUT<\/button>/,'live assistant tab is now Scout');
-assert.doesNotMatch(index,/data-tab="brain" type="button">ADAM<\/button>/,'Adam tab is removed from live navigation');
-assert.match(app,/JLR SCOUT \/\/ TRAVEL UPDATE WATCH/,'Scout replaces the live Adam control room');
-assert.doesNotMatch(app,/NO MICROPHONE REQUIRED/,'Scout does not waste space explaining the retired microphone');
+assert.match(index,/data-tab="brain" type="button">ADAM<\/button>/,'context assistant is presented as Adam');
+assert.doesNotMatch(index,/data-tab="brain" type="button">SCOUT<\/button>/,'Scout is a subsystem instead of the main tab identity');
+assert.match(app,/JLR ADAM \/\/ CONTEXT ASSISTANT/,'Adam context workspace is restored');
+assert.match(app,/id="adamQuestion"/,'Adam exposes typed contextual questions');
+assert.match(app,/id="adamAsk"/,'Adam has an explicit ask action');
+assert.match(app,/function adamContextSnapshot\(\)/,'Adam builds current JLR context for each question');
+assert.match(app,/SCOUT \/ TRAVEL WATCH/,'Scout travel logic remains inside Adam');
 assert.match(app,/id="scoutCharacterSelect"/,'Scout includes a travel-toon selector');
 assert.match(app,/CLOSEST FIELD UPDATES/,'Scout ranks nearby Field Tracker update targets');
-assert.doesNotMatch(app,/assistant\.innerHTML=\`[\s\S]*TALK TO ADAM/,'live Scout template has no Adam chat panel');
 assert.match(index,/id="scoutGlobalAlert"/,'Scout has a persistent app-wide update alert');
-assert.match(app,/SCOUT • UPDATE/,'Scout tab highlights when a scan update is due');
+assert.match(app,/ADAM • UPDATE/,'Adam tab highlights when Scout needs a scan update');
 
-assert.equal(pkg.version,'2.9.144','Scout no-mic release is versioned');
-assert.ok(index.includes('/app.js?v=2.9.144'),'browser cachebuster loads the Scout build');
+assert.equal(pkg.version,'2.9.144','Adam context release remains on the current app version');
+assert.ok(index.includes('/app.js?v=2.9.144'),'browser cachebuster loads the Adam build');
 
-console.log('Scout no-microphone regression tests passed.');
+console.log('Adam context / retired-microphone regression tests passed.');
