@@ -7309,7 +7309,14 @@ async function trackerIntelSnapshot(user,{force=false,regionId=TRACKER_INTEL_DEF
       :Number(regions[0]?.regionId)||TRACKER_INTEL_DEFAULT_REGION_ID;
   }
   const region=await trackerIntelRegionById(selectedId);
-  const hotZones=await trackerIntelRegionHotZones(region,{force});
+  const cachedHotZones=await trackerIntelRegionHotZones(region,{force});
+  // Jump counts are user/location-specific. Clone the persisted regional
+  // snapshot before decorating it so one pilot cannot contaminate the shared cache.
+  const hotZones={
+    ...cachedHotZones,
+    systems:(Array.isArray(cachedHotZones?.systems)?cachedHotZones.systems:[]).map(row=>({...row})),
+    bestHoursUtc:(Array.isArray(cachedHotZones?.bestHoursUtc)?cachedHotZones.bestHoursUtc:[]).map(row=>({...row})),
+  };
   const originSystemId=location?.systemId||null;
   const [essReports,interferenceReports]=await Promise.all([
     trackerIntelObservedRows('ess',originSystemId),
