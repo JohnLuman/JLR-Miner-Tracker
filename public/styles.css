@@ -2642,3 +2642,61 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
   gap:8px;
   flex-wrap:wrap;
 }
+
+
+/* v2.9.144-feedback-simple1 — low-friction feedback form */
+@media(min-width:981px){
+  .feedback-type-grid{grid-template-columns:repeat(5,minmax(0,1fr))}
+}
+.feedback-main-message textarea{
+  min-height:170px;
+  font-family:"Segoe UI",Arial,sans-serif;
+  font-size:11px;
+  line-height:1.45;
+}
+.feedback-context-note{
+  display:grid;
+  gap:3px;
+  margin:2px 0 9px;
+  padding:9px 10px;
+  border:1px solid #2d3943;
+  border-radius:7px;
+  background:#0c1218;
+}
+.feedback-context-note strong{
+  color:#9bc7df;
+  font:700 8px/1.2 "Segoe UI",Arial,sans-serif;
+  letter-spacing:.03em;
+}
+.feedback-context-note span{
+  color:#9099a5;
+  font:600 8px/1.35 "Segoe UI",Arial,sans-serif;
+}
+.feedback-more-details{
+  margin:0 0 10px;
+  border:1px solid #292f38;
+  border-radius:7px;
+  background:#0b0f14;
+  overflow:hidden;
+}
+.feedback-more-details>summary{
+  list-style:none;
+  cursor:pointer;
+  padding:8px 10px;
+  color:#8f98a4;
+  font:700 8px/1.2 "Segoe UI",Arial,sans-serif;
+  letter-spacing:.035em;
+  user-select:none;
+}
+.feedback-more-details>summary::-webkit-details-marker{display:none}
+.feedback-more-details>summary:after{content:"＋";float:right;color:#6f7782}
+.feedback-more-details[open]>summary:after{content:"−"}
+.feedback-more-details[open]>summary{
+  color:#bcc3cc;
+  border-bottom:1px solid #252b33;
+}
+.feedback-more-details-body{padding:9px}
+.feedback-more-details .feedback-meta-grid{margin-bottom:8px}
+.feedback-submit-row #feedbackSubmit{
+  min-width:150px;
+}
