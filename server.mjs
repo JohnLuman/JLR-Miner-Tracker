@@ -1114,12 +1114,22 @@ function miningLedgerDebug(){
 
 function publicState() {
   resetExpired(false);
-  const daily = state.esi.dailyFleet;
+  let daily = state.esi.dailyFleet;
   const today = dateUTC(); const weekStart = mondayUTC();
   const scans = scanActivityPublic();
   const ledgerDebug = miningLedgerDebug();
-  const sum = (predicate) => daily.filter(predicate).reduce((a,x)=>({m3:a.m3+Number(x.m3||0),jbv:a.jbv+Number(x.jbv||0),unpricedM3:a.unpricedM3+Number(x.unpricedM3||0)}),{m3:0,jbv:0,unpricedM3:0});
-  const todayActual = sum(x=>x.date===today); const weekActual = sum(x=>x.date>=weekStart);
+  const sum = (rows,predicate) => rows.filter(predicate).reduce((a,x)=>({m3:a.m3+Number(x.m3||0),jbv:a.jbv+Number(x.jbv||0),unpricedM3:a.unpricedM3+Number(x.unpricedM3||0)}),{m3:0,jbv:0,unpricedM3:0});
+  let todayActual = sum(daily,x=>x.date===today); let weekActual = sum(daily,x=>x.date>=weekStart);
+
+  // The raw per-character ledger cache is authoritative. If it already contains
+  // current-EVE-day T3 volume but the derived dailyFleet snapshot is stale,
+  // rebuild immediately instead of showing a false zero until the next full cycle.
+  if(ledgerDebug.cacheHealthy&&Number(ledgerDebug.matchedM3||0)>0&&Number(todayActual.m3||0)<=0){
+    rebuildDailyFleetFromLedgerCache();
+    daily=state.esi.dailyFleet;
+    todayActual=sum(daily,x=>x.date===today);
+    weekActual=sum(daily,x=>x.date>=weekStart);
+  }
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
@@ -4984,10 +4994,10 @@ async function applyLedgerResults(results,{fullCycle=false}={}){
   const coverageRatio=connectedIds.size>0?cachedConnectedIds.length/connectedIds.size:0;
   const cacheHealthy=coverageRatio>=LEDGER_HEALTH_RATIO;
   // Fleet payout remains useful with a small number of unavailable characters.
-  // Publish once at least 80% of linked character ledgers are cached; below that
-  // threshold preserve the last known aggregate rather than presenting a thin
-  // partial sample as the whole app payout.
-  if(cacheComplete||(fullCycle&&cacheHealthy)){
+  // Once at least 80% of linked character ledgers are cached, rebuild after any
+  // successful sync (manual or automatic). This keeps the payout from sitting
+  // on a stale zero while waiting for the next full fleet cycle.
+  if(cacheComplete||cacheHealthy){
     rebuildDailyFleetFromLedgerCache();
     if(!cacheComplete){
       console.warn('Mining ledger cache healthy partial: '+cachedConnectedIds.length+'/'+connectedIds.size+' ('+Math.round(coverageRatio*100)+'%); publishing available ledger totals.');
