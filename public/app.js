@@ -331,7 +331,7 @@
       selectedCharacterId:String(selectedCharacter?.characterId||scanCharacterId||''),
       selectedCharacterName:String(selectedCharacter?.name||''),
       selectedFleetCount:typeof selectedFleetPerformanceIds==='function'?selectedFleetPerformanceIds().length:0,
-      selectedMetric:activeTab==='performance'?String(fleetHistoryMetric||'m3'):'',
+      selectedMetric:currentContextTab==='performance'?String(fleetHistoryMetric||'m3'):'',
       targetOre:String(targetOre||''),
       historyMetric:String(fleetHistoryMetric||''),
       historyDays:Number(fleetHistoryDays)||7,
