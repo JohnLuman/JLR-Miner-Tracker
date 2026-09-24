@@ -57,9 +57,9 @@ assert.match(app,/outside tracked fields/,'ledger diagnostics distinguish payout
 assert.match(app,/fleetUptimeMeter/,'fleet target exposes the uptime assumption visually');
 
 assert.equal(pkg.version,'2.9.144');
-assert.ok(index.includes('/styles.css?v=2.9.144-system-pass1'),'main information-design CSS is cache-busted');
+assert.ok(index.includes('/styles.css?v=2.9.144-adam-organic2'),'main information-design CSS is cache-busted');
 assert.ok(index.includes('/tracker.css?v=2.9.144-system-pass1'),'Tracker information-design CSS is cache-busted');
-assert.ok(index.includes('/app.js?v=2.9.144-system-pass1'),'dashboard JS is cache-busted');
+assert.ok(index.includes('/app.js?v=2.9.144-adam-organic2'),'dashboard JS is cache-busted');
 assert.ok(index.includes('/tracker.js?v=2.9.144-system-pass1'),'Tracker loader is cache-busted');
 assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.144-system-pass1/,'Tracker core is cache-busted');
 
@@ -74,6 +74,10 @@ assert.match(app,/class="fleet-perf-row compact"/,'per-miner performance no long
 assert.doesNotMatch(app,/fleet-share-track/,'per-miner performance removes decorative share bars');
 assert.match(index,/id="adamQuickToggle"/,'Ask Adam is available outside the Adam tab');
 assert.match(index,/id="adamQuickPanel"/,'global Adam panel is present');
+assert.match(index,/adam-quick-conversation/,'global Adam uses a conversation layout');
+assert.match(styles,/app-tab\.adam-current/,'Adam shows a calm current state after an update clears');
+assert.match(styles,/adam-nearest-mining/,'nearest mining system has a dedicated readable card');
+
 assert.match(index,/id="toonLinkedCount"/,'Toons tab has a linked-character summary');
 assert.match(app,/toon-state-ready/,'Toons tab renders explicit per-character data states');
 assert.match(styles,/v2\.9\.144-system-pass1/,'system-wide UI pass is styled');
