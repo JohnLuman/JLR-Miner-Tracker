@@ -38,6 +38,28 @@ now+=31*60*1000;
 const expiredFocus=store.resolve('a'.repeat(48),{question:'How far is it?',currentTab:'fields'});
 assert.equal(expiredFocus.answerOverride,null,'stale conversational focus is not reused');
 
+const firstTurn=new TrackerSessionStore({nowFn:()=>now,focusTtlMs:30*60*1000,ttlMs:12*60*60*1000});
+const firstNext=firstTurn.resolve('c'.repeat(48),{
+  question:'Next one?',
+  currentTab:'fields',
+  context:{workflow:'scan-update',selectedSystem:'Y-2ANO',recentActions:[{kind:'scan-updated',at:now,tab:'fields',system:'Y-2ANO'}]},
+});
+assert.equal(firstNext.question,'closest tracked system needing a scan update','first Adam question can use the supplied scan workflow context');
+
+const firstPerf=firstTurn.resolve('d'.repeat(48),{
+  question:'Why is this low?',
+  currentTab:'performance',
+  context:{workflow:'performance-review',performance:{latestRate:600000,targetRate:900000,activeToons:28,sampledToons:30}},
+});
+assert.equal(firstPerf.question,'explain recent fleet performance variance','Fleet Performance short follow-up resolves from current tab context');
+
+const selectedSystem=firstTurn.resolve('e'.repeat(48),{
+  question:'Explain this system',
+  currentTab:'fields',
+  context:{selectedSystem:'K8L-X7'},
+});
+assert.equal(selectedSystem.question,'Explain K8L-X7','selected system resolves this-system references');
+
 const snapshot=store.exportState();
 const restored=new TrackerSessionStore({nowFn:()=>now});
 restored.importState(snapshot);
