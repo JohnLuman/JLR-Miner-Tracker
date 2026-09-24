@@ -102,7 +102,9 @@
     </section>
     <div id="tabHost" class="tab-host"></div>
 
-    <section class="glass tracker-assistant-panel"></section>\n\n    <section class="compact-row">
+    <section class="glass tracker-assistant-panel"></section>
+
+    <section class="compact-row">
       <details class="glass setup-drawer fleet-and-fits" open>
         <summary><span>⚙ FLEET & FITS</span><span id="setupSummary">Choose miners and fits</span></summary>
         <div class="fleet-setup-body">
@@ -255,6 +257,14 @@
           <div class="visual-card-head"><strong>LIVE ACTIVITY RATE</strong><small>15-minute ESI samples • updates automatically</small></div>
           <div id="fleetActivityChart" class="fleet-activity-chart"></div>
         </article>
+        <article class="fleet-command-card fleet-trend-card">
+          <div class="visual-card-head trend-head">
+            <div><strong>ORE VALUE TREND</strong><small>Jita vs C-N • last 30 days • ISK/m³</small></div>
+            <select id="oreTrendSelect" aria-label="Ore value trend"></select>
+          </div>
+          <div class="visual-legend"><span class="legend-jita">JITA</span><span class="legend-cn">C-N</span></div>
+          <div id="oreValueChart" class="market-line-chart"></div>
+        </article>
         <article class="fleet-command-card fleet-history-card">
           <div class="visual-card-head"><strong id="fleetHistoryTitle">DAILY MINING VOLUME</strong><small id="fleetHistorySubtitle">last 7 days • hover for daily totals</small></div>
           <div id="fleetHistoryTotals" class="fleet-history-totals">
@@ -273,17 +283,9 @@
 
     <section class="glass mining-visuals-panel">
       <div class="section-title"><div><strong>ORE VALUE & FIT ANALYTICS</strong></div><span class="muted tiny">Jita/C-N history • fit projection • ledger actuals</span></div>
-      <div class="mining-visual-grid">
+      <div class="mining-visual-grid mining-visual-grid-single">
         <article class="mining-visual-card">
-          <div class="visual-card-head trend-head">
-            <div><strong>ORE VALUE TREND</strong><small>Jita vs C-N • last 30 days • ISK/m³</small></div>
-            <select id="oreTrendSelect" aria-label="Ore value trend"></select>
-          </div>
-          <div class="visual-legend"><span class="legend-jita">JITA</span><span class="legend-cn">C-N</span></div>
-          <div id="oreValueChart" class="market-line-chart"></div>
-        </article>
-        <article class="mining-visual-card">
-          <div class="visual-card-head"><strong>FLEET PERFORMANCE</strong><small>100% rate • selected uptime • contribution</small></div>
+          <div class="visual-card-head"><strong>FLEET PERFORMANCE</strong><small>compact miner comparison • actual vs target</small></div>
           <div id="fleetOutputChart" class="fleet-performance"></div>
         </article>
       </div>
