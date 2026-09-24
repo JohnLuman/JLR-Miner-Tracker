@@ -18,7 +18,7 @@ assert.match(server,/publishing available ledger totals/,'partial fleet coverage
 assert.match(server,/if\(miningLedgerDebug\(\)\.cacheComplete\)rebuildDailyFleetFromLedgerCache\(\)/,'market refresh cannot independently rebuild fleet totals from a partial cache');
 assert.match(server,/Mining ledger cache empty: 0\//,'zero cached ledgers still preserve the previous fleet payout');
 
-assert.equal(pkg.version,'2.9.136','ledger restart protection is versioned');
-assert.ok(index.includes('/app.js?v=2.9.136'),'browser loads the ledger restart fix');
+assert.equal(pkg.version,'2.9.137','ledger restart protection is versioned');
+assert.ok(index.includes('/app.js?v=2.9.137'),'browser loads the ledger restart fix');
 
 console.log('Ledger restart cache regression tests passed.');
