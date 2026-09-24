@@ -5691,7 +5691,7 @@
     eventSource.onerror=()=>{$('liveBadge').textContent='⚠ DATA CONNECTION LOST';$('liveBadge').title='Live dashboard updates disconnected; the page is attempting to reconnect.'};
   }
 
-  document.addEventListener('change',event=>{
+  document.addEventListener('change',async event=>{
     const target=event.target;
     if(target?.id==='brainVoiceEnabled'){
       soundEnabled=target.value==='on';
