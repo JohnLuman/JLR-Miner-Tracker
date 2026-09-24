@@ -440,10 +440,12 @@
       const devices=Array.isArray(payload?.devices)?payload.devices:[];
       const locations=Array.isArray(payload?.locations)?payload.locations:[];
       const companionActive=Boolean(payload?.companionActive);
-      status.textContent=companionActive?'● ACTIVE • '+devices.length:(devices.length?'○ PAIRED • STANDBY':'○ NOT PAIRED');
-      detail.textContent=devices.length
-        ?locations.length+' toon'+(locations.length===1?'':'s')+' feeding • ESI fallback '+(companionActive?'standby':'active')
-        :'No Windows companion is paired to this account yet.';
+      status.textContent=companionActive?'● COMPANION ACTIVE':(devices.length?'○ COMPANION READY':'○ EVE LOCATION');
+      detail.textContent=companionActive
+        ?locations.length+' toon'+(locations.length===1?'':'s')+' updating from the Windows companion.'
+        :(devices.length
+          ?'Companion is paired and waiting for EVE movement.'
+          :'Using EVE location checks. Windows companion setup is optional.');
       if(feed){
         if(locations.length){
           const parts=locations.map(row=>{
@@ -457,7 +459,7 @@
           feed.classList.add('active');
           feed.style.setProperty('--companion-feed-seconds',Math.max(18,locations.length*4)+'s');
         }else{
-          feed.textContent=devices.length?'PAIRED • waiting for EVE Local movement…':'NO COMPANION FEED';
+          feed.textContent=devices.length?'COMPANION READY • waiting for movement…':'EVE LOCATION CHECKS ACTIVE';
           feed.classList.remove('active');
           feed.style.removeProperty('--companion-feed-seconds');
         }
@@ -2258,26 +2260,31 @@
         </section>
 
         <section class="brain-card">
-          <div class="brain-card-head"><strong>DESKTOP COMPANION</strong><small>Preferred movement source</small></div>
-          <div class="brain-follow-head"><strong id="brainCompanionStatus">CHECKING…</strong><small id="brainCompanionDetail">Checking paired Windows devices.</small></div>
+          <div class="brain-card-head"><strong>LOCATION TRACKING</strong><small>Automatic movement source</small></div>
+          <div class="brain-follow-head"><strong id="brainCompanionStatus">CHECKING…</strong><small id="brainCompanionDetail">Checking location tracking.</small></div>
           <div class="brain-companion-feed">
-            <span>LIVE FEED</span>
-            <div class="brain-companion-feed-window"><div id="brainCompanionFeedTrack" class="brain-companion-feed-track">WAITING FOR COMPANION FEED…</div></div>
+            <span>TOON FEED</span>
+            <div class="brain-companion-feed-window"><div id="brainCompanionFeedTrack" class="brain-companion-feed-track">WAITING FOR LOCATION FEED…</div></div>
           </div>
-          <div class="brain-companion-code">
-            <div><span>PAIR CODE</span><strong id="brainCompanionCode">—</strong><small id="brainCompanionExpiry"></small></div>
-            <button id="brainCompanionCopy" class="board-tool" type="button">COPY CODE</button>
-          </div>
-          <div class="tracker-assist-actions">
-            <button id="brainCompanionPair" class="orb purple" type="button">CREATE PAIR CODE</button>
-            <button id="brainCompanionRefresh" class="board-tool" type="button">REFRESH</button>
-            <button id="brainCompanionRevoke" class="board-tool subtle" type="button">REVOKE DEVICES</button>
-            <a class="board-tool" href="/downloads/INSTALL-JLR-TRACKER-COMPANION.cmd" download>DOWNLOAD WINDOWS COMPANION</a>
-          </div>
+          <details class="brain-advanced-tools">
+            <summary>COMPANION SETUP</summary>
+            <div class="brain-advanced-tools-body">
+              <div class="brain-companion-code">
+                <div><span>PAIR CODE</span><strong id="brainCompanionCode">—</strong><small id="brainCompanionExpiry"></small></div>
+                <button id="brainCompanionCopy" class="board-tool" type="button">COPY CODE</button>
+              </div>
+              <div class="tracker-assist-actions">
+                <button id="brainCompanionPair" class="orb purple" type="button">CREATE PAIR CODE</button>
+                <button id="brainCompanionRefresh" class="board-tool" type="button">REFRESH</button>
+                <button id="brainCompanionRevoke" class="board-tool subtle" type="button">REVOKE DEVICES</button>
+                <a class="board-tool" href="/downloads/INSTALL-JLR-TRACKER-COMPANION.cmd" download>DOWNLOAD WINDOWS COMPANION</a>
+              </div>
+            </div>
+          </details>
         </section>
 
         <section class="brain-card scout-decisions-card">
-          <div class="brain-card-head"><strong>CURRENT TRACKING DECISIONS</strong><small>Useful logic kept; voice/chat removed</small></div>
+          <div class="brain-card-head"><strong>SCOUT RECOMMENDATIONS</strong><small>Systems that may need attention</small></div>
           <div id="brainDecisionList" class="brain-decision-list"></div>
         </section>
       </div>`;
