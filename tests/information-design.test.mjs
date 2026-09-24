@@ -57,9 +57,9 @@ assert.match(app,/outside tracked fields/,'ledger diagnostics distinguish payout
 assert.match(app,/fleetUptimeMeter/,'fleet target exposes the uptime assumption visually');
 
 assert.equal(pkg.version,'2.9.144');
-assert.ok(index.includes('/styles.css?v=2.9.144-adam-organic2'),'main information-design CSS is cache-busted');
+assert.ok(index.includes('/styles.css?v=2.9.144-payout-fit1'),'main information-design CSS is cache-busted');
 assert.ok(index.includes('/tracker.css?v=2.9.144-system-pass1'),'Tracker information-design CSS is cache-busted');
-assert.ok(index.includes('/app.js?v=2.9.144-adam-data1'),'dashboard JS is cache-busted');
+assert.ok(index.includes('/app.js?v=2.9.144-payout-fit1'),'dashboard JS is cache-busted');
 assert.ok(index.includes('/tracker.js?v=2.9.144-system-pass1'),'Tracker loader is cache-busted');
 assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.144-system-pass1/,'Tracker core is cache-busted');
 
