@@ -20,13 +20,21 @@ function voiceHarness(fail=false,sharedStorage=new Map()){
   const listeners=new Map();
   let requests=0;
   class Audio{
-    constructor(){this.listeners=new Map();this.stopped=false}
+    constructor(){this.listeners=new Map();this.stopped=false;this._src=''}
     addEventListener(name,listener){this.listeners.set(name,listener)}
     emit(name){this.listeners.get(name)?.()}
+    set src(value){
+      this._src=String(value||'');
+      requests++;
+      events.push('stream-'+requests);
+      assert.match(this._src,/^\/api\/voice\/stream\/brain\?text=/,'conversational voice uses the streaming endpoint');
+    }
+    get src(){return this._src}
     play(){
       events.push('play');
       queueMicrotask(()=>{
         if(this.stopped)return;
+        if(fail){this.emit('error');return;}
         this.emit('playing');
         setTimeout(()=>{if(!this.stopped){events.push('ended');this.emit('ended')}},30);
       });
@@ -47,21 +55,7 @@ function voiceHarness(fail=false,sharedStorage=new Map()){
     documentElement:{},head:{appendChild(){}},
     createElement(){return{dataset:{}}},
   };
-  const fetch=async(url,options)=>{
-    assert.equal(url,'/api/voice/event');
-    assert.equal(options.credentials,'same-origin');
-    requests++;
-    events.push('fetch-'+requests);
-    if(fail)return{
-      ok:false,status:503,
-      headers:new Headers({'content-type':'application/json'}),
-      json:async()=>({message:'Worker unavailable'}),
-    };
-    return{
-      ok:true,headers:new Headers({'content-type':'audio/wav','x-jlr-voice-profile':'core'}),
-      arrayBuffer:async()=>new ArrayBuffer(128),
-    };
-  };
+  const fetch=async()=>{throw new Error('brain conversational voice should not use buffered fetch');};
   vm.runInNewContext(source,{
     window,document,localStorage,fetch,Audio,Blob,URL,Headers,AbortController,performance,
     MutationObserver:class{observe(){}},CustomEvent:class{},Element:class{},
@@ -74,9 +68,9 @@ const happy=voiceHarness();
 const spoken=await happy.window.jlrSpeakEvent('brain',{text:'First sentence '+('ready '.repeat(14))+'. Second sentence '+('ready '.repeat(14))+'.'});
 assert.equal(spoken,true);
 assert.equal(happy.requests,2);
-assert.ok(happy.events.indexOf('fetch-2')<happy.events.indexOf('ended'),'next chunk is requested while the first plays');
+assert.ok(happy.events.indexOf('ended')<happy.events.indexOf('stream-2'),'second chunk waits for the first stream to finish so CPU synthesis is not doubled');
 assert.equal(happy.window.jlrVoiceProfile,'core');
-assert.equal(happy.window.jlrVoiceTransport,'verified-buffered');
+assert.equal(happy.window.jlrVoiceTransport,'streaming');
 
 const version=voiceHarness();
 assert.equal(await version.window.jlrSpeakEvent('brain',{text:'Tracker is running version 2.9.113.'}),true);
@@ -84,8 +78,8 @@ assert.equal(version.requests,1,'a version number is one spoken sentence');
 
 const broken=voiceHarness(true);
 assert.equal(await broken.window.jlrSpeakEvent('brain',{text:'Test failure.'}),false);
-assert.match(broken.window.jlrVoiceLastError,/Worker unavailable/);
-assert.equal(broken.events.includes('play'),false);
+assert.match(broken.window.jlrVoiceLastError,/Streaming audio element failed/);
+assert.equal(broken.events.includes('play'),true,'streaming playback was attempted before the simulated media error');
 
 const sharedStorage=new Map();
 const firstTab=voiceHarness(false,sharedStorage);
