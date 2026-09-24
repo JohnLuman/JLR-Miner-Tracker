@@ -46,6 +46,7 @@ const trackerSupport = createTrackerSupportClient({
   timeoutMs: num(process.env.TRACKER_SUPPORT_TIMEOUT_MS, 900),
 });
 const MINING_SCOPE = 'esi-industry.read_character_mining.v1';
+const LEDGER_HEALTH_RATIO = 0.80;
 const SKILLS_SCOPE = 'esi-skills.read_skills.v1';
 const FITTINGS_SCOPE = 'esi-fittings.read_fittings.v1';
 const ASSETS_SCOPE = 'esi-assets.read_assets.v1';
@@ -1052,11 +1053,17 @@ function miningLedgerDebug(){
     }
   }
 
+  const coverageRatio=linkedCharacters>0?cachedCharacters/linkedCharacters:0;
+  const needsAccessCharacters=Object.values(state.characters||{}).filter(ch=>!Array.isArray(ch?.scopes)||!ch.scopes.includes(MINING_SCOPE)).length;
   return{
     day:today,
     linkedCharacters,
     cachedCharacters,
+    coverageRatio,
+    coveragePercent:Math.round(coverageRatio*1000)/10,
+    cacheHealthy:linkedCharacters>0&&coverageRatio>=LEDGER_HEALTH_RATIO,
     cacheComplete:linkedCharacters>0&&cachedCharacters>=linkedCharacters,
+    needsAccessCharacters,
     totalRows,
     todayRows,
     trackedSystemRows,
@@ -1082,7 +1089,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.141',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.142',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}])),wormholes:{reports:wormholeGasPublicReports(),reportHours:WORMHOLE_GAS_REPORT_TTL/3600000}},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans,
@@ -2309,7 +2316,7 @@ async function refreshMarketPrices(force=false) {
     }
     state.market.lastUpdatedAt=now();
     state.market.lastError=null;
-    if(miningLedgerDebug().cacheComplete)rebuildDailyFleetFromLedgerCache();
+    if(miningLedgerDebug().cacheHealthy)rebuildDailyFleetFromLedgerCache();
     await save();
   }catch(err){
     state.market.lastError=String(err.message||err);
@@ -3421,15 +3428,15 @@ function trackerBrainSnapshot(scans=scanActivityPublic(),debug=miningLedgerDebug
       voice:'Eve synchronization has a warning. Check the connected character status.',
       signature:'esi-sync-error|'+String(state.esi.lastError),
     });
-  }else if(!debug.cacheComplete){
-    const label=`${debug.cachedCharacters} of ${debug.linkedCharacters} character ledgers are ready`;
+  }else if(!debug.cacheHealthy){
+    const label=`${debug.cachedCharacters} of ${debug.linkedCharacters} character ledgers are ready (${Number(debug.coveragePercent||0).toFixed(0)}%)`;
     add({
       id:'esi-ledger-partial',
       type:'esi',
       priority:'info',
-      title:'Mining ledger cache is rebuilding',
+      title:'Mining ledger coverage below 80%',
       reason:label,
-      voice:`Mining ledger synchronization is still in progress. ${label}.`,
+      voice:`Mining ledger synchronization coverage is below the healthy threshold. ${label}.`,
       signature:`esi-ledger-partial|${debug.cachedCharacters}|${debug.linkedCharacters}`,
     });
   }
@@ -3659,14 +3666,16 @@ async function trackerBrainCharacterLocation(ch,user=null){
   }
 }
 
-async function trackerBrainNearestSystems(originSystemId,{updatesOnly=false,limit=1}={}){
+async function trackerBrainNearestSystems(originSystemId,{updatesOnly=false,limit=1,fieldOnly=false}={}){
   const activity=scanActivityPublic();
-  const names=new Set([
-    ...SYSTEM_DEFS.map(row=>row.system),
-    ...(state.market?.iceFields||[]).map(row=>row.system),
-    ...(state.market?.a0Fields||[]).map(row=>row.system),
-    ...Object.keys(state.market?.a0Reports||{}),
-  ].filter(Boolean));
+  const names=new Set((fieldOnly
+    ?SYSTEM_DEFS.map(row=>row.system)
+    :[
+      ...SYSTEM_DEFS.map(row=>row.system),
+      ...(state.market?.iceFields||[]).map(row=>row.system),
+      ...(state.market?.a0Fields||[]).map(row=>row.system),
+      ...Object.keys(state.market?.a0Reports||{}),
+    ]).filter(Boolean));
   const eligible=[...names].filter(system=>{
     const field=state.fields?.[system];
     const respawning=field?.status==='cleared'&&Date.parse(field.timerEndsAt||'')>Date.now();
@@ -4054,7 +4063,7 @@ function trackerBrainAnswer(user,question,options={}){
   const snapshot=trackerBrainSnapshot();
   const linked=(user?.characterIds||[]).map(String).filter(Boolean);
   const primaryName=trackerBrainPrimaryName(user);
-  const appVersion='2.9.141';
+  const appVersion='2.9.142';
 
   const voiceSummary=(text,max=120)=>{
     const clean=trackerSpeechSafe(text,1200).replace(/\s+/g,' ').trim();
@@ -4929,20 +4938,19 @@ async function applyLedgerResults(results,{fullCycle=false}={}){
   for(const id of ledgerSnapshotAtByCharacter.keys())if(!connectedIds.has(id))ledgerSnapshotAtByCharacter.delete(id);
   const cachedConnectedIds=[...connectedIds].filter(id=>ledgerRowsByCharacter.has(id));
   const cacheComplete=cachedConnectedIds.length>=connectedIds.size&&connectedIds.size>0;
-  // A never-synced/orphan linked character must not freeze the entire app ledger
-  // at a stale value. Existing cached characters are still exact ESI ledger data,
-  // so after a full fleet pass we publish the available aggregate and expose the
-  // coverage through ledgerDebug (for example 99/100 = PARTIAL).
-  //
-  // We still refuse to replace the fleet aggregate when zero linked-character
-  // ledgers are available, which protects against a total cache/storage failure.
-  if(cacheComplete||(fullCycle&&cachedConnectedIds.length>0)){
+  const coverageRatio=connectedIds.size>0?cachedConnectedIds.length/connectedIds.size:0;
+  const cacheHealthy=coverageRatio>=LEDGER_HEALTH_RATIO;
+  // Fleet payout remains useful with a small number of unavailable characters.
+  // Publish once at least 80% of linked character ledgers are cached; below that
+  // threshold preserve the last known aggregate rather than presenting a thin
+  // partial sample as the whole app payout.
+  if(cacheComplete||(fullCycle&&cacheHealthy)){
     rebuildDailyFleetFromLedgerCache();
     if(!cacheComplete){
-      console.warn('Mining ledger cache partial: '+cachedConnectedIds.length+'/'+connectedIds.size+'; publishing available ledger totals.');
+      console.warn('Mining ledger cache healthy partial: '+cachedConnectedIds.length+'/'+connectedIds.size+' ('+Math.round(coverageRatio*100)+'%); publishing available ledger totals.');
     }
   }else if(fullCycle){
-    console.warn('Mining ledger cache empty: 0/'+connectedIds.size+'; preserving previous dailyFleet totals.');
+    console.warn('Mining ledger cache below 80%: '+cachedConnectedIds.length+'/'+connectedIds.size+'; preserving previous dailyFleet totals.');
   }
   await saveLedgerCache();
   if(successful.length)state.esi.lastSyncAt=sampleAt;
@@ -4952,7 +4960,8 @@ async function applyLedgerResults(results,{fullCycle=false}={}){
     const match=String(result.error||'').match(/ESI\s+(\d{3})/i);
     return match?`ESI ${match[1]}`:'request error';
   }))];
-  state.esi.lastError=failed
+  const postDebug=miningLedgerDebug();
+  state.esi.lastError=failed&&!postDebug.cacheHealthy
     ?`${failed} of ${results.length} character refreshes failed${failureKinds.length?` (${failureKinds.slice(0,3).join(', ')})`:''}.`
     :null;
 }
@@ -5022,7 +5031,7 @@ function myProfile(user) {
         scopes,
         locationAccess:scopes.includes(LOCATION_SCOPE),
         contactsAccess:hasThreatContactAccess(scopes),
-        needsReauth:!scopes.includes(SKILLS_SCOPE)||!scopes.includes(FITTINGS_SCOPE)||!scopes.includes(ASSETS_SCOPE)||!scopes.includes(LOCATION_SCOPE)||!hasThreatContactAccess(scopes),
+        needsReauth:!scopes.includes(MINING_SCOPE)||!scopes.includes(SKILLS_SCOPE)||!scopes.includes(FITTINGS_SCOPE)||!scopes.includes(ASSETS_SCOPE)||!scopes.includes(LOCATION_SCOPE)||!hasThreatContactAccess(scopes),
         marketEligible:c.name===MARKET_CHARACTER_NAME,
         marketAuthorized:c.name===MARKET_CHARACTER_NAME&&String(state.market.characterId||'')===String(c.characterId)&&Boolean(state.market.refreshTokenEnc),
         skills:c.skills||{},
@@ -7788,7 +7797,7 @@ async function routeApi(req,res,url) {
     });
     return res.end(ref.audio);
   }
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.141',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.142',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -8007,7 +8016,7 @@ async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname==='/api/tracker/speech/diagnostics'){
     const voiceWorker=await trackerVoiceHealth().catch(err=>({configured:Boolean(TRACKER_TTS_WORKER_URL),reachable:false,message:String(err?.message||err)}));
     return json(res,200,{
-      version:'2.9.141',
+      version:'2.9.142',
       modelCached:Boolean(voskModelArchive),
       modelBytes:voskModelArchive?.length||0,
       modelSource:voskModelSource||null,
@@ -8047,6 +8056,39 @@ async function routeApi(req,res,url) {
       catch(error){return{characterId:id,error:error?.code||'ESI_LOCATION_FAILED'}}
     }));
     return json(res,200,{locations:results.filter(row=>!row.error),errors:results.filter(row=>row.error),checkedAt:now()});
+  }
+  if(req.method==='POST'&&url.pathname==='/api/scout/targets'){
+    if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
+    let body;
+    try{body=await readBody(req,2_000)}
+    catch(err){return json(res,400,{error:'BAD_SCOUT_REQUEST',message:String(err.message||err)})}
+    const characterId=String(body?.characterId||'');
+    if(!characterId||!(user.characterIds||[]).map(String).includes(characterId))return json(res,404,{error:'CHARACTER_NOT_LINKED'});
+    const ch=state.characters[characterId];
+    if(!ch)return json(res,404,{error:'CHARACTER_NOT_LINKED'});
+    try{
+      const location=await scoutLocationSnapshot(ch,user);
+      const nearest=await trackerBrainNearestSystems(location.systemId,{updatesOnly:true,limit:5,fieldOnly:true});
+      const targets=nearest.rows.map(row=>{
+        const activity=row.activity||{};
+        const ledger=activity.ledger||null;
+        const reason=ledger?.likelyDepleted?'LIKELY DEPLETED'
+          :ledger?.needsScan?'LEDGER REQUESTS SCAN'
+          :activity.lastScanAt?'SCAN STALE'
+          :'NEVER SCANNED';
+        return{
+          system:row.system,
+          jumps:row.jumps,
+          reason,
+          lastScanAt:activity.lastScanAt||null,
+          ledgerNeedsScan:Boolean(ledger?.needsScan||ledger?.likelyDepleted),
+        };
+      });
+      return json(res,200,{characterId,characterName:ch.name,location,targets,candidates:nearest.candidates,checkedAt:now()});
+    }catch(error){
+      if(error?.code==='LOCATION_SCOPE_REQUIRED'||error?.code==='COMPANION_WAITING')return json(res,409,{error:error.code,message:error.message});
+      return json(res,502,{error:'SCOUT_TARGETS_FAILED',message:String(error.message||error)});
+    }
   }
   if(req.method==='GET'&&url.pathname==='/api/tracker/brain'){
     return json(res,200,trackerBrainSnapshot());
@@ -8643,7 +8685,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.141 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.142 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>{
   Promise.all([
     loadVoskRuntimeAsset(VOSK_RUNTIME_FILES['/vendor/vosk/vosk-0.0.8.js']),
