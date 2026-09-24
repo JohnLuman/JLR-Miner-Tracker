@@ -17,6 +17,7 @@
   let eventSource = null;
   let fleetPerformanceRefreshPromise = null;
   let fleetPerformanceSnapshotPromise = null;
+  let fleetPerformanceSnapshotRequestKey = '';
   let fleetPerformanceData = null;
   let fleetPerformanceSelectionKey = '';
   let scanCharacterId = localStorage.getItem('jlrScanCharacter') || '';
@@ -4558,7 +4559,11 @@
     const characterIds=selectedFleetPerformanceIds();
     const key=fleetPerformanceKey(characterIds);
     if(!force&&fleetPerformanceData&&fleetPerformanceSelectionKey===key)return fleetPerformanceData;
-    if(fleetPerformanceSnapshotPromise)return fleetPerformanceSnapshotPromise;
+    if(fleetPerformanceSnapshotPromise){
+      if(fleetPerformanceSnapshotRequestKey===key)return fleetPerformanceSnapshotPromise;
+      return fleetPerformanceSnapshotPromise.finally(()=>refreshFleetPerformanceSnapshot(true));
+    }
+    fleetPerformanceSnapshotRequestKey=key;
     const pending=api('/api/fleet-performance',{
       method:'POST',
       body:JSON.stringify({characterIds}),
@@ -4571,7 +4576,10 @@
       if(fleetPerformanceSelectionKey!==key)fleetPerformanceData=null;
       return null;
     }).finally(()=>{
-      if(fleetPerformanceSnapshotPromise===pending)fleetPerformanceSnapshotPromise=null;
+      if(fleetPerformanceSnapshotPromise===pending){
+        fleetPerformanceSnapshotPromise=null;
+        fleetPerformanceSnapshotRequestKey='';
+      }
     });
     fleetPerformanceSnapshotPromise=pending;
     return pending;
@@ -4714,18 +4722,18 @@
     $('fleetLiveRate').textContent=latest?`${fmt(liveRate,'m3')} m³/hr`:'—';
     $('fleetLiveRateSub').textContent=latest?(liveRate>0?'latest detected mining interval':'no increase in latest interval'):'waiting for a mining interval';
     $('fleetActiveToons').textContent=latest?`${Number(latest.activeToons||0)} / ${Number(latest.sampledToons||0)}`:'—';
-    $('fleetActiveToonsSub').textContent=latest?'active / sampled in latest sync':'detected in latest sample';
+    $('fleetActiveToonsSub').textContent=latest?'assigned miners active / sampled in latest sync':'assigned miners in latest sample';
     $('fleetTodayM3').textContent=`${fmt(performance.actual?.today?.m3||0,'m3')} m³`;
     $('fleetTodayPayout').textContent=`${fmt(actualValue(performance.actual?.today?.jbv||0))} ISK`;
-    $('fleetTodayPayoutSub').textContent=`tracked T3 value × ${(payout*100).toFixed(1)}% payout`;
+    $('fleetTodayPayoutSub').textContent=`assigned fleet • tracked T3 value × ${(payout*100).toFixed(1)}% payout`;
     $('fleetRangeTotalLabel').textContent=`${fleetHistoryDays}D MINED`;
     $('fleetRangeTotal').textContent=`${fmt(rangeM3,'m3')} m³`;
     $('fleetRangeTotalSub').textContent=`${fmt(rangeValue)} ISK tracked payout`;
     $('fleetBestDay').textContent=best&&Number(best.m3)>0?`${fmt(best.m3,'m3')} m³`:'—';
     $('fleetBestDaySub').textContent=best&&Number(best.m3)>0?chartDateLabel(best.date):'no production history yet';
     $('fleetHistoryTitle').textContent=fleetHistoryMetric==='value'?'DAILY ISK PAYOUT':'DAILY MINING VOLUME';
-    $('fleetHistorySubtitle').textContent=fleetHistoryMetric==='value'?`bars show ISK payout • last ${fleetHistoryDays} days • hover for daily totals`:`bars show mined m³ • last ${fleetHistoryDays} days • hover for daily totals`;
-    $('fleetOreMixSubtitle').textContent=`last ${fleetHistoryDays} days • mined m³ by ore`;
+    $('fleetHistorySubtitle').textContent=fleetHistoryMetric==='value'?`assigned miners • ISK payout • last ${fleetHistoryDays} days`:`assigned miners • mined m³ • last ${fleetHistoryDays} days`;
+    $('fleetOreMixSubtitle').textContent=`assigned miners • last ${fleetHistoryDays} days • mined m³ by ore`;
     renderFleetActivityChart($('fleetActivityChart'),samples,target);
     renderFleetDailyChart($('fleetHistoryChart'),daily,fleetHistoryMetric);
     renderFleetOreMix($('fleetOreMix'),daily);
