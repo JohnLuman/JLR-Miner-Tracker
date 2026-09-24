@@ -233,7 +233,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.138');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.139');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -323,7 +323,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR ADAM MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.138'),
+      'Version: '+String(state?.app?.version||'2.9.139'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -3927,47 +3927,55 @@
     $('cnValueKpi').textContent=cnHourly===null?'—':`${fmt(cnHourly)}/hr`;
     $('cnValueSub').textContent=cnHourly===null?'C-N private mineral price unavailable':`${cnPerM3.toFixed(2)} ISK/m³ • ${(payout*100).toFixed(1)}% payout • prices ${ago(state.market?.lastUpdatedAt)}`;
 
-    $('actualTodayM3').textContent=fmt(state.esi.actual.today.m3,'m3');
     const ledgerDebug=state.esi?.ledgerDebug||null;
-    if(ledgerDebug){
-      const cacheText=`cache ${Number(ledgerDebug.cachedCharacters||0)}/${Number(ledgerDebug.linkedCharacters||0)}`;
-      const rowText=`today rows ${Number(ledgerDebug.todayRows||0)} • matched T3 ${Number(ledgerDebug.matchedT3Rows||0)}`;
-      const rejectText=(Number(ledgerDebug.unmatchedSystemRows||0)||Number(ledgerDebug.unmatchedOreRows||0))
-        ?` • rejected system ${Number(ledgerDebug.unmatchedSystemRows||0)} • ore ${Number(ledgerDebug.unmatchedOreRows||0)}`
-        :'';
-      $('actualTodaySub').textContent=`${cacheText} • ${rowText}${rejectText}${state.esi.lastSyncAt?' • synced '+ago(state.esi.lastSyncAt):''}`;
-    }else{
-      $('actualTodaySub').textContent=state.esi.lastSyncAt?`tracked T3 ledger • EVE day (UTC) • synced ${ago(state.esi.lastSyncAt)}`:'waiting for first EVE ledger sync';
-    }
+    const appTodayM3=Math.max(0,Number(state.esi.actual.today.m3)||0);
     $('actualTodayIsk').textContent=fmt(actualValue(state.esi.actual.today.jbv));
     const payoutPriceBasis=state.market?.jitaBuyBasis==='janice-immediate-buy'?'Janice Jita buy':'ESI Jita buy fallback';
-    const unpricedM3=Number(state.esi.actual.today.unpricedM3||0);
-    const ledgerCoverage=ledgerDebug
-      ?Number(ledgerDebug.cachedCharacters||0)+'/'+Number(ledgerDebug.linkedCharacters||0)+(ledgerDebug.cacheComplete?' TOONS':' TOONS • PARTIAL')
-      :'ALL JLR-LINKED TOONS';
-    const appCoveragePct=ledgerDebug&&Number(ledgerDebug.linkedCharacters)>0
-      ?Math.max(0,Math.min(100,Number(ledgerDebug.cachedCharacters||0)/Number(ledgerDebug.linkedCharacters)*100))
-      :0;
-    if($('appLedgerCoverageMeter'))$('appLedgerCoverageMeter').style.width=appCoveragePct.toFixed(1)+'%';
+    const unpricedM3=Math.max(0,Number(state.esi.actual.today.unpricedM3)||0);
+    const appCached=Number(ledgerDebug?.cachedCharacters||0);
+    const appLinked=Number(ledgerDebug?.linkedCharacters||0);
+    const appCoverageBadge=$('appLedgerCoverageBadge');
+    if(appCoverageBadge){
+      appCoverageBadge.textContent=ledgerDebug?(appCached+'/'+appLinked+' SYNCED'):'WAITING';
+      appCoverageBadge.classList.toggle('partial',Boolean(ledgerDebug&&!ledgerDebug.cacheComplete));
+    }
     const appPayoutCard=$('actualTodayIsk')?.closest('.kpi');
-    if(appPayoutCard)appPayoutCard.classList.toggle('partial',Boolean(ledgerDebug&&!ledgerDebug.cacheComplete));
+    if(appPayoutCard){
+      appPayoutCard.classList.toggle('partial',Boolean(ledgerDebug&&!ledgerDebug.cacheComplete));
+      if(ledgerDebug){
+        const debug=[
+          'cache '+appCached+'/'+appLinked,
+          'today rows '+Number(ledgerDebug.todayRows||0),
+          'valid T3 '+Number(ledgerDebug.matchedT3Rows||0),
+          'outside tracked fields '+Number(ledgerDebug.outsideTrackedSystemRows||0),
+          'unresolved systems '+Number(ledgerDebug.unresolvedSystemRows??ledgerDebug.unmatchedSystemRows??0),
+          'non-T3 '+Number(ledgerDebug.unmatchedOreRows||0),
+        ];
+        appPayoutCard.title='Combined payout value for all linked JLR characters. '+debug.join(' • ')+(state.esi.lastSyncAt?' • synced '+ago(state.esi.lastSyncAt):'');
+      }
+    }
     $('actualTodayIskSub').textContent=unpricedM3>0
-      ?payoutPriceBasis+' refined • '+fmt(unpricedM3,'m3')+' m³ awaiting price • '+ledgerCoverage
-      :payoutPriceBasis+' refined • exact grade • '+(payout*100).toFixed(1)+'% payout • '+ledgerCoverage;
+      ?fmt(appTodayM3,'m3')+' m³ mined • '+fmt(unpricedM3,'m3')+' m³ awaiting price • '+payoutPriceBasis
+      :fmt(appTodayM3,'m3')+' m³ mined • exact T3 grade • '+(payout*100).toFixed(1)+'% payout • '+payoutPriceBasis;
+
     const myTotals=myLedgerSummary?.totals||null;
-    const myRawValue=Number(myTotals?.jbv||0);
-    const myUnpricedM3=Number(myTotals?.unpricedM3||0);
+    const myRawValue=Math.max(0,Number(myTotals?.jbv)||0);
+    const myM3=Math.max(0,Number(myTotals?.m3)||0);
+    const myUnpricedM3=Math.max(0,Number(myTotals?.unpricedM3)||0);
     if($('actualMyTodayIsk'))$('actualMyTodayIsk').textContent=myLedgerSummary?fmt(myRawValue*payout):'—';
     if($('actualMyTodayIskSub')){
       const myCached=Number(myLedgerSummary?.cachedCharacters||0);
       const myLinked=Number(myLedgerSummary?.linkedCharacters||0);
-      const myCoveragePct=myLinked>0?Math.max(0,Math.min(100,myCached/myLinked*100)):0;
-      if($('myLedgerCoverageMeter'))$('myLedgerCoverageMeter').style.width=myCoveragePct.toFixed(1)+'%';
+      const myBadge=$('myLedgerCoverageBadge');
+      if(myBadge){
+        myBadge.textContent=myLedgerSummary?(myCached+'/'+myLinked+' SYNCED'):'LOADING';
+        myBadge.classList.toggle('partial',Boolean(myLedgerSummary&&myCached<myLinked));
+      }
       if($('myLedgerPayoutCard'))$('myLedgerPayoutCard').classList.toggle('partial',Boolean(myLedgerSummary&&myCached<myLinked));
       $('actualMyTodayIskSub').textContent=myLedgerSummary
         ?(myUnpricedM3>0
-          ?myCached+'/'+myLinked+' YOUR TOONS • '+fmt(myUnpricedM3,'m3')+' m³ awaiting price • click for audit'
-          :myCached+'/'+myLinked+' YOUR TOONS • exact grade • '+(payout*100).toFixed(1)+'% payout • click for audit')
+          ?fmt(myM3,'m3')+' m³ mined • '+fmt(myUnpricedM3,'m3')+' m³ awaiting price • click for audit'
+          :fmt(myM3,'m3')+' m³ mined • exact T3 grade • '+(payout*100).toFixed(1)+'% payout • click for audit')
         :'Loading your toon ledger…';
     }
     $('actualExpTodayM3').textContent=`${fmt(state.esi.actual.today.m3,'m3')} m³`;
@@ -5726,7 +5734,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.138',
+          version:state?.app?.version||'2.9.139',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
