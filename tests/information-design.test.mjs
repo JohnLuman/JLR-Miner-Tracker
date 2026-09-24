@@ -41,17 +41,22 @@ assert.match(tracker,/const topMetric=top\?trackerIntelMetric/,'Hot Zones only p
 assert.doesNotMatch(tracker,/tracker-intel-valuebar/,'Hot Zones no longer stretches proportional bars across the card');
 assert.match(tracker,/tracker-intel-stat tracker-intel-selected/,'Hot Zones uses compact numeric signal cells');
 assert.match(trackerCss,/\.tracker-intel-insight/,'Hot Zones insight treatment is styled');
+assert.match(tracker,/trackerOverviewHtml\(losses,status,sourceUrl\)/,'Tracker pairs Hot Zones with recent Heavy Fighter losses');
+assert.match(trackerCss,/\.tracker-overview-grid\{display:grid;grid-template-columns:/,'paired Tracker intel uses a restrained two-column layout');
+assert.match(trackerCss,/\.fighter-loss-alarm-overlay/,'Heavy Fighter loss alarm has a dedicated visual overlay');
+assert.match(index,/id="scoutGlobalAlert"/,'Scout update requests are visible outside the Scout tab');
+assert.match(app,/NO MICROPHONE REQUIRED/,'Scout visibly communicates the no-microphone design');
 
 assert.match(app,/appLedgerCoverageBadge/,'app ledger sync state is rendered as a badge');
 assert.match(app,/myLedgerCoverageBadge/,'personal ledger sync state is rendered as a badge');
 assert.match(app,/outside tracked fields/,'ledger diagnostics distinguish payout rows from field attribution');
 assert.match(app,/fleetUptimeMeter/,'fleet target exposes the uptime assumption visually');
 
-assert.equal(pkg.version,'2.9.140');
-assert.ok(index.includes('/styles.css?v=2.9.140'),'main information-design CSS is cache-busted');
-assert.ok(index.includes('/tracker.css?v=2.9.140'),'Tracker information-design CSS is cache-busted');
-assert.ok(index.includes('/app.js?v=2.9.140'),'dashboard JS is cache-busted');
-assert.ok(index.includes('/tracker.js?v=2.9.140'),'Tracker loader is cache-busted');
+assert.equal(pkg.version,'2.9.141');
+assert.ok(index.includes('/styles.css?v=2.9.141'),'main information-design CSS is cache-busted');
+assert.ok(index.includes('/tracker.css?v=2.9.141'),'Tracker information-design CSS is cache-busted');
+assert.ok(index.includes('/app.js?v=2.9.141'),'dashboard JS is cache-busted');
+assert.ok(index.includes('/tracker.js?v=2.9.141'),'Tracker loader is cache-busted');
 assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.140/,'Tracker core is cache-busted');
 
 assert.match(styles,/\.app\.compact\{width:min\(1120px,calc\(100vw - 12px\)\);max-width:1120px\}/,'Compact app keeps a bounded design width');
