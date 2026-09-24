@@ -307,6 +307,12 @@ let zkillInitLeaderboardCache = { updatedAt:0, data:null, promise:null };
 let heavyFighterTrackerCache = {updatedAt:0,data:null,promise:null};
 let trackerCorporationCache = {at:0,data:null,promise:null};
 const trackerAccessCache = new Map();
+const trackerIntelRegionCache = new Map();
+const trackerIntelHotCache = new Map();
+const trackerIntelShipGroupCache = new Map();
+const TRACKER_INTEL_HOT_CACHE_MS = 3 * 60 * 1000;
+const TRACKER_INTEL_REPORT_TTL_MS = 6 * 60 * 60 * 1000;
+const TRACKER_INTEL_HISTORY_TTL_MS = 72 * 60 * 60 * 1000;
 let zkillInitArchiveRefreshPromise = null;
 const zkillCorpLeaderboardCache = new Map();
 const zkillCorpStatsCache = new Map();
@@ -467,6 +473,7 @@ function freshState() {
     characters: {},
     scans: {},
     pvpLifetimeDamage: {},
+    trackerIntel: { essReports: {}, interferenceReports: {}, hotZoneHistory: [] },
     fields: Object.fromEntries(SYSTEM_DEFS.map((d) => [d.system, {
       status: 'ready', cherryPicked: false, timerEndsAt: null, notes: [], updatedAt: null,
       autoReopenedAt: null, autoReopenReason: null, autoReopenM3: null,
@@ -498,6 +505,10 @@ async function loadState() {
     }
     parsed.scans ||= {};
     parsed.pvpLifetimeDamage ||= {};
+    parsed.trackerIntel = { ...base.trackerIntel, ...(parsed.trackerIntel || {}) };
+    parsed.trackerIntel.essReports ||= {};
+    parsed.trackerIntel.interferenceReports ||= {};
+    if(!Array.isArray(parsed.trackerIntel.hotZoneHistory))parsed.trackerIntel.hotZoneHistory=[];
     parsed.fields ||= {};
     for (const d of SYSTEM_DEFS) {
       const field = parsed.fields[d.system] = { ...base.fields[d.system], ...(parsed.fields[d.system] || {}) };
@@ -979,7 +990,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.129',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.131',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}])),wormholes:{reports:wormholeGasPublicReports(),reportHours:WORMHOLE_GAS_REPORT_TTL/3600000}},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans,
@@ -1349,15 +1360,19 @@ async function routeJumps(originSystemId,destinationSystemId){
   if(a===b)return 0;
   const key=`${a}:${b}`;
   if(routeJumpCache.has(key))return routeJumpCache.get(key);
+  let data=null;
   try{
-    const {data}=await esiGet(`https://esi.evetech.net/latest/route/${a}/${b}/?datasource=tranquility&flag=shortest`);
-    const jumps=Math.max(0,(Array.isArray(data)?data.length:0)-1);
-    routeJumpCache.set(key,jumps);
-    return jumps;
+    ({data}=await esiPost(`https://esi.evetech.net/route/${a}/${b}/?datasource=tranquility`,{preference:'shorter',security_penalty:50}));
   }catch{
-    routeJumpCache.set(key,Infinity);
-    return Infinity;
+    try{({data}=await esiGet(`https://esi.evetech.net/latest/route/${a}/${b}/?datasource=tranquility&flag=shortest`))}
+    catch{
+      routeJumpCache.set(key,Infinity);
+      return Infinity;
+    }
   }
+  const jumps=Math.max(0,(Array.isArray(data)?data.length:0)-1);
+  routeJumpCache.set(key,jumps);
+  return jumps;
 }
 async function bestPricesReachableAt(orders,targetSystemId,targetLocationId){
   let sell=null;
@@ -3947,7 +3962,7 @@ function trackerBrainAnswer(user,question,options={}){
   const snapshot=trackerBrainSnapshot();
   const linked=(user?.characterIds||[]).map(String).filter(Boolean);
   const primaryName=trackerBrainPrimaryName(user);
-  const appVersion='2.9.129';
+  const appVersion='2.9.131';
 
   const voiceSummary=(text,max=120)=>{
     const clean=trackerSpeechSafe(text,1200).replace(/\s+/g,' ').trim();
@@ -6863,6 +6878,336 @@ async function trackerCorporationIdentity(){
   return pending;
 }
 
+
+function trackerIntelStore(){
+  state.trackerIntel ||= {essReports:{},interferenceReports:{},hotZoneHistory:[]};
+  state.trackerIntel.essReports ||= {};
+  state.trackerIntel.interferenceReports ||= {};
+  if(!Array.isArray(state.trackerIntel.hotZoneHistory))state.trackerIntel.hotZoneHistory=[];
+  return state.trackerIntel;
+}
+
+function trackerIntelPrune(){
+  const intel=trackerIntelStore();
+  const historyCutoff=Date.now()-TRACKER_INTEL_HISTORY_TTL_MS;
+  for(const key of ['essReports','interferenceReports']){
+    const collection=intel[key]||{};
+    for(const [systemId,row] of Object.entries(collection)){
+      row.history=(Array.isArray(row?.history)?row.history:[])
+        .filter(entry=>Date.parse(entry?.at||'')>=historyCutoff)
+        .slice(-40);
+      if(!row.history.length)delete collection[systemId];
+    }
+  }
+  intel.hotZoneHistory=(intel.hotZoneHistory||[])
+    .filter(row=>Date.parse(row?.at||'')>=historyCutoff)
+    .slice(-240);
+  return intel;
+}
+
+async function trackerIntelCurrentLocation(user){
+  const linked=[String(user?.primaryCharacterId||''),...(user?.characterIds||[]).map(String)]
+    .filter((id,index,list)=>id&&list.indexOf(id)===index&&state.characters[id]);
+  const nowMs=Date.now();
+  for(const id of linked){
+    const cached=trackerLocationCache.get(id);
+    const age=nowMs-Date.parse(cached?.checkedAt||'');
+    if(cached?.systemId&&cached?.system&&Number.isFinite(age)&&age<COMPANION_LOCATION_TTL_MS){
+      return{
+        characterId:id,
+        characterName:String(state.characters[id]?.name||'Toon'),
+        systemId:String(cached.systemId),
+        system:String(cached.system),
+        checkedAt:cached.checkedAt,
+        source:cached.source||'cache',
+      };
+    }
+  }
+  for(const id of linked){
+    try{
+      const row=await scoutLocationSnapshot(state.characters[id],user);
+      if(row?.systemId&&row?.system)return{
+        characterId:id,
+        characterName:row.characterName,
+        systemId:String(row.systemId),
+        system:String(row.system),
+        checkedAt:row.checkedAt,
+        source:row.locationSource||'esi',
+      };
+    }catch{}
+  }
+  return null;
+}
+
+async function trackerIntelRegionForSystem(systemId){
+  const key=String(systemId||'');
+  const cached=trackerIntelRegionCache.get(key);
+  if(cached&&Date.now()-cached.at<6*60*60*1000)return cached.data;
+  const system=(await esiGet('https://esi.evetech.net/latest/universe/systems/'+encodeURIComponent(key)+'/?datasource=tranquility')).data;
+  const constellationId=Number(system?.constellation_id)||0;
+  if(!constellationId)throw new Error('EVE did not return the current constellation.');
+  const constellation=(await esiGet('https://esi.evetech.net/latest/universe/constellations/'+constellationId+'/?datasource=tranquility')).data;
+  const regionId=Number(constellation?.region_id)||0;
+  if(!regionId)throw new Error('EVE did not return the current region.');
+  const region=(await esiGet('https://esi.evetech.net/latest/universe/regions/'+regionId+'/?datasource=tranquility')).data;
+  const constellationIds=(Array.isArray(region?.constellations)?region.constellations:[]).map(Number).filter(id=>id>0);
+  const constellationRows=await Promise.all(constellationIds.map(async id=>{
+    try{return (await esiGet('https://esi.evetech.net/latest/universe/constellations/'+id+'/?datasource=tranquility')).data}
+    catch{return null}
+  }));
+  const systemIds=[...new Set(constellationRows.flatMap(row=>Array.isArray(row?.systems)?row.systems:[]).map(Number).filter(id=>id>0))];
+  const data={
+    regionId,
+    regionName:String(region?.name||regionId),
+    systemId:Number(key),
+    systemName:String(system?.name||key),
+    systemIds,
+  };
+  trackerIntelRegionCache.set(key,{at:Date.now(),data});
+  return data;
+}
+
+async function trackerIntelShipGroupName(typeId){
+  const id=Number(typeId)||0;
+  if(!id)return'';
+  const cached=trackerIntelShipGroupCache.get(id);
+  if(cached&&Date.now()-cached.at<24*60*60*1000)return cached.name;
+  try{
+    const type=(await esiGet('https://esi.evetech.net/latest/universe/types/'+id+'/?datasource=tranquility')).data;
+    const groupId=Number(type?.group_id)||0;
+    const group=groupId?(await esiGet('https://esi.evetech.net/latest/universe/groups/'+groupId+'/?datasource=tranquility')).data:null;
+    const name=String(group?.name||'');
+    trackerIntelShipGroupCache.set(id,{at:Date.now(),name});
+    return name;
+  }catch{
+    trackerIntelShipGroupCache.set(id,{at:Date.now(),name:''});
+    return'';
+  }
+}
+
+function trackerIntelHuntScore(row){
+  const npc=Math.max(0,Number(row?.npcKills)||0);
+  const pvp=Math.max(0,Number(row?.pvpLosses)||0);
+  const blobs=Math.max(0,Number(row?.blobLosses)||0);
+  const ratting=Math.max(0,Number(row?.rattingLosses)||0);
+  const activity=Math.min(70,Math.log10(npc+1)*24);
+  const rattingSignal=Math.min(12,ratting*4);
+  const danger=Math.min(45,pvp*5)+Math.min(20,blobs*7);
+  return Math.max(0,Math.min(100,Math.round(18+activity+rattingSignal-danger)));
+}
+
+async function trackerIntelRegionHotZones(region,{force=false}={}){
+  const regionId=Number(region?.regionId)||0;
+  const cached=trackerIntelHotCache.get(regionId);
+  if(!force&&cached&&Date.now()-cached.at<TRACKER_INTEL_HOT_CACHE_MS)return cached.data;
+  const regionSystems=new Set((region?.systemIds||[]).map(Number));
+  const [killsResult,firstLossPage]=await Promise.all([
+    esiGet('https://esi.evetech.net/latest/universe/system_kills/?datasource=tranquility'),
+    zkillJson('https://zkillboard.com/api/losses/regionID/'+regionId+'/pastSeconds/3600/page/1/').catch(()=>[]),
+  ]);
+  let lossRows=Array.isArray(firstLossPage)?firstLossPage:[];
+  if(lossRows.length>=200){
+    const second=await zkillJson('https://zkillboard.com/api/losses/regionID/'+regionId+'/pastSeconds/3600/page/2/').catch(()=>[]);
+    if(Array.isArray(second))lossRows=lossRows.concat(second);
+  }
+  const bySystem=new Map();
+  const ensureRow=id=>{
+    const key=Number(id)||0;
+    if(!key||!regionSystems.has(key))return null;
+    if(!bySystem.has(key))bySystem.set(key,{
+      systemId:key,npcKills:0,shipKills:0,podKills:0,pvpLosses:0,rattingLosses:0,
+      miningLosses:0,dreadLosses:0,blobLosses:0,iskDestroyed:0,
+    });
+    return bySystem.get(key);
+  };
+  for(const row of Array.isArray(killsResult?.data)?killsResult.data:[]){
+    const out=ensureRow(row?.system_id);
+    if(!out)continue;
+    out.npcKills=Math.max(0,Number(row?.npc_kills)||0);
+    out.shipKills=Math.max(0,Number(row?.ship_kills)||0);
+    out.podKills=Math.max(0,Number(row?.pod_kills)||0);
+  }
+
+  const victimTypes=[...new Set(lossRows.map(row=>Number(row?.victim?.ship_type_id)||0).filter(id=>id>0))].slice(0,100);
+  const groupPairs=await Promise.all(victimTypes.map(async id=>[id,await trackerIntelShipGroupName(id)]));
+  const groupByType=new Map(groupPairs);
+  for(const kill of lossRows){
+    const out=ensureRow(kill?.solar_system_id);
+    if(!out)continue;
+    const npc=Boolean(kill?.zkb?.npc);
+    if(!npc)out.pvpLosses++;
+    out.iskDestroyed+=Math.max(0,Number(kill?.zkb?.totalValue)||0);
+    const attackers=Array.isArray(kill?.attackers)?kill.attackers:[];
+    if(!npc&&attackers.length>=15)out.blobLosses++;
+    const group=String(groupByType.get(Number(kill?.victim?.ship_type_id)||0)||'').toLowerCase();
+    if(/mining barge|exhumer|mining frigate|industrial command ship/.test(group))out.miningLosses++;
+    if(/dreadnought/.test(group))out.dreadLosses++;
+    if(!npc&&/marauder|battleship|battlecruiser|strategic cruiser|carrier|supercarrier|cruiser/.test(group))out.rattingLosses++;
+  }
+
+  const active=[...bySystem.values()].filter(row=>
+    row.npcKills||row.shipKills||row.podKills||row.pvpLosses||row.rattingLosses||
+    row.miningLosses||row.dreadLosses||row.blobLosses
+  );
+  const names=await resolveUniverseNames(active.map(row=>row.systemId));
+  for(const row of active){
+    row.system=String(names.get(row.systemId)||row.systemId);
+    row.huntScore=trackerIntelHuntScore(row);
+  }
+  active.sort((a,b)=>b.huntScore-a.huntScore||b.npcKills-a.npcKills||a.system.localeCompare(b.system));
+
+  const intel=trackerIntelPrune();
+  const hourStamp=new Date();
+  hourStamp.setUTCMinutes(0,0,0);
+  const hourIso=hourStamp.toISOString();
+  if(!intel.hotZoneHistory.some(row=>Number(row?.regionId)===regionId&&row?.at===hourIso)){
+    intel.hotZoneHistory.push({
+      regionId,
+      regionName:region.regionName,
+      at:hourIso,
+      systems:active.slice(0,20).map(row=>({
+        systemId:row.systemId,system:row.system,huntScore:row.huntScore,npcKills:row.npcKills,
+        pvpLosses:row.pvpLosses,rattingLosses:row.rattingLosses,blobLosses:row.blobLosses,
+      })),
+    });
+    intel.hotZoneHistory=intel.hotZoneHistory.slice(-240);
+    save();
+  }
+  const regionHistory=(intel.hotZoneHistory||[]).filter(row=>Number(row?.regionId)===regionId);
+  const historyHours=[...new Set(regionHistory.map(row=>new Date(row.at).getUTCHours()))];
+  const hourStats=new Map();
+  for(const snapshot of regionHistory){
+    const hour=new Date(snapshot.at).getUTCHours();
+    const top=(snapshot.systems||[]).slice(0,5);
+    const avg=top.length?top.reduce((sum,row)=>sum+Math.max(0,Number(row?.huntScore)||0),0)/top.length:0;
+    const current=hourStats.get(hour)||{hourUtc:hour,total:0,count:0};
+    current.total+=avg;current.count++;
+    hourStats.set(hour,current);
+  }
+  const bestHoursUtc=[...hourStats.values()]
+    .map(row=>({hourUtc:row.hourUtc,score:Math.round(row.total/Math.max(1,row.count)),samples:row.count}))
+    .sort((a,b)=>b.score-a.score)
+    .slice(0,3);
+
+  const data={
+    generatedAt:now(),
+    regionId,
+    regionName:region.regionName,
+    systems:active.slice(0,80),
+    historyHours:historyHours.length,
+    bestHoursUtc:historyHours.length>=4?bestHoursUtc:[],
+    zkillLossesSampled:lossRows.length,
+  };
+  trackerIntelHotCache.set(regionId,{at:Date.now(),data});
+  return data;
+}
+
+function trackerIntelRising(history){
+  const rows=(Array.isArray(history)?history:[]).slice().sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
+  const last=rows.at(-1)||null;
+  const prior=rows.at(-2)||null;
+  const delta=last&&prior?Number(last.value)-Number(prior.value):0;
+  let risingSince=null;
+  if(last&&prior&&delta>0){
+    risingSince=prior.at;
+    for(let i=rows.length-2;i>0;i--){
+      if(Number(rows[i].value)>Number(rows[i-1].value))risingSince=rows[i-1].at;
+      else break;
+    }
+  }
+  return{delta:Number.isFinite(delta)?delta:0,risingSince};
+}
+
+async function trackerIntelReportedRows(kind,originSystemId){
+  const intel=trackerIntelPrune();
+  const collection=kind==='ess'?intel.essReports:intel.interferenceReports;
+  const cutoff=Date.now()-TRACKER_INTEL_REPORT_TTL_MS;
+  const rows=[];
+  for(const row of Object.values(collection||{})){
+    const history=(Array.isArray(row?.history)?row.history:[])
+      .filter(entry=>Date.parse(entry?.at||'')>=cutoff)
+      .sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
+    const latest=history.at(-1);
+    if(!latest)continue;
+    const trend=kind==='interference'?trackerIntelRising(history):{delta:0,risingSince:null};
+    rows.push({
+      systemId:Number(row.systemId)||0,
+      system:String(row.system||row.systemId||'Unknown'),
+      value:Math.max(0,Number(latest.value)||0),
+      reportedAt:latest.at,
+      samples:history.length,
+      delta:trend.delta,
+      risingSince:trend.risingSince,
+    });
+  }
+  const limited=rows.sort((a,b)=>Date.parse(b.reportedAt)-Date.parse(a.reportedAt)).slice(0,60);
+  await Promise.all(limited.map(async row=>{
+    row.jumps=await routeJumps(originSystemId,row.systemId);
+    if(!Number.isFinite(row.jumps))row.jumps=null;
+  }));
+  return limited;
+}
+
+async function trackerIntelSnapshot(user,{force=false}={}){
+  const location=await trackerIntelCurrentLocation(user);
+  if(!location)return{
+    generatedAt:now(),
+    location:null,
+    locationError:'No live linked-toon location is available. Keep the desktop companion running or update EVE location access.',
+    hotZones:null,
+    essReports:[],
+    interferenceReports:[],
+  };
+  const region=await trackerIntelRegionForSystem(location.systemId);
+  const hotZones=await trackerIntelRegionHotZones(region,{force});
+  const [essReports,interferenceReports]=await Promise.all([
+    trackerIntelReportedRows('ess',location.systemId),
+    trackerIntelReportedRows('interference',location.systemId),
+  ]);
+  await Promise.all(hotZones.systems.slice(0,30).map(async row=>{
+    row.jumps=await routeJumps(location.systemId,row.systemId);
+    if(!Number.isFinite(row.jumps))row.jumps=null;
+  }));
+  return{
+    generatedAt:now(),
+    location,
+    region:{regionId:region.regionId,regionName:region.regionName},
+    hotZones,
+    essReports,
+    interferenceReports,
+    reportTtlHours:TRACKER_INTEL_REPORT_TTL_MS/3600000,
+  };
+}
+
+async function trackerIntelRecordReport(user,kind,value){
+  const location=await trackerIntelCurrentLocation(user);
+  if(!location)throw new Error('A live linked-toon location is required before reporting Tracker intel.');
+  const intel=trackerIntelPrune();
+  const key=String(location.systemId);
+  const collection=kind==='ess'?intel.essReports:intel.interferenceReports;
+  const numeric=Number(value);
+  if(kind==='ess'){
+    if(!Number.isFinite(numeric)||numeric<1||numeric>1e15)throw new Error('ESS value must be a positive ISK amount.');
+  }else if(kind==='interference'){
+    if(!Number.isFinite(numeric)||numeric<0||numeric>100)throw new Error('Interference must be between 0 and 100 percent.');
+  }else{
+    throw new Error('Unknown Tracker intel report type.');
+  }
+  const row=collection[key]&&typeof collection[key]==='object'
+    ?collection[key]
+    :{systemId:Number(location.systemId),system:location.system,history:[]};
+  row.system=location.system;
+  row.systemId=Number(location.systemId);
+  row.history=Array.isArray(row.history)?row.history:[];
+  row.history.push({value:numeric,at:now(),userId:String(user?.id||'')});
+  row.history=row.history
+    .filter(entry=>Date.parse(entry?.at||'')>=Date.now()-TRACKER_INTEL_HISTORY_TTL_MS)
+    .slice(-40);
+  collection[key]=row;
+  await save();
+  return{ok:true,kind,systemId:row.systemId,system:row.system,value:numeric,reportedAt:row.history.at(-1)?.at||now()};
+}
+
 async function trackerAccessForUser(user,{force=false}={}){
   const key=String(user?.id||'');
   const cached=trackerAccessCache.get(key);
@@ -7292,7 +7637,7 @@ async function routeApi(req,res,url) {
     });
     return res.end(ref.audio);
   }
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.129',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.131',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -7511,7 +7856,7 @@ async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname==='/api/tracker/speech/diagnostics'){
     const voiceWorker=await trackerVoiceHealth().catch(err=>({configured:Boolean(TRACKER_TTS_WORKER_URL),reachable:false,message:String(err?.message||err)}));
     return json(res,200,{
-      version:'2.9.129',
+      version:'2.9.131',
       modelCached:Boolean(voskModelArchive),
       modelBytes:voskModelArchive?.length||0,
       modelSource:voskModelSource||null,
@@ -7857,6 +8202,35 @@ async function routeApi(req,res,url) {
       return json(res,502,{error:'ZKILL_LEADERBOARD_FAILED',message:String(err.message||err)});
     }
   }
+  if(req.method==='GET'&&url.pathname==='/api/tracker/intel'){
+    let access;
+    try{access=await trackerAccessForUser(user)}
+    catch(err){return json(res,503,{error:'TRACKER_ACCESS_CHECK_FAILED',message:'Tracker access could not be verified with EVE right now.'})}
+    if(!access.allowed)return json(res,403,{error:'TRACKER_CORPORATION_REQUIRED',message:'Tracker is restricted to the configured corporation.'});
+    const force=url.searchParams.get('refresh')==='1';
+    try{return json(res,200,{...(await trackerIntelSnapshot(user,{force})),access:{corporationName:access.corporationName}})}
+    catch(err){
+      console.warn('Tracker intel failed',String(err.message||err));
+      return json(res,502,{error:'TRACKER_INTEL_FAILED',message:String(err.message||err)});
+    }
+  }
+  if(req.method==='POST'&&url.pathname==='/api/tracker/intel/report'){
+    if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
+    let access;
+    try{access=await trackerAccessForUser(user)}
+    catch(err){return json(res,503,{error:'TRACKER_ACCESS_CHECK_FAILED',message:'Tracker access could not be verified with EVE right now.'})}
+    if(!access.allowed)return json(res,403,{error:'TRACKER_CORPORATION_REQUIRED',message:'Tracker is restricted to the configured corporation.'});
+    let body;
+    try{body=await readBody(req,4_000)}
+    catch(err){return json(res,400,{error:'BAD_TRACKER_INTEL_REPORT',message:String(err.message||err)})}
+    const kind=String(body?.kind||'').trim().toLowerCase();
+    try{
+      const report=await trackerIntelRecordReport(user,kind,body?.value);
+      return json(res,201,{...report,snapshot:await trackerIntelSnapshot(user,{force:false})});
+    }catch(err){
+      return json(res,400,{error:'TRACKER_INTEL_REPORT_FAILED',message:String(err.message||err)});
+    }
+  }
   if(req.method==='GET'&&url.pathname==='/api/tracker/heavy-fighters/voice/status'){
     let access;
     try{access=await trackerAccessForUser(user)}
@@ -8133,7 +8507,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.129 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.131 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>{
   Promise.all([
     loadVoskRuntimeAsset(VOSK_RUNTIME_FILES['/vendor/vosk/vosk-0.0.8.js']),
