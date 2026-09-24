@@ -21,6 +21,12 @@ assert.match(server,/const currentTab=trackerSpeechSafe\(body\?\.currentTab,40\)
 assert.match(server,/trackerBrainLiveAnswer\(user,resolvedQuestion,\{[\s\S]*?currentTab,/,'Brain API passes the active tab into local Brain fallback');
 assert.match(server,/trackerSupport\.resolveQuestion\(\{[\s\S]*?currentTab,/,'Brain API passes the active tab into shared Tracker support');
 assert.match(app,/currentTab:activeTab/,'browser sends the active tab with Tracker questions');
+assert.match(app,/function adamContextSnapshot\(\)/,'browser builds structured Adam context');
+assert.match(app,/context,\s*\}\),/,'Adam request sends structured context with the question');
+assert.match(server,/const context=trackerBrainContext\(body\?\.context\)/,'Brain API sanitizes structured context');
+assert.match(server,/trackerSupport\.resolveQuestion\(\{[\s\S]*?context,/,'Brain API passes structured context into shared support');
+assert.match(server,/Reds or hostiles|reds, hostiles/,'Fleet variance explanation explicitly preserves interruption uncertainty');
+
 assert.match(server,/what am i looking at/,'contextual current-tab questions are supported');
 
 console.log('Tracker app knowledge regression tests passed.');
