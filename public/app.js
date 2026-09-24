@@ -2715,6 +2715,7 @@
             </table>
           </div>
 
+          <div class="doctrine-side-column">
           <aside id="doctrineShoppingDrop" class="doctrine-shopping ${doctrineShoppingOpen?'open':'collapsed'}">
             <button id="doctrineShoppingToggle" class="doctrine-shopping-toggle" type="button" aria-expanded="${String(doctrineShoppingOpen)}">
               <div class="doctrine-shopping-toggle-title">
@@ -2749,6 +2750,11 @@
               <button id="doctrineShoppingCopy" class="doctrine-multibuy-copy" type="button" ${shoppingRows.length?'':'disabled'}>COPY FOR EVE MULTIBUY</button>
             </div>
           </aside>
+          <a class="doctrine-nyx-buyback" href="https://discord.com/channels/1275408985171820585/1465988346185515078" target="_blank" rel="noopener noreferrer" aria-label="Open the Nyx Buyback Discord channel">
+            <img src="/assets/nyx-buyback.webp?v=2.9.142" alt="Nyx Buyback — open the Discord channel">
+            <span>OPEN BUYBACK CHANNEL ↗</span>
+          </a>
+          </div>
         </div>
 
       </section>`;
