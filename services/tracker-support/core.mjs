@@ -127,7 +127,7 @@ export class TrackerSessionStore{
     const tab=clean(currentTab,40);
     const key=clean(userKey,160);
     this.prune();
-    const row=key?this.sessions.get(key):null;
+    const row=key?this.get(key):null;
     if(!row||!q)return{question:q,currentTab:tab,answerOverride:null,contextUsed:false};
     row.updatedAt=this.now();
     if(tab)row.lastTab=tab;
