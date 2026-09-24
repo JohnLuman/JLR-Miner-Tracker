@@ -9,15 +9,15 @@ const trackerCss=fs.readFileSync(new URL('../public/tracker.css',import.meta.url
 const trackerLoader=fs.readFileSync(new URL('../public/tracker.js',import.meta.url),'utf8');
 const pkg=JSON.parse(fs.readFileSync(new URL('../package.json',import.meta.url),'utf8'));
 
-assert.match(index,/class="kpis information-kpis"/,'top summary uses the decision-first KPI template');
-assert.match(index,/class="kpi kpi-primary api-kpi app-payout-kpi"/,'app payout is a primary KPI');
-assert.match(index,/class="kpi kpi-secondary fleet-target-kpi"/,'fleet target is a compact secondary KPI');
-assert.match(index,/class="market-payout-pair"/,'Jita and C-N payout cards are bound into one grid group');
-assert.match(index,/MY TOONS PAYOUT • EVE DAY/,'personal payout is a primary KPI');
-assert.match(index,/class="kpi kpi-secondary"/,'secondary metrics remain available');
-assert.match(styles,/v2\.9\.143 — balanced operations summary/,'top summary uses the balanced 2-row layout');
-assert.match(styles,/\.information-kpis\{grid-template-columns:repeat\(4,minmax\(0,1fr\)\);max-width:1040px/,'summary is capped and uses four equal columns');
-assert.match(styles,/\.information-kpis>\.market-payout-pair\{grid-column:span 2;display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/,'Jita and C-N are locked side-by-side in the payout pair');
+assert.match(index,/class="kpis information-kpis operations-summary-bar"/,'top metrics are presented as one summary bar');
+assert.match(index,/class="kpi summary-cell summary-cell-payout api-kpi app-payout-kpi"/,'app payout leads the one-line summary');
+assert.match(index,/class="kpi summary-cell fleet-target-kpi"/,'fleet target remains a compact summary metric');
+assert.match(index,/>MY TOONS<\/span>/,'personal payout stays in the top summary');
+assert.match(index,/>JITA \/ HR<\/span>[\s\S]*>C-N \/ HR<\/span>/,'Jita and C-N remain adjacent in the summary flow');
+assert.match(styles,/v2\.9\.144 — one-line decision summary/,'top summary uses the one-line decision bar');
+assert.match(styles,/\.operations-summary-bar\{display:grid;grid-template-columns:/,'all six summary metrics share one horizontal grid');
+assert.match(styles,/repeat\(6,minmax\(105px,1fr\)\)/,'summary compresses evenly before mobile overflow');
+assert.doesNotMatch(index,/market-payout-pair/,'summary no longer needs a nested market row');
 assert.match(index,/appLedgerCoverageBadge/,'app ledger coverage is a compact badge');
 assert.match(index,/myLedgerCoverageBadge/,'personal ledger coverage is a compact badge');
 assert.match(index,/app-tab-group-label[^>]*>OPS</,'navigation has an Operations group');
@@ -56,12 +56,12 @@ assert.match(app,/myLedgerCoverageBadge/,'personal ledger sync state is rendered
 assert.match(app,/outside tracked fields/,'ledger diagnostics distinguish payout rows from field attribution');
 assert.match(app,/fleetUptimeMeter/,'fleet target exposes the uptime assumption visually');
 
-assert.equal(pkg.version,'2.9.143');
-assert.ok(index.includes('/styles.css?v=2.9.143'),'main information-design CSS is cache-busted');
-assert.ok(index.includes('/tracker.css?v=2.9.143'),'Tracker information-design CSS is cache-busted');
-assert.ok(index.includes('/app.js?v=2.9.143'),'dashboard JS is cache-busted');
-assert.ok(index.includes('/tracker.js?v=2.9.143'),'Tracker loader is cache-busted');
-assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.143/,'Tracker core is cache-busted');
+assert.equal(pkg.version,'2.9.144');
+assert.ok(index.includes('/styles.css?v=2.9.144'),'main information-design CSS is cache-busted');
+assert.ok(index.includes('/tracker.css?v=2.9.144'),'Tracker information-design CSS is cache-busted');
+assert.ok(index.includes('/app.js?v=2.9.144'),'dashboard JS is cache-busted');
+assert.ok(index.includes('/tracker.js?v=2.9.144'),'Tracker loader is cache-busted');
+assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.144/,'Tracker core is cache-busted');
 
 assert.match(styles,/\.app\.compact\{width:min\(1120px,calc\(100vw - 12px\)\);max-width:1120px\}/,'Compact app keeps a bounded design width');
 assert.match(styles,/\.app\.expanded\{width:min\(1600px,calc\(100vw - 12px\)\);max-width:1600px\}/,'Expanded app keeps a bounded design width');

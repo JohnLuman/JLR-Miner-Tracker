@@ -19,7 +19,7 @@ assert.doesNotMatch(app,/assistant\.innerHTML=\`[\s\S]*TALK TO ADAM/,'live Scout
 assert.match(index,/id="scoutGlobalAlert"/,'Scout has a persistent app-wide update alert');
 assert.match(app,/SCOUT • UPDATE/,'Scout tab highlights when a scan update is due');
 
-assert.equal(pkg.version,'2.9.143','Scout no-mic release is versioned');
-assert.ok(index.includes('/app.js?v=2.9.143'),'browser cachebuster loads the Scout build');
+assert.equal(pkg.version,'2.9.144','Scout no-mic release is versioned');
+assert.ok(index.includes('/app.js?v=2.9.144'),'browser cachebuster loads the Scout build');
 
 console.log('Scout no-microphone regression tests passed.');
