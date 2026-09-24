@@ -5692,64 +5692,135 @@
   }
   function renderCharacters(){
     if(!me)return;
-    $('characterList').innerHTML='';
-    if(!me.characters.length){
-      $('characterList').innerHTML='<div class="character-row"><div></div><div><strong>No mining toons linked</strong><small>Add Toon connects a character for skills, saved fits, assets, and mining-ledger data.</small></div></div>';
+    const host=$('characterList');
+    if(!host)return;
+    const chars=Array.isArray(me.characters)?me.characters:[];
+    const linked=chars.length;
+    const ledgerReady=chars.filter(c=>c.miningAccess!==false&&c.ledgerCached!==false&&!c.needsReauth&&!c.lastError).length;
+    const locationReady=chars.filter(c=>Boolean(c.locationAccess)).length;
+    const needsAttention=chars.filter(c=>
+      c.miningAccess===false||
+      Boolean(c.needsReauth)||
+      c.ledgerCached===false||
+      Boolean(c.lastError)
+    ).length;
+    if($('toonLinkedCount'))$('toonLinkedCount').textContent=String(linked);
+    if($('toonLedgerReady'))$('toonLedgerReady').textContent=linked?ledgerReady+'/'+linked:'0';
+    if($('toonLocationReady'))$('toonLocationReady').textContent=linked?locationReady+'/'+linked:'0';
+    if($('toonNeedsAttention')){
+      $('toonNeedsAttention').textContent=String(needsAttention);
+      $('toonNeedsAttention').classList.toggle('attention',needsAttention>0);
+    }
+
+    host.innerHTML='';
+    if(!linked){
+      host.innerHTML='<div class="toon-empty"><strong>No toons linked yet.</strong><span>ADD TOON connects an EVE character for mining ledgers, saved fits, skills, assets, and optional location features.</span></div>';
       return;
     }
-    for(const c of me.characters){
-      const r=document.createElement('div');r.className='character-row';
-      const savedFits=Number(c.savedFittingsCount ?? (c.fittings||[]).length)||0;
-      const miningFits=(c.fittings||[]).length;
-      const abyssal=Number(c.abyssalStripCount||0);
-      const missingMiningAccess=c.miningAccess===false;
-      const waitingLedger=c.ledgerCached===false&&!missingMiningAccess;
-      const scopeState=missingMiningAccess
-        ?' • mining ledger access missing'
-        :c.needsReauth
-          ?' • EVE access update required'
-          :` • ${savedFits} saved fits • ${miningFits} mining fits${abyssal?` • ${abyssal} Abyssal strips`:''}`;
-      const syncState=missingMiningAccess?'⚠ MINING LEDGER NOT AUTHORIZED'
-        :waitingLedger?'⚠ WAITING FOR FIRST LEDGER SYNC'
-        :c.lastError?`⚠ sync error: ${esc(c.lastError)}`
-        :`EVE data synced ${ago(c.lastSyncAt)}`;
-      const assetCacheLabel=esiCacheLabel(c.assetsEsiCache);
-      const fitState=c.fittingsUpdatedAt?` • fits ${ago(c.fittingsUpdatedAt)}${assetCacheLabel?` • Abyssal ${assetCacheLabel}`:''}`:'';
-      const marketButton=c.marketEligible
-        ?`<button class="orb ${c.marketAuthorized?'green':'purple'} market-auth" data-id="${c.characterId}" type="button">${c.marketAuthorized?'C-N MARKET CONNECTED':'CONNECT C-N MARKET'}</button>`
+
+    for(const ch of chars){
+      const id=String(ch.characterId||'');
+      const row=document.createElement('article');
+      const savedFits=Number(ch.savedFittingsCount ?? (ch.fittings||[]).length)||0;
+      const miningFits=(ch.fittings||[]).length;
+      const abyssal=Number(ch.abyssalStripCount||0);
+      const missingMiningAccess=ch.miningAccess===false;
+      const waitingLedger=ch.ledgerCached===false&&!missingMiningAccess;
+      const accessIssue=Boolean(ch.needsReauth||missingMiningAccess);
+      const syncError=Boolean(ch.lastError);
+      const stateKey=syncError||accessIssue?'attention':waitingLedger?'waiting':'ready';
+      const stateLabel=syncError?'SYNC ERROR':accessIssue?'ACCESS NEEDED':waitingLedger?'FIRST LEDGER PENDING':'DATA READY';
+      const isPrimary=String(me.primaryCharacterId||'')===id;
+      const lastSync=ch.lastSyncAt?ago(ch.lastSyncAt):'not synced yet';
+      const fitsUpdated=ch.fittingsUpdatedAt?ago(ch.fittingsUpdatedAt):'not refreshed yet';
+      const badges=[
+        '<span class="toon-badge '+(missingMiningAccess?'bad':'good')+'">'+(missingMiningAccess?'LEDGER OFF':'LEDGER ON')+'</span>',
+        '<span class="toon-badge '+(ch.locationAccess?'good':'muted')+'">'+(ch.locationAccess?'LOCATION ON':'LOCATION OFF')+'</span>',
+        '<span class="toon-badge neutral">'+miningFits+' MINING FIT'+(miningFits===1?'':'S')+'</span>',
+        abyssal?'<span class="toon-badge accent">'+abyssal+' ABYSSAL</span>':'',
+        ch.marketAuthorized?'<span class="toon-badge good">C-N MARKET</span>':'',
+      ].filter(Boolean).join('');
+      const marketButton=ch.marketEligible
+        ?'<button class="toon-action '+(ch.marketAuthorized?'connected':'')+' market-auth" data-id="'+esc(id)+'" type="button">'+(ch.marketAuthorized?'C-N MARKET CONNECTED':'CONNECT C-N MARKET')+'</button>'
         :'';
-      r.innerHTML=`<img src="${esc(c.portrait)}" alt=""><div><strong>${esc(c.name)}</strong><small>${syncState}${fitState}${scopeState}${c.marketAuthorized?' • private C-N market prices enabled':''}</small></div><div class="character-actions">${marketButton}<button class="orb blue fit-refresh" data-id="${c.characterId}" type="button" title="Refresh saved fits for this toon only. Skips skills and mining ledger.">↻ UPDATE FITS</button>${c.needsReauth?'<button class="orb blue reauth" type="button">UPDATE ACCESS</button>':''}<button class="orb red disconnect" data-id="${c.characterId}" type="button">DISCONNECT</button></div>`;
-      $('characterList').appendChild(r);
+      const accessButton=(ch.needsReauth||missingMiningAccess||!ch.locationAccess)
+        ?'<button class="toon-action reauth" type="button">UPDATE ACCESS</button>'
+        :'';
+      const issueText=syncError
+        ?String(ch.lastError||'EVE sync failed.')
+        :missingMiningAccess
+          ?'Mining-ledger permission is missing.'
+          :waitingLedger
+            ?'Waiting for this toon’s first successful mining-ledger cache.'
+            :!ch.locationAccess
+              ?'Location access is optional, but Scout / Adam routing cannot follow this toon yet.'
+              :'Skills, ledger and account access are current.';
+
+      row.className='character-row toon-character-card toon-state-'+stateKey;
+      row.dataset.id=id;
+      row.innerHTML=
+        '<div class="toon-identity">'+
+          '<img src="'+esc(ch.portrait)+'" alt="">'+
+          '<div><div class="toon-name-line"><strong>'+esc(ch.name)+'</strong>'+(isPrimary?'<span class="toon-primary">PRIMARY</span>':'')+'</div>'+
+          '<small>'+esc(issueText)+'</small></div>'+
+        '</div>'+
+        '<div class="toon-data">'+
+          '<div class="toon-state-line"><span class="toon-state-dot"></span><strong>'+stateLabel+'</strong><small>full sync '+esc(lastSync)+'</small></div>'+
+          '<div class="toon-badges">'+badges+'</div>'+
+          '<div class="toon-meta"><span>'+savedFits+' saved fits</span><span>fits '+esc(fitsUpdated)+'</span></div>'+
+        '</div>'+
+        '<div class="character-actions">'+
+          marketButton+
+          '<button class="toon-action fit-refresh" data-id="'+esc(id)+'" type="button" title="Refresh saved fits, assets, and Abyssal strip-miner rolls for this toon.">↻ UPDATE FITS</button>'+
+          accessButton+
+          '<button class="toon-action danger disconnect" data-id="'+esc(id)+'" type="button">DISCONNECT</button>'+
+        '</div>';
+      host.appendChild(row);
     }
-    $('characterList').querySelectorAll('.market-auth').forEach(b=>b.addEventListener('click',()=>{location.href=`/auth/eve/market/start?character=${encodeURIComponent(b.dataset.id)}`}));
-    $('characterList').querySelectorAll('.fit-refresh').forEach(b=>b.addEventListener('click',async()=>{
-      const original=b.textContent;
-      b.disabled=true;
-      b.textContent='UPDATING…';
+
+    host.querySelectorAll('.market-auth').forEach(button=>button.addEventListener('click',()=>{
+      location.href='/auth/eve/market/start?character='+encodeURIComponent(button.dataset.id);
+    }));
+    host.querySelectorAll('.fit-refresh').forEach(button=>button.addEventListener('click',async()=>{
+      const original=button.textContent;
+      button.disabled=true;
+      button.textContent='UPDATING…';
       try{
         const requestedAt=Date.now();
-        const p=await api(`/api/esi/fittings/${encodeURIComponent(b.dataset.id)}`,{method:'POST',body:'{}'});
-        me=p.user;
+        const payload=await api('/api/esi/fittings/'+encodeURIComponent(button.dataset.id),{method:'POST',body:'{}'});
+        me=payload.user;
         renderAll();
-        const f=p.fitSync||{};
-        const assetCache=f.assetsEsiCache||null;
+        const fitSync=payload.fitSync||{};
+        const assetCache=fitSync.assetsEsiCache||null;
         const sourceMs=Date.parse(assetCache?.lastModified||'');
         const freshUntilMs=Date.parse(assetCache?.freshUntil||'');
         const servedCached=Number.isFinite(sourceMs)&&requestedAt-sourceMs>15000&&Number.isFinite(freshUntilMs)&&freshUntilMs>Date.now();
         if(servedCached){
-          toast(`${f.characterName||'Toon'}: fittings checked • ESI is still serving Abyssal assets from ${ago(assetCache.lastModified)} • cache refresh ${until(assetCache.freshUntil)}`);
+          toast((fitSync.characterName||'Toon')+': fittings checked • ESI is still serving Abyssal assets from '+ago(assetCache.lastModified)+' • cache refresh '+until(assetCache.freshUntil));
         }else{
-          toast(`${f.characterName||'Toon'}: ${Number(f.savedFittingsCount||0)} saved fits • ${Number(f.miningFittingsCount||0)} mining fits • Abyssal data checked`);
+          toast((fitSync.characterName||'Toon')+': '+Number(fitSync.savedFittingsCount||0)+' saved fits • '+Number(fitSync.miningFittingsCount||0)+' mining fits • Abyssal data checked');
         }
-      }catch(e){
-        b.disabled=false;
-        b.textContent=original;
-        toast(e.message);
+      }catch(error){
+        button.disabled=false;
+        button.textContent=original;
+        toast(error.message);
       }
     }));
-    $('characterList').querySelectorAll('.reauth').forEach(b=>b.addEventListener('click',()=>{location.href='/auth/eve/start?intent=link'}));
-    $('characterList').querySelectorAll('.disconnect').forEach(b=>b.addEventListener('click',async()=>{if(!confirm('Disconnect this mining toon from JLR?'))return;try{const p=await api(`/api/me/characters/${b.dataset.id}`,{method:'DELETE'});me=p.user;renderCharacters();renderCalculator();toast('Toon disconnected.')}catch(e){toast(e.message)}}));
+    host.querySelectorAll('.reauth').forEach(button=>button.addEventListener('click',()=>{
+      location.href='/auth/eve/start?intent=link';
+    }));
+    host.querySelectorAll('.disconnect').forEach(button=>button.addEventListener('click',async()=>{
+      if(!confirm('Disconnect this mining toon from JLR?'))return;
+      try{
+        const payload=await api('/api/me/characters/'+button.dataset.id,{method:'DELETE'});
+        me=payload.user;
+        renderCharacters();
+        renderCalculator();
+        toast('Toon disconnected.');
+      }catch(error){toast(error.message)}
+    }));
   }
+
   function renderCalculator(){
     if(!me||!$('calcResults'))return;
     const data=calcData(),engine=window.JLRYieldMath;
