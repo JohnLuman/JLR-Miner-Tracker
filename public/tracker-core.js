@@ -567,7 +567,7 @@
             '<p>Near-live Heavy Fighter loss watch with a dedicated local alarm, browser notification, and compact regional activity context.</p>'+
           '</div>'+
           '<div class="tracker-actions">'+
-            '<button id="trackerArm" class="tracker-arm '+(trackerArmed?'armed':'off')+'" type="button" aria-pressed="'+String(trackerArmed)+'">'+(trackerArmed?'LOUD ALERTS ARMED':'ARM LOUD ALERTS')+'</button>'+
+            '<button id="trackerArm" class="tracker-arm '+(trackerArmed?'armed':'off')+'" type="button" aria-pressed="'+String(trackerArmed)+'">'+(trackerArmed?'LOSS ALARM ARMED':'ARM LOSS ALARM')+'</button>'+
             '<button id="trackerTest" class="orb red" type="button">▶ TEST LOSS ALARM</button>'+
             '<button id="trackerStop" class="orb silver" type="button">■ STOP ALARM</button>'+
             '<button id="trackerRefresh" class="orb silver" type="button" '+(trackerLoading?'disabled':'')+'>'+(trackerLoading?'CHECKING…':'REFRESH NOW')+'</button>'+
@@ -587,7 +587,7 @@
         '<section class="tracker-feed">'+body+'</section>'+
         '<section class="tracker-source-note">'+
           '<strong>HOW ALERTS WORK</strong>'+
-          '<span>JLR follows zKillboard\'s R2Z2 live sequence for Heavy Fighter group 1653. When CUSTOM VOICE is ONLINE, Railway requests one GPT-SoVITS announcement per killmail and caches it for authorized users. If the worker is OFFLINE, JLR automatically uses the browser fallback voice so the alarm still fires.</span>'+
+          '<span>JLR follows zKillboard\'s R2Z2 live sequence for Heavy Fighter group 1653. New losses trigger JLR\'s dedicated local two-tone loss alarm immediately. No microphone or AI voice is involved. Use STOP ALARM to silence it.</span>'+
         '</section>'+
       '</div>';
 
