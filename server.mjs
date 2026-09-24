@@ -5029,6 +5029,8 @@ function myProfile(user) {
         lastError:/temporarily unavailable\s*\(HTTP\s*\d+\)/i.test(String(c.lastError||''))?null:c.lastError,
         portrait:`https://images.evetech.net/characters/${c.characterId}/portrait?size=64`,
         scopes,
+        miningAccess:scopes.includes(MINING_SCOPE),
+        ledgerCached:ledgerRowsByCharacter.has(String(c.characterId)),
         locationAccess:scopes.includes(LOCATION_SCOPE),
         contactsAccess:hasThreatContactAccess(scopes),
         needsReauth:!scopes.includes(MINING_SCOPE)||!scopes.includes(SKILLS_SCOPE)||!scopes.includes(FITTINGS_SCOPE)||!scopes.includes(ASSETS_SCOPE)||!scopes.includes(LOCATION_SCOPE)||!hasThreatContactAccess(scopes),
