@@ -1,5 +1,7 @@
 # JLR Miner Tracker v2.2 — Website Build
 
+**Latest patch notes:** [September 23–24, 2026 release roundup (v2.9.124–v2.9.144)](PATCH-NOTES-2026-09-23-24.md) · [Full GitHub commit history](https://github.com/JohnLuman/JLR-Miner-Tracker/compare/93abba91ceeec13d39dbb3b7cd2d0e04aa43fa17...e7a1f62216290ccfcad66c3dedf5709b5eec3dd2)
+
 This version is designed to work like a normal EVE web app:
 
 1. A player visits the public JLR website.

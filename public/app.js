@@ -4287,17 +4287,22 @@
     const previousEvePayout=Math.max(0,actualValue(previousEveRow?.jbv));
     const todayLedgerRows=Math.max(0,Number(ledgerDebug?.todayRows)||0);
     const todayT3Rows=Math.max(0,Number(ledgerDebug?.matchedT3Rows)||0);
+    const appTodaySub=$('actualTodayIskSub');
+    const newEveDay=unpricedM3<=0&&appTodayM3<=0&&todayT3Rows<=0&&previousEveM3>0;
+    appPayoutCard?.classList.toggle('eve-day-reset',newEveDay);
+    appTodaySub.removeAttribute('title');
 
     if(unpricedM3>0){
-      $('actualTodayIskSub').textContent='EVE day '+eveDay+' UTC • '+fmt(appTodayM3,'m3')+' m³ mined • '+fmt(unpricedM3,'m3')+' m³ awaiting price • '+payoutPriceBasis;
-    }else if(appTodayM3<=0&&todayT3Rows<=0&&previousEveM3>0){
-      $('actualTodayIskSub').textContent='NEW EVE DAY • reset 00:00 UTC • previous '+previousEveDay+': '+fmt(previousEveM3,'m3')+' m³ • '+fmt(previousEvePayout)+' ISK';
+      appTodaySub.textContent='EVE day '+eveDay+' UTC • '+fmt(appTodayM3,'m3')+' m³ mined • '+fmt(unpricedM3,'m3')+' m³ awaiting price • '+payoutPriceBasis;
+    }else if(newEveDay){
+      appTodaySub.textContent='NEW EVE DAY • reset 00:00 UTC\nYesterday '+fmt(previousEveM3,'m3')+' m³ • '+fmt(previousEvePayout)+' ISK';
+      appTodaySub.title='Previous EVE day '+previousEveDay+': '+fmt(previousEveM3,'m3')+' m³ • '+fmt(previousEvePayout)+' ISK';
     }else if(appTodayM3<=0&&todayLedgerRows>0&&todayT3Rows<=0){
-      $('actualTodayIskSub').textContent='EVE day '+eveDay+' UTC • '+todayLedgerRows+' mining rows seen • 0 T3 ore rows • payout counts T3 ore only';
+      appTodaySub.textContent='EVE day '+eveDay+' UTC • '+todayLedgerRows+' mining rows seen • 0 T3 ore rows • payout counts T3 ore only';
     }else if(appTodayM3<=0){
-      $('actualTodayIskSub').textContent='EVE day '+eveDay+' UTC • no T3 ledger rows since 00:00 UTC • '+(payout*100).toFixed(1)+'% payout';
+      appTodaySub.textContent='EVE day '+eveDay+' UTC • no T3 ledger rows since 00:00 UTC • '+(payout*100).toFixed(1)+'% payout';
     }else{
-      $('actualTodayIskSub').textContent='EVE day '+eveDay+' UTC • '+fmt(appTodayM3,'m3')+' m³ mined • exact T3 grade • '+(payout*100).toFixed(1)+'% payout • '+payoutPriceBasis;
+      appTodaySub.textContent='EVE day '+eveDay+' UTC • '+fmt(appTodayM3,'m3')+' m³ mined • exact T3 grade • '+(payout*100).toFixed(1)+'% payout • '+payoutPriceBasis;
     }
 
     const myTotals=myLedgerSummary?.totals||null;

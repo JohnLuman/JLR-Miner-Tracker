@@ -3419,3 +3419,16 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
   .adam-quick-nearest{grid-template-columns:auto minmax(0,1fr) auto}
   .adam-quick-nearest>span{grid-column:1/-1}
 }
+
+/* Give the EVE-day reset explanation two complete lines inside the payout card. */
+.operations-summary-bar>.summary-cell-payout.eve-day-reset{min-height:82px}
+.operations-summary-bar>.summary-cell-payout.eve-day-reset>small{
+  display:block;
+  white-space:pre-line!important;
+  overflow:visible;
+  overflow-wrap:anywhere;
+  -webkit-line-clamp:unset;
+}
+@media(min-width:761px){
+  .app.compact .operations-summary-bar>.summary-cell-payout.eve-day-reset{min-height:70px}
+}
