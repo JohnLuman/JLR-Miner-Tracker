@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700&family=Rajdhani:wght@600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=2.9.141">
-  <link rel="stylesheet" href="/tracker.css?v=2.9.141">
+  <link rel="stylesheet" href="/styles.css?v=2.9.142">
+  <link rel="stylesheet" href="/tracker.css?v=2.9.142">
 </head>
 <body>
   <main id="loginView" class="login-shell hidden">
@@ -31,7 +31,7 @@
     <header class="topbar">
       <div class="brand">
         <div class="brand-kicker">JLR INDUSTRIAL NETWORK // FOUNTAIN</div>
-        <div class="brand-line"><span class="brand-mark">JLR</span><h1>MINER TRACKER</h1><span class="brand-status-stack"><small id="appVersion" class="app-version">v2.9.141</small><span id="liveBadge" class="status-pill" title="Latest EVE data sync status">● DATA LOADING</span></span></div>
+        <div class="brand-line"><span class="brand-mark">JLR</span><h1>MINER TRACKER</h1><span class="brand-status-stack"><small id="appVersion" class="app-version">v2.9.142</small><span id="liveBadge" class="status-pill" title="Latest EVE data sync status">● DATA LOADING</span></span></div>
       </div>
       <div class="top-actions">
         <button id="compactMode" class="orb purple active" type="button" title="Condensed operations view with smaller cards and fewer detail panels">COMPACT</button>
@@ -61,11 +61,11 @@
 
     <section class="kpis information-kpis" aria-label="Operations summary">
       <article class="kpi kpi-primary api-kpi app-payout-kpi" title="Combined payout value for all characters linked anywhere in JLR">
-        <div class="kpi-title-row"><span>APP PAYOUT • TODAY</span><small id="appLedgerCoverageBadge" class="kpi-badge">—</small></div>
+        <div class="kpi-title-row"><span>APP PAYOUT • EVE DAY</span><small id="appLedgerCoverageBadge" class="kpi-badge">—</small></div>
         <strong id="actualTodayIsk">—</strong><small id="actualTodayIskSub">all JLR-linked toons • exact T3 type IDs • payout setting</small>
       </article>
       <article id="myLedgerPayoutCard" class="kpi kpi-primary api-kpi ledger-audit-trigger" tabindex="0" role="button" aria-haspopup="dialog" title="Open your per-toon payout audit">
-        <div class="kpi-title-row"><span>MY TOONS PAYOUT • TODAY</span><small id="myLedgerCoverageBadge" class="kpi-badge">—</small></div>
+        <div class="kpi-title-row"><span>MY TOONS PAYOUT • EVE DAY</span><small id="myLedgerCoverageBadge" class="kpi-badge">—</small></div>
         <strong id="actualMyTodayIsk">—</strong><small id="actualMyTodayIskSub">your linked toons • click for toon audit</small>
       </article>
       <article class="kpi kpi-secondary fleet-target-kpi">
@@ -102,7 +102,9 @@
     </section>
     <div id="tabHost" class="tab-host"></div>
 
-    <section class="glass tracker-assistant-panel"></section>\n\n    <section class="compact-row">
+    <section class="glass tracker-assistant-panel"></section>
+
+    <section class="compact-row">
       <details class="glass setup-drawer fleet-and-fits" open>
         <summary><span>⚙ FLEET & FITS</span><span id="setupSummary">Choose miners and fits</span></summary>
         <div class="fleet-setup-body">
@@ -244,8 +246,8 @@
       </div>
       <div class="fleet-command-kpis information-fleet-kpis">
         <article class="fleet-kpi-primary"><span>ACTIVE LEDGER RATE</span><strong id="fleetLiveRate">—</strong><small id="fleetLiveRateSub">waiting for a mining interval</small></article>
-        <article class="fleet-kpi-primary"><span>TODAY PAYOUT</span><strong id="fleetTodayPayout">—</strong><small id="fleetTodayPayoutSub">tracked T3 value × payout</small></article>
-        <article class="fleet-kpi-primary"><span>TODAY MINED</span><strong id="fleetTodayM3">—</strong><small>all linked mining ledgers</small></article>
+        <article class="fleet-kpi-primary"><span>EVE DAY T3 PAYOUT</span><strong id="fleetTodayPayout">—</strong><small id="fleetTodayPayoutSub">current UTC/EVE day • exact T3 ledger</small></article>
+        <article class="fleet-kpi-primary"><span>EVE DAY T3 MINED</span><strong id="fleetTodayM3">—</strong><small>current UTC/EVE day • selected fleet</small></article>
         <article class="fleet-kpi-secondary"><span>ACTIVE TOONS</span><strong id="fleetActiveToons">—</strong><small id="fleetActiveToonsSub">detected in latest sample</small></article>
         <article class="fleet-kpi-secondary"><span id="fleetRangeTotalLabel">7D MINED</span><strong id="fleetRangeTotal">—</strong><small id="fleetRangeTotalSub">selected history range</small></article>
         <article class="fleet-kpi-secondary"><span>BEST DAY</span><strong id="fleetBestDay">—</strong><small id="fleetBestDaySub">no production history yet</small></article>
@@ -254,6 +256,14 @@
         <article class="fleet-command-card fleet-live-card">
           <div class="visual-card-head"><strong>LIVE ACTIVITY RATE</strong><small>15-minute ESI samples • updates automatically</small></div>
           <div id="fleetActivityChart" class="fleet-activity-chart"></div>
+        </article>
+        <article class="fleet-command-card fleet-trend-card">
+          <div class="visual-card-head trend-head">
+            <div><strong>ORE VALUE TREND</strong><small>Jita vs C-N • last 30 days • ISK/m³</small></div>
+            <select id="oreTrendSelect" aria-label="Ore value trend"></select>
+          </div>
+          <div class="visual-legend"><span class="legend-jita">JITA</span><span class="legend-cn">C-N</span></div>
+          <div id="oreValueChart" class="market-line-chart"></div>
         </article>
         <article class="fleet-command-card fleet-history-card">
           <div class="visual-card-head"><strong id="fleetHistoryTitle">DAILY MINING VOLUME</strong><small id="fleetHistorySubtitle">last 7 days • hover for daily totals</small></div>
@@ -273,17 +283,9 @@
 
     <section class="glass mining-visuals-panel">
       <div class="section-title"><div><strong>ORE VALUE & FIT ANALYTICS</strong></div><span class="muted tiny">Jita/C-N history • fit projection • ledger actuals</span></div>
-      <div class="mining-visual-grid">
+      <div class="mining-visual-grid mining-visual-grid-single">
         <article class="mining-visual-card">
-          <div class="visual-card-head trend-head">
-            <div><strong>ORE VALUE TREND</strong><small>Jita vs C-N • last 30 days • ISK/m³</small></div>
-            <select id="oreTrendSelect" aria-label="Ore value trend"></select>
-          </div>
-          <div class="visual-legend"><span class="legend-jita">JITA</span><span class="legend-cn">C-N</span></div>
-          <div id="oreValueChart" class="market-line-chart"></div>
-        </article>
-        <article class="mining-visual-card">
-          <div class="visual-card-head"><strong>FLEET PERFORMANCE</strong><small>100% rate • selected uptime • contribution</small></div>
+          <div class="visual-card-head"><strong>FLEET PERFORMANCE</strong><small>compact miner comparison • actual vs target</small></div>
           <div id="fleetOutputChart" class="fleet-performance"></div>
         </article>
       </div>
@@ -327,7 +329,7 @@
 
     <section class="glass gas-huffing-panel">
       <div class="section-title">
-        <div><span id="gasRegionEyebrow" class="eyebrow">FOUNTAIN • CYTOSEROCIN</span><strong>GAS HUFFING</strong></div>
+        <div><span id="gasRegionEyebrow" class="eyebrow">SELECT REGION • GAS FAMILY</span><strong>GAS HUFFING</strong></div>
         <div class="ice-title-tools gas-title-tools">
           <label for="gasRegionSelect">REGION</label><select id="gasRegionSelect" aria-label="Gas region"></select>
           <label for="gasTypeSelect">GAS</label><select id="gasTypeSelect" aria-label="Gas type"></select>
@@ -338,7 +340,7 @@
         <article class="ice-kpi"><span id="gasRawLabel">RAW GAS JITA / UNIT</span><strong id="gasRawJita">—</strong><small id="gasRawJitaSub">selected gas buy value</small></article>
         <article class="ice-kpi"><span id="gasCompressedLabel">COMPRESSED JITA / UNIT</span><strong id="gasCompressedJita">—</strong><small id="gasCompressedJitaSub">1 compressed unit = 1 raw unit</small></article>
         <article class="ice-kpi"><span>SELECTED GAS FLEET</span><strong id="gasFleetM3">—</strong><small id="gasFleetM3Sub">calculated m³/hr from gas fits</small></article>
-        <article class="ice-kpi"><span>RAW JITA VALUE / HR</span><strong id="gasFleetIsk">—</strong><small id="gasFleetIskSub">fleet output × raw Celadon buy</small></article>
+        <article class="ice-kpi"><span>RAW JITA VALUE / HR</span><strong id="gasFleetIsk">—</strong><small id="gasFleetIskSub">selected gas • fleet output × raw Jita buy</small></article>
       </div>
 
       <div class="ice-layout gas-layout">
@@ -347,7 +349,7 @@
           <div id="gasFleetOutput" class="ice-fleet-output gas-fleet-output"></div>
         </article>
         <article class="ice-chart-card">
-          <div class="visual-card-head"><strong id="gasSiteTitle">KNOWN FOUNTAIN GAS SITES</strong><small>site volume and danger at a glance</small></div>
+          <div class="visual-card-head"><strong id="gasSiteTitle">KNOWN REGIONAL GAS SITES</strong><small>selected region • site volume and danger at a glance</small></div>
           <div id="gasSiteTable" class="gas-site-table"></div>
         </article>
       </div>
@@ -370,9 +372,9 @@
           <div id="gasModuleTable" class="gas-module-table"></div>
         </article>
         <article class="ice-chart-card gas-ops-card">
-          <div class="visual-card-head"><strong>GAS OPERATIONS</strong><small>Fountain huffing reference</small></div>
+          <div class="visual-card-head"><strong>GAS OPERATIONS</strong><small id="gasOpsReference">selected-region huffing reference</small></div>
           <div class="gas-ops-grid">
-            <div><span>SELECTED GAS</span><strong id="gasOpsType">Celadon Cytoserocin</strong><small id="gasOpsRegion">Fountain • 10 m³ per raw unit</small></div>
+            <div><span>SELECTED GAS</span><strong id="gasOpsType">—</strong><small id="gasOpsRegion">select a region and gas</small></div>
             <div><span>FIT SOURCE</span><strong>Fleet & Fits</strong><small>select a saved gas fit on each huffer</small></div>
             <div><span>BOOSTS</span><strong>Mining Foreman</strong><small>cycle and range bonuses use the selected booster</small></div>
             <div><span>VALUE BASIS</span><strong>Raw Jita Buy</strong><small>compressed and C-N prices shown separately when available</small></div>
@@ -411,7 +413,6 @@
           <div class="section-title"><div><strong>CONNECTED TOONS & DATA SYNC</strong></div><span id="esiStatus" class="status-pill">—</span></div>
           <div class="esi-actions"><button id="addToon" class="orb purple" type="button">+ ADD TOON</button><button id="syncNow" class="orb blue" type="button">SYNC EVE DATA</button><button id="scanAllFits" class="orb blue" type="button" title="Refresh saved fittings, assets, and Abyssal strip-miner rolls for every linked toon.">↻ SCAN ALL FITS</button><span id="lastSync" class="tiny muted">No successful sync yet</span></div>
           <div id="characterList" class="character-list"></div>
-          <div class="privacy-box"><strong>Privacy:</strong><p>When Adam Auto Follow is on, this open page checks your linked toons' locations for scan prompts. Live locations are visible only on your account and are not added to the shared field board or retained in character history. Turn Auto Follow off in Brain.</p></div>
         </section>
 
         <section class="glass actual-panel">
@@ -447,7 +448,7 @@
   </main>
   <script src="/yield-math.js?v=2.9.37" defer></script>
   <script src="/vendor/vosk/vosk-0.0.8.js?v=1" defer></script>
-  <script src="/app.js?v=2.9.141" defer></script>
-  <script src="/tracker.js?v=2.9.141" defer></script>
+  <script src="/app.js?v=2.9.142" defer></script>
+  <script src="/tracker.js?v=2.9.142" defer></script>
 </body>
 </html>

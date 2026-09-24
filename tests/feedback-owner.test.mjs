@@ -23,7 +23,7 @@ assert.match(app,/feedbackOwner\?100:15/,'owner can browse more submissions than
 assert.match(app,/feedback-owner-full/,'owner feedback list gets a full-text display mode');
 assert.match(styles,/feedback-recent\.feedback-owner-full \.feedback-history-row>p\{display:block;/,'owner feedback text is not line-clamped');
 
-assert.equal(pkg.version,'2.9.141','owner feedback release is versioned');
-assert.ok(index.includes('/app.js?v=2.9.141'),'browser loads the owner-feedback app build');
+assert.equal(pkg.version,'2.9.142','owner feedback release is versioned');
+assert.ok(index.includes('/app.js?v=2.9.142'),'browser loads the owner-feedback app build');
 
 console.log('Owner feedback ESI access tests passed.');

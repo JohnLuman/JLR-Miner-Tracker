@@ -1,7 +1,7 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.141';
-  const CORE_URL='/tracker-core.js?v=2.9.141';
+  const ALARM_VERSION='2.9.142';
+  const CORE_URL='/tracker-core.js?v=2.9.142';
 
   let alarmContext=null;
   let alarmSource=null;
@@ -544,7 +544,7 @@
     el.id='fighterLossAlarmOverlay';
     el.className='fighter-loss-alarm-overlay hidden';
     el.setAttribute('role','alert');
-    el.innerHTML='<div class="fighter-loss-alarm-copy"><span>JLR LOSS ALARM</span><strong id="fighterLossAlarmTitle">HEAVY FIGHTER DOWN</strong><small id="fighterLossAlarmDetail">Open Tracker for details.</small></div><div class="fighter-loss-alarm-actions"><button id="fighterLossAlarmOpen" class="board-tool" type="button">OPEN TRACKER</button><button id="fighterLossAlarmStop" class="orb red" type="button">■ STOP ALARM</button></div>';
+    el.innerHTML='<div class="fighter-loss-alarm-copy"><span>JLR LOSS ALARM</span><strong id="fighterLossAlarmTitle">HEAVY FIGHTER DOWN</strong><small id="fighterLossAlarmDetail">Open Tracker for details.</small></div><div class="fighter-loss-alarm-actions"><button id="fighterLossAlarmOpen" class="board-tool" type="button">OPEN TRACKER</button><button id="fighterLossAlarmStop" class="orb red" type="button">■ ACKNOWLEDGE / STOP</button></div>';
     document.body.appendChild(el);
     el.querySelector('#fighterLossAlarmStop')?.addEventListener('click',()=>stopVoiceAlert());
     el.querySelector('#fighterLossAlarmOpen')?.addEventListener('click',()=>{
@@ -567,15 +567,12 @@
     el.classList.remove('hidden');
   }
 
-  async function playVoiceAlert(loss){
-    if(!loss?.test&&!autoVoiceAllowed())return false;
-    stopVoiceAlert();
-    const context=ensureAlarmContext();
-    if(!context)return false;
-    if(context.state==='suspended'){
-      try{await context.resume();}catch(error){}
+  function playFighterAlarmCycle(context,generation){
+    if(generation!==alarmGeneration)return;
+    for(const node of fighterAlarmNodes.splice(0)){
+      try{node.stop?.();}catch(error){}
+      try{node.disconnect?.();}catch(error){}
     }
-    if(context.state!=='running')return false;
 
     const now=context.currentTime+.03;
     const master=context.createGain();
@@ -583,7 +580,8 @@
     master.connect(context.destination);
     fighterAlarmNodes.push(master);
 
-    // Immediate, local two-tone loss alarm. No network request, TTS, or AI voice.
+    // Repeating two-tone Heavy Fighter alarm. It intentionally latches until
+    // STOP ALARM / ACKNOWLEDGE calls stopVoiceAlert().
     for(let i=0;i<8;i++){
       const start=now+i*.46;
       const osc=context.createOscillator();
@@ -602,12 +600,27 @@
     master.gain.setValueAtTime(.88,now+3.55);
     master.gain.exponentialRampToValueAtTime(.0001,now+3.75);
 
-    showFighterAlarmOverlay(loss||{});
     fighterAlarmTimer=setTimeout(()=>{
       fighterAlarmTimer=null;
-      for(const node of fighterAlarmNodes.splice(0)){try{node.disconnect?.();}catch(error){}}
-    },4100);
-    reportVoiceMode('alarm','Dedicated local Heavy Fighter loss alarm');
+      if(generation!==alarmGeneration)return;
+      playFighterAlarmCycle(context,generation);
+    },4050);
+  }
+
+  async function playVoiceAlert(loss){
+    if(!loss?.test&&!autoVoiceAllowed())return false;
+    stopVoiceAlert();
+    const context=ensureAlarmContext();
+    if(!context)return false;
+    if(context.state==='suspended'){
+      try{await context.resume();}catch(error){}
+    }
+    if(context.state!=='running')return false;
+
+    const generation=alarmGeneration;
+    showFighterAlarmOverlay(loss||{});
+    playFighterAlarmCycle(context,generation);
+    reportVoiceMode('alarm','Latched Heavy Fighter loss alarm — acknowledge to stop');
     return true;
   }
 

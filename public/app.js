@@ -33,6 +33,11 @@
   const scoutLocationErrors = new Map();
   let scoutLocationCursor = 0;
   let scoutFollowEnabled = localStorage.getItem('jlrScoutFollow') !== 'false';
+  let scoutSelectedCharacterId = localStorage.getItem('jlrScoutCharacter') || '';
+  let scoutTargets = [];
+  let scoutTargetsLoading = false;
+  let scoutTargetsError = '';
+  let scoutTargetsOriginSystem = '';
   let scoutPromptKey = '';
   const scoutVoiceCooldown = new Map();
   let merIntel = null;
@@ -234,7 +239,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.141');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.142');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -324,7 +329,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR ADAM MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.141'),
+      'Version: '+String(state?.app?.version||'2.9.142'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -1352,7 +1357,7 @@
         <span class="tracker-assist-priority ${esc(issue.priority||'info')}">${esc(String(issue.priority||'info').toUpperCase())}</span>
         <strong>${esc(issue.title||'Tracker update')}</strong>
         <small>${esc(issue.reason||'')}</small>
-      </button>`).join(''):'<div class="visual-empty">No active Adam decisions require attention.</div>';
+      </button>`).join(''):'<div class="visual-empty">No active Scout decisions require attention.</div>';
     }
   }
 
@@ -1482,10 +1487,94 @@
     return !last||entered&&Date.now()-last>cooldown;
   }
 
+  function renderScoutTargets(){
+    const host=$('scoutTargetList');
+    const summary=$('scoutTargetSummary');
+    if(!host)return;
+    const selected=(me?.characters||[]).find(ch=>String(ch.characterId)===String(scoutSelectedCharacterId));
+    const location=scoutLocations.get(String(scoutSelectedCharacterId));
+    if(summary){
+      summary.textContent=location?.system
+        ?String(selected?.name||'Selected toon')+' • '+location.system+' • closest Field Tracker updates'
+        :'Select a location-enabled toon to rank nearby Field Tracker updates.';
+    }
+    if(scoutTargetsLoading){
+      host.innerHTML='<div class="visual-empty">Calculating closest update systems…</div>';
+      return;
+    }
+    if(scoutTargetsError){
+      host.innerHTML='<div class="visual-empty">'+esc(scoutTargetsError)+'</div>';
+      return;
+    }
+    if(!scoutTargets.length){
+      host.innerHTML='<div class="visual-empty">No Field Tracker systems currently need a scan update.</div>';
+      return;
+    }
+    host.innerHTML=scoutTargets.map((row,index)=>{
+      const age=row.lastScanAt?ago(row.lastScanAt):'never scanned';
+      return '<button class="scout-target-row" type="button" data-scout-field="'+esc(row.system)+'">'+
+        '<b>#'+(index+1)+'</b><div><strong>'+esc(row.system)+'</strong><small>'+esc(row.reason||'SCAN UPDATE')+' • '+esc(age)+'</small></div>'+
+        '<span>'+Number(row.jumps||0)+'J</span><em>OPEN →</em>'+
+      '</button>';
+    }).join('');
+  }
+
+  async function loadScoutTargets(force=false){
+    if(!me||scoutTargetsLoading)return;
+    const chars=(me.characters||[]).filter(ch=>ch.locationAccess);
+    if(!chars.length){
+      scoutTargets=[];scoutTargetsError='No linked toon currently has EVE location access.';renderScoutTargets();return;
+    }
+    if(!chars.some(ch=>String(ch.characterId)===String(scoutSelectedCharacterId))){
+      const preferred=chars.find(ch=>String(ch.characterId)===String(scanCharacterId))
+        ||chars.find(ch=>String(ch.characterId)===String(me.primaryCharacterId))
+        ||chars[0];
+      scoutSelectedCharacterId=String(preferred.characterId);
+      localStorage.setItem('jlrScoutCharacter',scoutSelectedCharacterId);
+    }
+    if(!force&&scoutTargets.length&&scoutTargetsOriginSystem===String(scoutLocations.get(scoutSelectedCharacterId)?.system||'')){
+      renderScoutTargets();
+      return;
+    }
+    scoutTargetsLoading=true;scoutTargetsError='';renderScoutTargets();
+    try{
+      const response=await api('/api/scout/targets',{method:'POST',body:JSON.stringify({characterId:scoutSelectedCharacterId})});
+      if(String(response?.characterId)!==String(scoutSelectedCharacterId))return;
+      if(response?.location?.system){
+        scoutLocations.set(String(scoutSelectedCharacterId),response.location);
+        scoutTargetsOriginSystem=String(response.location.system);
+      }
+      scoutTargets=Array.isArray(response?.targets)?response.targets:[];
+    }catch(error){
+      scoutTargets=[];
+      scoutTargetsError=String(error?.message||error||'Could not calculate nearby field updates.');
+    }finally{
+      scoutTargetsLoading=false;
+      renderScoutFollow();
+      renderScoutTargets();
+    }
+  }
+
   function renderScoutFollow(){
     const status=$('brainFollowStatus'),list=$('brainFollowList');
     if(!status||!list||!me)return;
     const chars=(me.characters||[]).filter(c=>c.locationAccess);
+    if(chars.length&&!chars.some(ch=>String(ch.characterId)===String(scoutSelectedCharacterId))){
+      const preferred=chars.find(ch=>String(ch.characterId)===String(scanCharacterId))
+        ||chars.find(ch=>String(ch.characterId)===String(me.primaryCharacterId))
+        ||chars[0];
+      scoutSelectedCharacterId=String(preferred.characterId);
+      localStorage.setItem('jlrScoutCharacter',scoutSelectedCharacterId);
+    }
+    const selector=$('scoutCharacterSelect');
+    if(selector){
+      const previous=String(selector.value||'');
+      selector.innerHTML=chars.length
+        ?chars.map(ch=>'<option value="'+esc(ch.characterId)+'">'+esc(ch.name)+'</option>').join('')
+        :'<option value="">NO LOCATION-ENABLED TOONS</option>';
+      selector.disabled=!chars.length;
+      selector.value=chars.some(ch=>String(ch.characterId)===String(scoutSelectedCharacterId))?scoutSelectedCharacterId:(previous||'');
+    }
     status.textContent=scoutFollowEnabled
       ?'Following '+chars.length+' location-enabled toon'+(chars.length===1?'':'s')+' while this page is open • scan-due alerts appear at the top of JLR'
       :'Auto follow is off.';
@@ -1498,6 +1587,7 @@
         :locationError?'Location fallback failed • retrying':'Waiting for location check';
       return '<div class="brain-follow-row"><strong>'+esc(ch.name)+'</strong><span'+(row?.needsScan?' class="scan-due"':'')+'>'+detail+'</span></div>';
     }).join(''):'<div class="brain-follow-row">Enable Auto Follow to watch your linked toons.</div>';
+    renderScoutTargets();
   }
 
   function scoutShowPrompt(snapshot){
@@ -1520,7 +1610,7 @@
     if((document.hidden&&!force)||scoutLocationBusy||scanBusy||!me||!scoutFollowEnabled)return;
     const chars=(me.characters||[]).filter(c=>c.locationAccess);
     if(!chars.length){renderScoutFollow();return}
-    const selected=chars.find(c=>String(c.characterId)===String(scanCharacterId));
+    const selected=chars.find(c=>String(c.characterId)===String(scoutSelectedCharacterId));
     const others=chars.filter(c=>String(c.characterId)!==String(selected?.characterId));
     const batch=[];
     if(selected)batch.push(String(selected.characterId));
@@ -1554,6 +1644,8 @@
       }
       for(const failure of response?.errors||[])scoutLocationErrors.set(String(failure.characterId),String(failure.error||'ESI_LOCATION_FAILED'));
       renderScoutFollow();
+      const selectedSnapshot=scoutLocations.get(String(scoutSelectedCharacterId));
+      if(selectedSnapshot?.system&&String(selectedSnapshot.system)!==String(scoutTargetsOriginSystem))void loadScoutTargets(true);
       if(prompt)scoutShowPrompt(prompt);
     }catch(error){
       if(force)console.warn('Scout location check failed',error);
@@ -1568,6 +1660,7 @@
     renderScoutFollow();
     if(!scoutFollowEnabled)return;
     pollScoutLocation(true);
+    if(activeTab==='brain')void loadScoutTargets(false);
     scoutLocationTimer=setInterval(()=>pollScoutLocation(false),30*1000);
   }
 
@@ -2091,6 +2184,7 @@
     if(activeTab==='brain'){
       refreshCompanionStatus();
       if(scoutFollowEnabled)pollScoutLocation(true);
+      void loadScoutTargets(false);
     }
     if(activeTab==='pvp'&&!pvpIntel&&!pvpIntelLoading)loadPvpIntel();
     if(activeTab==='threat')renderThreatScan();
@@ -2148,15 +2242,17 @@
           <button id="scoutCheckNow" class="orb purple" type="button">↻ CHECK LOCATIONS</button>
         </div>
       </div>
-      <div class="scout-no-mic-note"><strong>NO MICROPHONE REQUIRED</strong><span>JLR watches linked toon movement through the Desktop Companion or ESI and shows visual scan-update alerts only.</span></div>
       <div class="tracker-brain-grid scout-ops-grid">
         <section class="brain-card scout-watch-card">
           <div class="brain-card-head"><strong>TRAVEL UPDATE WATCH</strong><small>Silent visual alerts</small></div>
           <div class="brain-setting-grid scout-setting-grid">
+            <label class="brain-setting"><span>TRAVEL TOON</span><select id="scoutCharacterSelect"><option value="">SELECT TOON</option></select></label>
             <label class="brain-setting"><span>AUTO FOLLOW TOONS</span><select id="brainFollowEnabled"><option value="on">ON</option><option value="off">OFF</option></select></label>
           </div>
           <div id="brainScanPrompt" class="brain-scan-prompt hidden" role="status"><span id="brainScanPromptText"></span><button id="brainScanOpen" class="board-tool" type="button">OPEN SCANNER</button></div>
-          <div class="brain-follow-head"><strong>LINKED TOONS</strong><small id="brainFollowStatus">Checking location access…</small></div>
+          <div class="brain-follow-head"><strong>CLOSEST FIELD UPDATES</strong><small id="scoutTargetSummary">Select a toon to calculate routes.</small></div>
+          <div id="scoutTargetList" class="scout-target-list"><div class="visual-empty">Waiting for Scout location…</div></div>
+          <div class="brain-follow-head scout-linked-head"><strong>LINKED TOONS</strong><small id="brainFollowStatus">Checking location access…</small></div>
           <div id="brainFollowList" class="brain-follow-list"></div>
         </section>
 
@@ -2619,6 +2715,7 @@
             </table>
           </div>
 
+          <div class="doctrine-side-column">
           <aside id="doctrineShoppingDrop" class="doctrine-shopping ${doctrineShoppingOpen?'open':'collapsed'}">
             <button id="doctrineShoppingToggle" class="doctrine-shopping-toggle" type="button" aria-expanded="${String(doctrineShoppingOpen)}">
               <div class="doctrine-shopping-toggle-title">
@@ -2653,6 +2750,11 @@
               <button id="doctrineShoppingCopy" class="doctrine-multibuy-copy" type="button" ${shoppingRows.length?'':'disabled'}>COPY FOR EVE MULTIBUY</button>
             </div>
           </aside>
+          <a class="doctrine-nyx-buyback" href="https://discord.com/channels/1275408985171820585/1465988346185515078" target="_blank" rel="noopener noreferrer" aria-label="Open the Nyx Buyback Discord channel">
+            <img src="/assets/nyx-buyback.webp?v=2.9.142" alt="Nyx Buyback — open the Discord channel">
+            <span>OPEN BUYBACK CHANNEL ↗</span>
+          </a>
+          </div>
         </div>
 
       </section>`;
@@ -3900,13 +4002,15 @@
     const appCached=Number(ledgerDebug?.cachedCharacters||0);
     const appLinked=Number(ledgerDebug?.linkedCharacters||0);
     const appCoverageBadge=$('appLedgerCoverageBadge');
+    const appCoverageRatio=appLinked>0?appCached/appLinked:0;
+    const appCoverageHealthy=Boolean(ledgerDebug&&(ledgerDebug.cacheHealthy??appCoverageRatio>=.8));
     if(appCoverageBadge){
-      appCoverageBadge.textContent=ledgerDebug?(appCached+'/'+appLinked+' SYNCED'):'WAITING';
-      appCoverageBadge.classList.toggle('partial',Boolean(ledgerDebug&&!ledgerDebug.cacheComplete));
+      appCoverageBadge.textContent=ledgerDebug?(appCached+'/'+appLinked+' '+(appCoverageHealthy?'HEALTHY':'SYNCING')):'WAITING';
+      appCoverageBadge.classList.toggle('partial',Boolean(ledgerDebug&&!appCoverageHealthy));
     }
     const appPayoutCard=$('actualTodayIsk')?.closest('.kpi');
     if(appPayoutCard){
-      appPayoutCard.classList.toggle('partial',Boolean(ledgerDebug&&!ledgerDebug.cacheComplete));
+      appPayoutCard.classList.toggle('partial',Boolean(ledgerDebug&&!appCoverageHealthy));
       if(ledgerDebug){
         const debug=[
           'cache '+appCached+'/'+appLinked,
@@ -3915,13 +4019,15 @@
           'outside tracked fields '+Number(ledgerDebug.outsideTrackedSystemRows||0),
           'unresolved systems '+Number(ledgerDebug.unresolvedSystemRows??ledgerDebug.unmatchedSystemRows??0),
           'non-T3 '+Number(ledgerDebug.unmatchedOreRows||0),
+          'needs EVE access '+Number(ledgerDebug.needsAccessCharacters||0),
+          'coverage '+Number(ledgerDebug.coveragePercent??appCoverageRatio*100).toFixed(1)+'%',
         ];
         appPayoutCard.title='Combined payout value for all linked JLR characters. '+debug.join(' • ')+(state.esi.lastSyncAt?' • synced '+ago(state.esi.lastSyncAt):'');
       }
     }
     $('actualTodayIskSub').textContent=unpricedM3>0
-      ?fmt(appTodayM3,'m3')+' m³ mined • '+fmt(unpricedM3,'m3')+' m³ awaiting price • '+payoutPriceBasis
-      :fmt(appTodayM3,'m3')+' m³ mined • exact T3 grade • '+(payout*100).toFixed(1)+'% payout • '+payoutPriceBasis;
+      ?'EVE day (UTC) • '+fmt(appTodayM3,'m3')+' m³ mined • '+fmt(unpricedM3,'m3')+' m³ awaiting price • '+payoutPriceBasis
+      :'EVE day (UTC) • '+fmt(appTodayM3,'m3')+' m³ mined • exact T3 grade • '+(payout*100).toFixed(1)+'% payout • '+payoutPriceBasis;
 
     const myTotals=myLedgerSummary?.totals||null;
     const myRawValue=Math.max(0,Number(myTotals?.jbv)||0);
@@ -3932,15 +4038,17 @@
       const myCached=Number(myLedgerSummary?.cachedCharacters||0);
       const myLinked=Number(myLedgerSummary?.linkedCharacters||0);
       const myBadge=$('myLedgerCoverageBadge');
+      const myCoverageRatio=myLinked>0?myCached/myLinked:0;
+      const myCoverageHealthy=Boolean(myLedgerSummary&&myCoverageRatio>=.8);
       if(myBadge){
-        myBadge.textContent=myLedgerSummary?(myCached+'/'+myLinked+' SYNCED'):'LOADING';
-        myBadge.classList.toggle('partial',Boolean(myLedgerSummary&&myCached<myLinked));
+        myBadge.textContent=myLedgerSummary?(myCached+'/'+myLinked+' '+(myCoverageHealthy?'HEALTHY':'SYNCING')):'LOADING';
+        myBadge.classList.toggle('partial',Boolean(myLedgerSummary&&!myCoverageHealthy));
       }
-      if($('myLedgerPayoutCard'))$('myLedgerPayoutCard').classList.toggle('partial',Boolean(myLedgerSummary&&myCached<myLinked));
+      if($('myLedgerPayoutCard'))$('myLedgerPayoutCard').classList.toggle('partial',Boolean(myLedgerSummary&&!myCoverageHealthy));
       $('actualMyTodayIskSub').textContent=myLedgerSummary
         ?(myUnpricedM3>0
-          ?fmt(myM3,'m3')+' m³ mined • '+fmt(myUnpricedM3,'m3')+' m³ awaiting price • click for audit'
-          :fmt(myM3,'m3')+' m³ mined • exact T3 grade • '+(payout*100).toFixed(1)+'% payout • click for audit')
+          ?'EVE day (UTC) • '+fmt(myM3,'m3')+' m³ mined • '+fmt(myUnpricedM3,'m3')+' m³ awaiting price • click for audit'
+          :'EVE day (UTC) • '+fmt(myM3,'m3')+' m³ mined • exact T3 grade • '+(payout*100).toFixed(1)+'% payout • click for audit')
         :'Loading your toon ledger…';
     }
     $('actualExpTodayM3').textContent=`${fmt(state.esi.actual.today.m3,'m3')} m³`;
@@ -4710,29 +4818,31 @@
     const topThreeShare=grand>0?topThree/grand*100:0;
     const [topName,topValue]=sorted[0];
     const topShare=grand>0?topValue/grand*100:0;
+    const palette=['mix-a','mix-b','mix-c','mix-d','mix-e','mix-f','mix-g','mix-h'];
 
-    const ranked=sorted.map(([name,value],index)=>{
+    const segments=sorted.map(([name,value],index)=>{
       const share=grand>0?value/grand*100:0;
-      const relative=topValue>0?value/topValue*100:0;
-      return `
-        <div class="ore-mix-rank information-ore-row">
-          <span class="ore-mix-rank-no">#${index+1}</span>
-          <div class="ore-mix-rank-main">
-            <span class="ore-mix-name" title="${esc(name)}">${esc(name)}</span>
-            <div class="ore-mix-bar" title="${share.toFixed(1)}% of mined volume"><i style="width:${relative.toFixed(2)}%"></i></div>
-          </div>
-          <strong>${fmt(value,'m3')} m³</strong>
-          <small>${share.toFixed(1)}%</small>
-        </div>`;
+      return '<i class="'+palette[index%palette.length]+'" style="width:'+share.toFixed(3)+'%" title="'+esc(name)+' • '+share.toFixed(1)+'% • '+fmt(value,'m3')+' m³"></i>';
     }).join('');
 
-    el.innerHTML=`
-      <div class="ore-mix-kpis">
-        <div><span>TOTAL MINED</span><strong>${fmt(grand,'m3')} m³</strong><small>${sorted.length} ore type${sorted.length===1?'':'s'}</small></div>
-        <div><span>TOP ORE</span><strong>${esc(topName)}</strong><small>${fmt(topValue,'m3')} m³ • ${topShare.toFixed(1)}%</small></div>
-        <div><span>TOP 3 SHARE</span><strong>${topThreeShare.toFixed(1)}%</strong><small>concentration of mined volume</small></div>
-      </div>
-      <div class="ore-mix-rank-list information-ore-list">${ranked}</div>`;
+    const rowsHtml=sorted.map(([name,value],index)=>{
+      const share=grand>0?value/grand*100:0;
+      return '<div class="ore-mix-compact-row">'+
+        '<span class="ore-mix-swatch '+palette[index%palette.length]+'"></span>'+
+        '<strong title="'+esc(name)+'">'+esc(name)+'</strong>'+
+        '<b>'+fmt(value,'m3')+' m³</b>'+
+        '<small>'+share.toFixed(1)+'%</small>'+
+      '</div>';
+    }).join('');
+
+    el.innerHTML=
+      '<div class="ore-mix-kpis">'+
+        '<div><span>TOTAL MINED</span><strong>'+fmt(grand,'m3')+' m³</strong><small>'+sorted.length+' ore type'+(sorted.length===1?'':'s')+'</small></div>'+
+        '<div><span>TOP ORE</span><strong>'+esc(topName)+'</strong><small>'+fmt(topValue,'m3')+' m³ • '+topShare.toFixed(1)+'%</small></div>'+
+        '<div><span>TOP 3 SHARE</span><strong>'+topThreeShare.toFixed(1)+'%</strong><small>concentration of mined volume</small></div>'+
+      '</div>'+
+      '<div class="ore-mix-composition" aria-label="Ore mix composition">'+segments+'</div>'+
+      '<div class="ore-mix-compact-list">'+rowsHtml+'</div>';
   }
   function renderFleetPerformance(){
     if(!state||!$('fleetActivityChart'))return;
@@ -4790,9 +4900,13 @@
     $('fleetLiveRateSub').textContent=latest?(liveRate>0?'latest detected mining interval':'no increase in latest interval'):'waiting for a mining interval';
     $('fleetActiveToons').textContent=latest?`${Number(latest.activeToons||0)} / ${Number(latest.sampledToons||0)}`:'—';
     $('fleetActiveToonsSub').textContent=latest?'assigned miners active / sampled in latest sync':'assigned miners in latest sample';
-    $('fleetTodayM3').textContent=`${fmt(performance.actual?.today?.m3||0,'m3')} m³`;
-    $('fleetTodayPayout').textContent=`${fmt(actualValue(performance.actual?.today?.jbv||0))} ISK`;
-    $('fleetTodayPayoutSub').textContent=`assigned fleet • tracked T3 value × ${(payout*100).toFixed(1)}% payout`;
+    const eveDayM3=Math.max(0,Number(performance.actual?.today?.m3)||0);
+    const eveDayJbv=Math.max(0,Number(performance.actual?.today?.jbv)||0);
+    $('fleetTodayM3').textContent=eveDayM3>0?`${fmt(eveDayM3,'m3')} m³`:'—';
+    $('fleetTodayPayout').textContent=eveDayJbv>0?`${fmt(actualValue(eveDayJbv))} ISK`:(liveRate>0?'PENDING':'—');
+    $('fleetTodayPayoutSub').textContent=eveDayJbv>0
+      ?`current EVE day • exact T3 value × ${(payout*100).toFixed(1)}% payout`
+      :(liveRate>0?'mining detected • waiting for current EVE-day T3 ledger rows':'no current EVE-day T3 ledger rows yet');
     $('fleetRangeTotalLabel').textContent=`${fleetHistoryDays}D MINED`;
     $('fleetRangeTotal').textContent=`${fmt(rangeM3,'m3')} m³`;
     $('fleetRangeTotalSub').textContent=`${fmt(rangeValue)} ISK tracked payout`;
@@ -4853,19 +4967,14 @@
       const hasActual=Boolean(ledger?.miningDetected)&&Number.isFinite(actual)&&actual>0;
       const targetPct=output>0&&hasActual?actual/output*100:null;
       const share=effective>0?output/effective*100:0;
-      const delta=average>0?(output-average)/average*100:0;
-      return `<div class="fleet-perf-row">
+      return `<div class="fleet-perf-row compact">
         <div class="fleet-perf-miner">
           <strong>${esc(entry.character.name)}</strong>
-          <small>${esc(entry.fit?.shipName||'Ship')} • ${delta>=0?'+':''}${delta.toFixed(1)}% vs fleet avg</small>
+          <small>${esc(entry.fit?.shipName||'Ship')} • ${share.toFixed(1)}% fleet target share</small>
         </div>
-        <div class="fleet-rate-pair">
-          <div><span>100% RATE</span><strong>${fmt(fullRate,'m3')}</strong><small>m³/hr</small></div>
-          <div><span>@ ${uptime.toFixed(0)}% TARGET</span><strong>${fmt(output,'m3')}</strong><small>m³/hr</small></div>
-          <div class="ledger-rate"><span>LEDGER ACTIVE RATE</span><strong>${hasActual?fmt(actual,'m3'):'—'}</strong><small>${hasActual?activeTimeLabel(ledger.activeSeconds):'starts after EVE ledger quantity increases'}</small></div>
-        </div>
-        <div class="fleet-share-track"><span style="width:${targetPct==null?0:Math.min(100,targetPct).toFixed(2)}%"></span></div>
-        <div class="fleet-perf-number"><strong>${targetPct==null?'—':targetPct.toFixed(0)+'%'}</strong><small>of uptime target</small></div>
+        <div class="fleet-perf-cell"><span>TARGET</span><strong>${fmt(output,'m3')}</strong><small>m³/hr</small></div>
+        <div class="fleet-perf-cell ledger"><span>ACTUAL</span><strong>${hasActual?fmt(actual,'m3'):'—'}</strong><small>${hasActual?activeTimeLabel(ledger.activeSeconds):'no active interval'}</small></div>
+        <div class="fleet-perf-cell pct"><span>OF TARGET</span><strong>${targetPct==null?'—':targetPct.toFixed(0)+'%'}</strong><small>${fmt(fullRate,'m3')} at 100%</small></div>
       </div>`;
     }).join('');
 
@@ -4880,22 +4989,18 @@
 
     $('fleetOutputChart').innerHTML=`
       <div class="fleet-perf-kpis">
-        <div class="ledger-kpi"><span>LEDGER ACTIVE RATE</span><strong>${detectedRows.length?fmt(ledgerActual,'m3'):'—'}</strong><small>${detectedRows.length} of ${entries.length} miners detected</small></div>
-        <div><span>@ ${uptime.toFixed(0)}% TARGET</span><strong>${fmt(effective,'m3')}</strong><small>projected m³/hr</small></div>
+        <div class="ledger-kpi"><span>ACTUAL RATE</span><strong>${detectedRows.length?fmt(ledgerActual,'m3'):'—'}</strong><small>${detectedRows.length}/${entries.length} miners detected</small></div>
+        <div><span>${uptime.toFixed(0)}% TARGET</span><strong>${fmt(effective,'m3')}</strong><small>selected fleet m³/hr</small></div>
         <div><span>100% RATE</span><strong>${fmt(potential,'m3')}</strong><small>full calculated m³/hr</small></div>
-        <div><span>VS DETECTED TARGET</span><strong>${actualVsTarget==null?'—':actualVsTarget.toFixed(0)+'%'}</strong><small>actual rate ÷ target for detected miners</small></div>
+        <div><span>ACTUAL / TARGET</span><strong>${actualVsTarget==null?'—':actualVsTarget.toFixed(0)+'%'}</strong><small>detected miners only</small></div>
       </div>
-      <div class="fleet-capacity-chart">
-        <div class="fleet-capacity-head"><span>ACTUAL VS UPTIME TARGET</span><strong>${detectedRows.length?fmt(ledgerActual,'m3'):'—'} / ${fmt(effective,'m3')} m³/hr</strong></div>
-        <div class="fleet-capacity-track actual-target"><span style="width:${actualVsTarget==null?0:Math.min(100,actualVsTarget).toFixed(2)}%"></span></div>
-        <div class="fleet-capacity-scale"><span>only miners with detected ledger increases</span><span>${uptime.toFixed(0)}% target for detected miners</span></div>
+      <div class="fleet-performance-summary-line">
+        <span>ACTUAL VS DETECTED TARGET</span>
+        <strong>${detectedRows.length?fmt(ledgerActual,'m3'):'—'} / ${detectedTarget>0?fmt(detectedTarget,'m3'):'—'} m³/hr</strong>
+        <b class="${actualVsTarget!=null&&actualVsTarget>=90?'good':actualVsTarget!=null&&actualVsTarget<60?'low':''}">${actualVsTarget==null?'WAITING':actualVsTarget.toFixed(0)+'%'}</b>
       </div>
-      <div class="fleet-perf-list">${contributionRows}</div>
-      <div class="fleet-perf-footer">
-        <span>Ledger time counts only intervals where mined m³ increased.</span>
-        <span>Idle intervals are excluded.</span>
-        <span>${entries.length} miner${entries.length===1?'':'s'} selected</span>
-      </div>`;
+      <div class="fleet-perf-list compact">${contributionRows}</div>
+      <div class="fleet-perf-footer"><span>Actual rate counts only ledger intervals where mined m³ increased.</span><span>${entries.length} miner${entries.length===1?'':'s'} selected</span></div>`;
   }
 
 
@@ -5061,7 +5166,7 @@
     const gasData=state.source?.gas||null;
     const regions=gasData?.regions||{};
     const types=gasData?.types||{};
-    const regionNames=Object.keys(regions);
+    const regionNames=Object.keys(regions).sort((a,b)=>a==='Wormhole'?1:b==='Wormhole'?-1:a.localeCompare(b));
     if(!gasData||!regionNames.length){
       $('gasFleetOutput').innerHTML='<div class="visual-empty">Gas data is not loaded yet.</div>';
       return;
@@ -5111,8 +5216,9 @@
       ?'compressed 1:1 • C-N '+fmt(compressedCn)
       :'compressed 1:1 equivalent';
     $('gasOpsType').textContent=gasType;
-    $('gasOpsRegion').textContent=gasRegion+' • '+gasVolume.toFixed(gasVolume%1?1:0)+' m³ per raw unit';
-    $('gasSiteTitle').textContent='KNOWN '+gasRegion.toUpperCase()+' • '+gasType.toUpperCase()+' SITES';
+    $('gasOpsRegion').textContent=gasRegion+' • '+gasFamily+' • '+gasVolume.toFixed(gasVolume%1?1:0)+' m³ per raw unit';
+    if($('gasOpsReference'))$('gasOpsReference').textContent=gasRegion+' • '+gasFamily.toLowerCase()+' huffing reference';
+    $('gasSiteTitle').textContent='KNOWN '+gasRegion.toUpperCase()+' GAS SITES';
 
     const boosterId=String(calcSettings.boosterCharacterId||'');
     const selected=(me?.characters||[]).filter(ch=>{
@@ -5288,10 +5394,17 @@
       const savedFits=Number(c.savedFittingsCount ?? (c.fittings||[]).length)||0;
       const miningFits=(c.fittings||[]).length;
       const abyssal=Number(c.abyssalStripCount||0);
-      const scopeState=c.needsReauth
-        ?' • access update required for skills/fits/assets/location/contacts'
-        :` • ${savedFits} saved fits • ${miningFits} mining fits${abyssal?` • ${abyssal} Abyssal strips`:''}`;
-      const syncState=c.lastError?`⚠ sync error: ${esc(c.lastError)}`:`EVE data synced ${ago(c.lastSyncAt)}`;
+      const missingMiningAccess=c.miningAccess===false;
+      const waitingLedger=c.ledgerCached===false&&!missingMiningAccess;
+      const scopeState=missingMiningAccess
+        ?' • mining ledger access missing'
+        :c.needsReauth
+          ?' • EVE access update required'
+          :` • ${savedFits} saved fits • ${miningFits} mining fits${abyssal?` • ${abyssal} Abyssal strips`:''}`;
+      const syncState=missingMiningAccess?'⚠ MINING LEDGER NOT AUTHORIZED'
+        :waitingLedger?'⚠ WAITING FOR FIRST LEDGER SYNC'
+        :c.lastError?`⚠ sync error: ${esc(c.lastError)}`
+        :`EVE data synced ${ago(c.lastSyncAt)}`;
       const assetCacheLabel=esiCacheLabel(c.assetsEsiCache);
       const fitState=c.fittingsUpdatedAt?` • fits ${ago(c.fittingsUpdatedAt)}${assetCacheLabel?` • Abyssal ${assetCacheLabel}`:''}`:'';
       const marketButton=c.marketEligible
@@ -5578,7 +5691,7 @@
     eventSource.onerror=()=>{$('liveBadge').textContent='⚠ DATA CONNECTION LOST';$('liveBadge').title='Live dashboard updates disconnected; the page is attempting to reconnect.'};
   }
 
-  document.addEventListener('change',event=>{
+  document.addEventListener('change',async event=>{
     const target=event.target;
     if(target?.id==='brainVoiceEnabled'){
       soundEnabled=target.value==='on';
@@ -5593,6 +5706,12 @@
         toast('Tracker voice enabled.');
       }
       updateSoundStatus();
+    }else if(target?.id==='scoutCharacterSelect'){
+      scoutSelectedCharacterId=String(target.value||'');
+      localStorage.setItem('jlrScoutCharacter',scoutSelectedCharacterId);
+      scoutTargets=[];scoutTargetsError='';scoutTargetsOriginSystem='';
+      await pollScoutLocation(true);
+      await loadScoutTargets(true);
     }else if(target?.id==='brainFollowEnabled'){
       scoutFollowEnabled=target.value==='on';
       localStorage.setItem('jlrScoutFollow',String(scoutFollowEnabled));
@@ -5638,9 +5757,25 @@
       await revokeCompanionDevices();
       return;
     }
+    const scoutTarget=target.closest('[data-scout-field]');
+    if(scoutTarget){
+      const system=String(scoutTarget.dataset.scoutField||'');
+      if(system){
+        if(scoutSelectedCharacterId&&(me?.characters||[]).some(ch=>String(ch.characterId)===String(scoutSelectedCharacterId))){
+          scanCharacterId=scoutSelectedCharacterId;
+          localStorage.setItem('jlrScanCharacter',scanCharacterId);
+          renderScanCharacters();
+        }
+        applyTab('fields');
+        chooseSystem(system);
+        toast('Scout target: '+system);
+      }
+      return;
+    }
     if(target.closest('#scoutCheckNow')){
       await pollScoutLocation(true);
-      toast('Scout location check complete.');
+      await loadScoutTargets(true);
+      toast('Scout routes refreshed.');
       return;
     }
     if(target.closest('#trackerRepeatLast')){
@@ -5700,7 +5835,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.141',
+          version:state?.app?.version||'2.9.142',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
