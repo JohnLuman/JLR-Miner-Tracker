@@ -13,7 +13,6 @@ assert.match(index,/class="kpis information-kpis"/,'top summary uses the decisio
 assert.match(index,/class="kpi kpi-primary api-kpi app-payout-kpi"/,'app payout is a primary KPI');
 assert.match(index,/class="kpi kpi-secondary fleet-target-kpi"/,'fleet target is a compact secondary KPI');
 assert.match(index,/class="market-payout-pair"/,'Jita and C-N payout cards are bound into one grid group');
-assert.match(fix=>fix,/.*/);
 assert.match(index,/MY TOONS PAYOUT • EVE DAY/,'personal payout is a primary KPI');
 assert.match(index,/class="kpi kpi-secondary"/,'secondary metrics remain available');
 assert.match(styles,/v2\.9\.143 — balanced operations summary/,'top summary uses the balanced 2-row layout');
