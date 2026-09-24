@@ -38,11 +38,22 @@ assert.match(app,/appLedgerCoverageMeter/,'app ledger coverage is visualized');
 assert.match(app,/myLedgerCoverageMeter/,'personal ledger coverage is visualized');
 assert.match(app,/fleetUptimeMeter/,'fleet target exposes the uptime assumption visually');
 
-assert.equal(pkg.version,'2.9.137');
-assert.ok(index.includes('/styles.css?v=2.9.137'),'main information-design CSS is cache-busted');
-assert.ok(index.includes('/tracker.css?v=2.9.137'),'Tracker information-design CSS is cache-busted');
-assert.ok(index.includes('/app.js?v=2.9.137'),'dashboard JS is cache-busted');
-assert.ok(index.includes('/tracker.js?v=2.9.137'),'Tracker loader is cache-busted');
+assert.equal(pkg.version,'2.9.138');
+assert.ok(index.includes('/styles.css?v=2.9.138'),'main information-design CSS is cache-busted');
+assert.ok(index.includes('/tracker.css?v=2.9.138'),'Tracker information-design CSS is cache-busted');
+assert.ok(index.includes('/app.js?v=2.9.138'),'dashboard JS is cache-busted');
+assert.ok(index.includes('/tracker.js?v=2.9.138'),'Tracker loader is cache-busted');
 assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.137/,'Tracker core is cache-busted');
+
+assert.match(styles,/\.app\.compact\{width:min\(1120px,calc\(100vw - 12px\)\);max-width:1120px\}/,'Compact app keeps a bounded design width');
+assert.match(styles,/\.app\.expanded\{width:min\(1600px,calc\(100vw - 12px\)\);max-width:1600px\}/,'Expanded app keeps a bounded design width');
+assert.match(styles,/grid-template-columns:repeat\(auto-fill,minmax\(250px,340px\)\)/,'Compact target cards are capped instead of stretched');
+assert.match(styles,/\.fleet-live-card\{width:100%;max-width:1000px/,'live chart workspace is capped to a useful reading width');
+assert.match(styles,/\.market-end-label/,'market chart uses direct end labels');
+assert.match(app,/const ticks=3/,'market chart uses restrained grid density');
+assert.doesNotMatch(app,/function areaPaths\(\)/,'market chart no longer shades the area between series');
+assert.match(app,/class="fleet-latest-label"/,'live fleet chart labels the latest value directly');
+assert.doesNotMatch(app,/class="fleet-activity-area"/,'live fleet chart no longer uses decorative area fill');
+assert.match(app,/fleet-history-bar'\+\(i===bestIndex\?' best':'\'\)\+\(i===todayIndex\?' today':'\'\)/,'daily chart emphasizes best day and today');
 
 console.log('Information design regression tests passed.');
