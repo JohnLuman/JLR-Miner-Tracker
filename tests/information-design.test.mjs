@@ -54,11 +54,11 @@ assert.match(app,/myLedgerCoverageBadge/,'personal ledger sync state is rendered
 assert.match(app,/outside tracked fields/,'ledger diagnostics distinguish payout rows from field attribution');
 assert.match(app,/fleetUptimeMeter/,'fleet target exposes the uptime assumption visually');
 
-assert.equal(pkg.version,'2.9.142');
-assert.ok(index.includes('/styles.css?v=2.9.142'),'main information-design CSS is cache-busted');
-assert.ok(index.includes('/tracker.css?v=2.9.142'),'Tracker information-design CSS is cache-busted');
-assert.ok(index.includes('/app.js?v=2.9.142'),'dashboard JS is cache-busted');
-assert.ok(index.includes('/tracker.js?v=2.9.142'),'Tracker loader is cache-busted');
+assert.equal(pkg.version,'2.9.143');
+assert.ok(index.includes('/styles.css?v=2.9.143'),'main information-design CSS is cache-busted');
+assert.ok(index.includes('/tracker.css?v=2.9.143'),'Tracker information-design CSS is cache-busted');
+assert.ok(index.includes('/app.js?v=2.9.143'),'dashboard JS is cache-busted');
+assert.ok(index.includes('/tracker.js?v=2.9.143'),'Tracker loader is cache-busted');
 assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.142/,'Tracker core is cache-busted');
 
 assert.match(styles,/\.app\.compact\{width:min\(1120px,calc\(100vw - 12px\)\);max-width:1120px\}/,'Compact app keeps a bounded design width');
