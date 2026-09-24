@@ -127,12 +127,18 @@ export class TrackerSessionStore{
     const tab=clean(currentTab,40);
     const key=clean(userKey,160);
     this.prune();
-    const row=key?this.get(key):null;
+    const incoming=cleanContext(context);
+    const hasIncomingContext=Boolean(
+      incoming.currentTab||incoming.workflow||incoming.selectedSystem||incoming.selectedCharacterId||
+      incoming.selectedCharacterName||incoming.selectedMetric||incoming.targetOre||incoming.fieldStatus||
+      incoming.recentActions.length||incoming.selectedFleetCount!==null||incoming.performance.latestRate!==null
+    );
+    const row=key?(this.sessions.get(key)||(hasIncomingContext?this.get(key):null)):null;
     if(!row||!q)return{question:q,currentTab:tab,answerOverride:null,contextUsed:false};
     row.updatedAt=this.now();
     if(tab)row.lastTab=tab;
 
-    const ctx=mergeContext(row.lastContext,context);
+    const ctx=mergeContext(row.lastContext,incoming);
     if(tab)ctx.currentTab=tab;
     const effectiveTab=tab||ctx.currentTab||row.lastTab||'';
     const lower=q.toLowerCase();
