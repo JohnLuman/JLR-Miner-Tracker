@@ -4901,16 +4901,16 @@
           $('fleetInsightText').textContent=missingToons+' MINER'+(missingToons===1?'':'S')+' HAD NO NEW LEDGER ENTRY IN THE LATEST SAMPLE';
           $('fleetInsightDetail').textContent=activeToons+'/'+sampledToons+' miners contributed • latest fleet rate '+pct.toFixed(0)+'% of fitted target';
           if(reason)reason.textContent=sampleDropPct!=null&&sampleDropPct>=5
-            ?'Rate dropped '+sampleDropPct.toFixed(0)+'% from the previous sample • use miner comparison below to see who missed the interval.'
-            :'Use miner comparison below to see which miners missed the interval.';
+            ?'Rate dropped '+sampleDropPct.toFixed(0)+'% from the previous sample • a missed ledger interval can also be caused by reds/hostiles, movement, hauling, or another interruption.'
+            :'A missed ledger interval does not prove a miner was idle • interruptions such as reds/hostiles or movement can also cause it.';
         }else{
           $('fleetInsightText').textContent=(sampledToons||activeToons)+'/'+(sampledToons||activeToons)+' MINERS CONTRIBUTED IN THE LATEST SAMPLE';
           $('fleetInsightDetail').textContent=pct>=100
             ?'Fleet rate met the fitted target • no miners were missing from the latest interval'
-            :'Fleet rate was ~'+Math.max(0,100-pct).toFixed(0)+'% below fitted target • gap is output rate, not missing miners';
+            :'Fleet rate was ~'+Math.max(0,100-pct).toFixed(0)+'% below fitted target • all sampled miners still contributed';
           if(reason)reason.textContent=pct>=100
             ?'Review the history and miner comparison below for the completed mining session.'
-            :'Use miner comparison below to see which miners finished furthest from their fitted target.';
+            :'Ledger data cannot identify the cause by itself • reds/hostiles, travel, compression, hauling, pauses, or mining efficiency can all reduce the measured rate.';
         }
         $('fleetInsightMeter').style.width=Math.min(100,pct).toFixed(1)+'%';
         $('fleetInsightPct').textContent=pct.toFixed(0)+'%';
