@@ -20,6 +20,7 @@
   let fleetPerformanceSnapshotRequestKey = '';
   let fleetPerformanceData = null;
   let fleetPerformanceSelectionKey = '';
+  let fleetPerformanceError = '';
   let scanCharacterId = localStorage.getItem('jlrScanCharacter') || '';
   let scanBusy = false;
   let scoutLocationTimer = null;
@@ -4724,9 +4725,11 @@
     }).then(payload=>{
       fleetPerformanceData=payload;
       fleetPerformanceSelectionKey=key;
+      fleetPerformanceError='';
       return payload;
     }).catch(error=>{
       console.warn('Assigned Fleet Performance snapshot failed',error);
+      fleetPerformanceError=String(error?.message||error||'Fleet performance request failed.');
       if(fleetPerformanceSelectionKey!==key)fleetPerformanceData=null;
       return null;
     }).finally(()=>{
@@ -4755,7 +4758,15 @@
     if(!el)return;
     const rows=(samples||[]).filter(row=>Number.isFinite(Date.parse(row?.at||''))).slice(-48);
     if(!rows.length){
-      el.innerHTML='<div class="visual-empty">Live activity history will begin after the next ESI ledger sync.</div>';
+      const selected=selectedFleetPerformanceIds().length;
+      const message=fleetPerformanceError
+        ?'Fleet activity could not be loaded • '+esc(fleetPerformanceError)
+        :selected<=0
+          ?'No fleet selected • choose miners in Fleet & Fits'
+          :(fleetPerformanceSnapshotPromise||state?.esi?.syncing)
+            ?'Refreshing fleet mining ledger…'
+            :'No mining intervals recorded yet for the selected fleet';
+      el.innerHTML='<div class="visual-empty fleet-state-empty">'+message+'</div>';
       return;
     }
     const W=760,H=205,L=52,R=118,T=20,B=28,pw=W-L-R,ph=H-T-B;
@@ -4885,8 +4896,44 @@
 
     document.querySelectorAll('.fleet-range').forEach(button=>button.classList.toggle('active',Number(button.dataset.days)===fleetHistoryDays));
     document.querySelectorAll('.fleet-metric').forEach(button=>button.classList.toggle('active',button.dataset.metric===fleetHistoryMetric));
-    $('fleetLiveStatus').textContent=state.esi?.syncing?'● SYNCING ESI':latest?`● RECENT SAMPLE • ${ago(latest.at).toUpperCase()}`:'● WAITING FOR ESI';
-    $('fleetLiveStatus').classList.toggle('stale',Boolean(latest&&sampleAge>45*60*1000));
+    const assignedCount=Math.max(0,Number(performance.characterIds?.length)||0);
+    const cachedCount=Math.max(0,Number(performance.cachedCharacters)||0);
+    const partialCoverage=assignedCount>0&&cachedCount>0&&cachedCount<assignedCount;
+    const staleSample=Boolean(latest&&sampleAge>45*60*1000);
+    let fleetDataState='ready';
+    let fleetDataLabel=latest?'● READY':'● EMPTY';
+    let fleetDataReason=latest?'Recent mining sample available.':'No mining sample is available for the selected fleet yet.';
+    if(fleetPerformanceError){
+      fleetDataState='error';
+      fleetDataLabel='⚠ ERROR';
+      fleetDataReason=fleetPerformanceError;
+    }else if(state.esi?.syncing||fleetPerformanceSnapshotPromise){
+      fleetDataState='waiting';
+      fleetDataLabel='● SYNCING';
+      fleetDataReason='JLR is refreshing the selected fleet mining ledger.';
+    }else if(partialCoverage){
+      fleetDataState='partial';
+      fleetDataLabel='● PARTIAL '+cachedCount+'/'+assignedCount;
+      fleetDataReason='Some selected miners are missing cached ledger data, so totals may be incomplete.';
+    }else if(staleSample){
+      fleetDataState='stale';
+      fleetDataLabel='● STALE • '+ago(latest.at).toUpperCase();
+      fleetDataReason='The most recent mining sample is older than 45 minutes.';
+    }else if(latest){
+      fleetDataState='ready';
+      fleetDataLabel='● READY • '+ago(latest.at).toUpperCase();
+      fleetDataReason='Recent mining sample available for review.';
+    }else if(assignedCount<=0){
+      fleetDataState='empty';
+      fleetDataLabel='● NO FLEET';
+      fleetDataReason='Select miners in Fleet & Fits to build a fleet review.';
+    }
+    const fleetStatus=$('fleetLiveStatus');
+    if(fleetStatus){
+      fleetStatus.textContent=fleetDataLabel;
+      fleetStatus.title=fleetDataReason;
+      fleetStatus.dataset.state=fleetDataState;
+    }
     if($('fleetInsightText')&&$('fleetInsightDetail')&&$('fleetInsightMeter')&&$('fleetInsightPct')){
       const insight=$('fleetInsight');
       const activeToons=Math.max(0,Number(latest?.activeToons)||0);
@@ -4941,8 +4988,9 @@
     $('fleetActiveToonsSub').textContent=latest?'miners contributing / sampled in latest interval':'miners in latest sample';
     const eveDayM3=Math.max(0,Number(performance.actual?.today?.m3)||0);
     const eveDayJbv=Math.max(0,Number(performance.actual?.today?.jbv)||0);
-    $('fleetTodayM3').textContent=eveDayM3>0?`${fmt(eveDayM3,'m3')} m³`:'—';
-    $('fleetTodayPayout').textContent=eveDayJbv>0?`${fmt(actualValue(eveDayJbv))} ISK`:(liveRate>0?'PENDING':'—');
+    const fleetValueState=fleetPerformanceError?'ERROR':(partialCoverage?'PARTIAL':(state.esi?.syncing||fleetPerformanceSnapshotPromise?'SYNCING':''));
+    $('fleetTodayM3').textContent=eveDayM3>0?`${fmt(eveDayM3,'m3')} m³`:(fleetValueState||'—');
+    $('fleetTodayPayout').textContent=eveDayJbv>0?`${fmt(actualValue(eveDayJbv))} ISK`:(fleetValueState||(liveRate>0?'PENDING':'—'));
     $('fleetTodayPayoutSub').textContent=eveDayJbv>0
       ?`current EVE day • exact T3 value × ${(payout*100).toFixed(1)}% payout`
       :(liveRate>0?'mining detected • waiting for current EVE-day T3 ledger rows':'no current EVE-day T3 ledger rows yet');
