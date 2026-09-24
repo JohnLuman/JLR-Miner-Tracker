@@ -44,12 +44,17 @@ const rows=[
 const daily=aggregateTrackedT3Ledger({rows,typeById,systemById,systemOreByName,priceByMineral:mineralPrices,refineYield:MAX_REFINE_YIELD});
 assert.equal(daily.length,2);
 assert.equal(daily[0].date,'2026-09-21');
-assert.equal(daily[0].m3,180);
-assert.deepEqual(daily[0].ores,{'Kylixium II-Grade':120,'Kylixium IV-Grade':60});
+assert.equal(daily[0].m3,420);
+assert.deepEqual(daily[0].ores,{'Kylixium II-Grade':360,'Kylixium IV-Grade':60});
 const kylixiumFourHalf=(345*5+230*10+633*50)*0.5*MAX_REFINE_YIELD;
-assert.ok(Math.abs(daily[0].jbv-(kylixiumTwoExpected+kylixiumFourHalf))<1e-8);
+assert.ok(Math.abs(daily[0].jbv-(kylixiumTwoExpected*3+kylixiumFourHalf))<1e-8);
 assert.equal(daily[0].unpricedM3,0);
 assert.equal(daily[1].m3,1_000);
+
+// Exact T3 ore mined outside a tracked field system still counts for payout.
+const outsideTracked=aggregateTrackedT3Ledger({rows:[rows[4]],typeById,systemById,systemOreByName,priceByMineral:mineralPrices,refineYield:MAX_REFINE_YIELD});
+assert.equal(outsideTracked[0].m3,120);
+assert.ok(outsideTracked[0].jbv>0);
 
 const missingPrice=aggregateTrackedT3Ledger({rows:rows.slice(0,1),typeById,systemById,systemOreByName,priceByMineral:{},refineYield:MAX_REFINE_YIELD});
 assert.equal(missingPrice[0].m3,120);
