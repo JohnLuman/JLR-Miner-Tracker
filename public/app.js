@@ -1502,6 +1502,7 @@
       status.textContent=high>0?'⚠ PRIORITY '+high:attention>0?'● ATTENTION '+attention:'● ONLINE';
     }
     renderScoutFollow();
+    renderAdamContext();
     const decisions=$('brainDecisionList');
     const issues=Array.isArray(brain?.issues)?brain.issues:[];
     if(decisions){
@@ -1753,7 +1754,7 @@
     if($('scoutGlobalAlertText'))$('scoutGlobalAlertText').textContent=text;
     const key=String(snapshot.characterId)+':'+String(snapshot.system);
     const tab=document.querySelector('.app-tab[data-tab="brain"]');
-    if(tab){tab.classList.add('scout-update');tab.textContent='SCOUT • UPDATE';}
+    if(tab){tab.classList.add('scout-update');tab.textContent='ADAM • UPDATE';}
     document.title='⚠ SCAN UPDATE • JLR';
     if(scoutPromptKey!==key){scoutPromptKey=key;toast('🛰 '+snapshot.characterName+': '+snapshot.system+' needs a scan update.')}
   }
@@ -1784,7 +1785,7 @@
           $('brainScanPrompt')?.classList.add('hidden');
           $('scoutGlobalAlert')?.classList.add('hidden');
           const scoutTab=document.querySelector('.app-tab[data-tab="brain"]');
-          if(scoutTab){scoutTab.classList.remove('scout-update');scoutTab.textContent='SCOUT';}
+          if(scoutTab){scoutTab.classList.remove('scout-update');scoutTab.textContent='ADAM';}
           document.title='JLR Miner Tracker';
         }
         if(snapshot.needsScan){
@@ -2323,7 +2324,9 @@
     }
     const nextTab=valid.includes(tab)?tab:'fields';
     if(nextTab==='feedback'&&activeTab!=='feedback')feedbackOpenedFrom=activeTab;
+    const previousTab=activeTab;
     activeTab=nextTab;
+    if(previousTab!==activeTab)adamRecordAction('tab-open',{tab:activeTab});
     localStorage.setItem('jlrTab',activeTab);
     document.querySelectorAll('.app-tab').forEach(button=>button.classList.toggle('active',button.dataset.tab===activeTab));
     document.querySelectorAll('.tab-panel').forEach(panel=>panel.classList.toggle('active',panel.dataset.tab===activeTab));
@@ -2334,6 +2337,7 @@
     if(activeTab==='doctrine'&&!doctrineMarket&&!doctrineMarketLoading)loadDoctrineMarket();
     if(activeTab==='performance')refreshFleetPerformanceData(false);
     if(activeTab==='brain'){
+      renderAdamContext();
       refreshCompanionStatus();
       if(scoutFollowEnabled)pollScoutLocation(true);
       void loadScoutTargets(false);
@@ -4604,7 +4608,7 @@
     selectedSystem=definitions().some(x=>x.system===old)?old:(definitions()[0]?.system||'');
     systemSelect.value=selectedSystem;
   }
-  function chooseSystem(system){selectedSystem=system;$('systemSelect').value=system;$('fieldNote').value='';renderSelect();renderBoards();renderSelected();renderNotes()}
+  function chooseSystem(system){selectedSystem=system;$('systemSelect').value=system;$('fieldNote').value='';adamRecordAction('system-select',{system});renderSelect();renderBoards();renderSelected();renderNotes();renderAdamContext()}
   function node(d,f,includeTimer=true){
     const b=document.createElement('div');
     const key=boardKey('t3',d.system);
@@ -6217,7 +6221,7 @@
   });
   syncBoardControls();
   $('systemSelect').addEventListener('change',()=>chooseSystem($('systemSelect').value));
-  $('scanCharacter').addEventListener('change',()=>{scanCharacterId=$('scanCharacter').value;localStorage.setItem('jlrScanCharacter',scanCharacterId);renderScanCharacters();pollScoutLocation(true)});
+  $('scanCharacter').addEventListener('change',()=>{scanCharacterId=$('scanCharacter').value;localStorage.setItem('jlrScanCharacter',scanCharacterId);const ch=(me?.characters||[]).find(row=>String(row.characterId)===String(scanCharacterId));adamRecordAction('toon-select',{characterName:String(ch?.name||'')});renderScanCharacters();renderAdamContext();pollScoutLocation(true)});
   document.querySelectorAll('.filter').forEach(b=>b.addEventListener('click',()=>{filter=b.dataset.filter;document.querySelectorAll('.filter').forEach(x=>x.classList.toggle('active',x===b));renderBoards()}));
 
   function applyFieldUpdate(system,updatedField){state.fields[system]=updatedField;renderAll()}
@@ -6259,6 +6263,9 @@
       const preview=await api('/api/scans/preview',{method:'POST',body:JSON.stringify({characterId:selected.characterId,text})});
       const appliedScan=applyPreviewBoardScan(preview);
       const appliedWormholeGas=applyPreviewWormholeGas(preview);
+      if(preview?.boardScan?.recorded||preview?.tracked||preview?.a0?.tracked||preview?.gasWormhole?.recorded){
+        adamRecordAction('scan-updated',{system:String(preview.system||''),characterName:String(preview.characterName||selected.name||''),detail:'Probe Scanner update accepted'});
+      }
       if(preview?.tracked&&preview?.scan?.valid){
         const recordedAt=Date.parse(preview?.serverScan?.lastScanAt||preview?.boardScan?.lastScanAt||'');
         const fresh=Number.isFinite(recordedAt)&&recordedAt>=scanRequestAt-5000;
