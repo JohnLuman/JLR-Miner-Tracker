@@ -2242,7 +2242,6 @@
           <button id="scoutCheckNow" class="orb purple" type="button">↻ CHECK LOCATIONS</button>
         </div>
       </div>
-      <div class="scout-no-mic-note"><strong>NO MICROPHONE REQUIRED</strong><span>JLR watches linked toon movement through the Desktop Companion or ESI and shows visual scan-update alerts only.</span></div>
       <div class="tracker-brain-grid scout-ops-grid">
         <section class="brain-card scout-watch-card">
           <div class="brain-card-head"><strong>TRAVEL UPDATE WATCH</strong><small>Silent visual alerts</small></div>
