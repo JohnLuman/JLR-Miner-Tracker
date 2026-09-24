@@ -123,3 +123,7 @@
 .tracker-region-head{min-width:0}
 .tracker-region-title{display:block;margin-top:3px}
 .tracker-region-title select{min-width:190px;font-size:13px;font-weight:900;padding:5px 28px 5px 7px}
+
+/* v2.9.136 — Hot Zones is the only Tracker intel card */
+.tracker-intel-grid-hot-only{grid-template-columns:minmax(0,1fr)}
+.tracker-intel-grid-hot-only .tracker-intel-hot{grid-column:1/-1}
