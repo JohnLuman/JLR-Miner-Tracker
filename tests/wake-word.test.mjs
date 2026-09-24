@@ -2,24 +2,22 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const app=fs.readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
-const server=fs.readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
 const index=fs.readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
 const pkg=JSON.parse(fs.readFileSync(new URL('../package.json',import.meta.url),'utf8'));
 
-assert.ok((app.match(/\\badam\\b/g)||[]).length>=2,'partial and final speech transcripts listen for Adam');
-assert.ok(!app.includes('/\\btracker\\b/.exec(lower)'),'Tracker is no longer accepted as the wake word');
-assert.ok(app.includes("replace(/^adam[\\s,.:;-]*/,'')"),'Adam is stripped from the start of a spoken command');
-assert.ok(!app.includes("replace(/^tracker[\\s,.:;-]*/,'')"),'old Tracker command prefix is removed');
-assert.ok(app.includes('Try: “Adam, how much have I made this hour?”'),'Adam examples use Adam');
-assert.ok(app.includes('waiting for “Adam”'),'Adam mic hint names Adam');
-assert.ok(server.includes('wake word Adam'),'server help describes Adam as the wake word');
-assert.ok(server.includes('say adam'),'server voice-help intent recognizes questions about saying Adam');
+assert.match(app,/const ADAM_VOICE_ENABLED=false/,'Adam voice is hard-disabled in the live client');
+assert.match(app,/if\(!ADAM_VOICE_ENABLED\)return null/,'microphone acquisition is gated off');
+assert.doesNotMatch(app,/setTimeout\(\(\)=>startBrainListening\(\),1200\)/,'boot no longer starts microphone recognition');
+assert.doesNotMatch(app,/await refreshBrainMicrophones\(\);\s*startBrainLongUptimeWatchdog\(\)/,'boot no longer enumerates microphones or starts the mic watchdog');
+assert.match(index,/data-tab="brain" type="button">SCOUT<\/button>/,'live assistant tab is now Scout');
+assert.doesNotMatch(index,/data-tab="brain" type="button">ADAM<\/button>/,'Adam tab is removed from live navigation');
+assert.match(app,/JLR SCOUT \/\/ TRAVEL UPDATE WATCH/,'Scout replaces the live Adam control room');
+assert.match(app,/NO MICROPHONE REQUIRED/,'Scout explains that no microphone is needed');
+assert.doesNotMatch(app,/assistant\.innerHTML=\`[\s\S]*TALK TO ADAM/,'live Scout template has no Adam chat panel');
+assert.match(index,/id="scoutGlobalAlert"/,'Scout has a persistent app-wide update alert');
+assert.match(app,/SCOUT • UPDATE/,'Scout tab highlights when a scan update is due');
 
-assert.equal(pkg.version,'2.9.140','package version is the Adam wake-word release');
-assert.ok(server.includes("version:'2.9.140'"),'server public version is 2.9.140');
-assert.ok(index.includes('/app.js?v=2.9.140'),'browser cachebuster loads the Adam build');
-assert.ok(index.includes('data-tab="brain" type="button">ADAM</button>'),'Brain tab is presented as Adam');
-assert.ok(app.includes('ADAM // TRACKER OPERATIONS ASSISTANT'),'Adam is the user-facing assistant identity');
-assert.ok(app.includes('TALK TO ADAM'),'voice controls use Adam naming');
+assert.equal(pkg.version,'2.9.141','Scout no-mic release is versioned');
+assert.ok(index.includes('/app.js?v=2.9.141'),'browser cachebuster loads the Scout build');
 
-console.log('Adam wake-word regression tests passed.');
+console.log('Scout no-microphone regression tests passed.');
