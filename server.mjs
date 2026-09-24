@@ -2579,14 +2579,28 @@ function updateLedgerActivity(characterId,totalM3,sampleAt=now()) {
 
 function recordFleetPerformanceSample(sampleAt,successful){
   state.esi.performanceSamples ||= [];
-  const rows=(successful||[]).map(result=>state.esi.ledgerActivity?.[String(result.characterId)]).filter(Boolean);
-  const active=rows.filter(row=>Number(row.lastIntervalM3)>0&&Number(row.lastIntervalSeconds)>0);
+  const characters=(successful||[]).map(result=>{
+    const characterId=String(result.characterId);
+    const row=state.esi.ledgerActivity?.[characterId];
+    if(!row)return null;
+    const intervalM3=Math.max(0,Number(row.lastIntervalM3)||0);
+    const intervalSeconds=Math.max(0,Number(row.lastIntervalSeconds)||0);
+    return{
+      characterId,
+      actualM3PerHour:intervalM3>0&&intervalSeconds>0?Math.max(0,Number(row.lastIntervalRate)||0):0,
+      intervalM3,
+      intervalSeconds,
+      active:intervalM3>0&&intervalSeconds>0,
+    };
+  }).filter(Boolean);
+  const active=characters.filter(row=>row.active);
   const sample={
     at:sampleAt,
-    actualM3PerHour:active.reduce((sum,row)=>sum+Math.max(0,Number(row.lastIntervalRate)||0),0),
-    intervalM3:active.reduce((sum,row)=>sum+Math.max(0,Number(row.lastIntervalM3)||0),0),
+    actualM3PerHour:active.reduce((sum,row)=>sum+row.actualM3PerHour,0),
+    intervalM3:active.reduce((sum,row)=>sum+row.intervalM3,0),
     activeToons:active.length,
-    sampledToons:rows.length,
+    sampledToons:characters.length,
+    characters,
   };
   const last=state.esi.performanceSamples.at(-1);
   const gap=Date.parse(sample.at)-Date.parse(last?.at||'');
@@ -2594,6 +2608,84 @@ function recordFleetPerformanceSample(sampleAt,successful){
   else state.esi.performanceSamples.push(sample);
   const cutoff=Date.now()-7*24*60*60*1000;
   state.esi.performanceSamples=state.esi.performanceSamples.filter(row=>Date.parse(row?.at||'')>=cutoff).slice(-672);
+}
+
+function fleetPerformanceSnapshotForUser(user,requestedCharacterIds){
+  const allowed=new Set((user?.characterIds||[]).map(String));
+  const characterIds=[...new Set((Array.isArray(requestedCharacterIds)?requestedCharacterIds:[])
+    .map(String).filter(id=>allowed.has(id)))];
+
+  const rows=characterIds.flatMap(id=>ledgerRowsByCharacter.get(id)||[]);
+  const daily=aggregateTrackedT3Ledger({
+    rows,
+    typeById:state.esi.typeCache,
+    systemById:state.esi.systemCache,
+    systemOreByName:SYSTEM_ORE_BY_NAME,
+    priceByMineral:effectiveJitaMineralPrices(),
+    refineYield:MAX_REFINE_YIELD,
+  }).slice(0,90);
+
+  const wanted=new Set(characterIds);
+  const samples=(state.esi.performanceSamples||[]).map(sample=>{
+    if(!Array.isArray(sample?.characters))return null;
+    const members=sample.characters.filter(row=>wanted.has(String(row?.characterId||'')));
+    const active=members.filter(row=>Number(row?.intervalM3)>0&&Number(row?.intervalSeconds)>0);
+    return{
+      at:sample.at,
+      actualM3PerHour:active.reduce((sum,row)=>sum+Math.max(0,Number(row.actualM3PerHour)||0),0),
+      intervalM3:active.reduce((sum,row)=>sum+Math.max(0,Number(row.intervalM3)||0),0),
+      activeToons:active.length,
+      sampledToons:members.length,
+    };
+  }).filter(Boolean);
+
+  const liveMembers=characterIds.map(characterId=>{
+    const row=state.esi.ledgerActivity?.[characterId];
+    if(!row)return null;
+    const intervalM3=Math.max(0,Number(row.lastIntervalM3)||0);
+    const intervalSeconds=Math.max(0,Number(row.lastIntervalSeconds)||0);
+    return{
+      characterId,
+      at:row.lastSampleAt||null,
+      actualM3PerHour:intervalM3>0&&intervalSeconds>0?Math.max(0,Number(row.lastIntervalRate)||0):0,
+      intervalM3,
+      intervalSeconds,
+      active:intervalM3>0&&intervalSeconds>0,
+    };
+  }).filter(Boolean);
+  const liveAtMs=Math.max(0,...liveMembers.map(row=>Date.parse(row.at||'')).filter(Number.isFinite));
+  if(liveAtMs>0){
+    const active=liveMembers.filter(row=>row.active);
+    const liveSample={
+      at:new Date(liveAtMs).toISOString(),
+      actualM3PerHour:active.reduce((sum,row)=>sum+row.actualM3PerHour,0),
+      intervalM3:active.reduce((sum,row)=>sum+row.intervalM3,0),
+      activeToons:active.length,
+      sampledToons:liveMembers.length,
+    };
+    const prior=samples.at(-1);
+    const gap=liveAtMs-Date.parse(prior?.at||'');
+    if(prior&&Number.isFinite(gap)&&gap>=0&&gap<5*60*1000)samples[samples.length-1]=liveSample;
+    else samples.push(liveSample);
+  }
+
+  const today=dateUTC();
+  const weekStart=mondayUTC();
+  const sum=predicate=>daily.filter(predicate).reduce((out,row)=>({
+    m3:out.m3+Math.max(0,Number(row.m3)||0),
+    jbv:out.jbv+Math.max(0,Number(row.jbv)||0),
+    unpricedM3:out.unpricedM3+Math.max(0,Number(row.unpricedM3)||0),
+  }),{m3:0,jbv:0,unpricedM3:0});
+
+  return{
+    scope:'assigned-fleet',
+    characterIds,
+    cachedCharacters:characterIds.filter(id=>ledgerRowsByCharacter.has(id)).length,
+    daily,
+    samples:samples.slice(-672),
+    actual:{today:sum(row=>row.date===today),week:sum(row=>row.date>=weekStart)},
+    generatedAt:now(),
+  };
 }
 
 function trackedFieldLedgerTotals(rows,day){
@@ -7341,6 +7433,19 @@ async function routeApi(req,res,url) {
     return json(res,200,await doctrineMarketSnapshot());
   }
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
+  if(req.method==='POST'&&url.pathname==='/api/fleet-performance'){
+    if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
+    let body;
+    try{body=await readBody(req,32_000)}
+    catch(err){return json(res,400,{error:'BAD_FLEET_PERFORMANCE_REQUEST',message:String(err.message||err)})}
+    if(body?.characterIds!==undefined&&!Array.isArray(body.characterIds)){
+      return json(res,400,{error:'BAD_CHARACTER_IDS',message:'characterIds must be an array.'});
+    }
+    if(Array.isArray(body?.characterIds)&&body.characterIds.length>200){
+      return json(res,400,{error:'TOO_MANY_CHARACTER_IDS'});
+    }
+    return json(res,200,fleetPerformanceSnapshotForUser(user,body?.characterIds||[]));
+  }
   if(req.method==='GET'&&url.pathname==='/api/tracker/speech/diagnostics'){
     const voiceWorker=await trackerVoiceHealth().catch(err=>({configured:Boolean(TRACKER_TTS_WORKER_URL),reachable:false,message:String(err?.message||err)}));
     return json(res,200,{

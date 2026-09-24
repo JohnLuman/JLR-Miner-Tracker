@@ -16,6 +16,10 @@
   let toastTimer = null;
   let eventSource = null;
   let fleetPerformanceRefreshPromise = null;
+  let fleetPerformanceSnapshotPromise = null;
+  let fleetPerformanceSnapshotRequestKey = '';
+  let fleetPerformanceData = null;
+  let fleetPerformanceSelectionKey = '';
   let scanCharacterId = localStorage.getItem('jlrScanCharacter') || '';
   let scanBusy = false;
   let scoutLocationTimer = null;
@@ -3469,7 +3473,11 @@
   function fleetM3(){return fleetStats().total}
   function projectedISK(ore){return fleetM3()*Number(ore.jbvPerM3)*(Number(fleetSettings.payout)/100)}
   function actualValue(raw){return Number(raw||0)*(Number(fleetSettings.payout)/100)}
-  function saveFleet(){localStorage.setItem('jlrFleet',JSON.stringify(fleetSettings));renderAll()}
+  function saveFleet(){
+    localStorage.setItem('jlrFleet',JSON.stringify(fleetSettings));
+    renderAll();
+    if(me)void refreshFleetPerformanceSnapshot(false).then(()=>{if(activeTab==='performance')renderFleetPerformance()});
+  }
   function saveCalc(){
     localStorage.setItem('jlrMiningCalc',JSON.stringify(calcSettings));
     if(state){renderFleet();renderTop();renderIceMining();renderGasHuffing()}
@@ -4529,8 +4537,55 @@
       }
     }
   }
+  function selectedFleetPerformanceIds(){
+    const boosterId=String(calcSettings.boosterCharacterId||'');
+    return (me?.characters||[])
+      .map(character=>String(character.characterId))
+      .filter(id=>id!==boosterId&&Boolean(fleetSettings.members?.[id]?.enabled));
+  }
+  function fleetPerformanceKey(ids=selectedFleetPerformanceIds()){
+    return [...ids].map(String).sort().join(',');
+  }
+  function scopedFleetPerformance(){
+    const ids=selectedFleetPerformanceIds();
+    const key=fleetPerformanceKey(ids);
+    const dataKey=fleetPerformanceKey(Array.isArray(fleetPerformanceData?.characterIds)?fleetPerformanceData.characterIds:[]);
+    if(key!==dataKey){
+      return{scope:'assigned-fleet',characterIds:ids,daily:[],samples:[],actual:{today:{m3:0,jbv:0,unpricedM3:0},week:{m3:0,jbv:0,unpricedM3:0}}};
+    }
+    return fleetPerformanceData||{scope:'assigned-fleet',characterIds:ids,daily:[],samples:[],actual:{today:{m3:0,jbv:0,unpricedM3:0},week:{m3:0,jbv:0,unpricedM3:0}}};
+  }
+  async function refreshFleetPerformanceSnapshot(force=false){
+    const characterIds=selectedFleetPerformanceIds();
+    const key=fleetPerformanceKey(characterIds);
+    if(!force&&fleetPerformanceData&&fleetPerformanceSelectionKey===key)return fleetPerformanceData;
+    if(fleetPerformanceSnapshotPromise){
+      if(fleetPerformanceSnapshotRequestKey===key)return fleetPerformanceSnapshotPromise;
+      return fleetPerformanceSnapshotPromise.finally(()=>refreshFleetPerformanceSnapshot(true));
+    }
+    fleetPerformanceSnapshotRequestKey=key;
+    const pending=api('/api/fleet-performance',{
+      method:'POST',
+      body:JSON.stringify({characterIds}),
+    }).then(payload=>{
+      fleetPerformanceData=payload;
+      fleetPerformanceSelectionKey=key;
+      return payload;
+    }).catch(error=>{
+      console.warn('Assigned Fleet Performance snapshot failed',error);
+      if(fleetPerformanceSelectionKey!==key)fleetPerformanceData=null;
+      return null;
+    }).finally(()=>{
+      if(fleetPerformanceSnapshotPromise===pending){
+        fleetPerformanceSnapshotPromise=null;
+        fleetPerformanceSnapshotRequestKey='';
+      }
+    });
+    fleetPerformanceSnapshotPromise=pending;
+    return pending;
+  }
   function fleetHistoryRows(days=fleetHistoryDays){
-    const source=Array.isArray(state?.esi?.performance?.daily)?state.esi.performance.daily:[];
+    const source=Array.isArray(scopedFleetPerformance()?.daily)?scopedFleetPerformance().daily:[];
     const byDate=new Map(source.map(row=>[String(row.date||''),row]));
     const today=new Date();
     today.setUTCHours(0,0,0,0);
@@ -4642,7 +4697,8 @@
   }
   function renderFleetPerformance(){
     if(!state||!$('fleetActivityChart'))return;
-    const daily=fleetHistoryRows(fleetHistoryDays),samples=state.esi?.performance?.samples||[];
+    const performance=scopedFleetPerformance();
+    const daily=fleetHistoryRows(fleetHistoryDays),samples=performance.samples||[];
     const latest=samples.at(-1)||null,payout=Number(fleetSettings.payout||95)/100;
     const rangeM3=daily.reduce((sum,row)=>sum+Number(row.m3||0),0);
     const rangeValue=daily.reduce((sum,row)=>sum+Number(row.jbv||0),0)*payout;
@@ -4666,18 +4722,18 @@
     $('fleetLiveRate').textContent=latest?`${fmt(liveRate,'m3')} m³/hr`:'—';
     $('fleetLiveRateSub').textContent=latest?(liveRate>0?'latest detected mining interval':'no increase in latest interval'):'waiting for a mining interval';
     $('fleetActiveToons').textContent=latest?`${Number(latest.activeToons||0)} / ${Number(latest.sampledToons||0)}`:'—';
-    $('fleetActiveToonsSub').textContent=latest?'active / sampled in latest sync':'detected in latest sample';
-    $('fleetTodayM3').textContent=`${fmt(state.esi?.actual?.today?.m3||0,'m3')} m³`;
-    $('fleetTodayPayout').textContent=`${fmt(actualValue(state.esi?.actual?.today?.jbv||0))} ISK`;
-    $('fleetTodayPayoutSub').textContent=`tracked T3 value × ${(payout*100).toFixed(1)}% payout`;
+    $('fleetActiveToonsSub').textContent=latest?'assigned miners active / sampled in latest sync':'assigned miners in latest sample';
+    $('fleetTodayM3').textContent=`${fmt(performance.actual?.today?.m3||0,'m3')} m³`;
+    $('fleetTodayPayout').textContent=`${fmt(actualValue(performance.actual?.today?.jbv||0))} ISK`;
+    $('fleetTodayPayoutSub').textContent=`assigned fleet • tracked T3 value × ${(payout*100).toFixed(1)}% payout`;
     $('fleetRangeTotalLabel').textContent=`${fleetHistoryDays}D MINED`;
     $('fleetRangeTotal').textContent=`${fmt(rangeM3,'m3')} m³`;
     $('fleetRangeTotalSub').textContent=`${fmt(rangeValue)} ISK tracked payout`;
     $('fleetBestDay').textContent=best&&Number(best.m3)>0?`${fmt(best.m3,'m3')} m³`:'—';
     $('fleetBestDaySub').textContent=best&&Number(best.m3)>0?chartDateLabel(best.date):'no production history yet';
     $('fleetHistoryTitle').textContent=fleetHistoryMetric==='value'?'DAILY ISK PAYOUT':'DAILY MINING VOLUME';
-    $('fleetHistorySubtitle').textContent=fleetHistoryMetric==='value'?`bars show ISK payout • last ${fleetHistoryDays} days • hover for daily totals`:`bars show mined m³ • last ${fleetHistoryDays} days • hover for daily totals`;
-    $('fleetOreMixSubtitle').textContent=`last ${fleetHistoryDays} days • mined m³ by ore`;
+    $('fleetHistorySubtitle').textContent=fleetHistoryMetric==='value'?`assigned miners • ISK payout • last ${fleetHistoryDays} days`:`assigned miners • mined m³ • last ${fleetHistoryDays} days`;
+    $('fleetOreMixSubtitle').textContent=`assigned miners • last ${fleetHistoryDays} days • mined m³ by ore`;
     renderFleetActivityChart($('fleetActivityChart'),samples,target);
     renderFleetDailyChart($('fleetHistoryChart'),daily,fleetHistoryMetric);
     renderFleetOreMix($('fleetOreMix'),daily);
@@ -5365,6 +5421,7 @@
       ]);
       state=nextState;
       if(myLedger)myLedgerSummary=myLedger;
+      await refreshFleetPerformanceSnapshot(true);
       renderAll();
       renderDataStatus();
       if(showStatus&&activeTab==='performance')toast('Fleet Performance updated.');
@@ -5443,7 +5500,10 @@
       state=nextState;
       announceFieldEsiChanges(previousState,nextState);
       if(syncChanged){
-        refreshMe().then(scheduleStateRender).catch(scheduleStateRender);
+        refreshMe()
+          .then(()=>refreshFleetPerformanceSnapshot(true))
+          .then(scheduleStateRender)
+          .catch(scheduleStateRender);
       }else{
         scheduleStateRender();
       }
@@ -6079,7 +6139,7 @@
       if(!config.ssoConfigured){$('setupWarning').classList.remove('hidden');$('setupWarning').textContent='Login is not configured yet.';}
       const auth=await fetch('/api/me',{credentials:'same-origin'}).then(r=>r.json());
       if(!auth.authenticated){showLogin();return}
-      me=auth.user;window.jlrVoiceAccountId=String(me.id||'');syncDoctrineTabAccess();syncTrackerTabAccess();initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');queueStartupGreeting();await loadMerIntel();await loadState();connectSse();startScoutLocationWatch();
+      me=auth.user;window.jlrVoiceAccountId=String(me.id||'');syncDoctrineTabAccess();syncTrackerTabAccess();initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');queueStartupGreeting();await loadMerIntel();await loadState();await refreshFleetPerformanceSnapshot(true);renderFleetPerformance();connectSse();startScoutLocationWatch();
       await refreshBrainMicrophones();
       startBrainLongUptimeWatchdog();
       setTimeout(()=>startBrainListening(),1200);
