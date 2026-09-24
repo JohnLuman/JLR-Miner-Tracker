@@ -114,6 +114,11 @@
   let brainMicWanted=false;
   let brainConversationUntil=0;
   let brainLastSystem='';
+  let adamAskBusy=false;
+  let adamRecentActions=[];
+  try{adamRecentActions=JSON.parse(localStorage.getItem('jlrAdamRecentActions')||'[]')}catch{}
+  if(!Array.isArray(adamRecentActions))adamRecentActions=[];
+  adamRecentActions=adamRecentActions.filter(row=>row&&Date.now()-Number(row.at||0)<6*60*60*1000).slice(-16);
   let brainSpeechHistory=[];
   try{brainSpeechHistory=JSON.parse(localStorage.getItem('jlrBrainSpeechHistory')||'[]')}catch{}
   if(!Array.isArray(brainSpeechHistory))brainSpeechHistory=[];
@@ -262,6 +267,150 @@
       el.title='No successful EVE character-data sync has completed yet.';
     }
   }
+  function adamRecordAction(kind,detail={}){
+    const row={
+      kind:String(kind||'').slice(0,60),
+      at:Date.now(),
+      tab:String(detail.tab||activeTab||'').slice(0,40),
+      system:String(detail.system||'').slice(0,80),
+      characterName:String(detail.characterName||'').slice(0,120),
+      detail:String(detail.detail||'').slice(0,160),
+    };
+    if(!row.kind)return;
+    const previous=adamRecentActions.at(-1);
+    if(previous&&previous.kind===row.kind&&previous.tab===row.tab&&previous.system===row.system&&previous.characterName===row.characterName){
+      adamRecentActions[adamRecentActions.length-1]=row;
+    }else{
+      adamRecentActions.push(row);
+      adamRecentActions=adamRecentActions.slice(-16);
+    }
+    localStorage.setItem('jlrAdamRecentActions',JSON.stringify(adamRecentActions));
+    renderAdamContext();
+  }
+  function adamPerformanceContext(){
+    try{
+      const performance=scopedFleetPerformance();
+      const samples=Array.isArray(performance?.samples)?performance.samples:[];
+      const latest=samples.at(-1)||null;
+      const previous=samples.length>1?samples[samples.length-2]:null;
+      const target=Number(fleetStats()?.total||0);
+      return{
+        latestRate:Math.max(0,Number(latest?.actualM3PerHour)||0),
+        previousRate:Math.max(0,Number(previous?.actualM3PerHour)||0),
+        targetRate:Math.max(0,target),
+        activeToons:Math.max(0,Number(latest?.activeToons)||0),
+        sampledToons:Math.max(0,Number(latest?.sampledToons)||0),
+        sampleAt:String(latest?.at||''),
+      };
+    }catch{return{latestRate:null,previousRate:null,targetRate:null,activeToons:null,sampledToons:null,sampleAt:''}}
+  }
+  function adamWorkflow(){
+    const cutoff=Date.now()-30*60*1000;
+    const recent=adamRecentActions.filter(row=>Number(row?.at||0)>=cutoff);
+    if(recent.some(row=>row.kind==='scan-updated'))return'scan-update';
+    if(activeTab==='performance')return'performance-review';
+    if(activeTab==='fleet')return'fleet-setup';
+    if(activeTab==='fields')return'field-review';
+    if(activeTab==='threat')return'threat-review';
+    if(activeTab==='doctrine')return'doctrine-market';
+    if(activeTab==='brain')return'scout-routing';
+    return activeTab?activeTab+'-review':'general';
+  }
+  function adamContextSnapshot(){
+    const selectedCharacter=(me?.characters||[]).find(row=>String(row.characterId)===String(scanCharacterId))||null;
+    return{
+      currentTab:activeTab,
+      workflow:adamWorkflow(),
+      selectedSystem:selectedSystem||$('systemSelect')?.value||'',
+      selectedCharacterId:String(selectedCharacter?.characterId||scanCharacterId||''),
+      selectedCharacterName:String(selectedCharacter?.name||''),
+      selectedFleetCount:typeof selectedFleetPerformanceIds==='function'?selectedFleetPerformanceIds().length:0,
+      selectedMetric:activeTab==='performance'?String(fleetHistoryMetric||'m3'):'',
+      targetOre:String(targetOre||''),
+      historyMetric:String(fleetHistoryMetric||''),
+      historyDays:Number(fleetHistoryDays)||7,
+      fieldStatus:selectedSystem&&state?.fields?.[selectedSystem]?String(state.fields[selectedSystem].status||''):'',
+      performance:adamPerformanceContext(),
+      recentActions:adamRecentActions.filter(row=>Date.now()-Number(row?.at||0)<60*60*1000).slice(-8),
+    };
+  }
+  function adamContextLabel(context=adamContextSnapshot()){
+    const parts=[String(context.currentTab||'JLR').replace(/-/g,' ').toUpperCase()];
+    if(context.selectedSystem)parts.push(context.selectedSystem);
+    if(context.workflow==='scan-update')parts.push('SCAN WORKFLOW');
+    else if(context.currentTab==='performance'&&Number(context.selectedFleetCount)>0)parts.push(context.selectedFleetCount+' MINERS');
+    else if(context.selectedCharacterName&&(context.currentTab==='fields'||context.currentTab==='brain'))parts.push(context.selectedCharacterName);
+    return parts.join(' • ');
+  }
+  function adamSuggestions(){
+    if(activeTab==='performance')return[
+      'Why is this low?',
+      'What changed?',
+      'Explain recent activity rate'
+    ];
+    if(activeTab==='fields')return[
+      'Next one?',
+      'What needs a scan?',
+      'Explain this system'
+    ];
+    if(activeTab==='fleet')return[
+      'Explain this tab',
+      'What does boosted output mean?',
+      'How does JLR use my fits?'
+    ];
+    if(activeTab==='brain')return[
+      'Next system?',
+      'Where is my travel toon?',
+      'What needs attention?'
+    ];
+    return[
+      'Explain this tab',
+      'What needs attention?',
+      'What can you help with?'
+    ];
+  }
+  function renderAdamContext(){
+    const label=$('adamContextLabel');
+    if(label)label.textContent=adamContextLabel();
+    const suggestions=$('adamSuggestions');
+    if(suggestions)suggestions.innerHTML=adamSuggestions().map(text=>'<button class="adam-suggestion" type="button" data-adam-question="'+esc(text)+'">'+esc(text)+'</button>').join('');
+  }
+  async function askAdamText(question){
+    const text=String(question||'').trim();
+    if(!text||adamAskBusy)return;
+    const input=$('adamQuestion');
+    const button=$('adamAsk');
+    const reply=$('adamReply');
+    adamAskBusy=true;
+    if(button){button.disabled=true;button.textContent='THINKING…';}
+    if(reply){reply.classList.add('loading');reply.textContent='Checking JLR context…';}
+    try{
+      const context=adamContextSnapshot();
+      const response=await api('/api/tracker/brain/ask',{
+        method:'POST',
+        body:JSON.stringify({
+          question:text,
+          characterId:scanCharacterId,
+          payoutPct:Number(fleetSettings.payout),
+          currentTab:activeTab,
+          context,
+        }),
+      });
+      const answer=String(response?.text||'I do not have an answer for that yet.');
+      if(response?.focusSystem)brainLastSystem=String(response.focusSystem);
+      else if(response?.closest?.system)brainLastSystem=String(response.closest.system);
+      if(reply){reply.classList.remove('loading');reply.textContent=answer;}
+      if(input)input.value='';
+      adamRecordAction('adam-question',{system:response?.focusSystem||response?.closest?.system||'',detail:String(response?.topic||'answer')});
+    }catch(error){
+      if(reply){reply.classList.remove('loading');reply.textContent=String(error?.message||error||'Adam could not answer that.');}
+    }finally{
+      adamAskBusy=false;
+      if(button){button.disabled=false;button.textContent='ASK ADAM';}
+      renderAdamContext();
+    }
+  }
+
   function recordBrainSpeech(kind,text){
     const message=String(text||'').trim();
     if(!message)return;
