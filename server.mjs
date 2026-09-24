@@ -4216,7 +4216,7 @@ function trackerBrainAnswer(user,question,options={}){
     const target=Number(p.targetRate);
     const active=Math.max(0,Number(p.activeToons)||0);
     const sampled=Math.max(0,Number(p.sampledToons)||0);
-    if(!(latest>=0)||!(target>0)){
+    if(!p.sampleAt||!(latest>=0)||!(target>0)){
       return answer('performance-variance',
         'JLR does not have enough recent rate and fitted-target context to explain that comparison yet. Open Fleet Performance after the ledger samples load, then ask again.',
         {voiceText:'I need a recent fleet sample and fitted target before I can explain the variance.'}
