@@ -32,7 +32,7 @@ assert.match(app,/class="ore-mix-bar"/,'Ore Mix uses horizontal comparison bars'
 assert.doesNotMatch(app,/ore-mix-composition/,'Ore Mix no longer relies on a composition strip');
 assert.match(styles,/\.information-ore-row/,'ranked ore comparison rows are styled');
 
-assert.match(tracker,/TOP SIGNAL/,'Hot Zones leads with the strongest selected signal');
+assert.match(tracker,/const topMetric=top\?trackerIntelMetric/,'Hot Zones only promotes a top signal when the selected metric is non-zero');
 assert.doesNotMatch(tracker,/tracker-intel-valuebar/,'Hot Zones no longer stretches proportional bars across the card');
 assert.match(tracker,/tracker-intel-stat tracker-intel-selected/,'Hot Zones uses compact numeric signal cells');
 assert.match(trackerCss,/\.tracker-intel-insight/,'Hot Zones insight treatment is styled');
@@ -47,7 +47,7 @@ assert.ok(index.includes('/styles.css?v=2.9.139'),'main information-design CSS i
 assert.ok(index.includes('/tracker.css?v=2.9.139'),'Tracker information-design CSS is cache-busted');
 assert.ok(index.includes('/app.js?v=2.9.139'),'dashboard JS is cache-busted');
 assert.ok(index.includes('/tracker.js?v=2.9.139'),'Tracker loader is cache-busted');
-assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.138/,'Tracker core is cache-busted');
+assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.139/,'Tracker core is cache-busted');
 
 assert.match(styles,/\.app\.compact\{width:min\(1120px,calc\(100vw - 12px\)\);max-width:1120px\}/,'Compact app keeps a bounded design width');
 assert.match(styles,/\.app\.expanded\{width:min\(1600px,calc\(100vw - 12px\)\);max-width:1600px\}/,'Expanded app keeps a bounded design width');
