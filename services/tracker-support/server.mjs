@@ -21,7 +21,8 @@ const VOICE_REFERENCE_META=path.join(VOICE_DIR,'core-reference.json');
 const VOICE_CACHE_DIR=path.join(VOICE_DIR,'cache');
 const VOICE_MAX_TEXT=700;
 const VOICE_MAX_AUDIO_BYTES=8_000_000;
-const VOICE_FETCH_TIMEOUT_MS=Math.max(15_000,Number(process.env.TRACKER_SUPPORT_VOICE_TIMEOUT_MS)||120_000);
+const VOICE_FETCH_TIMEOUT_MS=Math.max(30_000,Number(process.env.TRACKER_SUPPORT_VOICE_TIMEOUT_MS)||180_000);
+const VOICE_HEALTH_TIMEOUT_MS=Math.max(2_000,Number(process.env.TRACKER_SUPPORT_VOICE_HEALTH_TIMEOUT_MS)||5_000);
 const voiceJobs=new Map();
 const VOICE_PACK_FILE=String(process.env.TRACKER_SUPPORT_VOICE_PACK_FILE||path.join(path.dirname(STATE_FILE),'voice','JLR_Voice_Worker_v3_PATCH.zip')).trim();
 const UPLOAD_TOKEN=String(process.env.TRACKER_SUPPORT_UPLOAD_TOKEN||'').trim();
@@ -193,7 +194,7 @@ async function ensureVoiceReference({force=false}={}){
 async function gptSovitsReachable(){
   const base=GPT_SOVITS_URL.replace(/\/tts\/?$/,'');
   try{
-    const response=await fetch(base+'/docs',{signal:AbortSignal.timeout(1200)});
+    const response=await fetch(base+'/docs',{signal:AbortSignal.timeout(VOICE_HEALTH_TIMEOUT_MS)});
     return response.ok;
   }catch{return false}
 }
@@ -230,7 +231,7 @@ async function synthesizeVoice(request={}){
       top_k:15,
       top_p:.95,
       temperature:.75,
-      text_split_method:'cut5',
+      text_split_method:'cut2',
       batch_size:1,
       speed_factor:1.0,
       fragment_interval:.3,
@@ -265,6 +266,100 @@ async function synthesizeVoice(request={}){
   voiceJobs.set(seed,job);
   return await job;
 }
+
+async function streamSynthesizeVoice(res,request={}){
+  const text=cleanVoiceText(request?.text);
+  if(!text)throw new Error('text is required');
+  const reference=await ensureVoiceReference();
+  if(!reference.present)throw new Error('JLR core voice reference is unavailable.');
+
+  let meta={text:'',lang:'en'};
+  try{meta=JSON.parse(await fsp.readFile(VOICE_REFERENCE_META,'utf8'))}catch{}
+  const requestedMode=Number(request?.streaming_mode);
+  const streamingMode=[2,3].includes(requestedMode)?requestedMode:3;
+  const payload={
+    text,
+    text_lang:'en',
+    ref_audio_path:VOICE_REFERENCE_FILE,
+    aux_ref_audio_paths:[],
+    prompt_text:String(meta?.text||'').slice(0,220),
+    prompt_lang:String(meta?.lang||'en')||'en',
+    top_k:15,
+    top_p:.95,
+    temperature:.75,
+    // cut5 turns short English clauses such as "Welcome back," into tiny
+    // semantic jobs that can run to the 1500-token ceiling on CPU. cut2 keeps
+    // useful sentence context together and ends much more reliably.
+    text_split_method:'cut2',
+    batch_size:1,
+    speed_factor:1.0,
+    fragment_interval:.15,
+    seed:20260922,
+    media_type:'wav',
+    streaming_mode:streamingMode,
+    parallel_infer:true,
+    repetition_penalty:1.35,
+    overlap_length:2,
+    // Mode 3 can emit a first PCM fragment after a small semantic chunk instead
+    // of waiting for the entire sentence to finish on the CPU worker.
+    min_chunk_length:4,
+  };
+
+  let response;
+  try{
+    response=await fetch(GPT_SOVITS_URL,{
+      method:'POST',
+      headers:{'content-type':'application/json','accept':'audio/wav'},
+      body:JSON.stringify(payload),
+      signal:AbortSignal.timeout(VOICE_FETCH_TIMEOUT_MS),
+    });
+  }catch(error){
+    throw new Error('GPT-SoVITS streaming fetch failed: '+String(error?.message||error));
+  }
+  if(!response.ok){
+    const detail=(await response.text().catch(()=>'' )).slice(0,500);
+    throw new Error('GPT-SoVITS streaming HTTP '+response.status+(detail?': '+detail:''));
+  }
+  const mime=String(response.headers.get('content-type')||'audio/wav').split(';')[0].trim().toLowerCase();
+  if(!mime.startsWith('audio/'))throw new Error('GPT-SoVITS streaming returned '+(mime||'invalid content type'));
+  if(!response.body)throw new Error('GPT-SoVITS streaming returned no body.');
+
+  res.writeHead(200,{
+    'content-type':mime,
+    'cache-control':'private, no-store, no-transform',
+    'connection':'keep-alive',
+    'x-accel-buffering':'no',
+    'x-jlr-worker-cache':'MISS',
+    'x-jlr-voice-profile':'core',
+    'x-jlr-streaming':'1',
+    'x-jlr-streaming-mode':String(streamingMode),
+  });
+  res.flushHeaders?.();
+  res.socket?.setNoDelay?.(true);
+
+  const reader=response.body.getReader();
+  let total=0;
+  try{
+    for(;;){
+      const {done,value}=await reader.read();
+      if(done)break;
+      if(!value?.byteLength)continue;
+      total+=value.byteLength;
+      if(total>VOICE_MAX_AUDIO_BYTES)throw new Error('GPT-SoVITS streaming audio exceeded the maximum size.');
+      if(!res.destroyed)res.write(Buffer.from(value));
+    }
+    if(!res.destroyed)res.end();
+  }catch(error){
+    try{await reader.cancel()}catch{}
+    if(res.headersSent){
+      console.warn('Support GPT-SoVITS stream interrupted:',String(error?.message||error));
+      if(!res.destroyed)res.end();
+      return;
+    }
+    throw error;
+  }
+}
+
 function sendVoiceAudio(res,audio){
   res.writeHead(200,{
     'content-type':audio.mime||'audio/wav',
@@ -283,14 +378,14 @@ async function voiceHealth(){
     voice_ready:Boolean(reference.present&&engine),
     voice_engine:'GPT-SoVITS',
     voice_engine_reachable:engine,
-    reference_exists:Boolean(reference.present&&engine),
+    reference_exists:Boolean(reference.present),
     reference_pack:reference.present,
     reference_pack_version:'railway-core-v1',
     voice_profiles:['core'],
     system_pronunciations:0,
-    streaming:false,
-    streaming_modes:[0],
-    stable_streaming:false,
+    streaming:true,
+    streaming_modes:[2,3],
+    stable_streaming:true,
   };
 }
 
@@ -308,7 +403,7 @@ const server=http.createServer(async(req,res)=>{
     return json(res,200,{
       ok:true,
       service:'jlr-tracker-support',
-      version:'2.0.0',
+      version:'2.1.0',
       sessions:store.size,
       uptimeSeconds:Math.floor((Date.now()-startedAt)/1000),
       persistence:Boolean(STATE_FILE),
@@ -325,7 +420,19 @@ const server=http.createServer(async(req,res)=>{
     catch(error){return json(res,400,{error:String(error?.message||error)})}
   }
   if(!authorized(req))return json(res,401,{error:'UNAUTHORIZED'});
-  if(req.method==='POST'&&(url.pathname==='/synthesize'||url.pathname==='/synthesize-stream')){
+  if(req.method==='POST'&&url.pathname==='/synthesize-stream'){
+    let body;
+    try{body=await readBody(req,20_000)}
+    catch(error){return json(res,400,{error:'BAD_VOICE_REQUEST',message:String(error?.message||error)})}
+    try{return await streamSynthesizeVoice(res,body)}
+    catch(error){
+      console.warn('Support GPT-SoVITS streaming synthesis failed:',String(error?.message||error));
+      if(!res.headersSent)return json(res,503,{error:'TTS_FAILED',message:String(error?.message||error)});
+      if(!res.destroyed)res.end();
+      return;
+    }
+  }
+  if(req.method==='POST'&&url.pathname==='/synthesize'){
     let body;
     try{body=await readBody(req,20_000)}
     catch(error){return json(res,400,{error:'BAD_VOICE_REQUEST',message:String(error?.message||error)})}
