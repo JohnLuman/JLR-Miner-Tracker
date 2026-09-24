@@ -3996,7 +3996,8 @@
 
     const ledgerDebug=state.esi?.ledgerDebug||null;
     const appTodayM3=Math.max(0,Number(state.esi.actual.today.m3)||0);
-    $('actualTodayIsk').textContent=fmt(actualValue(state.esi.actual.today.jbv));
+    const appTodayPayout=Math.max(0,actualValue(state.esi.actual.today.jbv));
+    $('actualTodayIsk').textContent=fmt(appTodayPayout)+' ISK';
     const payoutPriceBasis=state.market?.jitaBuyBasis==='janice-immediate-buy'?'Janice Jita buy':'ESI Jita buy fallback';
     const unpricedM3=Math.max(0,Number(state.esi.actual.today.unpricedM3)||0);
     const appCached=Number(ledgerDebug?.cachedCharacters||0);
@@ -4025,9 +4026,26 @@
         appPayoutCard.title='Combined payout value for all linked JLR characters. '+debug.join(' • ')+(state.esi.lastSyncAt?' • synced '+ago(state.esi.lastSyncAt):'');
       }
     }
-    $('actualTodayIskSub').textContent=unpricedM3>0
-      ?'EVE day (UTC) • '+fmt(appTodayM3,'m3')+' m³ mined • '+fmt(unpricedM3,'m3')+' m³ awaiting price • '+payoutPriceBasis
-      :'EVE day (UTC) • '+fmt(appTodayM3,'m3')+' m³ mined • exact T3 grade • '+(payout*100).toFixed(1)+'% payout • '+payoutPriceBasis;
+    const eveDay=String(ledgerDebug?.day||String(state.serverNow||'').slice(0,10)||'');
+    const eveDayMs=Date.parse(eveDay+'T00:00:00Z');
+    const previousEveDay=Number.isFinite(eveDayMs)?new Date(eveDayMs-86400000).toISOString().slice(0,10):'';
+    const previousEveRow=(state.esi?.performance?.daily||[]).find(row=>String(row?.date||'')===previousEveDay)||null;
+    const previousEveM3=Math.max(0,Number(previousEveRow?.m3)||0);
+    const previousEvePayout=Math.max(0,actualValue(previousEveRow?.jbv));
+    const todayLedgerRows=Math.max(0,Number(ledgerDebug?.todayRows)||0);
+    const todayT3Rows=Math.max(0,Number(ledgerDebug?.matchedT3Rows)||0);
+
+    if(unpricedM3>0){
+      $('actualTodayIskSub').textContent='EVE day '+eveDay+' UTC • '+fmt(appTodayM3,'m3')+' m³ mined • '+fmt(unpricedM3,'m3')+' m³ awaiting price • '+payoutPriceBasis;
+    }else if(appTodayM3<=0&&todayT3Rows<=0&&previousEveM3>0){
+      $('actualTodayIskSub').textContent='NEW EVE DAY • reset 00:00 UTC • previous '+previousEveDay+': '+fmt(previousEveM3,'m3')+' m³ • '+fmt(previousEvePayout)+' ISK';
+    }else if(appTodayM3<=0&&todayLedgerRows>0&&todayT3Rows<=0){
+      $('actualTodayIskSub').textContent='EVE day '+eveDay+' UTC • '+todayLedgerRows+' mining rows seen • 0 T3 ore rows • payout counts T3 ore only';
+    }else if(appTodayM3<=0){
+      $('actualTodayIskSub').textContent='EVE day '+eveDay+' UTC • no T3 ledger rows since 00:00 UTC • '+(payout*100).toFixed(1)+'% payout';
+    }else{
+      $('actualTodayIskSub').textContent='EVE day '+eveDay+' UTC • '+fmt(appTodayM3,'m3')+' m³ mined • exact T3 grade • '+(payout*100).toFixed(1)+'% payout • '+payoutPriceBasis;
+    }
 
     const myTotals=myLedgerSummary?.totals||null;
     const myRawValue=Math.max(0,Number(myTotals?.jbv)||0);
