@@ -8,10 +8,7 @@ const cmd=fs.readFileSync(new URL('../public/downloads/INSTALL-JLR-TRACKER-COMPA
 
 assert.match(server,/\/api\/companion\/pair\/claim/);
 assert.match(server,/\/api\/companion\/location/);
-assert.match(server,/\/api\/companion\/tracker-map/,'paired Companion can submit read-only public client map observations');
-assert.match(server,/trackerIntelIngestPublicMap/,'public map observations are normalized before storage');
-assert.match(server,/source:'eve-client-public'/,'map observations are clearly separated from ESI data');
-assert.match(server,/publicMapLastSeenAt/,'Companion health records the public-map feed heartbeat');
+assert.doesNotMatch(server,/\/api\/companion\/tracker-map/,'removed ESS/interference watch endpoint stays disabled');
 assert.match(server,/source:'companion'/);
 assert.match(server,/COMPANION_LOCATION_TTL_MS/);
 assert.match(server,/companionTokenHash/);
