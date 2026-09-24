@@ -127,3 +127,21 @@
 /* v2.9.136 — Hot Zones is the only Tracker intel card */
 .tracker-intel-grid-hot-only{grid-template-columns:minmax(0,1fr)}
 .tracker-intel-grid-hot-only .tracker-intel-hot{grid-column:1/-1}
+
+
+/* v2.9.137 — Hot Zones information hierarchy */
+.tracker-intel-insight{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:8px 9px;border:1px solid #39333d;border-radius:7px;background:#111117}
+.tracker-intel-insight>span{color:#7e838d;font:900 7px/1 "Share Tech Mono",monospace;letter-spacing:.13em}
+.tracker-intel-insight>strong{font:900 13px/1 Oxanium,Segoe UI,sans-serif}
+.tracker-intel-insight>b{font:900 10px/1 Oxanium,Segoe UI,sans-serif;color:#f2f1f5}
+.tracker-intel-insight>em{font-style:normal;color:#a9adb5;font-size:9px}
+.information-hot-row{grid-template-columns:34px minmax(0,1fr) auto auto;padding-top:8px;padding-bottom:8px}
+.tracker-intel-main{min-width:0;display:grid;gap:4px}
+.tracker-intel-valuebar{height:4px;border-radius:999px;background:#26232b;overflow:hidden}
+.tracker-intel-valuebar>i{display:block;height:100%;border-radius:inherit;background:#b33b4b}
+.information-hot-row.current .tracker-intel-valuebar>i{background:#ef5969}
+.information-hot-row>span{min-width:74px}
+@media(max-width:760px){
+  .tracker-intel-insight{grid-template-columns:auto 1fr auto}
+  .tracker-intel-insight>em{grid-column:3}
+}
