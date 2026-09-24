@@ -157,7 +157,7 @@ const FOUNTAIN_THREAT_CACHE_MS = 60 * 60 * 1000;
 const FOUNTAIN_THREAT_MAX_PAGES = 15;
 // Perfect null-sec refine: T2 rigged Tatara + max skills + RX-804 implant.
 const MAX_REFINE_YIELD = 0.90628105568;
-const LEDGER_VALUATION_VERSION = 2;
+const LEDGER_VALUATION_VERSION = 3;
 const ORE_REPROCESSING = BASE_T3_ORE_REPROCESSING;
 const ORE_TYPE_NAME={Mordinium:'Mordunium'};
 const REFINING_MINERALS=[...new Set(Object.values(ORE_REPROCESSING).flatMap(x=>Object.keys(x.minerals)))];
@@ -286,6 +286,9 @@ const characterAccessTokenCache = new Map();
 const userSyncPromises = new Map();
 const ledgerRowsByCharacter = restoredLedgerCache.rowsByCharacter;
 const ledgerSnapshotAtByCharacter = restoredLedgerCache.snapshotAtByCharacter;
+// Rebuild immediately from the durable ledger cache so a deployment publishes
+// the new type-ID payout semantics without waiting for the next ESI cycle.
+if(ledgerRowsByCharacter.size)rebuildDailyFleetFromLedgerCache();
 const universeNameCache = new Map();
 const trackerLiveClients = new Set();
 let heavyFighterTypeIdsCache = {at:0,ids:null,promise:null};
