@@ -3952,8 +3952,8 @@ const TRACKER_APP_KNOWLEDGE = {
   performance:{
     label:'Fleet Performance',
     aliases:['performance','fleet performance','mining performance','performance tab'],
-    description:'Fleet Performance compares observed mining-ledger results with the fleet you configured. It shows today mined, estimated payout, live activity rate, daily mining history, ore mix, and projected-versus-observed production. ESI ledger values are delayed observations rather than second-by-second mining telemetry.',
-    panels:['today mined','today payout','live activity rate','daily mining volume','best day','ore mix','projected versus observed mining']
+    description:'Fleet Performance is a post-mining review of the selected fleet. It compares recent ESI mining-ledger intervals with the fitted fleet target, shows daily output and payout, mined ore mix, history and market context, and separates missing ledger contribution from rate variance. ESI can show what changed in output but cannot prove whether reds, hostiles, travel, hauling, compression, pauses or mining efficiency caused the difference.',
+    panels:['recent activity rate','contributing miners','daily output','daily payout','mined ore mix','market context','projected versus observed mining']
   },
   ice:{
     label:'Ice',
@@ -4257,7 +4257,7 @@ function trackerBrainAnswer(user,question,options={}){
 
   if(/\b(what can you do|what do you do|help me|help|capabilities|commands|what can i ask|what should i ask)\b/.test(q)){
     return answer('capabilities',
-      'I can estimate your observed mining payout this UTC hour across linked toons, check your current system, find scan stops on the ESI gate route to a Fountain destination, and ask for a new scan when a linked toon reaches a due field. I can also brief you on field and scan status, explain Fleet and Fits, mining performance, market data, and other JLR features. You can ask follow-up questions without repeating Tracker for a short time.',
+      'I can use your current JLR context to answer short follow-ups, find the next scan update while you are working Fields or Scout, explain Fleet Performance variance, check linked-toon location, find scan stops on a Fountain route, estimate observed mining payout, and explain JLR tabs, data and workflows. You do not need to repeat the selected system or toon when Adam already has that context.',
       {voiceText:'I can check observed mining payout this hour, Fountain route scan stops, and linked toon locations, and I can ask for new scans when needed.'}
     );
   }
@@ -4291,7 +4291,7 @@ function trackerBrainAnswer(user,question,options={}){
 
   if(/\b(performance|fleet performance|uptime|isk per hour|isk\/hr|m3|cubic|mining rate)\b/.test(q)){
     return answer('performance',
-      'Fleet Performance is the live mining analytics view. It uses ESI ledger activity and your configured fleet to show actual mining output, uptime, cubic meters, value, and trends. Projected rates come from the selected fits and boosts; actual results come from ledger data.'
+      'Fleet Performance is a post-mining review. It uses ESI ledger intervals and your configured fleet to compare recent measured output with the fitted target, daily production, payout, contributing miners, ore mix and history. It can show the variance, but ESI cannot prove whether reds, hostiles, travel, hauling, compression, pauses or mining efficiency caused it.'
     );
   }
 
@@ -4357,13 +4357,13 @@ function trackerBrainAnswer(user,question,options={}){
 
   if(/\b(mic|microphone|voice|speech|wake word|say adam|say tracker|talk to tracker|not hearing|error code)\b/.test(q)){
     return answer('voice',
-      'Talk to Adam listens locally for the wake word Adam, then keeps a short conversation window open for follow-up questions. The microphone selector chooses the input device, the signal meter shows whether audio is arriving, and Copy Diagnostics records the speech engine, model, audio and error-code state without including EVE tokens.'
+      'Adam currently uses typed questions rather than the retired live microphone pipeline. He carries JLR context between questions, including the current tab, selected system or toon, recent scan workflow and Fleet Performance state. Scout location tracking continues to work without a microphone.'
     );
   }
 
   if(/\b(feedback|report bug|bug report|suggestion|feature idea|submit idea)\b/.test(q)){
     return answer('feedback',
-      'The Feedback tab lets you report bugs, feature ideas, speech problems, data issues and UI problems. You can add impact, steps to reproduce and expected behavior, and optionally attach JLR diagnostic context. Your recent submissions stay visible there.'
+      'The Feedback tab lets you report bugs, feature ideas, data issues and UI problems. JLR automatically attaches safe app context such as the source tab, display mode and EVE-data health. Impact, reproduction steps and expected behavior are optional, and recent submissions stay visible there.'
     );
   }
 
@@ -4385,7 +4385,7 @@ function trackerBrainAnswer(user,question,options={}){
   }
 
   return answer('general',
-    'I can answer questions about JLR Miner Tracker and what its data means. I do not have a general internet knowledge engine built into Tracker yet. Ask me about a tab, feature, field status, mining metric, ESI data, voice control, threat scan, PVP, market data, or how to use something in the app.',
+    'I can answer questions about JLR Miner Tracker and use the current app context when the question is short. I do not have a general internet knowledge engine built into Adam. Ask me about the current tab, a selected system or toon, field status, mining metrics, ESI data, threat scan, PVP, market data, or what to do next.',
     {handled:false,voiceText:'I can help with Tracker features, mining numbers, and E S I. Ask me about a specific tab or value.'}
   );
 }
