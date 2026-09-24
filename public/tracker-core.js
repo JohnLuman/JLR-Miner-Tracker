@@ -141,10 +141,15 @@
     ].map(function(pair){
       return '<button type="button" class="tracker-intel-filter '+(trackerHotMode===pair[0]?'active':'')+'" data-hot-mode="'+pair[0]+'">'+pair[1]+'</button>';
     }).join('');
+    const maxMetric=Math.max(1,...rows.map(function(row){return trackerIntelMetric(row,trackerHotMode);}));
     const body=rows.length?rows.map(function(row,index){
       const current=location&&String(row.systemId)===String(location.systemId);
-      return '<div class="tracker-intel-row '+(current?'current':'')+'">'+
-        '<b>#'+(index+1)+'</b><div><strong>'+esc(row.system||row.systemId)+'</strong><small>HUNT '+fmt(row.huntScore)+'/100 • '+fmt(row.npcKills)+' NPC kills/h</small></div>'+
+      const metric=trackerIntelMetric(row,trackerHotMode);
+      const barPct=Math.max(0,Math.min(100,metric/maxMetric*100));
+      return '<div class="tracker-intel-row information-hot-row '+(current?'current':'')+'">'+
+        '<b>#'+(index+1)+'</b><div class="tracker-intel-main"><strong>'+esc(row.system||row.systemId)+'</strong>'+
+        '<div class="tracker-intel-valuebar"><i style="width:'+barPct.toFixed(2)+'%"></i></div>'+
+        '<small>HUNT '+fmt(row.huntScore)+'/100 • '+fmt(row.npcKills)+' NPC kills/h</small></div>'+
         '<span>'+esc(trackerIntelMetricLabel(row,trackerHotMode))+'</span><em>'+esc(trackerIntelJumpLabel(row.jumps))+'</em>'+
       '</div>';
     }).join(''):'<div class="tracker-intel-empty">No regional activity returned for this hour.</div>';
@@ -157,9 +162,14 @@
     if(Array.isArray(hot.bestHoursUtc)&&hot.bestHoursUtc.length){
       history='<span class="tracker-intel-note">Observed best UTC hours: '+hot.bestHoursUtc.map(function(row){return String(row.hourUtc).padStart(2,'0')+':00';}).join(' • ')+'</span>';
     }
+    const top=rows[0]||null;
+    const topSignal=top
+      ?'<div class="tracker-intel-insight"><span>TOP SIGNAL</span><strong>'+esc(top.system||top.systemId)+'</strong><b>'+esc(trackerIntelMetricLabel(top,trackerHotMode))+'</b><em>'+esc(trackerIntelJumpLabel(top.jumps))+'</em></div>'
+      :'';
     return '<div class="tracker-intel-head"><div class="tracker-region-head"><span>REGION HOT ZONES</span>'+
       '<label class="tracker-region-picker tracker-region-title"><select id="trackerHotRegion" aria-label="Hot zone region">'+trackerRegionOptionsHtml()+'</select></label>'+
       '<small>'+esc(originText)+'</small></div></div>'+
+      topSignal+
       '<div class="tracker-intel-filters">'+filters+'</div><div class="tracker-intel-list">'+body+'</div>'+
       '<span class="tracker-intel-note">Regional snapshot '+esc(updateText)+' • ESI region catalog + activity cache • automatic refresh every '+fmt(trackerIntel.hotZoneRefreshMinutes||60)+' minutes.</span>'+history;
   }
