@@ -161,10 +161,11 @@
     if(Array.isArray(hot.bestHoursUtc)&&hot.bestHoursUtc.length){
       history='<span class="tracker-intel-note">Observed best UTC hours: '+hot.bestHoursUtc.map(function(row){return String(row.hourUtc).padStart(2,'0')+':00';}).join(' • ')+'</span>';
     }
-    return '<div class="tracker-intel-head"><div><span>REGION HOT ZONES</span><strong>'+esc(selected.regionName||hot.regionName||'Fountain')+'</strong><small>'+esc(originText)+'</small></div>'+
-      '<label class="tracker-region-picker">REGION<select id="trackerHotRegion">'+trackerRegionOptionsHtml()+'</select></label></div>'+
+    return '<div class="tracker-intel-head"><div class="tracker-region-head"><span>REGION HOT ZONES</span>'+
+      '<label class="tracker-region-picker tracker-region-title"><select id="trackerHotRegion" aria-label="Hot zone region">'+trackerRegionOptionsHtml()+'</select></label>'+
+      '<small>'+esc(originText)+'</small></div></div>'+
       '<div class="tracker-intel-filters">'+filters+'</div><div class="tracker-intel-list">'+body+'</div>'+
-      '<span class="tracker-intel-note">Regional snapshot '+esc(updateText)+' • persistent local cache • automatic refresh every '+fmt(trackerIntel.hotZoneRefreshMinutes||30)+' minutes.</span>'+history;
+      '<span class="tracker-intel-note">Regional snapshot '+esc(updateText)+' • ESI region catalog + activity cache • automatic refresh every '+fmt(trackerIntel.hotZoneRefreshMinutes||60)+' minutes.</span>'+history;
   }
   function trackerEssHtml(){
     const rows=(Array.isArray(trackerIntel?.essReports)?trackerIntel.essReports:[])
@@ -258,8 +259,8 @@
     if(!isActive())return;
     trackerIntelTimer=setTimeout(async function(){
       await loadTrackerIntel(false);
-      scheduleTrackerIntel(5*60*1000);
-    },delayMs==null?5*60*1000:Math.max(15000,Number(delayMs)||5*60*1000));
+      scheduleTrackerIntel(60*60*1000);
+    },delayMs==null?60*60*1000:Math.max(15000,Number(delayMs)||60*60*1000));
   }
   async function loadVoiceStatus(){
     if(trackerVoiceChecking)return;
