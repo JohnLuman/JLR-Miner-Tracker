@@ -245,7 +245,7 @@
       const dbg=state?.esi?.ledgerDebug||null;
       if(dbg&&!dbg.cacheComplete){
         el.textContent='● EVE LEDGER '+Number(dbg.cachedCharacters||0)+'/'+Number(dbg.linkedCharacters||0);
-        el.title='Character data has synced before, but the in-memory mining-ledger cache is still rebuilding after this server start.';
+        el.title='Mining-ledger coverage is '+Number(dbg.cachedCharacters||0)+' of '+Number(dbg.linkedCharacters||0)+'. Available cached characters are included in the app payout; missing characters are excluded until they sync.';
       }else{
         el.textContent='● EVE DATA '+ago(state.esi.lastSyncAt).toUpperCase();
         el.title='Latest successful EVE character-data sync: '+ago(state.esi.lastSyncAt)+'.';
@@ -3948,9 +3948,12 @@
     $('actualTodayIsk').textContent=fmt(actualValue(state.esi.actual.today.jbv));
     const payoutPriceBasis=state.market?.jitaBuyBasis==='janice-immediate-buy'?'Janice Jita buy':'ESI Jita buy fallback';
     const unpricedM3=Number(state.esi.actual.today.unpricedM3||0);
+    const ledgerCoverage=ledgerDebug
+      ?Number(ledgerDebug.cachedCharacters||0)+'/'+Number(ledgerDebug.linkedCharacters||0)+(ledgerDebug.cacheComplete?' TOONS':' TOONS • PARTIAL')
+      :'ALL JLR-LINKED TOONS';
     $('actualTodayIskSub').textContent=unpricedM3>0
-      ?payoutPriceBasis+' refined • '+fmt(unpricedM3,'m3')+' m³ awaiting price • ALL JLR-LINKED TOONS'
-      :payoutPriceBasis+' refined • exact grade • '+(payout*100).toFixed(1)+'% payout • ALL JLR-LINKED TOONS';
+      ?payoutPriceBasis+' refined • '+fmt(unpricedM3,'m3')+' m³ awaiting price • '+ledgerCoverage
+      :payoutPriceBasis+' refined • exact grade • '+(payout*100).toFixed(1)+'% payout • '+ledgerCoverage;
     const myTotals=myLedgerSummary?.totals||null;
     const myRawValue=Number(myTotals?.jbv||0);
     const myUnpricedM3=Number(myTotals?.unpricedM3||0);
