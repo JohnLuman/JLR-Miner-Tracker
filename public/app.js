@@ -3919,6 +3919,7 @@
     $('perShipSub').textContent=fleetNow.count?`${fleetNow.count} selected • avg @ ${uptimePct.toFixed(0)}% uptime • m³/hr`:'No miners selected';
     $('fleetKpi').textContent=fmt(fleetNow.total,'m3');
     $('fleetSub').textContent=fleetNow.count?`${fleetNow.count} miners • ${uptimePct.toFixed(0)}% uptime target • m³/hr`:'Select miners in Fleet';
+    if($('fleetUptimeMeter'))$('fleetUptimeMeter').style.width=uptimePct.toFixed(1)+'%';
     const targetDistance=target&&Number.isFinite(Number(target.d.distanceLy))?` • ${Number(target.d.distanceLy).toFixed(2)} LY`:'';
 
     const payout=Number(fleetSettings.payout)/100;
@@ -3951,6 +3952,12 @@
     const ledgerCoverage=ledgerDebug
       ?Number(ledgerDebug.cachedCharacters||0)+'/'+Number(ledgerDebug.linkedCharacters||0)+(ledgerDebug.cacheComplete?' TOONS':' TOONS • PARTIAL')
       :'ALL JLR-LINKED TOONS';
+    const appCoveragePct=ledgerDebug&&Number(ledgerDebug.linkedCharacters)>0
+      ?Math.max(0,Math.min(100,Number(ledgerDebug.cachedCharacters||0)/Number(ledgerDebug.linkedCharacters)*100))
+      :0;
+    if($('appLedgerCoverageMeter'))$('appLedgerCoverageMeter').style.width=appCoveragePct.toFixed(1)+'%';
+    const appPayoutCard=$('actualTodayIsk')?.closest('.kpi');
+    if(appPayoutCard)appPayoutCard.classList.toggle('partial',Boolean(ledgerDebug&&!ledgerDebug.cacheComplete));
     $('actualTodayIskSub').textContent=unpricedM3>0
       ?payoutPriceBasis+' refined • '+fmt(unpricedM3,'m3')+' m³ awaiting price • '+ledgerCoverage
       :payoutPriceBasis+' refined • exact grade • '+(payout*100).toFixed(1)+'% payout • '+ledgerCoverage;
@@ -3961,6 +3968,9 @@
     if($('actualMyTodayIskSub')){
       const myCached=Number(myLedgerSummary?.cachedCharacters||0);
       const myLinked=Number(myLedgerSummary?.linkedCharacters||0);
+      const myCoveragePct=myLinked>0?Math.max(0,Math.min(100,myCached/myLinked*100)):0;
+      if($('myLedgerCoverageMeter'))$('myLedgerCoverageMeter').style.width=myCoveragePct.toFixed(1)+'%';
+      if($('myLedgerPayoutCard'))$('myLedgerPayoutCard').classList.toggle('partial',Boolean(myLedgerSummary&&myCached<myLinked));
       $('actualMyTodayIskSub').textContent=myLedgerSummary
         ?(myUnpricedM3>0
           ?myCached+'/'+myLinked+' YOUR TOONS • '+fmt(myUnpricedM3,'m3')+' m³ awaiting price • click for audit'
@@ -4723,18 +4733,16 @@
     const [topName,topValue]=sorted[0];
     const topShare=grand>0?topValue/grand*100:0;
 
-    const segments=sorted.map(([name,value],index)=>{
-      const share=grand>0?value/grand*100:0;
-      return `<span class="ore-mix-segment" style="width:${share.toFixed(4)}%;--ore-index:${index}" title="${esc(name)} • ${fmt(value,'m3')} m³ • ${share.toFixed(1)}%"></span>`;
-    }).join('');
-
     const ranked=sorted.map(([name,value],index)=>{
       const share=grand>0?value/grand*100:0;
+      const relative=topValue>0?value/topValue*100:0;
       return `
-        <div class="ore-mix-rank">
+        <div class="ore-mix-rank information-ore-row">
           <span class="ore-mix-rank-no">#${index+1}</span>
-          <span class="ore-mix-swatch" style="--ore-index:${index}"></span>
-          <span class="ore-mix-name" title="${esc(name)}">${esc(name)}</span>
+          <div class="ore-mix-rank-main">
+            <span class="ore-mix-name" title="${esc(name)}">${esc(name)}</span>
+            <div class="ore-mix-bar" title="${share.toFixed(1)}% of mined volume"><i style="width:${relative.toFixed(2)}%"></i></div>
+          </div>
           <strong>${fmt(value,'m3')} m³</strong>
           <small>${share.toFixed(1)}%</small>
         </div>`;
@@ -4746,8 +4754,7 @@
         <div><span>TOP ORE</span><strong>${esc(topName)}</strong><small>${fmt(topValue,'m3')} m³ • ${topShare.toFixed(1)}%</small></div>
         <div><span>TOP 3 SHARE</span><strong>${topThreeShare.toFixed(1)}%</strong><small>concentration of mined volume</small></div>
       </div>
-      <div class="ore-mix-composition" aria-label="Ore composition for selected period">${segments}</div>
-      <div class="ore-mix-rank-list">${ranked}</div>`;
+      <div class="ore-mix-rank-list information-ore-list">${ranked}</div>`;
   }
   function renderFleetPerformance(){
     if(!state||!$('fleetActivityChart'))return;
@@ -4768,11 +4775,39 @@
     const fleet=fleetStats(),target=Number(fleet.total||0);
     const liveRate=Number(latest?.actualM3PerHour||0);
     const sampleAge=latest?Date.now()-Date.parse(latest.at||''):Infinity;
+    const liveTargetPct=latest&&target>0?liveRate/target*100:null;
 
     document.querySelectorAll('.fleet-range').forEach(button=>button.classList.toggle('active',Number(button.dataset.days)===fleetHistoryDays));
     document.querySelectorAll('.fleet-metric').forEach(button=>button.classList.toggle('active',button.dataset.metric===fleetHistoryMetric));
     $('fleetLiveStatus').textContent=state.esi?.syncing?'● SYNCING ESI':latest?(sampleAge<=45*60*1000?`● LIVE • ${ago(latest.at).toUpperCase()}`:`● LAST SAMPLE • ${ago(latest.at).toUpperCase()}`):'● WAITING FOR ESI';
     $('fleetLiveStatus').classList.toggle('stale',Boolean(latest&&sampleAge>45*60*1000));
+    if($('fleetInsightText')&&$('fleetInsightDetail')&&$('fleetInsightMeter')&&$('fleetInsightPct')){
+      const insight=$('fleetInsight');
+      if(liveTargetPct!=null&&liveRate>0){
+        const pct=Math.max(0,liveTargetPct);
+        $('fleetInsightText').textContent=pct>=100
+          ?'LIVE RATE IS ABOVE THE SELECTED FLEET TARGET'
+          :'LIVE RATE IS '+pct.toFixed(0)+'% OF THE SELECTED FLEET TARGET';
+        $('fleetInsightDetail').textContent=fmt(liveRate,'m3')+' m³/hr live • '+fmt(target,'m3')+' m³/hr target • '+ago(latest.at);
+        $('fleetInsightMeter').style.width=Math.min(100,pct).toFixed(1)+'%';
+        $('fleetInsightPct').textContent=pct.toFixed(0)+'%';
+        insight?.classList.toggle('ahead',pct>=100);
+        insight?.classList.toggle('low',pct<60);
+      }else if(latest){
+        $('fleetInsightText').textContent='NO MINING IN THE LATEST LEDGER INTERVAL';
+        $('fleetInsightDetail').textContent='Last fleet sample '+ago(latest.at)+' • target '+fmt(target,'m3')+' m³/hr';
+        $('fleetInsightMeter').style.width='0%';
+        $('fleetInsightPct').textContent='0%';
+        insight?.classList.remove('ahead');
+        insight?.classList.add('low');
+      }else{
+        $('fleetInsightText').textContent='WAITING FOR AN ACTIVE LEDGER INTERVAL';
+        $('fleetInsightDetail').textContent='JLR will compare the live mining rate with your selected fleet target.';
+        $('fleetInsightMeter').style.width='0%';
+        $('fleetInsightPct').textContent='—';
+        insight?.classList.remove('ahead','low');
+      }
+    }
     $('fleetLiveRate').textContent=latest?`${fmt(liveRate,'m3')} m³/hr`:'—';
     $('fleetLiveRateSub').textContent=latest?(liveRate>0?'latest detected mining interval':'no increase in latest interval'):'waiting for a mining interval';
     $('fleetActiveToons').textContent=latest?`${Number(latest.activeToons||0)} / ${Number(latest.sampledToons||0)}`:'—';
