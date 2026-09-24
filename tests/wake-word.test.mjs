@@ -20,7 +20,7 @@ assert.doesNotMatch(app,/SCOUT \/ TRAVEL WATCH/,'visible Adam workspace no longe
 assert.match(app,/NEAREST MINING SYSTEM/,'Adam automatically surfaces the nearest available mining system');
 assert.match(app,/adam-copy-system/,'nearest mining system is copyable for EVE');
 assert.match(app,/id="scoutCharacterSelect"/,'Scout includes a travel-toon selector');
-assert.match(app,/CLOSEST FIELD UPDATES/,'Scout ranks nearby Field Tracker update targets');
+assert.match(app,/id="scoutTargetList"/,'Scout renders nearby Field Tracker update targets');
 assert.match(index,/id="scoutGlobalAlert"/,'Scout has a persistent app-wide update alert');
 assert.match(app,/ADAM • UPDATE/,'Adam tab highlights when Scout needs a scan update');
 
