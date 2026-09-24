@@ -52,6 +52,7 @@
         <a id="donateTop" class="donate-top-link" href="https://www.paypal.com/ncp/payment/J7UYHR2RJFS6N" target="_blank" rel="noopener noreferrer" aria-label="Donate to help keep JLR online and mining">
           <span class="donate-top-mark">JLR</span><span class="donate-top-copy"><strong>DONATE</strong><small>KEEP JLR ONLINE</small></span><b aria-hidden="true">›</b>
         </a>
+        <button id="adamQuickToggle" class="adam-quick-toggle" type="button" aria-expanded="false" aria-controls="adamQuickPanel" title="Ask Adam without leaving the tab you are working in">ASK ADAM</button>
         <button id="soundStatus" class="sound-status" type="button" aria-live="polite" aria-pressed="true" title="Sounds are on. Click to turn them off.">SOUND ON</button>
         <div class="user-chip"><img id="userPortrait" alt=""><span id="userName">—</span></div>
         <button id="addToonTop" class="orb blue" type="button">+ ADD TOON</button>
@@ -101,6 +102,17 @@
       <button class="app-tab" data-tab="toons" type="button">TOONS</button>
       <button class="app-tab" data-tab="feedback" type="button">FEEDBACK</button>
     </nav>
+    <section id="adamQuickPanel" class="adam-quick-panel hidden" aria-label="Ask Adam">
+      <div class="adam-quick-head">
+        <div><span>ADAM // CURRENT TAB</span><strong id="adamQuickContext">JLR</strong></div>
+        <button id="adamQuickClose" class="adam-quick-close" type="button" aria-label="Close Ask Adam">×</button>
+      </div>
+      <div class="adam-quick-row">
+        <input id="adamQuickQuestion" maxlength="900" autocomplete="off" placeholder="Ask Adam about what you are looking at…">
+        <button id="adamQuickAsk" type="button">ASK</button>
+      </div>
+      <div id="adamQuickReply" class="adam-quick-reply">Ask a question without leaving this tab.</div>
+    </section>
     <section id="scoutGlobalAlert" class="scout-global-alert hidden" role="status" aria-live="polite">
       <div class="scout-global-copy"><span>ADAM • SCOUT</span><strong>UPDATE NEEDED</strong><small id="scoutGlobalAlertText">A tracked system needs a fresh scan.</small></div>
       <button id="scoutGlobalOpen" class="board-tool" type="button">OPEN SCANNER</button>
@@ -414,14 +426,43 @@
       </div>
 
       <div class="expanded-grid">
-        <section class="glass esi-panel">
-          <div class="section-title"><div><strong>CONNECTED TOONS & DATA SYNC</strong></div><span id="esiStatus" class="status-pill">—</span></div>
-          <div class="esi-actions"><button id="addToon" class="orb purple" type="button">+ ADD TOON</button><button id="syncNow" class="orb blue" type="button">SYNC EVE DATA</button></div>
+        <section class="glass esi-panel toon-control-panel">
+          <div class="toon-control-head">
+            <div>
+              <span class="eyebrow">JLR ACCOUNT // EVE DATA</span>
+              <strong>TOON CONTROL</strong>
+              <small>Linked characters, ESI health, location access, saved fits, and account-specific market access.</small>
+            </div>
+            <span id="esiStatus" class="status-pill">—</span>
+          </div>
+
+          <div class="toon-summary-grid" aria-label="Toon connection summary">
+            <article><span>LINKED TOONS</span><strong id="toonLinkedCount">—</strong><small>EVE characters on this JLR account</small></article>
+            <article><span>LEDGER READY</span><strong id="toonLedgerReady">—</strong><small>included in mining-ledger coverage</small></article>
+            <article><span>LOCATION READY</span><strong id="toonLocationReady">—</strong><small>available to Scout / Adam routing</small></article>
+            <article><span>NEEDS ATTENTION</span><strong id="toonNeedsAttention">—</strong><small>access, sync, or first-ledger issues</small></article>
+          </div>
+
+          <div class="toon-primary-actions">
+            <div class="toon-action-copy">
+              <strong>ACCOUNT SYNC</strong>
+              <small id="lastSync">No successful sync yet</small>
+            </div>
+            <div class="esi-actions">
+              <button id="addToon" class="orb purple" type="button">+ ADD TOON</button>
+              <button id="syncNow" class="orb blue" type="button">↻ SYNC EVE DATA</button>
+            </div>
+          </div>
+
+          <div id="characterList" class="character-list toon-character-list"></div>
+
           <details class="esi-advanced-tools">
-            <summary>ADVANCED DATA TOOLS</summary>
-            <div class="esi-advanced-tools-body"><button id="scanAllFits" class="orb blue" type="button" title="Refresh saved fittings, assets, and Abyssal strip-miner rolls for every linked toon.">↻ SCAN ALL FITS</button><span id="lastSync" class="tiny muted">No successful sync yet</span></div>
+            <summary>ADVANCED FIT DATA</summary>
+            <div class="esi-advanced-tools-body">
+              <button id="scanAllFits" class="orb blue" type="button" title="Refresh saved fittings, assets, and Abyssal strip-miner rolls for every linked toon.">↻ SCAN ALL FITS</button>
+              <span class="tiny muted">Use this after changing saved EVE fits or Abyssal mining modules. Normal ledger sync does not need this button.</span>
+            </div>
           </details>
-          <div id="characterList" class="character-list"></div>
         </section>
 
         <section class="glass actual-panel">
