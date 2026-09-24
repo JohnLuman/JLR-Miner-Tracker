@@ -484,6 +484,13 @@ function freshState() {
       regionHotZones: {},
       essReports: {},
       interferenceReports: {},
+      publicMapCollector: {
+        lastSeenAt: null,
+        lastEssAt: null,
+        lastInterferenceAt: null,
+        deviceId: null,
+        deviceName: null,
+      },
       hotZoneHistory: [],
     },
     fields: Object.fromEntries(SYSTEM_DEFS.map((d) => [d.system, {
@@ -523,6 +530,10 @@ async function loadState() {
     parsed.trackerIntel.regionHotZones ||= {};
     parsed.trackerIntel.essReports ||= {};
     parsed.trackerIntel.interferenceReports ||= {};
+    parsed.trackerIntel.publicMapCollector = {
+      ...base.trackerIntel.publicMapCollector,
+      ...(parsed.trackerIntel.publicMapCollector || {}),
+    };
     if(!Array.isArray(parsed.trackerIntel.hotZoneHistory))parsed.trackerIntel.hotZoneHistory=[];
     parsed.fields ||= {};
     for (const d of SYSTEM_DEFS) {
@@ -6967,13 +6978,19 @@ async function trackerCorporationIdentity(){
 function trackerIntelStore(){
   state.trackerIntel ||= {
     regionCatalog:[],regionCatalogUpdatedAt:null,regionHotZones:{},
-    essReports:{},interferenceReports:{},hotZoneHistory:[],
+    essReports:{},interferenceReports:{},
+    publicMapCollector:{lastSeenAt:null,lastEssAt:null,lastInterferenceAt:null,deviceId:null,deviceName:null},
+    hotZoneHistory:[],
   };
   if(!Array.isArray(state.trackerIntel.regionCatalog))state.trackerIntel.regionCatalog=[];
   state.trackerIntel.regionCatalogUpdatedAt ||= null;
   state.trackerIntel.regionHotZones ||= {};
   state.trackerIntel.essReports ||= {};
   state.trackerIntel.interferenceReports ||= {};
+  state.trackerIntel.publicMapCollector = {
+    lastSeenAt:null,lastEssAt:null,lastInterferenceAt:null,deviceId:null,deviceName:null,
+    ...(state.trackerIntel.publicMapCollector || {}),
+  };
   if(!Array.isArray(state.trackerIntel.hotZoneHistory))state.trackerIntel.hotZoneHistory=[];
   return state.trackerIntel;
 }
@@ -7241,6 +7258,163 @@ async function trackerIntelRegionHotZones(region,{force=false}={}){
   trackerIntelHotCache.set(regionId,{at:Date.now(),data});
   await save();
   return data;
+}
+
+
+function trackerIntelObservationTime(value){
+  const parsed=Date.parse(String(value||''));
+  const nowMs=Date.now();
+  if(!Number.isFinite(parsed))return now();
+  // The map/Agency feed is live data. Reject impossible future timestamps and
+  // ancient samples so stale local files cannot masquerade as current intel.
+  const bounded=Math.min(nowMs+60_000,Math.max(nowMs-6*60*60*1000,parsed));
+  return new Date(bounded).toISOString();
+}
+
+function trackerIntelMeaningfulChange(kind,previousValue,nextValue){
+  if(!Number.isFinite(Number(previousValue)))return true;
+  const delta=Math.abs(Number(nextValue)-Number(previousValue));
+  return kind==='interference'?delta>=0.1:delta>=1;
+}
+
+async function trackerIntelIngestPublicMap(auth,body={}){
+  const ess=Array.isArray(body?.ess)?body.ess:[];
+  const interference=Array.isArray(body?.interference)?body.interference:[];
+  if(ess.length>500||interference.length>500||ess.length+interference.length>750){
+    throw new Error('Public map update is too large.');
+  }
+  if(!ess.length&&!interference.length){
+    return{ok:true,accepted:0,ess:0,interference:0,changes:[]};
+  }
+
+  const all=[...ess.map(row=>({kind:'ess',row})),...interference.map(row=>({kind:'interference',row}))];
+  const names=[...new Set(all.map(item=>companionText(item.row?.system,96)).filter(Boolean))];
+  let nameIds=new Map();
+  if(names.length){
+    try{nameIds=await resolveUniverseIds(names)}
+    catch(error){console.warn('Tracker public-map name resolution failed:',String(error?.message||error))}
+  }
+
+  const prepared=[];
+  for(const item of all){
+    const raw=item.row||{};
+    let systemId=Number(raw.systemId)||0;
+    const requestedName=companionText(raw.system,96);
+    if(!systemId&&requestedName)systemId=Number(nameIds.get(requestedName))||0;
+    if(systemId<30_000_000||systemId>39_999_999)continue;
+    if(item.kind==='ess'){
+      const value=Number(raw.mainValue??raw.value);
+      if(!Number.isFinite(value)||value<0||value>1e15)continue;
+      const reserveValue=Number(raw.reserveValue);
+      const payoutAt=Date.parse(String(raw.payoutAt||'' ));
+      prepared.push({
+        kind:item.kind,systemId,requestedName,value,
+        reserveValue:Number.isFinite(reserveValue)&&reserveValue>=0&&reserveValue<=1e16?reserveValue:null,
+        payoutAt:Number.isFinite(payoutAt)?new Date(payoutAt).toISOString():null,
+        observedAt:trackerIntelObservationTime(raw.observedAt||body?.observedAt),
+      });
+    }else{
+      const value=Number(raw.value??raw.interference);
+      if(!Number.isFinite(value)||value<0||value>100)continue;
+      prepared.push({
+        kind:item.kind,systemId,requestedName,value:Math.round(value*1000)/1000,
+        observedAt:trackerIntelObservationTime(raw.observedAt||body?.observedAt),
+      });
+    }
+  }
+  if(!prepared.length)return{ok:true,accepted:0,ess:0,interference:0,changes:[]};
+
+  const ids=[...new Set(prepared.map(row=>String(row.systemId)))];
+  await ensureSystem(ids).catch(()=>{});
+  const intel=trackerIntelPrune();
+  const changes=[];
+  let essAccepted=0,interferenceAccepted=0;
+
+  for(const item of prepared){
+    const key=String(item.systemId);
+    const collection=item.kind==='ess'?intel.essReports:intel.interferenceReports;
+    const row=collection[key]&&typeof collection[key]==='object'
+      ?collection[key]
+      :{systemId:item.systemId,system:item.requestedName||String(item.systemId),history:[],activeSince:null,changedAt:null};
+    row.systemId=item.systemId;
+    row.system=state.esi.systemCache[key]?.name||item.requestedName||row.system||key;
+    row.history=Array.isArray(row.history)?row.history:[];
+    const previous=[...row.history].reverse().find(entry=>entry?.source==='eve-client-public')||null;
+    const changed=trackerIntelMeaningfulChange(item.kind,Number(previous?.value),item.value);
+    const observedAt=item.observedAt;
+
+    if(item.kind==='interference'){
+      const previousActive=Number(previous?.value)>0;
+      if(item.value>0){
+        row.activeSince=previousActive?(row.activeSince||previous?.activeSince||previous?.at||observedAt):observedAt;
+      }else{
+        row.activeSince=null;
+      }
+      if(changed)row.changedAt=observedAt;
+      interferenceAccepted++;
+    }else{
+      essAccepted++;
+      if(changed)row.changedAt=observedAt;
+    }
+
+    const lastAt=Date.parse(previous?.at||'');
+    const heartbeatDue=!Number.isFinite(lastAt)||Date.parse(observedAt)-lastAt>=5*60*1000;
+    if(changed||heartbeatDue||!previous){
+      const entry={
+        value:item.value,
+        at:observedAt,
+        source:'eve-client-public',
+        deviceId:auth?.device?.id||null,
+        deviceName:auth?.device?.deviceName||'JLR Tracker Companion',
+      };
+      if(item.kind==='ess'){
+        entry.reserveValue=item.reserveValue;
+        entry.payoutAt=item.payoutAt;
+      }else{
+        entry.activeSince=row.activeSince;
+      }
+      row.history.push(entry);
+      row.history=row.history
+        .filter(entry=>Date.parse(entry?.at||'')>=Date.now()-TRACKER_INTEL_HISTORY_TTL_MS)
+        .slice(-100);
+    }
+    row.lastObservedAt=observedAt;
+    row.source='eve-client-public';
+    collection[key]=row;
+
+    if(changed&&previous){
+      changes.push({
+        kind:item.kind,
+        systemId:item.systemId,
+        system:row.system,
+        previous:Number(previous.value),
+        value:item.value,
+        changedAt:observedAt,
+        activeSince:row.activeSince||null,
+      });
+    }
+  }
+
+  const observedAt=prepared.map(row=>Date.parse(row.observedAt)).filter(Number.isFinite).sort((a,b)=>b-a)[0]||Date.now();
+  intel.publicMapCollector={
+    ...(intel.publicMapCollector||{}),
+    lastSeenAt:new Date(observedAt).toISOString(),
+    lastEssAt:essAccepted?new Date(observedAt).toISOString():(intel.publicMapCollector?.lastEssAt||null),
+    lastInterferenceAt:interferenceAccepted?new Date(observedAt).toISOString():(intel.publicMapCollector?.lastInterferenceAt||null),
+    deviceId:auth?.device?.id||null,
+    deviceName:auth?.device?.deviceName||'JLR Tracker Companion',
+  };
+  auth.device.lastSeenAt=now();
+  auth.device.publicMapLastSeenAt=intel.publicMapCollector.lastSeenAt;
+  await save();
+  return{
+    ok:true,
+    accepted:essAccepted+interferenceAccepted,
+    ess:essAccepted,
+    interference:interferenceAccepted,
+    changes,
+    observedAt:intel.publicMapCollector.lastSeenAt,
+  };
 }
 
 function trackerIntelRising(history){
@@ -7945,6 +8119,16 @@ async function routeApi(req,res,url) {
       }
     }
     return json(res,200,{ok:errors.length===0,results,errors,checkedAt});
+  }
+
+  if(req.method==='POST'&&url.pathname==='/api/companion/tracker-map'){
+    const auth=companionAuth(req);
+    if(!auth)return json(res,401,{error:'COMPANION_AUTH_REQUIRED',message:'Companion pairing is missing or has been revoked.'});
+    let body;
+    try{body=await readBody(req,512_000)}
+    catch(err){return json(res,400,{error:'BAD_PUBLIC_MAP_REPORT',message:String(err.message||err)})}
+    try{return json(res,200,await trackerIntelIngestPublicMap(auth,body))}
+    catch(err){return json(res,400,{error:'BAD_PUBLIC_MAP_REPORT',message:String(err.message||err)})}
   }
 
   if(req.method==='POST'&&url.pathname==='/api/companion/location'){
