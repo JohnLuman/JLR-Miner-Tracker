@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700&family=Rajdhani:wght@600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=2.9.143">
-  <link rel="stylesheet" href="/tracker.css?v=2.9.143">
+  <link rel="stylesheet" href="/styles.css?v=2.9.144">
+  <link rel="stylesheet" href="/tracker.css?v=2.9.144">
 </head>
 <body>
   <main id="loginView" class="login-shell hidden">
@@ -31,7 +31,7 @@
     <header class="topbar">
       <div class="brand">
         <div class="brand-kicker">JLR INDUSTRIAL NETWORK // FOUNTAIN</div>
-        <div class="brand-line"><span class="brand-mark">JLR</span><h1>MINER TRACKER</h1><span class="brand-status-stack"><small id="appVersion" class="app-version">v2.9.143</small><span id="liveBadge" class="status-pill" title="Latest EVE data sync status">● DATA LOADING</span></span></div>
+        <div class="brand-line"><span class="brand-mark">JLR</span><h1>MINER TRACKER</h1><span class="brand-status-stack"><small id="appVersion" class="app-version">v2.9.144</small><span id="liveBadge" class="status-pill" title="Latest EVE data sync status">● DATA LOADING</span></span></div>
       </div>
       <div class="top-actions">
         <button id="compactMode" class="orb purple active" type="button" title="Condensed operations view with smaller cards and fewer detail panels">COMPACT</button>
@@ -59,24 +59,27 @@
       </div>
     </header>
 
-    <section class="kpis information-kpis" aria-label="Operations summary">
-      <article class="kpi kpi-primary api-kpi app-payout-kpi" title="Combined payout value for all characters linked anywhere in JLR">
-        <div class="kpi-title-row"><span>APP PAYOUT • EVE DAY</span><small id="appLedgerCoverageBadge" class="kpi-badge">—</small></div>
-        <strong id="actualTodayIsk">—</strong><small id="actualTodayIskSub">all JLR-linked toons • exact T3 type IDs • payout setting</small>
+    <section class="kpis information-kpis operations-summary-bar" aria-label="Operations summary">
+      <article class="kpi summary-cell summary-cell-payout api-kpi app-payout-kpi" title="Combined payout value for all characters linked anywhere in JLR">
+        <div class="kpi-title-row"><span>APP PAYOUT</span><small id="appLedgerCoverageBadge" class="kpi-badge">—</small></div>
+        <strong id="actualTodayIsk">—</strong><small id="actualTodayIskSub">EVE day • all linked toons</small>
       </article>
-      <article id="myLedgerPayoutCard" class="kpi kpi-primary api-kpi ledger-audit-trigger" tabindex="0" role="button" aria-haspopup="dialog" title="Open your per-toon payout audit">
-        <div class="kpi-title-row"><span>MY TOONS PAYOUT • EVE DAY</span><small id="myLedgerCoverageBadge" class="kpi-badge">—</small></div>
-        <strong id="actualMyTodayIsk">—</strong><small id="actualMyTodayIskSub">your linked toons • click for toon audit</small>
+      <article id="myLedgerPayoutCard" class="kpi summary-cell summary-cell-payout api-kpi ledger-audit-trigger" tabindex="0" role="button" aria-haspopup="dialog" title="Open your per-toon payout audit">
+        <div class="kpi-title-row"><span>MY TOONS</span><small id="myLedgerCoverageBadge" class="kpi-badge">—</small></div>
+        <strong id="actualMyTodayIsk">—</strong><small id="actualMyTodayIskSub">EVE day • click for audit</small>
       </article>
-      <article class="kpi kpi-secondary fleet-target-kpi">
+      <article class="kpi summary-cell fleet-target-kpi">
         <span>FLEET TARGET</span><strong id="fleetKpi">—</strong><small id="fleetSub">selected uptime • m³/hr</small>
-        <div class="kpi-meter" title="Selected uptime assumption"><i id="fleetUptimeMeter"></i></div>
       </article>
-      <article class="kpi kpi-secondary"><span>AVG MINER</span><strong id="perShipKpi">—</strong><small id="perShipSub">selected miners • m³/hr</small></article>
-      <div class="market-payout-pair" aria-label="Market payout per hour">
-        <article class="kpi kpi-secondary market-kpi"><span>JITA PAYOUT / HR</span><strong id="jitaValueKpi">—</strong><small id="jitaValueSub">fleet target × refined mineral value</small></article>
-        <article class="kpi kpi-secondary market-kpi"><span>C-N PAYOUT / HR</span><strong id="cnValueKpi">—</strong><small id="cnValueSub">fleet target × private market refine</small></article>
-      </div>
+      <article class="kpi summary-cell">
+        <span>AVG MINER</span><strong id="perShipKpi">—</strong><small id="perShipSub">selected miners • m³/hr</small>
+      </article>
+      <article class="kpi summary-cell market-kpi">
+        <span>JITA / HR</span><strong id="jitaValueKpi">—</strong><small id="jitaValueSub">refined mineral value</small>
+      </article>
+      <article class="kpi summary-cell market-kpi">
+        <span>C-N / HR</span><strong id="cnValueKpi">—</strong><small id="cnValueSub">private market refine</small>
+      </article>
     </section>
 
     <nav class="app-tabs information-tabs" aria-label="Dashboard sections">
@@ -450,7 +453,7 @@
   </main>
   <script src="/yield-math.js?v=2.9.37" defer></script>
   <script src="/vendor/vosk/vosk-0.0.8.js?v=1" defer></script>
-  <script src="/app.js?v=2.9.143" defer></script>
-  <script src="/tracker.js?v=2.9.143" defer></script>
+  <script src="/app.js?v=2.9.144" defer></script>
+  <script src="/tracker.js?v=2.9.144" defer></script>
 </body>
 </html>
