@@ -3940,8 +3940,8 @@ const TRACKER_APP_KNOWLEDGE = {
   brain:{
     label:'Adam',
     aliases:['adam','brain','tracker brain','talk to adam','talk to tracker','assistant'],
-    description:'Adam is the control room assistant for JLR Tracker. It handles wake-word speech, text answers, briefings, microphone diagnostics, voice controls, current-toon location context, desktop-companion status, and app explanations. Tracker can use the current tab as context, so questions like what is this tab can be answered without repeating the tab name.',
-    panels:['Talk to Tracker','microphone and voice controls','desktop companion','live companion feed','diagnostics','briefing and question responses']
+    description:'Adam is JLRs context assistant. It uses the current tab, selected system, selected toon, fleet review state, recent scan workflow, and prior answers so short follow-ups such as next one, why this, or what changed can refer to what you are already doing. Scout location tracking and the optional desktop companion remain inside the Adam workspace.',
+    panels:['Ask Adam','current JLR context','Scout location tracking','desktop companion','recent workflow context','question responses']
   },
   fleet:{
     label:'Fleet & Fits',
@@ -4006,8 +4006,8 @@ const TRACKER_APP_KNOWLEDGE = {
   feedback:{
     label:'Feedback',
     aliases:['feedback','bug report','report bug','suggestion','feature idea'],
-    description:'Feedback is JLRs built-in place to send bug reports, feature ideas, speech issues, data problems and UI feedback. Reports can include impact, reproduction steps, expected behavior and diagnostic context, and your recent submissions are shown in the tab.',
-    panels:['bug reports','suggestions','speech issues','data issues','UI issues','recent submissions']
+    description:'Feedback is JLRs built-in place to send bug reports, feature ideas, data problems and UI feedback. JLR automatically attaches safe app context such as the source tab, display mode and EVE-data health, while optional details can include impact, reproduction steps and expected behavior.',
+    panels:['bug reports','feature ideas','data issues','UI issues','automatic safe context','recent submissions']
   }
 };
 
@@ -4016,8 +4016,8 @@ const TRACKER_METRIC_KNOWLEDGE = [
     id:'live-activity-rate',
     tab:'performance',
     aliases:['live activity rate','activity rate','live mining rate','mining rate chart'],
-    description:'Live Activity Rate estimates the fleets observed mining rate from ESI mining-ledger changes. On each successful ledger sample, JLR compares each toons current cumulative mined m3 with its previous sample. If the total increased, JLR divides that positive m3 delta by the elapsed sample time to get that toons interval m3 per hour, then adds the rates for all active toons. Active toons are the sampled characters with a positive mining delta; sampled toons are the characters whose ledger data was successfully included. Normal ESI sampling is about every fifteen minutes, stale gaps are capped at thirty minutes so downtime is not counted as continuous mining, and the chart retains seven days of samples. This is an interval estimate from ESI, not instant laser telemetry.',
-    voice:'Live Activity Rate is the combined observed mining rate from positive E S I ledger changes between samples. JLR converts each active toons mined volume change into cubic meters per hour and adds them together. It is an interval estimate, not instant laser telemetry.'
+    description:'Recent Activity Rate estimates the fleets observed mining rate from ESI mining-ledger changes. On each successful ledger sample, JLR compares each toons current cumulative mined m3 with its previous sample. If the total increased, JLR divides that positive m3 delta by the elapsed sample time to get that toons interval m3 per hour, then adds the rates for all active toons. Active toons are the sampled characters with a positive mining delta; sampled toons are the characters whose ledger data was successfully included. Normal ESI sampling is about every fifteen minutes, stale gaps are capped at thirty minutes so downtime is not counted as continuous mining, and the chart retains seven days of samples. This is an interval estimate from ESI, not instant laser telemetry.',
+    voice:'Recent Activity Rate is the combined observed mining rate from positive E S I ledger changes between samples. JLR converts each active toons mined volume change into cubic meters per hour and adds them together. It is an interval estimate, not instant laser telemetry.'
   },
   {
     id:'today-mined',
@@ -4101,9 +4101,74 @@ function trackerBrainKnowledgeAnswer(question,currentTab=''){
   };
 }
 
+function trackerBrainContext(value){
+  const input=value&&typeof value==='object'?value:{};
+  const perf=input.performance&&typeof input.performance==='object'?input.performance:{};
+  const finite=value=>{
+    const n=Number(value);
+    return Number.isFinite(n)?n:null;
+  };
+  return{
+    currentTab:trackerSpeechSafe(input.currentTab,40),
+    workflow:trackerSpeechSafe(input.workflow,60),
+    selectedSystem:trackerSpeechSafe(input.selectedSystem,80),
+    selectedCharacterId:trackerSpeechSafe(input.selectedCharacterId,40),
+    selectedCharacterName:trackerSpeechSafe(input.selectedCharacterName,120),
+    selectedFleetCount:finite(input.selectedFleetCount),
+    selectedMetric:trackerSpeechSafe(input.selectedMetric,60),
+    targetOre:trackerSpeechSafe(input.targetOre,120),
+    historyMetric:trackerSpeechSafe(input.historyMetric,30),
+    historyDays:finite(input.historyDays),
+    fieldStatus:trackerSpeechSafe(input.fieldStatus,40),
+    performance:{
+      latestRate:finite(perf.latestRate),
+      previousRate:finite(perf.previousRate),
+      targetRate:finite(perf.targetRate),
+      activeToons:finite(perf.activeToons),
+      sampledToons:finite(perf.sampledToons),
+      sampleAt:trackerSpeechSafe(perf.sampleAt,40),
+    },
+    recentActions:(Array.isArray(input.recentActions)?input.recentActions:[]).slice(-8).map(row=>({
+      kind:trackerSpeechSafe(row?.kind,60),
+      at:finite(row?.at),
+      tab:trackerSpeechSafe(row?.tab,40),
+      system:trackerSpeechSafe(row?.system,80),
+      characterName:trackerSpeechSafe(row?.characterName,120),
+      detail:trackerSpeechSafe(row?.detail,160),
+    })).filter(row=>row.kind),
+  };
+}
+function trackerBrainContextualQuestion(question,currentTab,context){
+  const q=trackerSpeechSafe(question,900);
+  const ctx=trackerBrainContext(context);
+  const tab=trackerSpeechSafe(currentTab||ctx.currentTab,40);
+  if(!q)return q;
+  if(explicitSystemFromQuestion(q))return q;
+  const recentScan=ctx.workflow==='scan-update'||ctx.recentActions.some(row=>row.kind==='scan-updated');
+  if(/^(?:next|next one|next system|next field|where next|what next|another one|another system)[\s?.!]*$/i.test(q)
+    &&(tab==='fields'||tab==='brain'||recentScan)){
+    return 'closest tracked system needing a scan update';
+  }
+  if(tab==='performance'&&/^(?:why(?: is)? (?:this|it)(?: so)? low|why did (?:this|it) drop|what changed|what happened|explain (?:this|it)|why)[\s?.!]*$/i.test(q)){
+    return 'explain recent fleet performance variance';
+  }
+  let out=q;
+  if(ctx.selectedSystem){
+    out=out.replace(/\b(?:this|that) system\b/ig,ctx.selectedSystem).replace(/\bthat field\b/ig,ctx.selectedSystem);
+  }
+  if(ctx.selectedCharacterName){
+    out=out.replace(/\b(?:this|that) toon\b/ig,ctx.selectedCharacterName).replace(/\b(?:this|that) character\b/ig,ctx.selectedCharacterName);
+  }
+  return out;
+}
+function explicitSystemFromQuestion(value){
+  return Boolean(String(value||'').toUpperCase().match(/\b[A-Z0-9]{1,10}(?:-[A-Z0-9]{1,10})+\b/));
+}
+
 function trackerBrainAnswer(user,question,options={}){
   const raw=trackerSpeechSafe(question,900);
   const q=raw.toLowerCase().replace(/[^a-z0-9%+\-/. ]+/g,' ').replace(/\s+/g,' ').trim();
+  const context=trackerBrainContext(options.context);
   const snapshot=trackerBrainSnapshot();
   const linked=(user?.characterIds||[]).map(String).filter(Boolean);
   const primaryName=trackerBrainPrimaryName(user);
@@ -4142,6 +4207,45 @@ function trackerBrainAnswer(user,question,options={}){
   };
 
   if(!q)return answer('help','Ask me a question about JLR Miner Tracker.');
+
+  if(/\b(?:explain recent fleet performance variance|why is this low|why is it low|why did this drop|what changed in fleet performance)\b/.test(q)){
+    const p=context.performance||{};
+    const latest=Number(p.latestRate);
+    const previous=Number(p.previousRate);
+    const target=Number(p.targetRate);
+    const active=Math.max(0,Number(p.activeToons)||0);
+    const sampled=Math.max(0,Number(p.sampledToons)||0);
+    if(!(latest>=0)||!(target>0)){
+      return answer('performance-variance',
+        'JLR does not have enough recent rate and fitted-target context to explain that comparison yet. Open Fleet Performance after the ledger samples load, then ask again.',
+        {voiceText:'I need a recent fleet sample and fitted target before I can explain the variance.'}
+      );
+    }
+    const pct=target>0?latest/target*100:null;
+    const gapPct=pct==null?null:Math.max(0,100-pct);
+    const movement=previous>0?((latest/previous)-1)*100:null;
+    const parts=[];
+    parts.push('The latest measured fleet rate is '+Math.round(latest).toLocaleString()+' m³/hr versus a fitted target of '+Math.round(target).toLocaleString()+' m³/hr'+(pct!=null?' ('+pct.toFixed(0)+'% of target).':'.'));
+    if(sampled>0){
+      if(active<sampled){
+        parts.push(active+' of '+sampled+' sampled miners produced a positive ledger delta in that interval; '+(sampled-active)+' did not.');
+      }else{
+        parts.push('All '+sampled+' sampled miners contributed a positive ledger delta, so the gap is not explained by missing miners in that interval.');
+      }
+    }
+    if(Number.isFinite(movement)&&Math.abs(movement)>=5){
+      parts.push('Compared with the previous sample, the measured rate '+(movement<0?'fell ':'rose ')+Math.abs(movement).toFixed(0)+'%.');
+    }
+    if(gapPct!=null&&gapPct>0){
+      parts.push('ESI mining ledgers show the output difference, but they do not prove the cause. Reds or hostiles, warping or repositioning, hauling, compression, pauses, site transitions, and actual mining efficiency can all lower the measured interval rate.');
+    }else{
+      parts.push('This sample met or exceeded the fitted target; the ledger still cannot identify every interruption or timing effect inside the interval.');
+    }
+    return answer('performance-variance',parts.join(' '),{
+      performance:{latestRate:latest,previousRate:Number.isFinite(previous)?previous:null,targetRate:target,activeToons:active,sampledToons:sampled},
+      voiceText:(pct!=null?'Latest fleet rate is '+pct.toFixed(0)+' percent of target. ':'')+(sampled>0?active+' of '+sampled+' miners contributed. ':'')+'E S I shows the variance, but not the exact cause.'
+    });
+  }
 
   const knowledge=trackerBrainKnowledgeAnswer(raw,options.currentTab);
   if(knowledge){
@@ -8166,12 +8270,16 @@ async function routeApi(req,res,url) {
     const question=trackerSpeechSafe(body?.question,900);
     if(!question)return json(res,400,{error:'QUESTION_REQUIRED',message:'Ask Adam a question first.'});
     const currentTab=trackerSpeechSafe(body?.currentTab,40);
+    const context=trackerBrainContext(body?.context);
+    context.currentTab=currentTab||context.currentTab;
     const supportResolution=await trackerSupport.resolveQuestion({
       userId:user.id,
       question,
       currentTab,
+      context,
     });
-    const resolvedQuestion=trackerSpeechSafe(supportResolution?.question,900)||question;
+    const sharedResolved=trackerSpeechSafe(supportResolution?.question,900)||question;
+    const resolvedQuestion=trackerBrainContextualQuestion(sharedResolved,currentTab,context);
     const supportOverride=supportResolution?.answerOverride&&typeof supportResolution.answerOverride==='object'
       ?supportResolution.answerOverride
       :null;
@@ -8199,12 +8307,14 @@ async function routeApi(req,res,url) {
         payoutPct:body?.payoutPct,
         characterId:body?.characterId,
         currentTab,
+        context,
       });
     }
     void trackerSupport.rememberAnswer({
       userId:user.id,
       question,
       currentTab,
+      context,
       answer,
     });
     return json(res,200,answer);
