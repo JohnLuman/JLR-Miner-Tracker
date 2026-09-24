@@ -29,11 +29,11 @@
   let trackerIntelError='';
   let trackerIntelTimer=null;
   const HOT_MODES=new Set(['composite','ratting','pvp','mining','dreads','blobs']);
+  const DEFAULT_HOT_REGION_ID='10000058';
   let trackerHotMode=HOT_MODES.has(localStorage.getItem('jlrTrackerHotMode'))?localStorage.getItem('jlrTrackerHotMode'):'composite';
+  let trackerSelectedRegionId=String(localStorage.getItem('jlrTrackerHotRegion')||DEFAULT_HOT_REGION_ID);
   let trackerEssMinValue=Math.max(0,Number(localStorage.getItem('jlrTrackerEssMinValue')||100000000)||100000000);
   let trackerEssMaxJumps=String(localStorage.getItem('jlrTrackerEssMaxJumps')||'10');
-  let trackerEssDraft='';
-  let trackerInterferenceDraft='';
   let trackerIntelSeeded=false;
   const trackerInterferenceLevels=new Map();
 
@@ -126,29 +126,45 @@
     });
     return rows.slice(0,10);
   }
+  function trackerRegionOptionsHtml(){
+    const regions=Array.isArray(trackerIntel?.regions)?trackerIntel.regions:[];
+    return regions.map(function(row){
+      const id=String(row?.regionId||'');
+      const selected=id===String(trackerSelectedRegionId)?' selected':'';
+      return '<option value="'+esc(id)+'"'+selected+'>'+esc(row?.regionName||id)+'</option>';
+    }).join('');
+  }
   function trackerHotZonesHtml(){
     if(trackerIntelLoading&&!trackerIntel)return '<div class="tracker-intel-empty">Loading regional activity…</div>';
-    if(!trackerIntel?.location)return '<div class="tracker-intel-empty">'+esc(trackerIntel?.locationError||trackerIntelError||'Live location unavailable.')+'</div>';
+    if(!trackerIntel)return '<div class="tracker-intel-empty">'+esc(trackerIntelError||'Regional activity unavailable.')+'</div>';
     const hot=trackerIntel.hotZones||{};
     const rows=trackerIntelHotRows();
+    const location=trackerIntel.location||null;
     const filters=[
       ['composite','HUNT SCORE'],['ratting','RATTING'],['pvp','PVP'],['mining','MINING'],['dreads','DREADS'],['blobs','BLOBS']
     ].map(function(pair){
       return '<button type="button" class="tracker-intel-filter '+(trackerHotMode===pair[0]?'active':'')+'" data-hot-mode="'+pair[0]+'">'+pair[1]+'</button>';
     }).join('');
     const body=rows.length?rows.map(function(row,index){
-      const current=String(row.systemId)===String(trackerIntel.location.systemId);
+      const current=location&&String(row.systemId)===String(location.systemId);
       return '<div class="tracker-intel-row '+(current?'current':'')+'">'+
         '<b>#'+(index+1)+'</b><div><strong>'+esc(row.system||row.systemId)+'</strong><small>HUNT '+fmt(row.huntScore)+'/100 • '+fmt(row.npcKills)+' NPC kills/h</small></div>'+
         '<span>'+esc(trackerIntelMetricLabel(row,trackerHotMode))+'</span><em>'+esc(trackerIntelJumpLabel(row.jumps))+'</em>'+
       '</div>';
     }).join(''):'<div class="tracker-intel-empty">No regional activity returned for this hour.</div>';
+    const selected=trackerIntel.selectedRegion||trackerIntel.region||{};
+    const updateText=hot.fetchedAt?ago(hot.fetchedAt):'not cached yet';
+    const originText=location
+      ?location.system+' • '+(trackerIntel.currentRegion?.regionName||'current region')+' • jump distances from you'
+      :'jump distances waiting for a live linked-toon location';
     let history='<span class="tracker-intel-note">Time-of-day history: '+fmt(hot.historyHours||0)+'/4 UTC hours collected.</span>';
     if(Array.isArray(hot.bestHoursUtc)&&hot.bestHoursUtc.length){
       history='<span class="tracker-intel-note">Observed best UTC hours: '+hot.bestHoursUtc.map(function(row){return String(row.hourUtc).padStart(2,'0')+':00';}).join(' • ')+'</span>';
     }
-    return '<div class="tracker-intel-head"><div><span>REGION HOT ZONES</span><strong>'+esc(trackerIntel.region?.regionName||hot.regionName||'Current region')+'</strong><small>'+esc(trackerIntel.location.system)+' • automatic ESI + zKill activity</small></div></div>'+
-      '<div class="tracker-intel-filters">'+filters+'</div><div class="tracker-intel-list">'+body+'</div>'+history;
+    return '<div class="tracker-intel-head"><div><span>REGION HOT ZONES</span><strong>'+esc(selected.regionName||hot.regionName||'Fountain')+'</strong><small>'+esc(originText)+'</small></div>'+
+      '<label class="tracker-region-picker">REGION<select id="trackerHotRegion">'+trackerRegionOptionsHtml()+'</select></label></div>'+
+      '<div class="tracker-intel-filters">'+filters+'</div><div class="tracker-intel-list">'+body+'</div>'+
+      '<span class="tracker-intel-note">Regional snapshot '+esc(updateText)+' • persistent local cache • automatic refresh every '+fmt(trackerIntel.hotZoneRefreshMinutes||30)+' minutes.</span>'+history;
   }
   function trackerEssHtml(){
     const rows=(Array.isArray(trackerIntel?.essReports)?trackerIntel.essReports:[])
@@ -158,31 +174,32 @@
         return Number(row?.value||0)>=trackerEssMinValue&&(!Number.isFinite(jumps)||jumps<=max);
       })
       .sort(function(a,b){return Number(b.value||0)-Number(a.value||0)||Number(a.jumps||999)-Number(b.jumps||999);})
-      .slice(0,8);
+      .slice(0,12);
     const body=rows.length?rows.map(function(row){
-      return '<div class="tracker-intel-row"><b>ESS</b><div><strong>'+esc(row.system)+'</strong><small>'+esc(ago(row.reportedAt))+' • shared pilot report</small></div><span>'+esc(fmt(row.value))+' ISK</span><em>'+esc(trackerIntelJumpLabel(row.jumps))+'</em></div>';
-    }).join(''):'<div class="tracker-intel-empty">No fresh ESS reports match these filters.</div>';
-    return '<div class="tracker-intel-head"><div><span>NEARBY ESS</span><strong>SHARED BOUNTY REPORTS</strong><small>Auto-attached to the reporter’s live system</small></div></div>'+
+      return '<div class="tracker-intel-row"><b>ESS</b><div><strong>'+esc(row.system)+'</strong><small>'+esc(ago(row.observedAt||row.reportedAt))+' • EVE client public data</small></div><span>'+esc(fmt(row.value))+' ISK</span><em>'+esc(trackerIntelJumpLabel(row.jumps))+'</em></div>';
+    }).join(''):'<div class="tracker-intel-empty">No automatic ESS bank observations are available yet.</div>';
+    const sourceReady=trackerIntel?.sources?.ess?.automatic===true;
+    return '<div class="tracker-intel-head"><div><span>NEARBY ESS</span><strong>AUTO BOUNTY WATCH</strong><small>'+esc(sourceReady?'Automatic public-data collector online':'Waiting for an automatic EVE client public-data collector')+'</small></div></div>'+
       '<div class="tracker-intel-controls">'+
         '<label>MIN <select id="trackerEssMin"><option value="50000000" '+(trackerEssMinValue===50000000?'selected':'')+'>50M</option><option value="100000000" '+(trackerEssMinValue===100000000?'selected':'')+'>100M</option><option value="250000000" '+(trackerEssMinValue===250000000?'selected':'')+'>250M</option><option value="500000000" '+(trackerEssMinValue===500000000?'selected':'')+'>500M</option></select></label>'+
         '<label>RANGE <select id="trackerEssJumps"><option value="5" '+(trackerEssMaxJumps==='5'?'selected':'')+'>5J</option><option value="10" '+(trackerEssMaxJumps==='10'?'selected':'')+'>10J</option><option value="20" '+(trackerEssMaxJumps==='20'?'selected':'')+'>20J</option><option value="all" '+(trackerEssMaxJumps==='all'?'selected':'')+'>ALL</option></select></label>'+
-      '</div>'+
-      '<div class="tracker-intel-report"><input id="trackerEssValue" type="number" min="1" step="1" inputmode="decimal" value="'+esc(trackerEssDraft)+'" placeholder="ESS VALUE • M ISK"><button id="trackerEssReport" type="button">REPORT CURRENT SYSTEM</button></div>'+
-      '<div class="tracker-intel-list">'+body+'</div><span class="tracker-intel-note">ESS value is not exposed by public ESI; JLR shares fresh pilot reports for '+fmt(trackerIntel?.reportTtlHours||6)+' hours.</span>';
+      '</div><div class="tracker-intel-list">'+body+'</div>'+
+      '<span class="tracker-intel-note">Filters are ready for automatic observations. Official ESI does not provide the live ESS bank balance shown in the EVE client, so Tracker will not fabricate it from NPC kills.</span>';
   }
   function trackerInterferenceHtml(){
     const rows=(Array.isArray(trackerIntel?.interferenceReports)?trackerIntel.interferenceReports:[])
       .sort(function(a,b){return Number(b.value||0)-Number(a.value||0)||Number(a.jumps||999)-Number(b.jumps||999);})
-      .slice(0,10);
+      .slice(0,12);
     const body=rows.length?rows.map(function(row){
       const delta=Number(row.delta)||0;
       const trend=delta>0?'▲ +'+delta.toFixed(1):delta<0?'▼ '+Math.abs(delta).toFixed(1):'• 0';
       const rising=row.risingSince?' • rising '+ago(row.risingSince):'';
-      return '<div class="tracker-intel-row '+(delta>0?'rising':'')+'"><b>CRAB</b><div><strong>'+esc(row.system)+'</strong><small>'+esc(ago(row.reportedAt))+rising+'</small></div><span>'+esc(Number(row.value).toFixed(1))+'% '+esc(trend)+'</span><em>'+esc(trackerIntelJumpLabel(row.jumps))+'</em></div>';
-    }).join(''):'<div class="tracker-intel-empty">No fresh interference reports yet.</div>';
-    return '<div class="tracker-intel-head"><div><span>SYSTEM INTERFERENCE</span><strong>CRAB WATCH</strong><small>Shared reports • increases can trigger an Adam ping</small></div></div>'+
-      '<div class="tracker-intel-report"><input id="trackerInterferenceValue" type="number" min="0" max="100" step="0.1" inputmode="decimal" value="'+esc(trackerInterferenceDraft)+'" placeholder="INTERFERENCE %"><button id="trackerInterferenceReport" type="button">PING CURRENT SYSTEM</button></div>'+
-      '<div class="tracker-intel-list">'+body+'</div><span class="tracker-intel-note">The in-game interference meter is not exposed by public ESI, so Tracker stores time-stamped pilot observations.</span>';
+      return '<div class="tracker-intel-row '+(delta>0?'rising':'')+'"><b>CRAB</b><div><strong>'+esc(row.system)+'</strong><small>'+esc(ago(row.observedAt||row.reportedAt))+rising+'</small></div><span>'+esc(Number(row.value).toFixed(1))+'% '+esc(trend)+'</span><em>'+esc(trackerIntelJumpLabel(row.jumps))+'</em></div>';
+    }).join(''):'<div class="tracker-intel-empty">No automatic Signal Interference observations are available yet.</div>';
+    const sourceReady=trackerIntel?.sources?.interference?.automatic===true;
+    return '<div class="tracker-intel-head"><div><span>SYSTEM INTERFERENCE</span><strong>CRAB WATCH</strong><small>'+esc(sourceReady?'Automatic public-data monitor online':'Waiting for an automatic EVE client public-data collector')+'</small></div></div>'+
+      '<div class="tracker-intel-list">'+body+'</div>'+
+      '<span class="tracker-intel-note">When automatic observations are available, Tracker keeps the history and Adam announces increases while alerts are armed. The in-game Signal Interference value is public in the client but is not a public ESI field.</span>';
   }
   function trackerIntelHtml(){
     return '<section class="tracker-intel-grid">'+
@@ -218,7 +235,14 @@
     if(force)trackerIntelError='';
     render();
     try{
-      const next=await api('/api/tracker/intel'+(force?'?refresh=1':''));
+      const params=new URLSearchParams();
+      params.set('regionId',String(trackerSelectedRegionId||DEFAULT_HOT_REGION_ID));
+      if(force)params.set('refresh','1');
+      const next=await api('/api/tracker/intel?'+params.toString());
+      if(next?.selectedRegion?.regionId){
+        trackerSelectedRegionId=String(next.selectedRegion.regionId);
+        localStorage.setItem('jlrTrackerHotRegion',trackerSelectedRegionId);
+      }
       notifyTrackerInterference(next);
       trackerIntel=next;
       trackerIntelError='';
@@ -234,30 +258,8 @@
     if(!isActive())return;
     trackerIntelTimer=setTimeout(async function(){
       await loadTrackerIntel(false);
-      scheduleTrackerIntel(60000);
-    },delayMs==null?60000:Math.max(5000,Number(delayMs)||60000));
-  }
-  async function reportTrackerIntel(kind){
-    const isEss=kind==='ess';
-    const raw=isEss?trackerEssDraft:trackerInterferenceDraft;
-    const entered=Number(raw);
-    if(!Number.isFinite(entered)||(isEss?entered<=0:entered<0||entered>100)){
-      toast(isEss?'Enter the current ESS bounty in millions of ISK.':'Enter interference from 0 to 100 percent.');
-      return;
-    }
-    const value=isEss?entered*1000000:entered;
-    try{
-      const payload=await api('/api/tracker/intel/report',{method:'POST',body:{kind:kind,value:value}});
-      if(isEss)trackerEssDraft='';else trackerInterferenceDraft='';
-      if(payload?.snapshot){
-        notifyTrackerInterference(payload.snapshot);
-        trackerIntel=payload.snapshot;
-      }else await loadTrackerIntel(false);
-      toast((isEss?'ESS':'Interference')+' report saved for '+String(payload?.system||'current system')+'.');
-      render();
-    }catch(error){
-      toast(String(error&&error.message||error||'Could not save Tracker intel.'));
-    }
+      scheduleTrackerIntel(5*60*1000);
+    },delayMs==null?5*60*1000:Math.max(15000,Number(delayMs)||5*60*1000));
   }
   async function loadVoiceStatus(){
     if(trackerVoiceChecking)return;
@@ -648,6 +650,12 @@
         render();
       });
     });
+    const hotRegion=document.getElementById('trackerHotRegion');
+    if(hotRegion)hotRegion.addEventListener('change',function(){
+      trackerSelectedRegionId=String(hotRegion.value||DEFAULT_HOT_REGION_ID);
+      localStorage.setItem('jlrTrackerHotRegion',trackerSelectedRegionId);
+      loadTrackerIntel(false);
+    });
     const essMin=document.getElementById('trackerEssMin');
     if(essMin)essMin.addEventListener('change',function(){
       trackerEssMinValue=Math.max(0,Number(essMin.value)||0);
@@ -660,14 +668,6 @@
       localStorage.setItem('jlrTrackerEssMaxJumps',trackerEssMaxJumps);
       render();
     });
-    const essInput=document.getElementById('trackerEssValue');
-    if(essInput)essInput.addEventListener('input',function(){trackerEssDraft=essInput.value;});
-    const essReport=document.getElementById('trackerEssReport');
-    if(essReport)essReport.addEventListener('click',function(){reportTrackerIntel('ess');});
-    const interferenceInput=document.getElementById('trackerInterferenceValue');
-    if(interferenceInput)interferenceInput.addEventListener('input',function(){trackerInterferenceDraft=interferenceInput.value;});
-    const interferenceReport=document.getElementById('trackerInterferenceReport');
-    if(interferenceReport)interferenceReport.addEventListener('click',function(){reportTrackerIntel('interference');});
   }
   function bind(){
     trackerTab=document.querySelector('.app-tab[data-tab="tracker"]');
@@ -696,7 +696,7 @@
         scheduleVoiceStatus(30000);
         if(!trackerData&&!trackerLoading)loadTracker(false,false);
         if(!trackerIntel&&!trackerIntelLoading)loadTrackerIntel(false);
-        else scheduleTrackerIntel(60000);
+        else scheduleTrackerIntel(5*60*1000);
         schedule();
       },0);
     });
@@ -711,7 +711,7 @@
       }
       syncTrackerStream();
       schedule();
-      scheduleTrackerIntel(60000);
+      scheduleTrackerIntel(5*60*1000);
       scheduleVoiceStatus(30000);
     });
     observer.observe(trackerPanel,{attributes:true,attributeFilter:['class']});
