@@ -2267,3 +2267,13 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
   .scout-setting-grid{grid-template-columns:1fr}
   .scout-target-row{grid-template-columns:20px minmax(0,1fr) 32px}.scout-target-row>em{display:none}
 }
+
+/* v2.9.142 — Doctrine Nyx Buyback promo */
+.doctrine-side-column{display:grid;gap:7px;align-self:start;min-width:0}
+.doctrine-side-column>.doctrine-shopping{position:sticky;top:8px}
+.doctrine-nyx-buyback{position:relative;display:block;overflow:hidden;border:1px solid #c7791f;border-radius:9px;background:#140b05;box-shadow:0 10px 26px #0008,0 0 15px #ff8a1f26;text-decoration:none;isolation:isolate;transition:transform .12s,filter .12s,border-color .12s,box-shadow .12s}
+.doctrine-nyx-buyback img{display:block;width:100%;height:auto;aspect-ratio:520/233;object-fit:cover}
+.doctrine-nyx-buyback span{position:absolute;right:8px;bottom:7px;padding:4px 6px;border:1px solid #f5b04a;border-radius:5px;background:#120905d9;color:#ffd796;font:900 6px/1 Oxanium,"Segoe UI",sans-serif;letter-spacing:.07em;box-shadow:0 0 10px #ff971f66}
+.doctrine-nyx-buyback:hover{transform:translateY(-1px);filter:brightness(1.08);border-color:#ffb047;box-shadow:0 12px 30px #0009,0 0 21px #ff951f55}
+.doctrine-nyx-buyback:focus-visible{outline:2px solid #ffc76d;outline-offset:2px}
+@media(max-width:1260px){.doctrine-side-column{order:-1}.doctrine-side-column>.doctrine-shopping{position:relative;top:auto}.doctrine-nyx-buyback{max-width:520px;justify-self:center;width:100%}}
