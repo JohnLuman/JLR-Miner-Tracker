@@ -5390,10 +5390,17 @@
       const savedFits=Number(c.savedFittingsCount ?? (c.fittings||[]).length)||0;
       const miningFits=(c.fittings||[]).length;
       const abyssal=Number(c.abyssalStripCount||0);
-      const scopeState=c.needsReauth
-        ?' • access update required for skills/fits/assets/location/contacts'
-        :` • ${savedFits} saved fits • ${miningFits} mining fits${abyssal?` • ${abyssal} Abyssal strips`:''}`;
-      const syncState=c.lastError?`⚠ sync error: ${esc(c.lastError)}`:`EVE data synced ${ago(c.lastSyncAt)}`;
+      const missingMiningAccess=c.miningAccess===false;
+      const waitingLedger=c.ledgerCached===false&&!missingMiningAccess;
+      const scopeState=missingMiningAccess
+        ?' • mining ledger access missing'
+        :c.needsReauth
+          ?' • EVE access update required'
+          :` • ${savedFits} saved fits • ${miningFits} mining fits${abyssal?` • ${abyssal} Abyssal strips`:''}`;
+      const syncState=missingMiningAccess?'⚠ MINING LEDGER NOT AUTHORIZED'
+        :waitingLedger?'⚠ WAITING FOR FIRST LEDGER SYNC'
+        :c.lastError?`⚠ sync error: ${esc(c.lastError)}`
+        :`EVE data synced ${ago(c.lastSyncAt)}`;
       const assetCacheLabel=esiCacheLabel(c.assetsEsiCache);
       const fitState=c.fittingsUpdatedAt?` • fits ${ago(c.fittingsUpdatedAt)}${assetCacheLabel?` • Abyssal ${assetCacheLabel}`:''}`:'';
       const marketButton=c.marketEligible
