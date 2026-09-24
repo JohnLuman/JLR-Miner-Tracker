@@ -7029,7 +7029,7 @@ async function trackerIntelRegionHotZones(region,{force=false}={}){
   }
 
   const victimTypes=[...new Set(lossRows.map(row=>Number(row?.victim?.ship_type_id)||0).filter(id=>id>0))].slice(0,100);
-  const groupPairs=await Promise.all(victimTypes.map(async id=>[id,await trackerIntelShipGroupName(id)]));
+  const groupPairs=await doctrineMapLimit(victimTypes,8,async id=>[id,await trackerIntelShipGroupName(id)]);
   const groupByType=new Map(groupPairs);
   for(const kill of lossRows){
     const out=ensureRow(kill?.solar_system_id);
