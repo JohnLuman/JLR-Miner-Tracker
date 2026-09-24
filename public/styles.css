@@ -2560,3 +2560,17 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .app.compact .fleet-command-panel .fleet-insight>div:first-child small{font-size:8px}
 .app.compact .fleet-command-panel .fleet-command-kpis article>span{font-size:7.5px}
 .app.compact .fleet-command-panel .fleet-command-kpis article>small{font-size:7.5px}
+
+
+/* v2.9.144-chart-purpose1 — review-first chart hierarchy */
+.fleet-command-grid{align-items:start}
+.fleet-command-card .visual-card-head{min-height:30px;align-items:flex-start}
+.fleet-command-card .visual-card-head>strong,
+.fleet-command-card .visual-card-head>div>strong{line-height:1.15}
+.fleet-command-card .visual-card-head>small,
+.fleet-command-card .visual-card-head>div>small{line-height:1.25;text-align:right}
+.fleet-live-card,.fleet-history-card{border-color:#33414d}
+.fleet-ore-card,.fleet-trend-card{border-color:#2a3038}
+.fleet-latest-label{font-family:"Segoe UI",Arial,sans-serif!important;font-weight:700!important}
+.app.compact .fleet-command-card .visual-card-head>small,
+.app.compact .fleet-command-card .visual-card-head>div>small{font-size:7px}
