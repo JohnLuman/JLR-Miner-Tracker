@@ -141,16 +141,18 @@
     ].map(function(pair){
       return '<button type="button" class="tracker-intel-filter '+(trackerHotMode===pair[0]?'active':'')+'" data-hot-mode="'+pair[0]+'">'+pair[1]+'</button>';
     }).join('');
-    const maxMetric=Math.max(1,...rows.map(function(row){return trackerIntelMetric(row,trackerHotMode);}));
+    const metricNames={composite:'HUNT',ratting:'NPC/H',pvp:'PVP',mining:'MINER',dreads:'DREAD',blobs:'BLOB'};
+    const metricName=metricNames[trackerHotMode]||'SIGNAL';
     const body=rows.length?rows.map(function(row,index){
       const current=location&&String(row.systemId)===String(location.systemId);
       const metric=trackerIntelMetric(row,trackerHotMode);
-      const barPct=Math.max(0,Math.min(100,metric/maxMetric*100));
-      return '<div class="tracker-intel-row information-hot-row '+(current?'current':'')+'">'+
-        '<b>#'+(index+1)+'</b><div class="tracker-intel-main"><strong>'+esc(row.system||row.systemId)+'</strong>'+
-        '<div class="tracker-intel-valuebar"><i style="width:'+barPct.toFixed(2)+'%"></i></div>'+
-        '<small>HUNT '+fmt(row.huntScore)+'/100 • '+fmt(row.npcKills)+' NPC kills/h</small></div>'+
-        '<span>'+esc(trackerIntelMetricLabel(row,trackerHotMode))+'</span><em>'+esc(trackerIntelJumpLabel(row.jumps))+'</em>'+
+      const danger=metric>0&&['pvp','dreads','blobs'].includes(trackerHotMode);
+      return '<div class="tracker-intel-row information-hot-row '+(current?'current ':'')+(danger?'danger':'')+'">'+
+        '<b>#'+(index+1)+'</b>'+
+        '<div class="tracker-intel-system"><strong>'+esc(row.system||row.systemId)+'</strong><small>'+fmt(row.npcKills)+' NPC kills/h</small></div>'+
+        '<div class="tracker-intel-stat tracker-intel-hunt"><span>HUNT</span><strong>'+fmt(row.huntScore)+'/100</strong></div>'+
+        '<div class="tracker-intel-stat tracker-intel-selected"><span>'+esc(metricName)+'</span><strong>'+esc(trackerIntelMetricLabel(row,trackerHotMode))+'</strong></div>'+
+        '<em>'+esc(trackerIntelJumpLabel(row.jumps))+'</em>'+
       '</div>';
     }).join(''):'<div class="tracker-intel-empty">No regional activity returned for this hour.</div>';
     const selected=trackerIntel.selectedRegion||trackerIntel.region||{};
@@ -163,9 +165,10 @@
       history='<span class="tracker-intel-note">Observed best UTC hours: '+hot.bestHoursUtc.map(function(row){return String(row.hourUtc).padStart(2,'0')+':00';}).join(' • ')+'</span>';
     }
     const top=rows[0]||null;
-    const topSignal=top
-      ?'<div class="tracker-intel-insight"><span>TOP SIGNAL</span><strong>'+esc(top.system||top.systemId)+'</strong><b>'+esc(trackerIntelMetricLabel(top,trackerHotMode))+'</b><em>'+esc(trackerIntelJumpLabel(top.jumps))+'</em></div>'
-      :'';
+    const topMetric=top?trackerIntelMetric(top,trackerHotMode):0;
+    const topSignal=top&&topMetric>0
+      ?'<div class="tracker-intel-insight"><span>TOP '+esc(metricName)+' SIGNAL</span><strong>'+esc(top.system||top.systemId)+'</strong><b>'+esc(trackerIntelMetricLabel(top,trackerHotMode))+'</b><em>'+esc(trackerIntelJumpLabel(top.jumps))+'</em></div>'
+      :top?'<div class="tracker-intel-insight quiet"><span>NO '+esc(metricName)+' SIGNAL</span><strong>No activity for this filter in the current snapshot</strong></div>':'';
     return '<div class="tracker-intel-head"><div class="tracker-region-head"><span>REGION HOT ZONES</span>'+
       '<label class="tracker-region-picker tracker-region-title"><select id="trackerHotRegion" aria-label="Hot zone region">'+trackerRegionOptionsHtml()+'</select></label>'+
       '<small>'+esc(originText)+'</small></div></div>'+
