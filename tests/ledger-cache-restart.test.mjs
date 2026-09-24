@@ -17,7 +17,7 @@ assert.doesNotMatch(server,/if\(fullCycle\|\|cacheComplete\)/,'a failed full cyc
 assert.match(server,/preserving previous dailyFleet totals/,'partial ESI cycles explicitly preserve the last complete payout');
 assert.match(server,/if\(miningLedgerDebug\(\)\.cacheComplete\)rebuildDailyFleetFromLedgerCache\(\)/,'market refresh cannot rebuild fleet totals from a partial cache');
 
-assert.equal(pkg.version,'2.9.132','ledger restart protection is versioned');
-assert.ok(index.includes('/app.js?v=2.9.132'),'browser loads the ledger restart fix');
+assert.equal(pkg.version,'2.9.133','ledger restart protection is versioned');
+assert.ok(index.includes('/app.js?v=2.9.133'),'browser loads the ledger restart fix');
 
 console.log('Ledger restart cache regression tests passed.');
