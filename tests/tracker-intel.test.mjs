@@ -37,15 +37,20 @@ assert.doesNotMatch(tracker,/trackerEssHtml/,'ESS watch renderer is removed');
 assert.doesNotMatch(tracker,/trackerInterferenceHtml/,'interference watch renderer is removed');
 assert.doesNotMatch(server,/\/api\/companion\/tracker-map/,'unused public-map watch ingestion endpoint is removed');
 assert.doesNotMatch(server,/trackerIntelIngestPublicMap/,'unused ESS/interference ingestion logic is removed');
-assert.match(trackerCss,/tracker-intel-grid-hot-only/,'Hot Zones uses the dedicated regional intel workspace');
-assert.match(trackerCss,/max-width:1080px/,'Hot Zones is capped instead of stretching across the full window');
+assert.match(tracker,/trackerOverviewHtml\(losses,status,sourceUrl\)/,'Tracker renders Hot Zones and Heavy Fighter losses in one overview');
+assert.match(trackerCss,/\.tracker-overview-grid\{display:grid;grid-template-columns:/,'Hot Zones and recent Heavy Fighter losses sit side by side on wide screens');
+assert.match(trackerCss,/\.tracker-overview-grid>/,'paired overview scopes Hot Zones inside the intel workspace');
 assert.doesNotMatch(tracker,/tracker-intel-valuebar/,'Hot Zones does not render misleading full-width red bars');
 assert.match(trackerCss,/tracker-region-picker/,'region selector is styled');
 
-assert.equal(pkg.version,'2.9.140','Hot Zones-only Tracker release is versioned');
-assert.ok(index.includes('/tracker.css?v=2.9.140'),'browser loads Tracker intel CSS');
-assert.ok(index.includes('/tracker.js?v=2.9.140'),'browser loads Tracker loader');
-assert.ok(index.includes('/app.js?v=2.9.140'),'browser loads matching app release');
+assert.equal(pkg.version,'2.9.141','Hot Zones-only Tracker release is versioned');
+assert.ok(index.includes('/tracker.css?v=2.9.141'),'browser loads Tracker intel CSS');
+assert.ok(index.includes('/tracker.js?v=2.9.141'),'browser loads Tracker loader');
+assert.ok(index.includes('/app.js?v=2.9.141'),'browser loads matching app release');
 assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.140/,'Tracker core cache is busted');
 
-console.log('Tracker regional intel tests passed.');
+assert.match(tracker,/TEST LOSS ALARM/,'Heavy Fighter Tracker exposes the redesigned local loss alarm test');
+assert.doesNotMatch(tracker,/TEST JLR CUSTOM VOICE/,'Heavy Fighter alarm no longer depends on custom voice');
+assert.match(trackerLoader,/Immediate, local two-tone loss alarm/,'loss alarm is generated locally without TTS latency');
+
+console.log('Tracker regional intel and loss-alarm tests passed.');
