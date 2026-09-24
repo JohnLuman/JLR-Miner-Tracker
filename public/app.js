@@ -1510,6 +1510,9 @@
     if(global){global.classList.remove('hidden');global.dataset.characterId=String(snapshot.characterId);}
     if($('scoutGlobalAlertText'))$('scoutGlobalAlertText').textContent=text;
     const key=String(snapshot.characterId)+':'+String(snapshot.system);
+    const tab=document.querySelector('.app-tab[data-tab="brain"]');
+    if(tab){tab.classList.add('scout-update');tab.textContent='SCOUT • UPDATE';}
+    document.title='⚠ SCAN UPDATE • JLR';
     if(scoutPromptKey!==key){scoutPromptKey=key;toast('🛰 '+snapshot.characterName+': '+snapshot.system+' needs a scan update.')}
   }
 
@@ -1538,6 +1541,9 @@
           scoutPromptKey='';
           $('brainScanPrompt')?.classList.add('hidden');
           $('scoutGlobalAlert')?.classList.add('hidden');
+          const scoutTab=document.querySelector('.app-tab[data-tab="brain"]');
+          if(scoutTab){scoutTab.classList.remove('scout-update');scoutTab.textContent='SCOUT';}
+          document.title='JLR Miner Tracker';
         }
         if(snapshot.needsScan){
           if(id===String(scanCharacterId)&&!scanBusy)setScanStatus(snapshot.system+': SCAN UPDATE NEEDED','warning');
