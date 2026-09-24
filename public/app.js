@@ -1287,7 +1287,7 @@
   }
 
   function feedbackTypeLabel(type){
-    return {bug:'BUG',suggestion:'FEATURE IDEA',speech:'SPEECH / VOICE',data:'DATA / ESI',ui:'UI / UX',other:'OTHER'}[String(type||'')]||'FEEDBACK';
+    return {bug:'BUG',suggestion:'FEATURE IDEA',speech:'SPEECH / VOICE',data:'DATA ISSUE',ui:'UI / UX',other:'OTHER'}[String(type||'')]||'FEEDBACK';
   }
   function feedbackAreaLabel(area){
     return {general:'GENERAL',fields:'FIELDS',brain:'SCOUT',fleet:'FLEET & FITS',performance:'FLEET PERFORMANCE',ice:'ICE',gas:'GAS',doctrine:'DOCTRINE MARKET',pvp:'INIT PVP',tracker:'TRACKER',threat:'THREAT SCAN',mer:'MER INTEL',toons:'TOONS'}[String(area||'')]||String(area||'GENERAL').toUpperCase();
@@ -2294,11 +2294,11 @@
           <div>
             <span class="eyebrow">JLR DEVELOPMENT // USER INPUT</span>
             <h2>FEEDBACK HUB</h2>
-            <p>Report a problem, pitch an idea, flag bad data, or tell us where Tracker feels awkward. Useful app context can be attached automatically so you do not have to explain the technical details.</p>
+            <p>Tell us what happened or what you want changed. JLR automatically attaches safe app context so you do not have to explain the technical details.</p>
           </div>
           <div class="feedback-hero-note">
             <strong>WHAT HELPS MOST</strong>
-            <span>What happened • where it happened • what you expected • whether it blocks you</span>
+            <span>What happened • what you expected • anything that would help us reproduce it</span>
           </div>
         </header>
 
@@ -2317,44 +2317,51 @@
             <div class="feedback-type-grid" role="group" aria-label="Feedback type">
               <button class="feedback-type active" data-feedback-type="bug" type="button"><b>BUG</b><span>Something is broken</span></button>
               <button class="feedback-type" data-feedback-type="suggestion" type="button"><b>FEATURE IDEA</b><span>Something JLR should add</span></button>
-              <button class="feedback-type" data-feedback-type="data" type="button"><b>DATA / ESI</b><span>Wrong, stale, or missing data</span></button>
+              <button class="feedback-type" data-feedback-type="data" type="button"><b>DATA ISSUE</b><span>Wrong, stale, or missing values</span></button>
               <button class="feedback-type" data-feedback-type="ui" type="button"><b>UI / UX</b><span>Layout, readability, or controls</span></button>
               <button class="feedback-type" data-feedback-type="other" type="button"><b>OTHER</b><span>Anything else</span></button>
             </div>
 
-            <div class="feedback-meta-grid">
-              <label><span>AREA</span><select id="feedbackArea">
-                <option value="general">GENERAL</option>
-                <option value="fields">FIELDS</option>
-                <option value="brain">SCOUT / TRACKING</option>
-                <option value="fleet">FLEET & FITS</option>
-                <option value="performance">FLEET PERFORMANCE</option>
-                <option value="ice">ICE</option>
-                <option value="gas">GAS</option>
-                <option value="doctrine">DOCTRINE MARKET</option>
-                <option value="pvp">INIT PVP</option>
-                <option value="tracker">TRACKER</option>
-                <option value="threat">THREAT SCAN</option>
-                <option value="mer">MER INTEL</option>
-                <option value="toons">TOONS</option>
-              </select></label>
-              <label><span>IMPACT</span><select id="feedbackImpact">
-                <option value="normal">NORMAL</option>
-                <option value="low">LOW / MINOR</option>
-                <option value="high">HIGH / IMPORTANT</option>
-                <option value="critical">BLOCKING / CRITICAL</option>
-              </select></label>
+            <label class="feedback-field feedback-main-message"><span>WHAT HAPPENED / WHAT SHOULD CHANGE?</span><textarea id="feedbackMessage" maxlength="2000" placeholder="Describe the problem or idea in your own words."></textarea></label>
+
+            <div class="feedback-context-note">
+              <strong>CONTEXT ATTACHED AUTOMATICALLY</strong>
+              <span>JLR version, source tab, selected system, display mode, EVE-data health, ledger coverage, and browser details. Passwords and EVE tokens are never included.</span>
             </div>
 
-            <label class="feedback-field"><span>SHORT TITLE</span><input id="feedbackTitle" maxlength="120" placeholder="Example: Selected mic keeps resetting"></label>
-            <label class="feedback-field"><span>DETAILS</span><textarea id="feedbackMessage" maxlength="2000" placeholder="Tell us what happened, what you want changed, or how the idea should work."></textarea></label>
-
-            <div class="feedback-detail-grid">
-              <label class="feedback-field"><span>STEPS TO REPRODUCE <small>optional</small></span><textarea id="feedbackSteps" maxlength="1500" placeholder="1. Open Adam&#10;2. Select microphone&#10;3. ..."></textarea></label>
-              <label class="feedback-field"><span>EXPECTED RESULT <small>optional</small></span><textarea id="feedbackExpected" maxlength="1000" placeholder="What should have happened instead?"></textarea></label>
-            </div>
-
-            <label class="feedback-diagnostics"><input id="feedbackDiagnostics" type="checkbox" checked><span><strong>ATTACH DIAGNOSTIC CONTEXT</strong><small>JLR version, source tab, selected system, browser info, and the last Tracker speech event. No passwords or EVE tokens are included.</small></span></label>
+            <details class="feedback-more-details">
+              <summary>ADD OPTIONAL DETAILS</summary>
+              <div class="feedback-more-details-body">
+                <label class="feedback-field"><span>SHORT TITLE <small>optional — JLR creates one if blank</small></span><input id="feedbackTitle" maxlength="120" placeholder="Short description"></label>
+                <div class="feedback-meta-grid">
+                  <label><span>AREA</span><select id="feedbackArea">
+                    <option value="general">GENERAL</option>
+                    <option value="fields">FIELDS</option>
+                    <option value="brain">SCOUT / TRACKING</option>
+                    <option value="fleet">FLEET & FITS</option>
+                    <option value="performance">FLEET PERFORMANCE</option>
+                    <option value="ice">ICE</option>
+                    <option value="gas">GAS</option>
+                    <option value="doctrine">DOCTRINE MARKET</option>
+                    <option value="pvp">INIT PVP</option>
+                    <option value="tracker">TRACKER</option>
+                    <option value="threat">THREAT SCAN</option>
+                    <option value="mer">MER INTEL</option>
+                    <option value="toons">TOONS</option>
+                  </select></label>
+                  <label><span>IMPACT</span><select id="feedbackImpact">
+                    <option value="normal">NORMAL</option>
+                    <option value="low">LOW / MINOR</option>
+                    <option value="high">HIGH / IMPORTANT</option>
+                    <option value="critical">BLOCKING / CRITICAL</option>
+                  </select></label>
+                </div>
+                <div class="feedback-detail-grid">
+                  <label class="feedback-field"><span>STEPS TO REPRODUCE <small>optional</small></span><textarea id="feedbackSteps" maxlength="1500" placeholder="What did you do before it happened?"></textarea></label>
+                  <label class="feedback-field"><span>EXPECTED RESULT <small>optional</small></span><textarea id="feedbackExpected" maxlength="1000" placeholder="What should have happened instead?"></textarea></label>
+                </div>
+              </div>
+            </details>
 
             <div class="feedback-submit-row">
               <button id="feedbackSubmit" class="orb green" type="button">SUBMIT TO JLR</button>
@@ -2368,7 +2375,7 @@
               <div class="feedback-guide-list">
                 <div><b>BUG</b><span>Something worked differently than intended.</span></div>
                 <div><b>FEATURE IDEA</b><span>A new tool, metric, alert, or workflow.</span></div>
-                <div><b>DATA / ESI</b><span>Values do not match EVE, zKill, market data, or another source.</span></div>
+                <div><b>DATA ISSUE</b><span>Values do not match EVE, zKill, market data, or another source.</span></div>
                 <div><b>UI / UX</b><span>Hard to read, clipped, confusing, or too many clicks.</span></div>
               </div>
             </section>
@@ -5921,22 +5928,37 @@
       const type=document.querySelector('.feedback-type.active')?.dataset.feedbackType||'suggestion';
       const title=String($('feedbackTitle')?.value||'').trim();
       const message=String($('feedbackMessage')?.value||'').trim();
-      const area=String($('feedbackArea')?.value||'general');
+      const sourceTab=String(feedbackOpenedFrom||'general');
+      const area=String($('feedbackArea')?.value||sourceTab||'general');
       const impact=String($('feedbackImpact')?.value||'normal');
       const steps=String($('feedbackSteps')?.value||'').trim();
       const expected=String($('feedbackExpected')?.value||'').trim();
-      const diagnostics=Boolean($('feedbackDiagnostics')?.checked);
-      if(!title){toast('Add a short title first.');$('feedbackTitle')?.focus();return}
-      if(!message){toast('Add some details first.');$('feedbackMessage')?.focus();return}
+      if(!message){toast('Tell us what happened or what you want changed.');$('feedbackMessage')?.focus();return}
       if(submit)submit.disabled=true;
       try{
-        const context=diagnostics?{
+        const ledger=state?.esi?.ledgerDebug||{};
+        const context={
           version:state?.app?.version||'2.9.144',
-          sourceTab:feedbackOpenedFrom||'unknown',
+          sourceTab,
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
-          userAgent:String(navigator.userAgent||'').slice(0,500),
-          lastSpeech:brainSpeechHistory[0]?.text||''
-        }:{sourceTab:feedbackOpenedFrom||'unknown'};
+          displayMode:$('app')?.classList.contains('expanded')?'expanded':'compact',
+          theme:String(activeTheme||''),
+          viewport:String(window.innerWidth)+'x'+String(window.innerHeight),
+          browser:String(navigator.userAgent||'').slice(0,500),
+          serverNow:state?.serverNow||null,
+          eveData:{
+            syncing:Boolean(state?.esi?.syncing),
+            lastSyncAt:state?.esi?.lastSyncAt||null,
+            hasError:Boolean(state?.esi?.lastError),
+            cachedCharacters:Number(ledger.cachedCharacters||0),
+            linkedCharacters:Number(ledger.linkedCharacters||0),
+            cacheHealthy:Boolean(ledger.cacheHealthy),
+            todayRows:Number(ledger.todayRows||0),
+            matchedT3Rows:Number(ledger.matchedT3Rows||0)
+          },
+          selectedFleetMiners:typeof selectedFleetPerformanceIds==='function'?selectedFleetPerformanceIds().length:0,
+          marketLastUpdatedAt:state?.market?.lastUpdatedAt||null
+        };
         await api('/api/tracker/feedback',{method:'POST',body:JSON.stringify({type,title,message,area,impact,steps,expected,context})});
         $('feedbackTitle').value='';
         $('feedbackMessage').value='';
