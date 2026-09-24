@@ -14,7 +14,7 @@ assert.match(index,/class="kpi kpi-primary api-kpi app-payout-kpi"/,'app payout 
 assert.match(index,/class="kpi kpi-secondary fleet-target-kpi"/,'fleet target is a compact secondary KPI');
 assert.match(index,/MY TOONS PAYOUT • TODAY/,'personal payout is a primary KPI');
 assert.match(index,/class="kpi kpi-secondary"/,'secondary metrics remain available');
-assert.match(styles,/v2\.9\.139 — balanced operations summary/,'top summary uses the balanced 2-row layout');
+assert.match(styles,/v2\.9\.140 — balanced operations summary/,'top summary uses the balanced 2-row layout');
 assert.match(styles,/\.information-kpis\{grid-template-columns:repeat\(4,minmax\(0,1fr\)\);max-width:1120px/,'summary is capped and uses four equal columns');
 assert.match(index,/appLedgerCoverageBadge/,'app ledger coverage is a compact badge');
 assert.match(index,/myLedgerCoverageBadge/,'personal ledger coverage is a compact badge');
