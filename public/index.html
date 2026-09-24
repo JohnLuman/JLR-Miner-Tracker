@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700&family=Rajdhani:wght@600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=2.9.141">
-  <link rel="stylesheet" href="/tracker.css?v=2.9.141">
+  <link rel="stylesheet" href="/styles.css?v=2.9.142">
+  <link rel="stylesheet" href="/tracker.css?v=2.9.142">
 </head>
 <body>
   <main id="loginView" class="login-shell hidden">
@@ -31,7 +31,7 @@
     <header class="topbar">
       <div class="brand">
         <div class="brand-kicker">JLR INDUSTRIAL NETWORK // FOUNTAIN</div>
-        <div class="brand-line"><span class="brand-mark">JLR</span><h1>MINER TRACKER</h1><span class="brand-status-stack"><small id="appVersion" class="app-version">v2.9.141</small><span id="liveBadge" class="status-pill" title="Latest EVE data sync status">● DATA LOADING</span></span></div>
+        <div class="brand-line"><span class="brand-mark">JLR</span><h1>MINER TRACKER</h1><span class="brand-status-stack"><small id="appVersion" class="app-version">v2.9.142</small><span id="liveBadge" class="status-pill" title="Latest EVE data sync status">● DATA LOADING</span></span></div>
       </div>
       <div class="top-actions">
         <button id="compactMode" class="orb purple active" type="button" title="Condensed operations view with smaller cards and fewer detail panels">COMPACT</button>
@@ -61,11 +61,11 @@
 
     <section class="kpis information-kpis" aria-label="Operations summary">
       <article class="kpi kpi-primary api-kpi app-payout-kpi" title="Combined payout value for all characters linked anywhere in JLR">
-        <div class="kpi-title-row"><span>APP PAYOUT • TODAY</span><small id="appLedgerCoverageBadge" class="kpi-badge">—</small></div>
+        <div class="kpi-title-row"><span>APP PAYOUT • EVE DAY</span><small id="appLedgerCoverageBadge" class="kpi-badge">—</small></div>
         <strong id="actualTodayIsk">—</strong><small id="actualTodayIskSub">all JLR-linked toons • exact T3 type IDs • payout setting</small>
       </article>
       <article id="myLedgerPayoutCard" class="kpi kpi-primary api-kpi ledger-audit-trigger" tabindex="0" role="button" aria-haspopup="dialog" title="Open your per-toon payout audit">
-        <div class="kpi-title-row"><span>MY TOONS PAYOUT • TODAY</span><small id="myLedgerCoverageBadge" class="kpi-badge">—</small></div>
+        <div class="kpi-title-row"><span>MY TOONS PAYOUT • EVE DAY</span><small id="myLedgerCoverageBadge" class="kpi-badge">—</small></div>
         <strong id="actualMyTodayIsk">—</strong><small id="actualMyTodayIskSub">your linked toons • click for toon audit</small>
       </article>
       <article class="kpi kpi-secondary fleet-target-kpi">
@@ -411,7 +411,6 @@
           <div class="section-title"><div><strong>CONNECTED TOONS & DATA SYNC</strong></div><span id="esiStatus" class="status-pill">—</span></div>
           <div class="esi-actions"><button id="addToon" class="orb purple" type="button">+ ADD TOON</button><button id="syncNow" class="orb blue" type="button">SYNC EVE DATA</button><button id="scanAllFits" class="orb blue" type="button" title="Refresh saved fittings, assets, and Abyssal strip-miner rolls for every linked toon.">↻ SCAN ALL FITS</button><span id="lastSync" class="tiny muted">No successful sync yet</span></div>
           <div id="characterList" class="character-list"></div>
-          <div class="privacy-box"><strong>Privacy:</strong><p>When Adam Auto Follow is on, this open page checks your linked toons' locations for scan prompts. Live locations are visible only on your account and are not added to the shared field board or retained in character history. Turn Auto Follow off in Brain.</p></div>
         </section>
 
         <section class="glass actual-panel">
@@ -447,7 +446,7 @@
   </main>
   <script src="/yield-math.js?v=2.9.37" defer></script>
   <script src="/vendor/vosk/vosk-0.0.8.js?v=1" defer></script>
-  <script src="/app.js?v=2.9.141" defer></script>
-  <script src="/tracker.js?v=2.9.141" defer></script>
+  <script src="/app.js?v=2.9.142" defer></script>
+  <script src="/tracker.js?v=2.9.142" defer></script>
 </body>
 </html>
