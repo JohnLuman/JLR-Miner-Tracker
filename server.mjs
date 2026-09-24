@@ -4922,14 +4922,22 @@ async function applyLedgerResults(results,{fullCycle=false}={}){
     state.esi.hourlyObservations[id]=(Array.isArray(rows)?rows:[]).filter(row=>Date.parse(row?.at||'')>=cutoff).slice(-48);
   }
   for(const id of ledgerSnapshotAtByCharacter.keys())if(!connectedIds.has(id))ledgerSnapshotAtByCharacter.delete(id);
-  const cacheComplete=[...connectedIds].every(id=>ledgerRowsByCharacter.has(id));
-  // Never replace a previously valid fleet ledger with a partial or empty
-  // post-restart cache. Rebuild only when every currently linked character has
-  // a ledger snapshot. This prevents deploys or ESI failures from showing 0.
-  if(cacheComplete){
+  const cachedConnectedIds=[...connectedIds].filter(id=>ledgerRowsByCharacter.has(id));
+  const cacheComplete=cachedConnectedIds.length>=connectedIds.size&&connectedIds.size>0;
+  // A never-synced/orphan linked character must not freeze the entire app ledger
+  // at a stale value. Existing cached characters are still exact ESI ledger data,
+  // so after a full fleet pass we publish the available aggregate and expose the
+  // coverage through ledgerDebug (for example 99/100 = PARTIAL).
+  //
+  // We still refuse to replace the fleet aggregate when zero linked-character
+  // ledgers are available, which protects against a total cache/storage failure.
+  if(cacheComplete||(fullCycle&&cachedConnectedIds.length>0)){
     rebuildDailyFleetFromLedgerCache();
+    if(!cacheComplete){
+      console.warn('Mining ledger cache partial: '+cachedConnectedIds.length+'/'+connectedIds.size+'; publishing available ledger totals.');
+    }
   }else if(fullCycle){
-    console.warn('Mining ledger cache incomplete: '+ledgerRowsByCharacter.size+'/'+connectedIds.size+'; preserving previous dailyFleet totals.');
+    console.warn('Mining ledger cache empty: 0/'+connectedIds.size+'; preserving previous dailyFleet totals.');
   }
   await saveLedgerCache();
   if(successful.length)state.esi.lastSyncAt=sampleAt;
