@@ -15,7 +15,10 @@ assert.match(app,/JLR ADAM \/\/ CONTEXT ASSISTANT/,'Adam context workspace is re
 assert.match(app,/id="adamQuestion"/,'Adam exposes typed contextual questions');
 assert.match(app,/id="adamAsk"/,'Adam has an explicit ask action');
 assert.match(app,/function adamContextSnapshot\(\)/,'Adam builds current JLR context for each question');
-assert.match(app,/SCOUT \/ TRAVEL WATCH/,'Scout travel logic remains inside Adam');
+assert.match(app,/TRAVEL WATCH/,'travel and location logic remains inside Adam');
+assert.doesNotMatch(app,/SCOUT \/ TRAVEL WATCH/,'visible Adam workspace no longer uses Scout branding');
+assert.match(app,/NEAREST MINING SYSTEM/,'Adam automatically surfaces the nearest available mining system');
+assert.match(app,/adam-copy-system/,'nearest mining system is copyable for EVE');
 assert.match(app,/id="scoutCharacterSelect"/,'Scout includes a travel-toon selector');
 assert.match(app,/CLOSEST FIELD UPDATES/,'Scout ranks nearby Field Tracker update targets');
 assert.match(index,/id="scoutGlobalAlert"/,'Scout has a persistent app-wide update alert');
