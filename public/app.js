@@ -4818,29 +4818,31 @@
     const topThreeShare=grand>0?topThree/grand*100:0;
     const [topName,topValue]=sorted[0];
     const topShare=grand>0?topValue/grand*100:0;
+    const palette=['mix-a','mix-b','mix-c','mix-d','mix-e','mix-f','mix-g','mix-h'];
 
-    const ranked=sorted.map(([name,value],index)=>{
+    const segments=sorted.map(([name,value],index)=>{
       const share=grand>0?value/grand*100:0;
-      const relative=topValue>0?value/topValue*100:0;
-      return `
-        <div class="ore-mix-rank information-ore-row">
-          <span class="ore-mix-rank-no">#${index+1}</span>
-          <div class="ore-mix-rank-main">
-            <span class="ore-mix-name" title="${esc(name)}">${esc(name)}</span>
-            <div class="ore-mix-bar" title="${share.toFixed(1)}% of mined volume"><i style="width:${relative.toFixed(2)}%"></i></div>
-          </div>
-          <strong>${fmt(value,'m3')} m³</strong>
-          <small>${share.toFixed(1)}%</small>
-        </div>`;
+      return '<i class="'+palette[index%palette.length]+'" style="width:'+share.toFixed(3)+'%" title="'+esc(name)+' • '+share.toFixed(1)+'% • '+fmt(value,'m3')+' m³"></i>';
     }).join('');
 
-    el.innerHTML=`
-      <div class="ore-mix-kpis">
-        <div><span>TOTAL MINED</span><strong>${fmt(grand,'m3')} m³</strong><small>${sorted.length} ore type${sorted.length===1?'':'s'}</small></div>
-        <div><span>TOP ORE</span><strong>${esc(topName)}</strong><small>${fmt(topValue,'m3')} m³ • ${topShare.toFixed(1)}%</small></div>
-        <div><span>TOP 3 SHARE</span><strong>${topThreeShare.toFixed(1)}%</strong><small>concentration of mined volume</small></div>
-      </div>
-      <div class="ore-mix-rank-list information-ore-list">${ranked}</div>`;
+    const rowsHtml=sorted.map(([name,value],index)=>{
+      const share=grand>0?value/grand*100:0;
+      return '<div class="ore-mix-compact-row">'+
+        '<span class="ore-mix-swatch '+palette[index%palette.length]+'"></span>'+
+        '<strong title="'+esc(name)+'">'+esc(name)+'</strong>'+
+        '<b>'+fmt(value,'m3')+' m³</b>'+
+        '<small>'+share.toFixed(1)+'%</small>'+
+      '</div>';
+    }).join('');
+
+    el.innerHTML=
+      '<div class="ore-mix-kpis">'+
+        '<div><span>TOTAL MINED</span><strong>'+fmt(grand,'m3')+' m³</strong><small>'+sorted.length+' ore type'+(sorted.length===1?'':'s')+'</small></div>'+
+        '<div><span>TOP ORE</span><strong>'+esc(topName)+'</strong><small>'+fmt(topValue,'m3')+' m³ • '+topShare.toFixed(1)+'%</small></div>'+
+        '<div><span>TOP 3 SHARE</span><strong>'+topThreeShare.toFixed(1)+'%</strong><small>concentration of mined volume</small></div>'+
+      '</div>'+
+      '<div class="ore-mix-composition" aria-label="Ore mix composition">'+segments+'</div>'+
+      '<div class="ore-mix-compact-list">'+rowsHtml+'</div>';
   }
   function renderFleetPerformance(){
     if(!state||!$('fleetActivityChart'))return;
@@ -4898,9 +4900,13 @@
     $('fleetLiveRateSub').textContent=latest?(liveRate>0?'latest detected mining interval':'no increase in latest interval'):'waiting for a mining interval';
     $('fleetActiveToons').textContent=latest?`${Number(latest.activeToons||0)} / ${Number(latest.sampledToons||0)}`:'—';
     $('fleetActiveToonsSub').textContent=latest?'assigned miners active / sampled in latest sync':'assigned miners in latest sample';
-    $('fleetTodayM3').textContent=`${fmt(performance.actual?.today?.m3||0,'m3')} m³`;
-    $('fleetTodayPayout').textContent=`${fmt(actualValue(performance.actual?.today?.jbv||0))} ISK`;
-    $('fleetTodayPayoutSub').textContent=`assigned fleet • tracked T3 value × ${(payout*100).toFixed(1)}% payout`;
+    const eveDayM3=Math.max(0,Number(performance.actual?.today?.m3)||0);
+    const eveDayJbv=Math.max(0,Number(performance.actual?.today?.jbv)||0);
+    $('fleetTodayM3').textContent=eveDayM3>0?`${fmt(eveDayM3,'m3')} m³`:'—';
+    $('fleetTodayPayout').textContent=eveDayJbv>0?`${fmt(actualValue(eveDayJbv))} ISK`:(liveRate>0?'PENDING':'—');
+    $('fleetTodayPayoutSub').textContent=eveDayJbv>0
+      ?`current EVE day • exact T3 value × ${(payout*100).toFixed(1)}% payout`
+      :(liveRate>0?'mining detected • waiting for current EVE-day T3 ledger rows':'no current EVE-day T3 ledger rows yet');
     $('fleetRangeTotalLabel').textContent=`${fleetHistoryDays}D MINED`;
     $('fleetRangeTotal').textContent=`${fmt(rangeM3,'m3')} m³`;
     $('fleetRangeTotalSub').textContent=`${fmt(rangeValue)} ISK tracked payout`;
@@ -4961,19 +4967,14 @@
       const hasActual=Boolean(ledger?.miningDetected)&&Number.isFinite(actual)&&actual>0;
       const targetPct=output>0&&hasActual?actual/output*100:null;
       const share=effective>0?output/effective*100:0;
-      const delta=average>0?(output-average)/average*100:0;
-      return `<div class="fleet-perf-row">
+      return `<div class="fleet-perf-row compact">
         <div class="fleet-perf-miner">
           <strong>${esc(entry.character.name)}</strong>
-          <small>${esc(entry.fit?.shipName||'Ship')} • ${delta>=0?'+':''}${delta.toFixed(1)}% vs fleet avg</small>
+          <small>${esc(entry.fit?.shipName||'Ship')} • ${share.toFixed(1)}% fleet target share</small>
         </div>
-        <div class="fleet-rate-pair">
-          <div><span>100% RATE</span><strong>${fmt(fullRate,'m3')}</strong><small>m³/hr</small></div>
-          <div><span>@ ${uptime.toFixed(0)}% TARGET</span><strong>${fmt(output,'m3')}</strong><small>m³/hr</small></div>
-          <div class="ledger-rate"><span>LEDGER ACTIVE RATE</span><strong>${hasActual?fmt(actual,'m3'):'—'}</strong><small>${hasActual?activeTimeLabel(ledger.activeSeconds):'starts after EVE ledger quantity increases'}</small></div>
-        </div>
-        <div class="fleet-share-track"><span style="width:${targetPct==null?0:Math.min(100,targetPct).toFixed(2)}%"></span></div>
-        <div class="fleet-perf-number"><strong>${targetPct==null?'—':targetPct.toFixed(0)+'%'}</strong><small>of uptime target</small></div>
+        <div class="fleet-perf-cell"><span>TARGET</span><strong>${fmt(output,'m3')}</strong><small>m³/hr</small></div>
+        <div class="fleet-perf-cell ledger"><span>ACTUAL</span><strong>${hasActual?fmt(actual,'m3'):'—'}</strong><small>${hasActual?activeTimeLabel(ledger.activeSeconds):'no active interval'}</small></div>
+        <div class="fleet-perf-cell pct"><span>OF TARGET</span><strong>${targetPct==null?'—':targetPct.toFixed(0)+'%'}</strong><small>${fmt(fullRate,'m3')} at 100%</small></div>
       </div>`;
     }).join('');
 
@@ -4988,22 +4989,18 @@
 
     $('fleetOutputChart').innerHTML=`
       <div class="fleet-perf-kpis">
-        <div class="ledger-kpi"><span>LEDGER ACTIVE RATE</span><strong>${detectedRows.length?fmt(ledgerActual,'m3'):'—'}</strong><small>${detectedRows.length} of ${entries.length} miners detected</small></div>
-        <div><span>@ ${uptime.toFixed(0)}% TARGET</span><strong>${fmt(effective,'m3')}</strong><small>projected m³/hr</small></div>
+        <div class="ledger-kpi"><span>ACTUAL RATE</span><strong>${detectedRows.length?fmt(ledgerActual,'m3'):'—'}</strong><small>${detectedRows.length}/${entries.length} miners detected</small></div>
+        <div><span>${uptime.toFixed(0)}% TARGET</span><strong>${fmt(effective,'m3')}</strong><small>selected fleet m³/hr</small></div>
         <div><span>100% RATE</span><strong>${fmt(potential,'m3')}</strong><small>full calculated m³/hr</small></div>
-        <div><span>VS DETECTED TARGET</span><strong>${actualVsTarget==null?'—':actualVsTarget.toFixed(0)+'%'}</strong><small>actual rate ÷ target for detected miners</small></div>
+        <div><span>ACTUAL / TARGET</span><strong>${actualVsTarget==null?'—':actualVsTarget.toFixed(0)+'%'}</strong><small>detected miners only</small></div>
       </div>
-      <div class="fleet-capacity-chart">
-        <div class="fleet-capacity-head"><span>ACTUAL VS UPTIME TARGET</span><strong>${detectedRows.length?fmt(ledgerActual,'m3'):'—'} / ${fmt(effective,'m3')} m³/hr</strong></div>
-        <div class="fleet-capacity-track actual-target"><span style="width:${actualVsTarget==null?0:Math.min(100,actualVsTarget).toFixed(2)}%"></span></div>
-        <div class="fleet-capacity-scale"><span>only miners with detected ledger increases</span><span>${uptime.toFixed(0)}% target for detected miners</span></div>
+      <div class="fleet-performance-summary-line">
+        <span>ACTUAL VS DETECTED TARGET</span>
+        <strong>${detectedRows.length?fmt(ledgerActual,'m3'):'—'} / ${detectedTarget>0?fmt(detectedTarget,'m3'):'—'} m³/hr</strong>
+        <b class="${actualVsTarget!=null&&actualVsTarget>=90?'good':actualVsTarget!=null&&actualVsTarget<60?'low':''}">${actualVsTarget==null?'WAITING':actualVsTarget.toFixed(0)+'%'}</b>
       </div>
-      <div class="fleet-perf-list">${contributionRows}</div>
-      <div class="fleet-perf-footer">
-        <span>Ledger time counts only intervals where mined m³ increased.</span>
-        <span>Idle intervals are excluded.</span>
-        <span>${entries.length} miner${entries.length===1?'':'s'} selected</span>
-      </div>`;
+      <div class="fleet-perf-list compact">${contributionRows}</div>
+      <div class="fleet-perf-footer"><span>Actual rate counts only ledger intervals where mined m³ increased.</span><span>${entries.length} miner${entries.length===1?'':'s'} selected</span></div>`;
   }
 
 
