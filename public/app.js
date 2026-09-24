@@ -324,12 +324,13 @@
     const selectedCharacter=(me?.characters||[]).find(row=>String(row.characterId)===String(scanCharacterId))||null;
     const workflow=adamWorkflow();
     const currentContextTab=activeTab==='brain'&&workflow!=='scout-routing'?(adamWorkingTab||'fields'):activeTab;
+    const fieldContext=currentContextTab==='fields'||currentContextTab==='brain';
     return{
       currentTab:currentContextTab,
       workflow,
-      selectedSystem:selectedSystem||$('systemSelect')?.value||'',
-      selectedCharacterId:String(selectedCharacter?.characterId||scanCharacterId||''),
-      selectedCharacterName:String(selectedCharacter?.name||''),
+      selectedSystem:fieldContext?(selectedSystem||$('systemSelect')?.value||''):'',
+      selectedCharacterId:fieldContext?String(selectedCharacter?.characterId||scanCharacterId||''):'',
+      selectedCharacterName:fieldContext?String(selectedCharacter?.name||''):'',
       selectedFleetCount:typeof selectedFleetPerformanceIds==='function'?selectedFleetPerformanceIds().length:0,
       selectedMetric:currentContextTab==='performance'?String(fleetHistoryMetric||'m3'):'',
       targetOre:String(targetOre||''),
