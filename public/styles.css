@@ -2490,3 +2490,16 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
     letter-spacing:.08em;
   }
 }
+
+
+/* v2.9.144-session-review — post-mining fleet review copy */
+.fleet-insight .fleet-insight-reason{
+  margin-top:3px!important;
+  color:#aeb5c0!important;
+  font-family:"Segoe UI",Arial,sans-serif;
+  font-size:9px!important;
+  line-height:1.25;
+}
+.app.compact .fleet-insight .fleet-insight-reason{
+  font-size:8px!important;
+}
