@@ -2384,26 +2384,41 @@
     assistant.innerHTML=`
       <div class="tracker-brain-head">
         <div class="tracker-brain-title">
-          <span class="eyebrow">JLR SCOUT // TRAVEL UPDATE WATCH</span>
+          <span class="eyebrow">JLR ADAM // CONTEXT ASSISTANT</span>
           <div class="tracker-brain-title-row">
-            <strong>SCOUT OPERATIONS</strong>
-            <span id="trackerBrainStatus" class="status-pill">● TRACKING</span>
+            <strong>ADAM OPERATIONS</strong>
+            <span id="trackerBrainStatus" class="status-pill">● CONTEXT READY</span>
           </div>
         </div>
         <div class="tracker-assist-actions">
           <button id="scoutCheckNow" class="orb purple" type="button">↻ CHECK LOCATIONS</button>
         </div>
       </div>
+      <div class="adam-context-strip">
+        <span>WORKING CONTEXT</span>
+        <strong id="adamContextLabel">JLR</strong>
+        <small>Adam uses the tab, selected system/toon, recent scan workflow, fleet review state, and prior answers.</small>
+      </div>
       <div class="tracker-brain-grid scout-ops-grid">
+        <section class="brain-card adam-query-card">
+          <div class="brain-card-head"><strong>ASK ADAM</strong><small>Short follow-ups can use what you are already doing</small></div>
+          <div class="adam-question-row">
+            <textarea id="adamQuestion" rows="2" maxlength="900" placeholder="Ask about what you are looking at, what changed, or what to do next."></textarea>
+            <button id="adamAsk" class="orb green" type="button">ASK ADAM</button>
+          </div>
+          <div id="adamSuggestions" class="adam-suggestions"></div>
+          <div id="adamReply" class="adam-reply">Adam is ready. He will use your current JLR context instead of making you repeat it.</div>
+        </section>
+
         <section class="brain-card scout-watch-card">
-          <div class="brain-card-head"><strong>TRAVEL UPDATE WATCH</strong><small>Silent visual alerts</small></div>
+          <div class="brain-card-head"><strong>SCOUT / TRAVEL WATCH</strong><small>Location-aware scan workflow</small></div>
           <div class="brain-setting-grid scout-setting-grid">
             <label class="brain-setting"><span>TRAVEL TOON</span><select id="scoutCharacterSelect"><option value="">SELECT TOON</option></select></label>
             <label class="brain-setting"><span>AUTO FOLLOW TOONS</span><select id="brainFollowEnabled"><option value="on">ON</option><option value="off">OFF</option></select></label>
           </div>
           <div id="brainScanPrompt" class="brain-scan-prompt hidden" role="status"><span id="brainScanPromptText"></span><button id="brainScanOpen" class="board-tool" type="button">OPEN SCANNER</button></div>
           <div class="brain-follow-head"><strong>CLOSEST FIELD UPDATES</strong><small id="scoutTargetSummary">Select a toon to calculate routes.</small></div>
-          <div id="scoutTargetList" class="scout-target-list"><div class="visual-empty">Waiting for Scout location…</div></div>
+          <div id="scoutTargetList" class="scout-target-list"><div class="visual-empty">Waiting for location…</div></div>
           <div class="brain-follow-head scout-linked-head"><strong>LINKED TOONS</strong><small id="brainFollowStatus">Checking location access…</small></div>
           <div id="brainFollowList" class="brain-follow-list"></div>
         </section>
@@ -2433,7 +2448,7 @@
         </section>
 
         <section class="brain-card scout-decisions-card">
-          <div class="brain-card-head"><strong>SCOUT RECOMMENDATIONS</strong><small>Systems that may need attention</small></div>
+          <div class="brain-card-head"><strong>ADAM RECOMMENDATIONS</strong><small>Current JLR items that may need attention</small></div>
           <div id="brainDecisionList" class="brain-decision-list"></div>
         </section>
       </div>`;
