@@ -2281,7 +2281,7 @@ async function refreshMarketPrices(force=false) {
     }
     state.market.lastUpdatedAt=now();
     state.market.lastError=null;
-    if(ledgerRowsByCharacter.size)rebuildDailyFleetFromLedgerCache();
+    if(miningLedgerDebug().cacheComplete)rebuildDailyFleetFromLedgerCache();
     await save();
   }catch(err){
     state.market.lastError=String(err.message||err);
