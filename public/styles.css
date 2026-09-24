@@ -2425,14 +2425,68 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
    Give the two payout cells extra room for the accessibility-sized text. */
 @media(min-width:761px){
   .app.compact .operations-summary-bar{
-    grid-template-columns:minmax(190px,1.45fr) minmax(190px,1.45fr) repeat(4,minmax(120px,1fr));
-    grid-auto-flow:column;
-    grid-auto-columns:minmax(120px,1fr);
+    grid-template-columns:1.35fr 1.35fr .9fr .8fr .9fr .9fr;
   }
 }
 @media(max-width:760px){
   .app.compact .operations-summary-bar{
     flex-wrap:nowrap;
     overflow-x:auto;
+  }
+}
+
+
+/* v2.9.144-compactbar2 — compact uses smaller readable text instead of overflow */
+@media(min-width:761px){
+  .app.compact .operations-summary-bar{
+    grid-template-columns:1.35fr 1.35fr .9fr .8fr .9fr .9fr;
+    overflow:hidden;
+  }
+  .app.compact .operations-summary-bar>.summary-cell{
+    min-height:58px;
+    padding:6px 7px;
+  }
+  .app.compact .operations-summary-bar>.summary-cell>span,
+  .app.compact .operations-summary-bar .kpi-title-row>span{
+    font-size:7.5px!important;
+    line-height:1.1!important;
+  }
+  .app.compact .operations-summary-bar>.summary-cell>strong{
+    font-size:16px!important;
+    line-height:1!important;
+  }
+  .app.compact .operations-summary-bar>.summary-cell-payout>strong{
+    font-size:18px!important;
+  }
+  .app.compact .operations-summary-bar>.summary-cell>small{
+    font-size:7.5px!important;
+    line-height:1.15!important;
+    -webkit-line-clamp:2;
+  }
+  .app.compact .operations-summary-bar .kpi-title-row>.kpi-badge{
+    font-size:6.5px!important;
+    padding:2px 4px;
+  }
+
+  /* Compact navigation also stays on one physical row without oversized labels. */
+  .app.compact .information-tabs{
+    flex-wrap:nowrap;
+    overflow:hidden;
+  }
+  .app.compact .information-tabs .app-tab{
+    flex:1 1 auto;
+    min-width:0;
+    padding-left:6px;
+    padding-right:6px;
+    font-size:7px;
+    letter-spacing:.04em;
+  }
+  .app.compact .information-tabs .app-tab-group-label{
+    flex:0 0 auto;
+    margin-left:3px;
+    padding-left:5px;
+    padding-right:1px;
+    font-size:6px;
+    letter-spacing:.08em;
   }
 }
