@@ -1,10 +1,13 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.140';
-  const CORE_URL='/tracker-core.js?v=2.9.140';
+  const ALARM_VERSION='2.9.141';
+  const CORE_URL='/tracker-core.js?v=2.9.141';
 
   let alarmContext=null;
   let alarmSource=null;
+  let fighterAlarmNodes=[];
+  let fighterAlarmTimer=null;
+  let fighterAlarmOverlay=null;
   let activeFetch=null;
   let activeUtterance=null;
   let activeMediaElement=null;
@@ -178,6 +181,13 @@
       try{alarmSource.stop();stopped=true;}catch(error){}
       alarmSource=null;
     }
+    if(fighterAlarmTimer){clearTimeout(fighterAlarmTimer);fighterAlarmTimer=null;stopped=true;}
+    for(const node of fighterAlarmNodes.splice(0)){
+      try{node.stop?.();}catch(error){}
+      try{node.disconnect?.();}catch(error){}
+      stopped=true;
+    }
+    if(fighterAlarmOverlay)fighterAlarmOverlay.classList.add('hidden');
     if(activeMediaElement){
       try{
         activeMediaElement.pause();
@@ -528,20 +538,77 @@
     }
   }
 
+  function ensureFighterAlarmOverlay(){
+    if(fighterAlarmOverlay&&document.body.contains(fighterAlarmOverlay))return fighterAlarmOverlay;
+    const el=document.createElement('section');
+    el.id='fighterLossAlarmOverlay';
+    el.className='fighter-loss-alarm-overlay hidden';
+    el.setAttribute('role','alert');
+    el.innerHTML='<div class="fighter-loss-alarm-copy"><span>JLR LOSS ALARM</span><strong id="fighterLossAlarmTitle">HEAVY FIGHTER DOWN</strong><small id="fighterLossAlarmDetail">Open Tracker for details.</small></div><div class="fighter-loss-alarm-actions"><button id="fighterLossAlarmOpen" class="board-tool" type="button">OPEN TRACKER</button><button id="fighterLossAlarmStop" class="orb red" type="button">■ STOP ALARM</button></div>';
+    document.body.appendChild(el);
+    el.querySelector('#fighterLossAlarmStop')?.addEventListener('click',()=>stopVoiceAlert());
+    el.querySelector('#fighterLossAlarmOpen')?.addEventListener('click',()=>{
+      document.querySelector('.app-tab[data-tab="tracker"]')?.click();
+    });
+    fighterAlarmOverlay=el;
+    return el;
+  }
+
+  function showFighterAlarmOverlay(loss){
+    const el=ensureFighterAlarmOverlay();
+    const title=el.querySelector('#fighterLossAlarmTitle');
+    const detail=el.querySelector('#fighterLossAlarmDetail');
+    if(title)title.textContent=loss?.test?'HEAVY FIGHTER ALARM TEST':String(loss?.shipTypeName||'Heavy Fighter').toUpperCase()+' DOWN';
+    if(detail){
+      const system=String(loss?.systemName||'').trim();
+      const value=Number(loss?.totalValue)||0;
+      detail.textContent=loss?.test?'Dedicated local two-tone alarm • no AI voice':(system||'Unknown system')+(value?' • '+Math.round(value).toLocaleString()+' ISK':'');
+    }
+    el.classList.remove('hidden');
+  }
+
   async function playVoiceAlert(loss){
     if(!loss?.test&&!autoVoiceAllowed())return false;
     stopVoiceAlert();
-    const generation=alarmGeneration;
-    const isTest=Boolean(loss&&loss.test);
-    const killId=String(loss&&loss.killmailId||'').replace(/\D/g,'');
-    if(isTest){
-      unlockAlarm();
-      return playStrictCustomTest(generation);
+    const context=ensureAlarmContext();
+    if(!context)return false;
+    if(context.state==='suspended'){
+      try{await context.resume();}catch(error){}
     }
-    const endpoint=killId?'/api/tracker/heavy-fighters/voice/'+killId+'?stream=1':'';
-    if(!endpoint)return false;
-    unlockAlarm();
-    return playCustomEndpoint(endpoint+'&nonce='+Date.now(),generation,'JLR Heavy Fighter custom voice');
+    if(context.state!=='running')return false;
+
+    const now=context.currentTime+.03;
+    const master=context.createGain();
+    master.gain.setValueAtTime(.0001,now);
+    master.connect(context.destination);
+    fighterAlarmNodes.push(master);
+
+    // Immediate, local two-tone loss alarm. No network request, TTS, or AI voice.
+    for(let i=0;i<8;i++){
+      const start=now+i*.46;
+      const osc=context.createOscillator();
+      const gain=context.createGain();
+      osc.type=i%2===0?'square':'sawtooth';
+      osc.frequency.setValueAtTime(i%2===0?880:620,start);
+      gain.gain.setValueAtTime(.0001,start);
+      gain.gain.exponentialRampToValueAtTime(.24,start+.025);
+      gain.gain.setValueAtTime(.24,start+.29);
+      gain.gain.exponentialRampToValueAtTime(.0001,start+.40);
+      osc.connect(gain);gain.connect(master);
+      osc.start(start);osc.stop(start+.42);
+      fighterAlarmNodes.push(osc,gain);
+    }
+    master.gain.exponentialRampToValueAtTime(.88,now+.02);
+    master.gain.setValueAtTime(.88,now+3.55);
+    master.gain.exponentialRampToValueAtTime(.0001,now+3.75);
+
+    showFighterAlarmOverlay(loss||{});
+    fighterAlarmTimer=setTimeout(()=>{
+      fighterAlarmTimer=null;
+      for(const node of fighterAlarmNodes.splice(0)){try{node.disconnect?.();}catch(error){}}
+    },4100);
+    reportVoiceMode('alarm','Dedicated local Heavy Fighter loss alarm');
+    return true;
   }
 
   function splitBrainVoiceText(text,maxLen){
@@ -825,9 +892,9 @@
 
     const relabel=function(){
       const button=document.getElementById('trackerTest');
-      if(button&&button.textContent!=='▶ TEST JLR CUSTOM VOICE'){
-        button.textContent='▶ TEST JLR CUSTOM VOICE';
-        button.title='Test the dynamic JLR custom voice worker';
+      if(button&&button.textContent!=='▶ TEST LOSS ALARM'){
+        button.textContent='▶ TEST LOSS ALARM';
+        button.title='Test the dedicated local Heavy Fighter loss alarm';
       }
     };
     const observer=new MutationObserver(relabel);

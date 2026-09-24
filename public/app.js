@@ -104,7 +104,8 @@
   try{brainMicDiagTrail=JSON.parse(localStorage.getItem('jlrBrainMicDiagTrail')||'[]')}catch{}
   if(!Array.isArray(brainMicDiagTrail))brainMicDiagTrail=[];
   brainMicDiagTrail=brainMicDiagTrail.slice(0,30);
-  let brainMicWanted=true;
+  const ADAM_VOICE_ENABLED=false;
+  let brainMicWanted=false;
   let brainConversationUntil=0;
   let brainLastSystem='';
   let brainSpeechHistory=[];
@@ -233,7 +234,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.140');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.141');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -323,7 +324,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR ADAM MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.140'),
+      'Version: '+String(state?.app?.version||'2.9.141'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -672,6 +673,7 @@
     },Math.max(100,Number(delay)||700));
   }
   async function ensureBrainMicTrack(force=false){
+    if(!ADAM_VOICE_ENABLED)return null;
     if(!navigator.mediaDevices?.getUserMedia)return null;
     if(!force&&brainMicTrack?.readyState==='live')return brainMicTrack;
     stopBrainMicStream();
@@ -901,6 +903,7 @@
     return brainLocalModelPromise;
   }
   async function startBrainLocalListening(reason='LOCAL AI'){
+    if(!ADAM_VOICE_ENABLED){brainMicWanted=false;return;}
     if(brainLocalRecognizer)return;
     brainMicWanted=true;
     localStorage.setItem('jlrBrainMicArmed','true');
@@ -1081,6 +1084,7 @@
   }
 
   async function startBrainListening(){
+    if(!ADAM_VOICE_ENABLED){brainMicWanted=false;localStorage.setItem('jlrBrainMicArmed','false');return;}
     const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
     const ua=String(navigator.userAgent||'');
     const isOpera=ua.includes('OPR/')||ua.includes('Opera/');
@@ -1254,6 +1258,7 @@
     }
   }
   function restartBrainListening(reopenMic=true,immediate=false){
+    if(!ADAM_VOICE_ENABLED){brainMicWanted=false;stopBrainLocalCapture(false);stopBrainMicStream();return;}
     stopBrainLocalCapture(false);
     brainMicWanted=true;
     brainMicStartToken++;
@@ -1277,7 +1282,7 @@
     return {bug:'BUG',suggestion:'FEATURE IDEA',speech:'SPEECH / VOICE',data:'DATA / ESI',ui:'UI / UX',other:'OTHER'}[String(type||'')]||'FEEDBACK';
   }
   function feedbackAreaLabel(area){
-    return {general:'GENERAL',fields:'FIELDS',brain:'ADAM',fleet:'FLEET & FITS',performance:'FLEET PERFORMANCE',ice:'ICE',gas:'GAS',doctrine:'DOCTRINE MARKET',pvp:'INIT PVP',tracker:'TRACKER',threat:'THREAT SCAN',mer:'MER INTEL',toons:'TOONS'}[String(area||'')]||String(area||'GENERAL').toUpperCase();
+    return {general:'GENERAL',fields:'FIELDS',brain:'SCOUT',fleet:'FLEET & FITS',performance:'FLEET PERFORMANCE',ice:'ICE',gas:'GAS',doctrine:'DOCTRINE MARKET',pvp:'INIT PVP',tracker:'TRACKER',threat:'THREAT SCAN',mer:'MER INTEL',toons:'TOONS'}[String(area||'')]||String(area||'GENERAL').toUpperCase();
   }
   function renderFeedbackHub(){
     const source=$('feedbackDraftSource');
@@ -1339,11 +1344,7 @@
       const high=Number(brain?.counts?.critical||0)+Number(brain?.counts?.high||0);
       status.textContent=high>0?'⚠ PRIORITY '+high:attention>0?'● ATTENTION '+attention:'● ONLINE';
     }
-    if($('brainVoiceEnabled'))$('brainVoiceEnabled').value=soundEnabled?'on':'off';
-    if($('brainStartupBriefing'))$('brainStartupBriefing').value=localStorage.getItem('jlrBrainStartupBriefing')==='false'?'off':'on';
-    if($('brainConversationWindow'))$('brainConversationWindow').value=localStorage.getItem('jlrBrainConversationWindow')||'30';
-    renderBrainMicSelect();
-    renderBrainSpeechHistory();
+    renderScoutFollow();
     const decisions=$('brainDecisionList');
     const issues=Array.isArray(brain?.issues)?brain.issues:[];
     if(decisions){
@@ -1486,7 +1487,7 @@
     if(!status||!list||!me)return;
     const chars=(me.characters||[]).filter(c=>c.locationAccess);
     status.textContent=scoutFollowEnabled
-      ?'Following '+chars.length+' location-enabled toon'+(chars.length===1?'':'s')+' while this page is open • one tab gives spoken updates'
+      ?'Following '+chars.length+' location-enabled toon'+(chars.length===1?'':'s')+' while this page is open • scan-due alerts appear at the top of JLR'
       :'Auto follow is off.';
     list.innerHTML=scoutFollowEnabled?chars.map(ch=>{
       const row=scoutLocations.get(String(ch.characterId));
@@ -1501,11 +1502,17 @@
 
   function scoutShowPrompt(snapshot){
     const panel=$('brainScanPrompt');
-    if(!panel)return;
-    panel.classList.remove('hidden');
-    if($('brainScanPromptText'))$('brainScanPromptText').textContent=String(snapshot.characterName||'Toon')+' is in '+snapshot.system+'. Could you send a new Probe Scanner copy when it is safe?';
-    panel.dataset.characterId=String(snapshot.characterId);
+    const global=$('scoutGlobalAlert');
+    if(!panel&&!global)return;
+    const text=String(snapshot.characterName||'Toon')+' is in '+snapshot.system+' • tracked scan is due. Send a new Probe Scanner copy when safe.';
+    if(panel){panel.classList.remove('hidden');panel.dataset.characterId=String(snapshot.characterId);}
+    if($('brainScanPromptText'))$('brainScanPromptText').textContent=text;
+    if(global){global.classList.remove('hidden');global.dataset.characterId=String(snapshot.characterId);}
+    if($('scoutGlobalAlertText'))$('scoutGlobalAlertText').textContent=text;
     const key=String(snapshot.characterId)+':'+String(snapshot.system);
+    const tab=document.querySelector('.app-tab[data-tab="brain"]');
+    if(tab){tab.classList.add('scout-update');tab.textContent='SCOUT • UPDATE';}
+    document.title='⚠ SCAN UPDATE • JLR';
     if(scoutPromptKey!==key){scoutPromptKey=key;toast('🛰 '+snapshot.characterName+': '+snapshot.system+' needs a scan update.')}
   }
 
@@ -1533,6 +1540,10 @@
         if(scoutPromptKey.startsWith(id+':')&&(scoutPromptKey!==id+':'+snapshot.system||!snapshot.needsScan)){
           scoutPromptKey='';
           $('brainScanPrompt')?.classList.add('hidden');
+          $('scoutGlobalAlert')?.classList.add('hidden');
+          const scoutTab=document.querySelector('.app-tab[data-tab="brain"]');
+          if(scoutTab){scoutTab.classList.remove('scout-update');scoutTab.textContent='SCOUT';}
+          document.title='JLR Miner Tracker';
         }
         if(snapshot.needsScan){
           if(id===String(scanCharacterId)&&!scanBusy)setScanStatus(snapshot.system+': SCAN UPDATE NEEDED','warning');
@@ -1543,14 +1554,7 @@
       }
       for(const failure of response?.errors||[])scoutLocationErrors.set(String(failure.characterId),String(failure.error||'ESI_LOCATION_FAILED'));
       renderScoutFollow();
-      if(prompt){
-        scoutShowPrompt(prompt);
-        if(soundEnabled&&window.jlrVoiceUserActivated===true&&!brainVoiceActive()&&window.jlrAutoVoiceAllowed?.()!==false){
-          scoutVoiceCooldown.set(String(prompt.system),Date.now());
-          const text=scoutFallbackText(prompt);
-          await speakBrainAnswer(text,'brain',{text,automatic:true});
-        }
-      }
+      if(prompt)scoutShowPrompt(prompt);
     }catch(error){
       if(force)console.warn('Scout location check failed',error);
     }finally{
@@ -2134,33 +2138,30 @@
     assistant.innerHTML=`
       <div class="tracker-brain-head">
         <div class="tracker-brain-title">
-          <span class="eyebrow">ADAM // TRACKER OPERATIONS ASSISTANT</span>
+          <span class="eyebrow">JLR SCOUT // TRAVEL UPDATE WATCH</span>
           <div class="tracker-brain-title-row">
-            <strong>ADAM CONTROL ROOM</strong>
-            <span id="trackerBrainStatus" class="status-pill">● ONLINE</span>
+            <strong>SCOUT OPERATIONS</strong>
+            <span id="trackerBrainStatus" class="status-pill">● TRACKING</span>
           </div>
         </div>
         <div class="tracker-assist-actions">
-          <button id="trackerBriefMe" class="orb purple" type="button">▶ BRIEF ME</button>
-          <button id="trackerRepeatLast" class="orb green" type="button">↻ REPEAT LAST</button>
-          <button id="trackerMicToggle" class="orb blue" type="button">TALK TO ADAM</button>
+          <button id="scoutCheckNow" class="orb purple" type="button">↻ CHECK LOCATIONS</button>
         </div>
       </div>
-
-      <div class="tracker-brain-grid">
-        <section class="brain-card">
-          <div class="brain-card-head"><strong>VOICE SETTINGS</strong><small>How Adam behaves for you</small></div>
-          <div class="brain-setting-grid">
-            <label class="brain-setting brain-mic-setting"><span>MICROPHONE</span><select id="brainMicDevice"><option value="default">DETECTING MICROPHONES…</option></select></label>
-            <label class="brain-setting"><span>VOICE</span><select id="brainVoiceEnabled"><option value="on">ON</option><option value="off">OFF</option></select></label>
-            <label class="brain-setting"><span>STARTUP BRIEFING</span><select id="brainStartupBriefing"><option value="on">ON</option><option value="off">OFF</option></select></label>
-            <label class="brain-setting"><span>CONVERSATION WINDOW</span><select id="brainConversationWindow"><option value="15">15 SECONDS</option><option value="30">30 SECONDS</option><option value="60">60 SECONDS</option></select></label>
+      <div class="scout-no-mic-note"><strong>NO MICROPHONE REQUIRED</strong><span>JLR watches linked toon movement through the Desktop Companion or ESI and shows visual scan-update alerts only.</span></div>
+      <div class="tracker-brain-grid scout-ops-grid">
+        <section class="brain-card scout-watch-card">
+          <div class="brain-card-head"><strong>TRAVEL UPDATE WATCH</strong><small>Silent visual alerts</small></div>
+          <div class="brain-setting-grid scout-setting-grid">
             <label class="brain-setting"><span>AUTO FOLLOW TOONS</span><select id="brainFollowEnabled"><option value="on">ON</option><option value="off">OFF</option></select></label>
           </div>
+          <div id="brainScanPrompt" class="brain-scan-prompt hidden" role="status"><span id="brainScanPromptText"></span><button id="brainScanOpen" class="board-tool" type="button">OPEN SCANNER</button></div>
+          <div class="brain-follow-head"><strong>LINKED TOONS</strong><small id="brainFollowStatus">Checking location access…</small></div>
+          <div id="brainFollowList" class="brain-follow-list"></div>
         </section>
 
         <section class="brain-card">
-          <div class="brain-card-head"><strong>DESKTOP COMPANION</strong></div>
+          <div class="brain-card-head"><strong>DESKTOP COMPANION</strong><small>Preferred movement source</small></div>
           <div class="brain-follow-head"><strong id="brainCompanionStatus">CHECKING…</strong><small id="brainCompanionDetail">Checking paired Windows devices.</small></div>
           <div class="brain-companion-feed">
             <span>LIVE FEED</span>
@@ -2178,52 +2179,8 @@
           </div>
         </section>
 
-        <section class="brain-card brain-talk-card">
-          <div class="brain-card-head"><strong>TALK TO ADAM</strong><small>Natural voice interaction</small></div>
-          <div class="brain-question-hint">Try: “Adam, how much have I made this hour?” • “Adam, heading to C-N, where can I stop and scan?” • “Adam, where is my closest scan?”</div>
-          <div id="brainListenPanel" class="brain-listen-panel">
-            <span class="brain-listen-orb">●</span>
-            <div><strong id="brainListenStatus">MIC STARTING</strong><small id="brainListenHint">Adam is arming the microphone and waiting for “Adam”.</small></div>
-          </div>
-          <div class="brain-mic-level-row">
-            <span>MIC SIGNAL</span>
-            <div class="brain-mic-level"><i id="brainMicLevelFill"></i></div>
-            <b id="brainMicLevelText">QUIET</b>
-          </div>
-          <div id="brainHeard" class="brain-heard">Standby.</div>
-          <div id="brainReply" class="brain-reply">Adam ready.</div>
-          <div id="brainScanPrompt" class="brain-scan-prompt hidden" role="status"><span id="brainScanPromptText"></span><button id="brainScanOpen" class="board-tool" type="button">OPEN SCANNER</button></div>
-          <div class="brain-follow-head"><strong>LINKED TOONS</strong><small id="brainFollowStatus">Checking location access…</small></div>
-          <div id="brainFollowList" class="brain-follow-list"></div>
-          <div id="brainMicDiagnostic" class="brain-mic-diagnostic hidden">
-            <div class="brain-mic-diagnostic-head"><strong id="brainMicErrorCode">MIC-E000</strong><span id="brainMicErrorStage">STAGE</span></div>
-            <p id="brainMicErrorDetail">No microphone error recorded.</p>
-            <div class="brain-mic-diagnostic-actions">
-              <button id="brainMicCopyDiag" class="board-tool" type="button">COPY DIAGNOSTICS</button>
-              <button id="brainMicClearDiag" class="board-tool subtle" type="button">CLEAR ERROR</button>
-            </div>
-          </div>
-        </section>
-
-        <section class="brain-card">
-          <div class="brain-card-head"><strong>BRIEFING SETTINGS</strong><small>What matters in a briefing</small></div>
-          <div class="brain-check-grid">
-            <label><input type="checkbox" checked disabled> Mining / fields</label>
-            <label><input type="checkbox" checked disabled> Scan status</label>
-            <label><input type="checkbox" checked disabled> Respawns</label>
-            <label><input type="checkbox" checked disabled> Threat alerts</label>
-            <label><input type="checkbox" checked disabled> Heavy Fighters</label>
-            <label><input type="checkbox" checked disabled> ESI health</label>
-          </div>
-        </section>
-
-        <section class="brain-card">
-          <div class="brain-card-head"><strong>SPEECH HISTORY</strong><small>Recent Adam announcements</small></div>
-          <div id="brainSpeechHistory" class="brain-speech-history"></div>
-        </section>
-
-        <section class="brain-card">
-          <div class="brain-card-head"><strong>CURRENT ADAM DECISIONS</strong><small>What Adam is acting on</small></div>
+        <section class="brain-card scout-decisions-card">
+          <div class="brain-card-head"><strong>CURRENT TRACKING DECISIONS</strong><small>Useful logic kept; voice/chat removed</small></div>
           <div id="brainDecisionList" class="brain-decision-list"></div>
         </section>
       </div>`;
@@ -2266,7 +2223,7 @@
               <label><span>AREA</span><select id="feedbackArea">
                 <option value="general">GENERAL</option>
                 <option value="fields">FIELDS</option>
-                <option value="brain">ADAM</option>
+                <option value="brain">SCOUT / TRACKING</option>
                 <option value="fleet">FLEET & FITS</option>
                 <option value="performance">FLEET PERFORMANCE</option>
                 <option value="ice">ICE</option>
@@ -5642,6 +5599,7 @@
       if(!scoutFollowEnabled){
         scoutLocations.clear();scoutLocationErrors.clear();scoutLastSystem.clear();scoutPromptKey='';
         $('brainScanPrompt')?.classList.add('hidden');
+        $('scoutGlobalAlert')?.classList.add('hidden');
       }
       startScoutLocationWatch();
     }else if(target?.id==='brainStartupBriefing'){
@@ -5680,19 +5638,19 @@
       await revokeCompanionDevices();
       return;
     }
+    if(target.closest('#scoutCheckNow')){
+      await pollScoutLocation(true);
+      toast('Scout location check complete.');
+      return;
+    }
     if(target.closest('#trackerRepeatLast')){
       const row=brainSpeechHistory[0];
       if(!row){toast('Nothing to repeat yet.');return}
       await speakJlr('repeat',{text:row.text},row.text);
       return;
     }
-    if(target.closest('#trackerMicToggle')){
-      brainClearMicError();
-      restartBrainListening(true,true);
-      return;
-    }
-    if(target.closest('#brainScanOpen')){
-      const id=String($('brainScanPrompt')?.dataset.characterId||'');
+    if(target.closest('#brainScanOpen')||target.closest('#scoutGlobalOpen')){
+      const id=String($('brainScanPrompt')?.dataset.characterId||$('scoutGlobalAlert')?.dataset.characterId||'');
       if((me?.characters||[]).some(ch=>String(ch.characterId)===id)){
         scanCharacterId=id;
         localStorage.setItem('jlrScanCharacter',id);
@@ -5742,7 +5700,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.140',
+          version:state?.app?.version||'2.9.141',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
@@ -5767,7 +5725,6 @@
     if(decision?.dataset.system){
       brainLastSystem=decision.dataset.system;
       chooseSystem(brainLastSystem);
-      if($('brainReply'))$('brainReply').textContent='Context set to '+brainLastSystem+'. Ask Tracker why.';
       return;
     }
   });
@@ -6240,19 +6197,13 @@
     toast(fleetUpgradeMode?'Upgrade Mode: weakest Abyssal lasers are shown first.':'Upgrade Mode off.');
   });
   window.addEventListener('resize',updateUiScale,{passive:true});
-  if(navigator.mediaDevices?.addEventListener){
-    navigator.mediaDevices.addEventListener('devicechange',()=>refreshBrainMicrophones());
-  }
   async function boot(){
     try{
       const config=await fetch('/api/config').then(r=>r.json());
       if(!config.ssoConfigured){$('setupWarning').classList.remove('hidden');$('setupWarning').textContent='Login is not configured yet.';}
       const auth=await fetch('/api/me',{credentials:'same-origin'}).then(r=>r.json());
       if(!auth.authenticated){showLogin();return}
-      me=auth.user;window.jlrVoiceAccountId=String(me.id||'');syncDoctrineTabAccess();syncTrackerTabAccess();initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');queueStartupGreeting();await loadMerIntel();await loadState();await refreshFleetPerformanceSnapshot(true);renderFleetPerformance();connectSse();startScoutLocationWatch();
-      await refreshBrainMicrophones();
-      startBrainLongUptimeWatchdog();
-      setTimeout(()=>startBrainListening(),1200);
+      me=auth.user;window.jlrVoiceAccountId=String(me.id||'');syncDoctrineTabAccess();syncTrackerTabAccess();initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');brainMicWanted=false;localStorage.setItem('jlrBrainMicArmed','false');stopBrainLocalCapture(false);stopBrainMicStream();await loadMerIntel();await loadState();await refreshFleetPerformanceSnapshot(true);renderFleetPerformance();connectSse();startScoutLocationWatch();
       const params=new URLSearchParams(location.search);if(params.get('linked'))toast('Mining toon connected.');if(params.get('login'))toast('Logged in.');if(params.get('market')==='authorized')toast('John market access authorized.');if(params.get('error'))toast(decodeURIComponent(params.get('error')));if(params.toString())history.replaceState({},'',location.pathname);
     }catch(e){console.error(e);showLogin();$('setupWarning').classList.remove('hidden');$('setupWarning').textContent=`JLR could not load: ${e.message}`}
   }
@@ -6261,11 +6212,7 @@
     scheduleStateRender();
     refreshCompanionStatus();
     if(scoutFollowEnabled)pollScoutLocation(true);
-    void ensureBrainLongRunHealth('tab resumed');
   });
-  window.addEventListener('pageshow',()=>{ if(!document.hidden)void ensureBrainLongRunHealth('page restored'); });
-  window.addEventListener('online',()=>{ if(!document.hidden)void ensureBrainLongRunHealth('network restored'); });
-  window.addEventListener('focus',()=>{ if(!document.hidden)void ensureBrainLongRunHealth('window focused'); });
 
   setInterval(()=>{
     if(!state||document.hidden)return;
