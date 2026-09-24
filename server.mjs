@@ -23,6 +23,7 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 const DATA_DIR = path.join(__dirname, 'data');
 const STATE_FILE = path.join(DATA_DIR, 'state.json');
 const PVP_DB_FILE = path.join(DATA_DIR, 'pvp-cache.json');
+const LEDGER_CACHE_FILE = path.join(DATA_DIR, 'ledger-cache.json');
 const KEY_FILE = path.join(DATA_DIR, 'token.key');
 const SOURCE_FILE = path.join(__dirname, 'source-data.json');
 const ENV_FILE = path.join(__dirname, '.env');
@@ -273,6 +274,7 @@ let syncInProgress = false;
 let manualSyncCount = 0;
 let marketRefreshInProgress = false;
 let state = await loadState();
+const restoredLedgerCache = await loadLedgerCache(state.characters);
 let pvpDb = await loadPvpDb();
 let pvpDbWritePromise = Promise.resolve();
 const tokenKey = await loadTokenKey();
@@ -281,8 +283,8 @@ const characterSyncPromises = new Map();
 const characterAccessPromises = new Map();
 const characterAccessTokenCache = new Map();
 const userSyncPromises = new Map();
-const ledgerRowsByCharacter = new Map();
-const ledgerSnapshotAtByCharacter = new Map();
+const ledgerRowsByCharacter = restoredLedgerCache.rowsByCharacter;
+const ledgerSnapshotAtByCharacter = restoredLedgerCache.snapshotAtByCharacter;
 const universeNameCache = new Map();
 const trackerLiveClients = new Set();
 let heavyFighterTypeIdsCache = {at:0,ids:null,promise:null};
@@ -559,6 +561,68 @@ async function writeState(value = state) {
   await fsp.writeFile(tmp, JSON.stringify(value, null, 2), 'utf8');
   await fsp.rename(tmp, STATE_FILE);
 }
+async function loadLedgerCache(characters={}) {
+  const rowsByCharacter=new Map();
+  const snapshotAtByCharacter=new Map();
+  try{
+    const parsed=JSON.parse(await fsp.readFile(LEDGER_CACHE_FILE,'utf8'));
+    if(Number(parsed?.version)!==1)return{rowsByCharacter,snapshotAtByCharacter,updatedAt:null};
+    const connected=new Set(Object.keys(characters||{}).map(String));
+    const source=parsed?.rowsByCharacter&&typeof parsed.rowsByCharacter==='object'?parsed.rowsByCharacter:{};
+    for(const [id,rows] of Object.entries(source)){
+      if(!connected.has(String(id))||!Array.isArray(rows))continue;
+      rowsByCharacter.set(String(id),rows.map(row=>({
+        date:String(row?.date||''),
+        solar_system_id:Number(row?.solar_system_id)||0,
+        type_id:Number(row?.type_id)||0,
+        quantity:Math.max(0,Number(row?.quantity)||0),
+      })).filter(row=>row.date&&row.solar_system_id>0&&row.type_id>0));
+    }
+    const stamps=parsed?.snapshotAtByCharacter&&typeof parsed.snapshotAtByCharacter==='object'?parsed.snapshotAtByCharacter:{};
+    for(const [id,stamp] of Object.entries(stamps)){
+      if(!connected.has(String(id))||!rowsByCharacter.has(String(id)))continue;
+      const ms=Date.parse(String(stamp||''));
+      if(Number.isFinite(ms))snapshotAtByCharacter.set(String(id),new Date(ms).toISOString());
+    }
+    console.log('Restored mining ledger cache for '+rowsByCharacter.size+'/'+connected.size+' linked characters.');
+    return{rowsByCharacter,snapshotAtByCharacter,updatedAt:parsed?.updatedAt||null};
+  }catch(error){
+    if(error?.code!=='ENOENT')console.warn('Mining ledger cache restore failed:',String(error?.message||error));
+    return{rowsByCharacter,snapshotAtByCharacter,updatedAt:null};
+  }
+}
+
+let ledgerCacheWritePromise=Promise.resolve();
+function saveLedgerCache(){
+  const cutoff=dateUTC(new Date(Date.now()-8*24*60*60*1000));
+  const connected=new Set(Object.keys(state.characters||{}).map(String));
+  const rowsByCharacter={};
+  const snapshotAtByCharacter={};
+  for(const [id,rows] of ledgerRowsByCharacter){
+    if(!connected.has(String(id)))continue;
+    rowsByCharacter[String(id)]=(Array.isArray(rows)?rows:[])
+      .filter(row=>String(row?.date||'')>=cutoff)
+      .map(row=>({
+        date:String(row?.date||''),
+        solar_system_id:Number(row?.solar_system_id)||0,
+        type_id:Number(row?.type_id)||0,
+        quantity:Math.max(0,Number(row?.quantity)||0),
+      }))
+      .filter(row=>row.date&&row.solar_system_id>0&&row.type_id>0);
+    const stamp=ledgerSnapshotAtByCharacter.get(String(id));
+    if(stamp)snapshotAtByCharacter[String(id)]=stamp;
+  }
+  const payload={version:1,updatedAt:now(),rowsByCharacter,snapshotAtByCharacter};
+  const snapshot=JSON.stringify(payload);
+  ledgerCacheWritePromise=ledgerCacheWritePromise.catch(()=>{}).then(async()=>{
+    const tmp=LEDGER_CACHE_FILE+'.tmp';
+    await fsp.writeFile(tmp,snapshot,'utf8');
+    await fsp.rename(tmp,LEDGER_CACHE_FILE);
+  }).catch(error=>console.warn('Mining ledger cache save failed:',String(error?.message||error)));
+  return ledgerCacheWritePromise;
+}
+
+
 let saveChain = Promise.resolve();
 let saveRequested = false;
 let saveRunning = false;
@@ -990,7 +1054,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.131',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.132',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}])),wormholes:{reports:wormholeGasPublicReports(),reportHours:WORMHOLE_GAS_REPORT_TTL/3600000}},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans,
@@ -3962,7 +4026,7 @@ function trackerBrainAnswer(user,question,options={}){
   const snapshot=trackerBrainSnapshot();
   const linked=(user?.characterIds||[]).map(String).filter(Boolean);
   const primaryName=trackerBrainPrimaryName(user);
-  const appVersion='2.9.131';
+  const appVersion='2.9.132';
 
   const voiceSummary=(text,max=120)=>{
     const clean=trackerSpeechSafe(text,1200).replace(/\s+/g,' ').trim();
@@ -4836,9 +4900,15 @@ async function applyLedgerResults(results,{fullCycle=false}={}){
   }
   for(const id of ledgerSnapshotAtByCharacter.keys())if(!connectedIds.has(id))ledgerSnapshotAtByCharacter.delete(id);
   const cacheComplete=[...connectedIds].every(id=>ledgerRowsByCharacter.has(id));
-  if(fullCycle||cacheComplete){
+  // Never replace a previously valid fleet ledger with a partial or empty
+  // post-restart cache. Rebuild only when every currently linked character has
+  // a ledger snapshot. This prevents deploys or ESI failures from showing 0.
+  if(cacheComplete){
     rebuildDailyFleetFromLedgerCache();
+  }else if(fullCycle){
+    console.warn('Mining ledger cache incomplete: '+ledgerRowsByCharacter.size+'/'+connectedIds.size+'; preserving previous dailyFleet totals.');
   }
+  await saveLedgerCache();
   if(successful.length)state.esi.lastSyncAt=sampleAt;
   const failedRows=results.filter(result=>!result.ok);
   const failed=failedRows.length;
@@ -7637,7 +7707,7 @@ async function routeApi(req,res,url) {
     });
     return res.end(ref.audio);
   }
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.131',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.132',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -7856,7 +7926,7 @@ async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname==='/api/tracker/speech/diagnostics'){
     const voiceWorker=await trackerVoiceHealth().catch(err=>({configured:Boolean(TRACKER_TTS_WORKER_URL),reachable:false,message:String(err?.message||err)}));
     return json(res,200,{
-      version:'2.9.131',
+      version:'2.9.132',
       modelCached:Boolean(voskModelArchive),
       modelBytes:voskModelArchive?.length||0,
       modelSource:voskModelSource||null,
@@ -8507,7 +8577,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.131 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.132 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>{
   Promise.all([
     loadVoskRuntimeAsset(VOSK_RUNTIME_FILES['/vendor/vosk/vosk-0.0.8.js']),
