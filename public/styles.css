@@ -2111,3 +2111,79 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
   .information-ore-row{grid-template-columns:24px minmax(0,1fr) auto}
   .information-ore-row>small{grid-column:3}
 }
+
+
+/* v2.9.138 — global scale discipline + compact chart grammar
+   Rule: preserve designed proportions; do not stretch cards just to occupy space. */
+.app.compact{width:min(1120px,calc(100vw - 12px));max-width:1120px}
+.app.expanded{width:min(1600px,calc(100vw - 12px));max-width:1600px}
+.tab-panel.active{min-width:0;align-content:start}
+.tab-panel.active>*{min-width:0}
+.glass{align-self:start}
+
+/* Repeated cards use bounded widths and leave honest empty space instead of inflating. */
+@media(min-width:761px){
+  .app.compact .node-grid{grid-template-columns:repeat(auto-fill,minmax(138px,160px));justify-content:start}
+  .app.expanded .node-grid{grid-template-columns:repeat(auto-fill,minmax(145px,168px));justify-content:start}
+
+  .app.compact .hit-order{grid-template-columns:repeat(auto-fill,minmax(250px,340px));justify-content:start}
+  .app.expanded .hit-order{grid-template-columns:repeat(auto-fill,minmax(270px,360px));justify-content:start}
+
+  .ice-kpis{grid-template-columns:repeat(auto-fill,minmax(175px,220px));justify-content:start}
+  .gas-ops-grid{grid-template-columns:repeat(auto-fill,minmax(190px,260px));justify-content:start}
+  .calc-results{grid-template-columns:repeat(auto-fill,minmax(175px,235px));justify-content:start}
+  .boost-stats{grid-template-columns:repeat(auto-fill,minmax(150px,215px));justify-content:start}
+  .actual-grid{grid-template-columns:repeat(auto-fill,minmax(190px,280px));justify-content:start}
+  .fleet-perf-kpis{grid-template-columns:repeat(auto-fill,minmax(150px,210px));justify-content:start}
+  .ore-mix-kpis{grid-template-columns:repeat(auto-fill,minmax(145px,195px));justify-content:start}
+}
+
+/* Full-width workspaces stay full width, but their visualizations are capped to useful reading sizes. */
+.fleet-command-grid{align-items:start}
+.fleet-live-card{width:100%;max-width:1000px;justify-self:start}
+.fleet-activity-chart,.fleet-history-chart{min-height:0}
+.fleet-chart-svg{min-height:0;height:auto;max-height:205px}
+.market-line-chart{min-height:0}
+.market-line-svg{min-height:0!important;height:auto;max-height:230px}
+.fleet-ore-mix{min-height:0}
+.information-ore-list{max-width:720px}
+.ore-mix-bar{height:4px}
+
+/* Compact mode is deliberately dense; Expanded adds information, not oversized geometry. */
+.app.compact .fleet-live-card{max-width:900px}
+.app.compact .fleet-chart-svg{max-height:185px}
+.app.compact .market-line-svg{max-height:205px}
+.app.compact .fleet-insight{padding:9px 11px}
+.app.compact .fleet-insight-meter:before,
+.app.compact .fleet-insight-meter>i{height:6px}
+.app.expanded .fleet-live-card{max-width:1000px}
+.app.expanded .fleet-chart-svg{max-height:205px}
+.app.expanded .market-line-svg{max-height:230px}
+
+/* Chart grammar: quiet scaffolding, direct labels, emphasis only where useful. */
+.market-grid,.fleet-chart-grid{opacity:.52;stroke-dasharray:none}
+.market-chart-legend,.market-chart-month,.market-range-area,.fleet-activity-area{display:none!important}
+.market-hit,.fleet-chart-hit{fill:transparent;stroke:transparent;pointer-events:all}
+.market-end-label{font:900 8px/1 Oxanium,Segoe UI,sans-serif;letter-spacing:.015em}
+.market-end-jita{fill:#ad92ff}
+.market-end-cn{fill:#62caff}
+.market-dot{stroke-width:1.2}
+.fleet-latest-label{fill:#d9efff;font:900 8px/1 Oxanium,Segoe UI,sans-serif}
+.fleet-target-label{font-size:7px}
+.fleet-history-bar{opacity:.62;filter:none}
+.fleet-history-bar.best{opacity:.88;filter:none}
+.fleet-history-bar.today{opacity:1;filter:drop-shadow(0 0 3px #37c77c66)}
+.fleet-history-bar:hover{opacity:1;filter:none}
+
+/* Text/control groups should size to content rather than growing for symmetry. */
+.section-title{align-items:center}
+.section-title>div,.visual-card-head>div{min-width:0}
+.top-actions,.fleet-history-controls,.ice-title-tools,.gas-title-tools{align-content:flex-start}
+.fleet-control-group,.fleet-order-tools{width:max-content;max-width:100%}
+
+@media(max-width:760px){
+  .app.compact,.app.expanded{width:100%;max-width:100%}
+  .fleet-live-card{max-width:none}
+  .fleet-chart-svg,.market-line-svg{max-height:none}
+  .ice-kpis,.gas-ops-grid,.calc-results,.boost-stats,.actual-grid,.fleet-perf-kpis,.ore-mix-kpis{grid-template-columns:1fr}
+}
