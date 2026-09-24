@@ -3432,3 +3432,12 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 @media(min-width:761px){
   .app.compact .operations-summary-bar>.summary-cell-payout.eve-day-reset{min-height:70px}
 }
+
+/* Payout details use deliberate line breaks; let the bar grow if a line wraps. */
+.operations-summary-bar>.summary-cell-payout>small{
+  display:block!important;
+  white-space:pre-line!important;
+  overflow:visible!important;
+  overflow-wrap:anywhere;
+  -webkit-line-clamp:unset;
+}
