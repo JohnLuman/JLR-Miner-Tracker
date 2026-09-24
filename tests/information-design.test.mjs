@@ -57,11 +57,11 @@ assert.match(app,/outside tracked fields/,'ledger diagnostics distinguish payout
 assert.match(app,/fleetUptimeMeter/,'fleet target exposes the uptime assumption visually');
 
 assert.equal(pkg.version,'2.9.144');
-assert.ok(index.includes('/styles.css?v=2.9.144'),'main information-design CSS is cache-busted');
-assert.ok(index.includes('/tracker.css?v=2.9.144'),'Tracker information-design CSS is cache-busted');
-assert.ok(index.includes('/app.js?v=2.9.144'),'dashboard JS is cache-busted');
-assert.ok(index.includes('/tracker.js?v=2.9.144'),'Tracker loader is cache-busted');
-assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.144/,'Tracker core is cache-busted');
+assert.ok(index.includes('/styles.css?v=2.9.144-system-pass1'),'main information-design CSS is cache-busted');
+assert.ok(index.includes('/tracker.css?v=2.9.144-system-pass1'),'Tracker information-design CSS is cache-busted');
+assert.ok(index.includes('/app.js?v=2.9.144-system-pass1'),'dashboard JS is cache-busted');
+assert.ok(index.includes('/tracker.js?v=2.9.144-system-pass1'),'Tracker loader is cache-busted');
+assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.144-system-pass1/,'Tracker core is cache-busted');
 
 assert.match(styles,/\.app\.compact\{width:min\(1120px,calc\(100vw - 12px\)\);max-width:1120px\}/,'Compact app keeps a bounded design width');
 assert.match(styles,/\.app\.expanded\{width:min\(1600px,calc\(100vw - 12px\)\);max-width:1600px\}/,'Expanded app keeps a bounded design width');
@@ -72,6 +72,12 @@ assert.match(styles,/\.fleet-performance-summary-line/,'Fleet Performance uses a
 assert.match(index,/class="fleet-command-card fleet-trend-card"/,'Ore Value Trend is next to Live Activity Rate');
 assert.match(app,/class="fleet-perf-row compact"/,'per-miner performance no longer uses giant progress bars');
 assert.doesNotMatch(app,/fleet-share-track/,'per-miner performance removes decorative share bars');
+assert.match(index,/id="adamQuickToggle"/,'Ask Adam is available outside the Adam tab');
+assert.match(index,/id="adamQuickPanel"/,'global Adam panel is present');
+assert.match(index,/id="toonLinkedCount"/,'Toons tab has a linked-character summary');
+assert.match(app,/toon-state-ready/,'Toons tab renders explicit per-character data states');
+assert.match(styles,/v2\.9\.144-system-pass1/,'system-wide UI pass is styled');
+assert.match(trackerCss,/tracker-hourly-badge/,'Tracker region selector shows its hourly refresh cadence');
 assert.match(styles,/\.market-end-label/,'market chart uses direct end labels');
 assert.match(app,/const ticks=3/,'market chart uses restrained grid density');
 assert.doesNotMatch(app,/function areaPaths\(\)/,'market chart no longer shades the area between series');
