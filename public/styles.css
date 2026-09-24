@@ -2594,3 +2594,51 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
   font-size:11px;
   line-height:1.35;
 }
+
+
+/* v2.9.144-advanced-ui1 — keep backend controls out of normal workflows */
+.brain-advanced-tools,
+.esi-advanced-tools{
+  margin-top:7px;
+  border:1px solid #2b313a;
+  border-radius:7px;
+  background:#0b0f14;
+  overflow:hidden;
+}
+.brain-advanced-tools>summary,
+.esi-advanced-tools>summary{
+  list-style:none;
+  cursor:pointer;
+  padding:7px 9px;
+  color:#89919c;
+  font-family:"Segoe UI",Arial,sans-serif;
+  font-size:8px;
+  font-weight:700;
+  letter-spacing:.04em;
+  user-select:none;
+}
+.brain-advanced-tools>summary::-webkit-details-marker,
+.esi-advanced-tools>summary::-webkit-details-marker{display:none}
+.brain-advanced-tools>summary:after,
+.esi-advanced-tools>summary:after{
+  content:"＋";
+  float:right;
+  color:#69717d;
+}
+.brain-advanced-tools[open]>summary:after,
+.esi-advanced-tools[open]>summary:after{content:"−"}
+.brain-advanced-tools[open]>summary,
+.esi-advanced-tools[open]>summary{
+  border-bottom:1px solid #252b33;
+  color:#b8bec7;
+}
+.brain-advanced-tools-body,
+.esi-advanced-tools-body{
+  padding:8px;
+}
+.esi-advanced-tools-body{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+}
