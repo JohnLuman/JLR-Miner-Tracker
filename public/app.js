@@ -5163,7 +5163,7 @@
     const gasData=state.source?.gas||null;
     const regions=gasData?.regions||{};
     const types=gasData?.types||{};
-    const regionNames=Object.keys(regions);
+    const regionNames=Object.keys(regions).sort((a,b)=>a==='Wormhole'?1:b==='Wormhole'?-1:a.localeCompare(b));
     if(!gasData||!regionNames.length){
       $('gasFleetOutput').innerHTML='<div class="visual-empty">Gas data is not loaded yet.</div>';
       return;
@@ -5213,8 +5213,9 @@
       ?'compressed 1:1 • C-N '+fmt(compressedCn)
       :'compressed 1:1 equivalent';
     $('gasOpsType').textContent=gasType;
-    $('gasOpsRegion').textContent=gasRegion+' • '+gasVolume.toFixed(gasVolume%1?1:0)+' m³ per raw unit';
-    $('gasSiteTitle').textContent='KNOWN '+gasRegion.toUpperCase()+' • '+gasType.toUpperCase()+' SITES';
+    $('gasOpsRegion').textContent=gasRegion+' • '+gasFamily+' • '+gasVolume.toFixed(gasVolume%1?1:0)+' m³ per raw unit';
+    if($('gasOpsReference'))$('gasOpsReference').textContent=gasRegion+' • '+gasFamily.toLowerCase()+' huffing reference';
+    $('gasSiteTitle').textContent='KNOWN '+gasRegion.toUpperCase()+' GAS SITES';
 
     const boosterId=String(calcSettings.boosterCharacterId||'');
     const selected=(me?.characters||[]).filter(ch=>{
