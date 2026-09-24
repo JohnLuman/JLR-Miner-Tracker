@@ -313,8 +313,8 @@ const trackerIntelRegionCache = new Map();
 const trackerIntelHotCache = new Map();
 const trackerIntelShipGroupCache = new Map();
 const TRACKER_INTEL_DEFAULT_REGION_ID = 10000058; // Fountain
-const TRACKER_INTEL_HOT_CACHE_MS = 30 * 60 * 1000;
-const TRACKER_INTEL_REGION_CATALOG_MS = 24 * 60 * 60 * 1000;
+const TRACKER_INTEL_HOT_CACHE_MS = 60 * 60 * 1000;
+const TRACKER_INTEL_REGION_CATALOG_MS = 60 * 60 * 1000;
 const TRACKER_INTEL_REPORT_TTL_MS = 6 * 60 * 60 * 1000;
 const TRACKER_INTEL_HISTORY_TTL_MS = 72 * 60 * 60 * 1000;
 let trackerIntelRefreshPromise = null;
@@ -7363,10 +7363,20 @@ async function trackerIntelSnapshot(user,{force=false,regionId=TRACKER_INTEL_DEF
 async function refreshTrackerIntelRegionalCaches(){
   if(trackerIntelRefreshPromise)return trackerIntelRefreshPromise;
   const pending=(async()=>{
+    // Refresh the authoritative ESI region catalog every hour so the selector
+    // always reflects every region currently returned by Tranquility.
+    const catalog=await trackerIntelRegionCatalog({force:true});
+    const validIds=new Set(catalog.map(row=>Number(row.regionId)).filter(id=>id>0));
     const intel=trackerIntelStore();
+
+    // Hot-zone snapshots are refreshed hourly for regions that have actually
+    // been viewed/cached. Any untouched region is fetched immediately the first
+    // time it is selected, then joins this hourly refresh set. This avoids
+    // hammering zKill/ESI for dozens of unused regions every hour while keeping
+    // every selectable region current on first use.
     const ids=[...new Set([
       TRACKER_INTEL_DEFAULT_REGION_ID,
-      ...Object.keys(intel.regionHotZones||{}).map(Number).filter(id=>id>0),
+      ...Object.keys(intel.regionHotZones||{}).map(Number).filter(id=>id>0&&validIds.has(id)),
     ])];
     for(let index=0;index<ids.length;index++){
       const regionId=ids[index];
@@ -8667,7 +8677,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.134 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.135 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>{
   Promise.all([
     loadVoskRuntimeAsset(VOSK_RUNTIME_FILES['/vendor/vosk/vosk-0.0.8.js']),
