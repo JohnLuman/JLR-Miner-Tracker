@@ -4883,39 +4883,60 @@
 
     document.querySelectorAll('.fleet-range').forEach(button=>button.classList.toggle('active',Number(button.dataset.days)===fleetHistoryDays));
     document.querySelectorAll('.fleet-metric').forEach(button=>button.classList.toggle('active',button.dataset.metric===fleetHistoryMetric));
-    $('fleetLiveStatus').textContent=state.esi?.syncing?'● SYNCING ESI':latest?(sampleAge<=45*60*1000?`● LIVE • ${ago(latest.at).toUpperCase()}`:`● LAST SAMPLE • ${ago(latest.at).toUpperCase()}`):'● WAITING FOR ESI';
+    $('fleetLiveStatus').textContent=state.esi?.syncing?'● SYNCING ESI':latest?`● RECENT SAMPLE • ${ago(latest.at).toUpperCase()}`:'● WAITING FOR ESI';
     $('fleetLiveStatus').classList.toggle('stale',Boolean(latest&&sampleAge>45*60*1000));
     if($('fleetInsightText')&&$('fleetInsightDetail')&&$('fleetInsightMeter')&&$('fleetInsightPct')){
       const insight=$('fleetInsight');
+      const activeToons=Math.max(0,Number(latest?.activeToons)||0);
+      const sampledToons=Math.max(0,Number(latest?.sampledToons)||0);
+      const missingToons=Math.max(0,sampledToons-activeToons);
+      const previous=samples.length>1?samples[samples.length-2]:null;
+      const previousRate=Math.max(0,Number(previous?.actualM3PerHour)||0);
+      const sampleDropPct=previousRate>0&&liveRate<previousRate?(1-liveRate/previousRate)*100:null;
+      const reason=$('fleetInsightReason');
+
       if(liveTargetPct!=null&&liveRate>0){
         const pct=Math.max(0,liveTargetPct);
-        $('fleetInsightText').textContent=pct>=100
-          ?'LIVE RATE IS ABOVE THE SELECTED FLEET TARGET'
-          :'LIVE RATE IS '+pct.toFixed(0)+'% OF THE SELECTED FLEET TARGET';
-        $('fleetInsightDetail').textContent=fmt(liveRate,'m3')+' m³/hr live • '+fmt(target,'m3')+' m³/hr target • '+ago(latest.at);
+        if(missingToons>0){
+          $('fleetInsightText').textContent=missingToons+' MINER'+(missingToons===1?'':'S')+' HAD NO NEW LEDGER ENTRY IN THE LATEST SAMPLE';
+          $('fleetInsightDetail').textContent=activeToons+'/'+sampledToons+' miners contributed • latest fleet rate '+pct.toFixed(0)+'% of fitted target';
+          if(reason)reason.textContent=sampleDropPct!=null&&sampleDropPct>=5
+            ?'Rate dropped '+sampleDropPct.toFixed(0)+'% from the previous sample • use miner comparison below to see who missed the interval.'
+            :'Use miner comparison below to see which miners missed the interval.';
+        }else{
+          $('fleetInsightText').textContent=(sampledToons||activeToons)+'/'+(sampledToons||activeToons)+' MINERS CONTRIBUTED IN THE LATEST SAMPLE';
+          $('fleetInsightDetail').textContent=pct>=100
+            ?'Fleet rate met the fitted target • no miners were missing from the latest interval'
+            :'Fleet rate was ~'+Math.max(0,100-pct).toFixed(0)+'% below fitted target • gap is output rate, not missing miners';
+          if(reason)reason.textContent=pct>=100
+            ?'Review the history and miner comparison below for the completed mining session.'
+            :'Use miner comparison below to see which miners finished furthest from their fitted target.';
+        }
         $('fleetInsightMeter').style.width=Math.min(100,pct).toFixed(1)+'%';
         $('fleetInsightPct').textContent=pct.toFixed(0)+'%';
         insight?.classList.toggle('ahead',pct>=100);
         insight?.classList.toggle('low',pct<60);
       }else if(latest){
         $('fleetInsightText').textContent='NO MINING IN THE LATEST LEDGER INTERVAL';
-        $('fleetInsightDetail').textContent='Last fleet sample '+ago(latest.at)+' • target '+fmt(target,'m3')+' m³/hr';
+        $('fleetInsightDetail').textContent='Latest sample '+ago(latest.at)+' • fitted target '+fmt(target,'m3')+' m³/hr';
+        if(reason)reason.textContent='This usually means the mining session ended or no miner produced a new ledger entry in that interval.';
         $('fleetInsightMeter').style.width='0%';
         $('fleetInsightPct').textContent='0%';
         insight?.classList.remove('ahead');
         insight?.classList.add('low');
       }else{
-        $('fleetInsightText').textContent='WAITING FOR AN ACTIVE LEDGER INTERVAL';
-        $('fleetInsightDetail').textContent='JLR will compare the live mining rate with your selected fleet target.';
+        $('fleetInsightText').textContent='WAITING FOR A MINING LEDGER SAMPLE';
+        $('fleetInsightDetail').textContent='JLR will compare recent mining samples with the selected fleet target.';
+        if(reason)reason.textContent='Once ESI records mining, this area will summarize contribution and rate variance.';
         $('fleetInsightMeter').style.width='0%';
         $('fleetInsightPct').textContent='—';
         insight?.classList.remove('ahead','low');
       }
     }
     $('fleetLiveRate').textContent=latest?`${fmt(liveRate,'m3')} m³/hr`:'—';
-    $('fleetLiveRateSub').textContent=latest?(liveRate>0?'latest detected mining interval':'no increase in latest interval'):'waiting for a mining interval';
+    $('fleetLiveRateSub').textContent=latest?(liveRate>0?'most recent detected mining interval':'no increase in latest interval'):'waiting for a mining interval';
     $('fleetActiveToons').textContent=latest?`${Number(latest.activeToons||0)} / ${Number(latest.sampledToons||0)}`:'—';
-    $('fleetActiveToonsSub').textContent=latest?'assigned miners active / sampled in latest sync':'assigned miners in latest sample';
+    $('fleetActiveToonsSub').textContent=latest?'miners contributing / sampled in latest interval':'miners in latest sample';
     const eveDayM3=Math.max(0,Number(performance.actual?.today?.m3)||0);
     const eveDayJbv=Math.max(0,Number(performance.actual?.today?.jbv)||0);
     $('fleetTodayM3').textContent=eveDayM3>0?`${fmt(eveDayM3,'m3')} m³`:'—';
