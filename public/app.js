@@ -233,7 +233,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.126');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.127');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -323,7 +323,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR TRACKER MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.126'),
+      'Version: '+String(state?.app?.version||'2.9.127'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -517,7 +517,7 @@
     const heard=String(transcript||'').trim();
     if(!heard)return;
     if($('brainHeard'))$('brainHeard').textContent='HEARD: “'+heard+'”';
-    const command=heard.toLowerCase().replace(/^tracker[\s,.:;-]*/,'').trim();
+    const command=heard.toLowerCase().replace(/^adam[\s,.:;-]*/,'').trim();
     if(!command){
       brainConversationUntil=Date.now()+brainConversationMs();
       brainSetListen('MIC ON','Listening for your question.');
@@ -725,7 +725,7 @@
     brainMicLastPartial=heard;
     if($('brainHeard'))$('brainHeard').textContent='HEARING: “'+heard+'”';
     const lower=heard.toLowerCase();
-    const wakeMatch=/\btracker\b/.exec(lower);
+    const wakeMatch=/\badam\b/.exec(lower);
     const localVoiceReady=!brainLocalRecognizer||Date.now()-brainMicVoiceLikeAt<1500;
     if(!wakeMatch||!localVoiceReady||Date.now()<brainMicWakeDebounceUntil||brainVoiceActive())return;
     const wake=wakeMatch.index;
@@ -752,7 +752,7 @@
     }
     if($('brainHeard'))$('brainHeard').textContent='HEARD: “'+heard+'”';
     const lower=heard.toLowerCase();
-    const wakeMatch=/\btracker\b/.exec(lower);
+    const wakeMatch=/\badam\b/.exec(lower);
     if(wakeMatch){
       handleBrainCommand(heard.slice(wakeMatch.index));
     }else if(Date.now()<brainConversationUntil){
@@ -2176,10 +2176,10 @@
 
         <section class="brain-card brain-talk-card">
           <div class="brain-card-head"><strong>TALK TO TRACKER</strong><small>Natural voice interaction</small></div>
-          <div class="brain-question-hint">Try: “Tracker, how much have I made this hour?” • “Tracker, heading to C-N, where can I stop and scan?” • “Tracker, where is my closest scan?”</div>
+          <div class="brain-question-hint">Try: “Adam, how much have I made this hour?” • “Adam, heading to C-N, where can I stop and scan?” • “Adam, where is my closest scan?”</div>
           <div id="brainListenPanel" class="brain-listen-panel">
             <span class="brain-listen-orb">●</span>
-            <div><strong id="brainListenStatus">MIC STARTING</strong><small id="brainListenHint">Tracker is arming the microphone and waiting for the wake word.</small></div>
+            <div><strong id="brainListenStatus">MIC STARTING</strong><small id="brainListenHint">Tracker is arming the microphone and waiting for “Adam”.</small></div>
           </div>
           <div class="brain-mic-level-row">
             <span>MIC SIGNAL</span>
@@ -5672,7 +5672,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.126',
+          version:state?.app?.version||'2.9.127',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),

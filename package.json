@@ -1,12 +1,12 @@
 {
   "name": "jlr-miner-tracker-web",
-  "version": "2.9.126",
+  "version": "2.9.127",
   "private": true,
   "type": "module",
   "description": "Shared EVE Online mining tracker with website SSO, fleet ESI actuals, T3 field timers, and compact/expanded UI.",
   "scripts": {
     "start": "node server.mjs",
-    "test": "node --check public/yield-math.js && node --check public/app.js && node --check public/tracker.js && node --check server.mjs && node --check lib/tracker-support-client.mjs && node --check services/tracker-support/core.mjs && node --check services/tracker-support/server.mjs && node tests/yield-math.test.mjs && node tests/ledger-valuation.test.mjs && node tests/probe-scan.test.mjs && node tests/threat-scan.test.mjs && node tests/brain-location.test.mjs && node tests/brain-intel.test.mjs && node tests/brain-voice.test.mjs && node tests/companion.test.mjs && node tests/efficiency.test.mjs && node tests/long-uptime.test.mjs && node tests/app-knowledge.test.mjs && node tests/tracker-support.test.mjs && node tests/fleet-performance-scope.test.mjs && node tests/doctrine-scroll.test.mjs"
+    "test": "node --check public/yield-math.js && node --check public/app.js && node --check public/tracker.js && node --check server.mjs && node --check lib/tracker-support-client.mjs && node --check services/tracker-support/core.mjs && node --check services/tracker-support/server.mjs && node tests/yield-math.test.mjs && node tests/ledger-valuation.test.mjs && node tests/probe-scan.test.mjs && node tests/threat-scan.test.mjs && node tests/brain-location.test.mjs && node tests/brain-intel.test.mjs && node tests/brain-voice.test.mjs && node tests/companion.test.mjs && node tests/efficiency.test.mjs && node tests/long-uptime.test.mjs && node tests/app-knowledge.test.mjs && node tests/tracker-support.test.mjs && node tests/fleet-performance-scope.test.mjs && node tests/doctrine-scroll.test.mjs && node tests/wake-word.test.mjs"
   },
   "engines": {
     "node": ">=22"
