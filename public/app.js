@@ -2350,6 +2350,34 @@
     applyTab(activeTab);
   }
 
+  function doctrineScrollSnapshot(host=$('doctrineMarketPanel')){
+    if(!host)return null;
+    const table=host.querySelector('.doctrine-table-wrap');
+    const shopping=host.querySelector('.doctrine-shopping-list');
+    return{
+      tableTop:Math.max(0,Number(table?.scrollTop)||0),
+      tableLeft:Math.max(0,Number(table?.scrollLeft)||0),
+      shoppingTop:Math.max(0,Number(shopping?.scrollTop)||0),
+      pageX:Math.max(0,Number(window.scrollX)||0),
+      pageY:Math.max(0,Number(window.scrollY)||0),
+    };
+  }
+  function restoreDoctrineScroll(snapshot,host=$('doctrineMarketPanel')){
+    if(!snapshot||!host)return;
+    const table=host.querySelector('.doctrine-table-wrap');
+    if(table){
+      table.scrollTop=snapshot.tableTop;
+      table.scrollLeft=snapshot.tableLeft;
+    }
+    const shopping=host.querySelector('.doctrine-shopping-list');
+    if(shopping)shopping.scrollTop=snapshot.shoppingTop;
+    if(activeTab==='doctrine'){
+      requestAnimationFrame(()=>{
+        if(activeTab==='doctrine')window.scrollTo(snapshot.pageX,snapshot.pageY);
+      });
+    }
+  }
+
   async function loadDoctrineMarket(force=false){
     if(!doctrineAllowed()){
       doctrineMarket=null;
@@ -2358,9 +2386,18 @@
       return;
     }
     if(doctrineMarketLoading)return;
+    const preserveScroll=Boolean(doctrineMarket);
     doctrineMarketLoading=true;doctrineMarketError='';
     if(doctrineMarketPoll){clearTimeout(doctrineMarketPoll);doctrineMarketPoll=null}
-    renderDoctrineMarket();
+    if(!preserveScroll){
+      renderDoctrineMarket();
+    }else{
+      const refreshButton=$('doctrineRefresh');
+      if(refreshButton){
+        refreshButton.disabled=true;
+        refreshButton.textContent='REFRESHING…';
+      }
+    }
     let shouldPoll=false;
     try{
       const payload=force
@@ -2373,7 +2410,7 @@
       doctrineMarketError='Doctrine market data is temporarily unavailable. Try again in a moment.';
     }finally{
       doctrineMarketLoading=false;
-      renderDoctrineMarket();
+      renderDoctrineMarket({preserveScroll});
       if(shouldPoll&&activeTab==='doctrine'){
         doctrineMarketPoll=setTimeout(()=>loadDoctrineMarket(false),5000);
       }
@@ -2417,7 +2454,7 @@
       return{typeId:Number(item.typeId),qty};
     }).filter(Boolean);
     saveDoctrineShoppingList();
-    renderDoctrineMarket();
+    renderDoctrineMarket({preserveScroll:true});
     const mode=doctrineShoppingMode==='shortfall'?'7-day shortfall':'full 7-day supply';
     toast('Shopping list recalculated for '+mode+'.'+(removed?' '+removed+' covered item'+(removed===1?'':'s')+' removed.':''));
   }
@@ -2437,14 +2474,14 @@
     }
     doctrineShoppingList.push({typeId:id,qty});
     saveDoctrineShoppingList();
-    renderDoctrineMarket();
+    renderDoctrineMarket({preserveScroll:true});
     toast(row.item+' added at '+(doctrineShoppingMode==='shortfall'?'the 7-day shortfall':'a full 7-day supply')+'.');
   }
   function removeDoctrineShoppingItem(typeId){
     const id=Number(typeId);
     doctrineShoppingList=doctrineShoppingList.filter(item=>Number(item.typeId)!==id);
     saveDoctrineShoppingList();
-    renderDoctrineMarket();
+    renderDoctrineMarket({preserveScroll:true});
   }
   async function copyDoctrineMultibuy(){
     const byId=new Map((doctrineMarket?.rows||[]).map(row=>[Number(row.typeId),row]));
@@ -2480,9 +2517,10 @@
     }
     toast(copied?'Shopping list copied. Paste it into EVE Multi-Buy.':'Could not copy automatically.');
   }
-  function renderDoctrineMarket(){
+  function renderDoctrineMarket({preserveScroll=false}={}){
     const host=$('doctrineMarketPanel');
     if(!host)return;
+    const scrollSnapshot=preserveScroll?doctrineScrollSnapshot(host):null;
     if(doctrineMarketLoading&&!doctrineMarket){
       host.innerHTML='<section class="glass doctrine-loading"><strong>LOADING DOCTRINE MARKET…</strong><span>Loading current doctrine market data.</span></section>';
       return;
@@ -2650,10 +2688,12 @@
 
       </section>`;
 
+    if(scrollSnapshot)restoreDoctrineScroll(scrollSnapshot,host);
+
     $('doctrineShoppingToggle')?.addEventListener('click',()=>{
       doctrineShoppingOpen=!doctrineShoppingOpen;
       localStorage.setItem('jlrDoctrineShoppingOpen',String(doctrineShoppingOpen));
-      renderDoctrineMarket();
+      renderDoctrineMarket({preserveScroll:true});
     });
     host.querySelectorAll('[data-add-doctrine]').forEach(button=>button.addEventListener('click',event=>{
       event.stopPropagation();
@@ -2687,7 +2727,7 @@
     host.querySelectorAll('[data-shop-mode]').forEach(button=>button.addEventListener('click',()=>{
       doctrineShoppingMode=button.dataset.shopMode==='shortfall'?'shortfall':'full';
       localStorage.setItem('jlrDoctrineShoppingMode',doctrineShoppingMode);
-      renderDoctrineMarket();
+      renderDoctrineMarket({preserveScroll:true});
     }));
     $('doctrineShoppingRecalc')?.addEventListener('click',recalculateDoctrineShoppingList);
     host.querySelectorAll('[data-shop-qty]').forEach(input=>input.addEventListener('change',()=>{
@@ -2695,13 +2735,13 @@
       if(!item)return;
       item.qty=Math.max(1,Math.floor(Number(input.value)||1));
       saveDoctrineShoppingList();
-      renderDoctrineMarket();
+      renderDoctrineMarket({preserveScroll:true});
     }));
     host.querySelectorAll('[data-remove-doctrine]').forEach(button=>button.addEventListener('click',()=>removeDoctrineShoppingItem(button.dataset.removeDoctrine)));
     $('doctrineShoppingClear')?.addEventListener('click',()=>{
       doctrineShoppingList=[];
       saveDoctrineShoppingList();
-      renderDoctrineMarket();
+      renderDoctrineMarket({preserveScroll:true});
       toast('Shopping list cleared.');
     });
     $('doctrineShoppingCopy')?.addEventListener('click',copyDoctrineMultibuy);
@@ -5399,7 +5439,7 @@
     }finally{ledgerAuditLoading=false;}
   }
 
-  function renderAll(){if(!state)return;renderFleet();renderTop();renderTrackerBrain();renderSelect();renderBoards();renderHits();renderFleetPerformance();renderMiningVisuals();renderIceMining();renderGasHuffing();if(doctrineMarket)renderDoctrineMarket();renderRanking();renderTimers();renderSelected();renderNotes();renderScanCharacters();renderCharacters();renderCalculator();renderMerIntel();}
+  function renderAll(){if(!state)return;renderFleet();renderTop();renderTrackerBrain();renderSelect();renderBoards();renderHits();renderFleetPerformance();renderMiningVisuals();renderIceMining();renderGasHuffing();renderRanking();renderTimers();renderSelected();renderNotes();renderScanCharacters();renderCharacters();renderCalculator();renderMerIntel();}
 
   async function refreshMe(){const p=await api('/api/me');if(me?.id&&me.id!==p.user?.id)window.jlrReleaseAutoVoice?.();me=p.user;if(me){window.jlrVoiceAccountId=String(me.id||'');$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;syncDoctrineTabAccess();syncTrackerTabAccess()}return p.authenticated}
   async function loadState(){
