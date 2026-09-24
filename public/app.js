@@ -115,6 +115,7 @@
   let brainConversationUntil=0;
   let brainLastSystem='';
   let adamAskBusy=false;
+  let adamWorkingTab=localStorage.getItem('jlrAdamWorkingTab')||'fields';
   let adamRecentActions=[];
   try{adamRecentActions=JSON.parse(localStorage.getItem('jlrAdamRecentActions')||'[]')}catch{}
   if(!Array.isArray(adamRecentActions))adamRecentActions=[];
@@ -307,20 +308,25 @@
   function adamWorkflow(){
     const cutoff=Date.now()-30*60*1000;
     const recent=adamRecentActions.filter(row=>Number(row?.at||0)>=cutoff);
-    if((activeTab==='fields'||activeTab==='brain')&&recent.some(row=>row.kind==='scan-updated'))return'scan-update';
-    if(activeTab==='performance')return'performance-review';
-    if(activeTab==='fleet')return'fleet-setup';
-    if(activeTab==='fields')return'field-review';
-    if(activeTab==='threat')return'threat-review';
-    if(activeTab==='doctrine')return'doctrine-market';
-    if(activeTab==='brain')return'scout-routing';
-    return activeTab?activeTab+'-review':'general';
+    const sourceTab=activeTab==='brain'?(adamWorkingTab||'fields'):activeTab;
+    const recentScan=recent.some(row=>row.kind==='scan-updated');
+    const recentScout=recent.some(row=>row.kind==='location-check'||row.kind==='scout-target');
+    if(sourceTab==='fields'&&recentScan)return'scan-update';
+    if(activeTab==='brain'&&recentScout)return'scout-routing';
+    if(sourceTab==='performance')return'performance-review';
+    if(sourceTab==='fleet')return'fleet-setup';
+    if(sourceTab==='fields')return'field-review';
+    if(sourceTab==='threat')return'threat-review';
+    if(sourceTab==='doctrine')return'doctrine-market';
+    return sourceTab?sourceTab+'-review':'general';
   }
   function adamContextSnapshot(){
     const selectedCharacter=(me?.characters||[]).find(row=>String(row.characterId)===String(scanCharacterId))||null;
+    const workflow=adamWorkflow();
+    const currentContextTab=activeTab==='brain'&&workflow!=='scout-routing'?(adamWorkingTab||'fields'):activeTab;
     return{
-      currentTab:activeTab,
-      workflow:adamWorkflow(),
+      currentTab:currentContextTab,
+      workflow,
       selectedSystem:selectedSystem||$('systemSelect')?.value||'',
       selectedCharacterId:String(selectedCharacter?.characterId||scanCharacterId||''),
       selectedCharacterName:String(selectedCharacter?.name||''),
@@ -343,22 +349,24 @@
     return parts.join(' • ');
   }
   function adamSuggestions(){
-    if(activeTab==='performance')return[
+    const context=adamContextSnapshot();
+    const tab=context.currentTab;
+    if(tab==='performance')return[
       'Why is this low?',
       'What changed?',
       'Explain recent activity rate'
     ];
-    if(activeTab==='fields')return[
+    if(tab==='fields')return[
       'Next one?',
       'What needs a scan?',
       'Explain this system'
     ];
-    if(activeTab==='fleet')return[
+    if(tab==='fleet')return[
       'Explain this tab',
       'What does boosted output mean?',
       'How does JLR use my fits?'
     ];
-    if(activeTab==='brain')return[
+    if(context.workflow==='scout-routing'||tab==='brain')return[
       'Next system?',
       'Where is my travel toon?',
       'What needs attention?'
@@ -392,7 +400,7 @@
           question:text,
           characterId:scanCharacterId,
           payoutPct:Number(fleetSettings.payout),
-          currentTab:activeTab,
+          currentTab:context.currentTab,
           context,
         }),
       });
@@ -2325,8 +2333,15 @@
     const nextTab=valid.includes(tab)?tab:'fields';
     if(nextTab==='feedback'&&activeTab!=='feedback')feedbackOpenedFrom=activeTab;
     const previousTab=activeTab;
+    if(nextTab==='brain'&&previousTab&&previousTab!=='brain'){
+      adamWorkingTab=previousTab;
+      localStorage.setItem('jlrAdamWorkingTab',adamWorkingTab);
+    }else if(nextTab!=='brain'){
+      adamWorkingTab=nextTab;
+      localStorage.setItem('jlrAdamWorkingTab',adamWorkingTab);
+    }
     activeTab=nextTab;
-    if(previousTab!==activeTab)adamRecordAction('tab-open',{tab:activeTab});
+    if(previousTab!==activeTab)adamRecordAction('tab-open',{tab:activeTab,detail:activeTab==='brain'?'from '+adamWorkingTab:''});
     localStorage.setItem('jlrTab',activeTab);
     document.querySelectorAll('.app-tab').forEach(button=>button.classList.toggle('active',button.dataset.tab===activeTab));
     document.querySelectorAll('.tab-panel').forEach(panel=>panel.classList.toggle('active',panel.dataset.tab===activeTab));
@@ -6037,6 +6052,7 @@
           localStorage.setItem('jlrScanCharacter',scanCharacterId);
           renderScanCharacters();
         }
+        adamRecordAction('scout-target',{system});
         applyTab('fields');
         chooseSystem(system);
         toast('Scout target: '+system);
