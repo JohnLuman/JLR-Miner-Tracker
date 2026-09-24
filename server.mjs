@@ -4105,6 +4105,7 @@ function trackerBrainContext(value){
   const input=value&&typeof value==='object'?value:{};
   const perf=input.performance&&typeof input.performance==='object'?input.performance:{};
   const finite=value=>{
+    if(value===null||value===undefined||value==='')return null;
     const n=Number(value);
     return Number.isFinite(n)?n:null;
   };
