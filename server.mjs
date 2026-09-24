@@ -1054,7 +1054,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.132',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.133',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}])),wormholes:{reports:wormholeGasPublicReports(),reportHours:WORMHOLE_GAS_REPORT_TTL/3600000}},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans,
@@ -5367,8 +5367,10 @@ function jlrPrimaryCharacterName(user){
 
 function jlrStartupVoiceText(user){
   const name=jlrPrimaryCharacterName(user);
-  const briefing=trackerBrainBriefing(user,{force:false}).text;
-  return 'Welcome back, '+name+'. Adam is online. '+briefing;
+  // Keep automatic startup speech short so it cannot monopolize the CPU voice
+  // worker before a manual Adam request arrives. Full status remains available
+  // through the briefing command.
+  return 'Welcome back, '+name+'. Adam is online.';
 }
 
 
@@ -5480,7 +5482,7 @@ function sendTrackerAudio(res,audio){
   res.end(audio.bytes);
 }
 
-async function streamTrackerVoiceToResponse(res,text,cacheKey,{priority='normal',voice='core',streamingMode=2}={}){
+async function streamTrackerVoiceToResponse(res,text,cacheKey,{priority='normal',voice='core',streamingMode=3}={}){
   if(!trackerVoiceConfigured()){
     const err=new Error('JLR custom voice worker is not configured.');
     err.code='TTS_NOT_CONFIGURED';
@@ -5490,7 +5492,7 @@ async function streamTrackerVoiceToResponse(res,text,cacheKey,{priority='normal'
   if(!cleanText)throw new Error('Tracker voice text was empty.');
   const selectedVoice=['core','scout','alert'].includes(String(voice||''))?String(voice):'core';
   const versionedCacheKey=`${TRACKER_VOICE_CACHE_VERSION}|${selectedVoice}|${String(cacheKey||'stream')}`;
-  const mode=[1,2,3].includes(Number(streamingMode))?Number(streamingMode):2;
+  const mode=[1,2,3].includes(Number(streamingMode))?Number(streamingMode):3;
   const workerPayload={
     text:cleanText,
     cache_key:versionedCacheKey,
@@ -5508,7 +5510,7 @@ async function streamTrackerVoiceToResponse(res,text,cacheKey,{priority='normal'
         'Accept':'audio/wav, application/octet-stream',
       },
       body:JSON.stringify(workerPayload),
-      signal:AbortSignal.timeout(Math.max(TRACKER_TTS_TIMEOUT_MS,120_000)),
+      signal:AbortSignal.timeout(Math.max(TRACKER_TTS_TIMEOUT_MS,180_000)),
     });
   }catch(err){
     throw new Error(`JLR streaming voice worker unavailable: ${String(err?.message||err)}`);
@@ -7707,7 +7709,7 @@ async function routeApi(req,res,url) {
     });
     return res.end(ref.audio);
   }
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.132',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.133',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -7926,7 +7928,7 @@ async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname==='/api/tracker/speech/diagnostics'){
     const voiceWorker=await trackerVoiceHealth().catch(err=>({configured:Boolean(TRACKER_TTS_WORKER_URL),reachable:false,message:String(err?.message||err)}));
     return json(res,200,{
-      version:'2.9.132',
+      version:'2.9.133',
       modelCached:Boolean(voskModelArchive),
       modelBytes:voskModelArchive?.length||0,
       modelSource:voskModelSource||null,
@@ -8110,7 +8112,7 @@ async function routeApi(req,res,url) {
     if(!voiceText)return json(res,400,{error:'VOICE_TEXT_REQUIRED',message:'Tracker voice text was empty.'});
     const cacheKey='brain-'+crypto.createHash('sha1').update(voiceText).digest('hex').slice(0,20);
     try{
-      return await streamTrackerVoiceToResponse(res,voiceText,cacheKey,{priority:'normal',voice:'core',streamingMode:2});
+      return await streamTrackerVoiceToResponse(res,voiceText,cacheKey,{priority:'normal',voice:'core',streamingMode:3});
     }catch(err){
       console.warn('Tracker conversational custom voice failed',String(err.message||err));
       return json(res,503,{error:err?.code||'JLR_CUSTOM_VOICE_UNAVAILABLE',message:String(err.message||err)});
@@ -8121,7 +8123,7 @@ async function routeApi(req,res,url) {
     if(!voiceText)return json(res,400,{error:'VOICE_TEXT_REQUIRED',message:'Tracker voice text was empty.'});
     const cacheKey='brain-live-'+crypto.createHash('sha1').update(voiceText).digest('hex').slice(0,20);
     try{
-      return await streamTrackerVoiceToResponse(res,voiceText,cacheKey,{priority:'normal',voice:'core',streamingMode:2});
+      return await streamTrackerVoiceToResponse(res,voiceText,cacheKey,{priority:'normal',voice:'core',streamingMode:3});
     }catch(err){
       console.warn('Tracker conversational live voice failed',String(err.message||err));
       return json(res,503,{error:err?.code||'JLR_CUSTOM_VOICE_UNAVAILABLE',message:String(err.message||err)});
@@ -8577,7 +8579,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.132 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.133 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>{
   Promise.all([
     loadVoskRuntimeAsset(VOSK_RUNTIME_FILES['/vendor/vosk/vosk-0.0.8.js']),
