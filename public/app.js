@@ -239,7 +239,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.142');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.143');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -329,7 +329,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR ADAM MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.142'),
+      'Version: '+String(state?.app?.version||'2.9.143'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -2751,7 +2751,7 @@
             </div>
           </aside>
           <a class="doctrine-nyx-buyback" href="https://discord.com/channels/1275408985171820585/1465988346185515078" target="_blank" rel="noopener noreferrer" aria-label="Open the Nyx Buyback Discord channel">
-            <img src="/assets/nyx-buyback.webp?v=2.9.142" alt="Nyx Buyback — open the Discord channel">
+            <img src="/assets/nyx-buyback.webp?v=2.9.143" alt="Nyx Buyback — open the Discord channel">
             <span>OPEN BUYBACK CHANNEL ↗</span>
           </a>
           </div>
@@ -5835,7 +5835,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.142',
+          version:state?.app?.version||'2.9.143',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
