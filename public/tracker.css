@@ -109,3 +109,9 @@
 .tracker-intel-report button:hover{filter:brightness(1.2)}
 @media(max-width:1180px){.tracker-intel-grid{grid-template-columns:1fr 1fr}.tracker-intel-hot{grid-column:1/-1}}
 @media(max-width:760px){.tracker-intel-grid{grid-template-columns:1fr}.tracker-intel-hot{grid-column:auto}.tracker-intel-row{grid-template-columns:30px minmax(0,1fr) auto}.tracker-intel-row>em{grid-column:3}.tracker-intel-report{grid-template-columns:1fr}}
+
+/* v2.9.134 — regional Tracker Intel selector */
+.tracker-region-picker{display:flex;align-items:center;gap:6px;color:var(--muted);font:900 7px/1 Oxanium,Segoe UI,sans-serif;white-space:nowrap}
+.tracker-region-picker select{min-width:165px;max-width:230px;background:#0d0d13;color:#f4f0f6;border:1px solid #514853;border-radius:6px;padding:7px 28px 7px 8px;font:800 8px Oxanium,Segoe UI,sans-serif}
+.tracker-region-picker select:focus{outline:1px solid #b33c4c;border-color:#b33c4c}
+@media(max-width:760px){.tracker-intel-head{flex-direction:column}.tracker-region-picker{width:100%}.tracker-region-picker select{flex:1;max-width:none}}
