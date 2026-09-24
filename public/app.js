@@ -33,6 +33,11 @@
   const scoutLocationErrors = new Map();
   let scoutLocationCursor = 0;
   let scoutFollowEnabled = localStorage.getItem('jlrScoutFollow') !== 'false';
+  let scoutSelectedCharacterId = localStorage.getItem('jlrScoutCharacter') || '';
+  let scoutTargets = [];
+  let scoutTargetsLoading = false;
+  let scoutTargetsError = '';
+  let scoutTargetsOriginSystem = '';
   let scoutPromptKey = '';
   const scoutVoiceCooldown = new Map();
   let merIntel = null;
@@ -234,7 +239,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.141');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.142');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -324,7 +329,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR ADAM MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.141'),
+      'Version: '+String(state?.app?.version||'2.9.142'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -1352,7 +1357,7 @@
         <span class="tracker-assist-priority ${esc(issue.priority||'info')}">${esc(String(issue.priority||'info').toUpperCase())}</span>
         <strong>${esc(issue.title||'Tracker update')}</strong>
         <small>${esc(issue.reason||'')}</small>
-      </button>`).join(''):'<div class="visual-empty">No active Adam decisions require attention.</div>';
+      </button>`).join(''):'<div class="visual-empty">No active Scout decisions require attention.</div>';
     }
   }
 
@@ -1482,10 +1487,94 @@
     return !last||entered&&Date.now()-last>cooldown;
   }
 
+  function renderScoutTargets(){
+    const host=$('scoutTargetList');
+    const summary=$('scoutTargetSummary');
+    if(!host)return;
+    const selected=(me?.characters||[]).find(ch=>String(ch.characterId)===String(scoutSelectedCharacterId));
+    const location=scoutLocations.get(String(scoutSelectedCharacterId));
+    if(summary){
+      summary.textContent=location?.system
+        ?String(selected?.name||'Selected toon')+' • '+location.system+' • closest Field Tracker updates'
+        :'Select a location-enabled toon to rank nearby Field Tracker updates.';
+    }
+    if(scoutTargetsLoading){
+      host.innerHTML='<div class="visual-empty">Calculating closest update systems…</div>';
+      return;
+    }
+    if(scoutTargetsError){
+      host.innerHTML='<div class="visual-empty">'+esc(scoutTargetsError)+'</div>';
+      return;
+    }
+    if(!scoutTargets.length){
+      host.innerHTML='<div class="visual-empty">No Field Tracker systems currently need a scan update.</div>';
+      return;
+    }
+    host.innerHTML=scoutTargets.map((row,index)=>{
+      const age=row.lastScanAt?ago(row.lastScanAt):'never scanned';
+      return '<button class="scout-target-row" type="button" data-scout-field="'+esc(row.system)+'">'+
+        '<b>#'+(index+1)+'</b><div><strong>'+esc(row.system)+'</strong><small>'+esc(row.reason||'SCAN UPDATE')+' • '+esc(age)+'</small></div>'+
+        '<span>'+Number(row.jumps||0)+'J</span><em>OPEN →</em>'+
+      '</button>';
+    }).join('');
+  }
+
+  async function loadScoutTargets(force=false){
+    if(!me||scoutTargetsLoading)return;
+    const chars=(me.characters||[]).filter(ch=>ch.locationAccess);
+    if(!chars.length){
+      scoutTargets=[];scoutTargetsError='No linked toon currently has EVE location access.';renderScoutTargets();return;
+    }
+    if(!chars.some(ch=>String(ch.characterId)===String(scoutSelectedCharacterId))){
+      const preferred=chars.find(ch=>String(ch.characterId)===String(scanCharacterId))
+        ||chars.find(ch=>String(ch.characterId)===String(me.primaryCharacterId))
+        ||chars[0];
+      scoutSelectedCharacterId=String(preferred.characterId);
+      localStorage.setItem('jlrScoutCharacter',scoutSelectedCharacterId);
+    }
+    if(!force&&scoutTargets.length&&scoutTargetsOriginSystem===String(scoutLocations.get(scoutSelectedCharacterId)?.system||'')){
+      renderScoutTargets();
+      return;
+    }
+    scoutTargetsLoading=true;scoutTargetsError='';renderScoutTargets();
+    try{
+      const response=await api('/api/scout/targets',{method:'POST',body:JSON.stringify({characterId:scoutSelectedCharacterId})});
+      if(String(response?.characterId)!==String(scoutSelectedCharacterId))return;
+      if(response?.location?.system){
+        scoutLocations.set(String(scoutSelectedCharacterId),response.location);
+        scoutTargetsOriginSystem=String(response.location.system);
+      }
+      scoutTargets=Array.isArray(response?.targets)?response.targets:[];
+    }catch(error){
+      scoutTargets=[];
+      scoutTargetsError=String(error?.message||error||'Could not calculate nearby field updates.');
+    }finally{
+      scoutTargetsLoading=false;
+      renderScoutFollow();
+      renderScoutTargets();
+    }
+  }
+
   function renderScoutFollow(){
     const status=$('brainFollowStatus'),list=$('brainFollowList');
     if(!status||!list||!me)return;
     const chars=(me.characters||[]).filter(c=>c.locationAccess);
+    if(chars.length&&!chars.some(ch=>String(ch.characterId)===String(scoutSelectedCharacterId))){
+      const preferred=chars.find(ch=>String(ch.characterId)===String(scanCharacterId))
+        ||chars.find(ch=>String(ch.characterId)===String(me.primaryCharacterId))
+        ||chars[0];
+      scoutSelectedCharacterId=String(preferred.characterId);
+      localStorage.setItem('jlrScoutCharacter',scoutSelectedCharacterId);
+    }
+    const selector=$('scoutCharacterSelect');
+    if(selector){
+      const previous=String(selector.value||'');
+      selector.innerHTML=chars.length
+        ?chars.map(ch=>'<option value="'+esc(ch.characterId)+'">'+esc(ch.name)+'</option>').join('')
+        :'<option value="">NO LOCATION-ENABLED TOONS</option>';
+      selector.disabled=!chars.length;
+      selector.value=chars.some(ch=>String(ch.characterId)===String(scoutSelectedCharacterId))?scoutSelectedCharacterId:(previous||'');
+    }
     status.textContent=scoutFollowEnabled
       ?'Following '+chars.length+' location-enabled toon'+(chars.length===1?'':'s')+' while this page is open • scan-due alerts appear at the top of JLR'
       :'Auto follow is off.';
@@ -1498,6 +1587,7 @@
         :locationError?'Location fallback failed • retrying':'Waiting for location check';
       return '<div class="brain-follow-row"><strong>'+esc(ch.name)+'</strong><span'+(row?.needsScan?' class="scan-due"':'')+'>'+detail+'</span></div>';
     }).join(''):'<div class="brain-follow-row">Enable Auto Follow to watch your linked toons.</div>';
+    renderScoutTargets();
   }
 
   function scoutShowPrompt(snapshot){
@@ -1520,7 +1610,7 @@
     if((document.hidden&&!force)||scoutLocationBusy||scanBusy||!me||!scoutFollowEnabled)return;
     const chars=(me.characters||[]).filter(c=>c.locationAccess);
     if(!chars.length){renderScoutFollow();return}
-    const selected=chars.find(c=>String(c.characterId)===String(scanCharacterId));
+    const selected=chars.find(c=>String(c.characterId)===String(scoutSelectedCharacterId));
     const others=chars.filter(c=>String(c.characterId)!==String(selected?.characterId));
     const batch=[];
     if(selected)batch.push(String(selected.characterId));
@@ -1554,6 +1644,8 @@
       }
       for(const failure of response?.errors||[])scoutLocationErrors.set(String(failure.characterId),String(failure.error||'ESI_LOCATION_FAILED'));
       renderScoutFollow();
+      const selectedSnapshot=scoutLocations.get(String(scoutSelectedCharacterId));
+      if(selectedSnapshot?.system&&String(selectedSnapshot.system)!==String(scoutTargetsOriginSystem))void loadScoutTargets(true);
       if(prompt)scoutShowPrompt(prompt);
     }catch(error){
       if(force)console.warn('Scout location check failed',error);
@@ -1568,6 +1660,7 @@
     renderScoutFollow();
     if(!scoutFollowEnabled)return;
     pollScoutLocation(true);
+    if(activeTab==='brain')void loadScoutTargets(false);
     scoutLocationTimer=setInterval(()=>pollScoutLocation(false),30*1000);
   }
 
@@ -2091,6 +2184,7 @@
     if(activeTab==='brain'){
       refreshCompanionStatus();
       if(scoutFollowEnabled)pollScoutLocation(true);
+      void loadScoutTargets(false);
     }
     if(activeTab==='pvp'&&!pvpIntel&&!pvpIntelLoading)loadPvpIntel();
     if(activeTab==='threat')renderThreatScan();
@@ -2153,10 +2247,13 @@
         <section class="brain-card scout-watch-card">
           <div class="brain-card-head"><strong>TRAVEL UPDATE WATCH</strong><small>Silent visual alerts</small></div>
           <div class="brain-setting-grid scout-setting-grid">
+            <label class="brain-setting"><span>TRAVEL TOON</span><select id="scoutCharacterSelect"><option value="">SELECT TOON</option></select></label>
             <label class="brain-setting"><span>AUTO FOLLOW TOONS</span><select id="brainFollowEnabled"><option value="on">ON</option><option value="off">OFF</option></select></label>
           </div>
           <div id="brainScanPrompt" class="brain-scan-prompt hidden" role="status"><span id="brainScanPromptText"></span><button id="brainScanOpen" class="board-tool" type="button">OPEN SCANNER</button></div>
-          <div class="brain-follow-head"><strong>LINKED TOONS</strong><small id="brainFollowStatus">Checking location access…</small></div>
+          <div class="brain-follow-head"><strong>CLOSEST FIELD UPDATES</strong><small id="scoutTargetSummary">Select a toon to calculate routes.</small></div>
+          <div id="scoutTargetList" class="scout-target-list"><div class="visual-empty">Waiting for Scout location…</div></div>
+          <div class="brain-follow-head scout-linked-head"><strong>LINKED TOONS</strong><small id="brainFollowStatus">Checking location access…</small></div>
           <div id="brainFollowList" class="brain-follow-list"></div>
         </section>
 
@@ -3900,13 +3997,15 @@
     const appCached=Number(ledgerDebug?.cachedCharacters||0);
     const appLinked=Number(ledgerDebug?.linkedCharacters||0);
     const appCoverageBadge=$('appLedgerCoverageBadge');
+    const appCoverageRatio=appLinked>0?appCached/appLinked:0;
+    const appCoverageHealthy=Boolean(ledgerDebug&&(ledgerDebug.cacheHealthy??appCoverageRatio>=.8));
     if(appCoverageBadge){
-      appCoverageBadge.textContent=ledgerDebug?(appCached+'/'+appLinked+' SYNCED'):'WAITING';
-      appCoverageBadge.classList.toggle('partial',Boolean(ledgerDebug&&!ledgerDebug.cacheComplete));
+      appCoverageBadge.textContent=ledgerDebug?(appCached+'/'+appLinked+' '+(appCoverageHealthy?'HEALTHY':'SYNCING')):'WAITING';
+      appCoverageBadge.classList.toggle('partial',Boolean(ledgerDebug&&!appCoverageHealthy));
     }
     const appPayoutCard=$('actualTodayIsk')?.closest('.kpi');
     if(appPayoutCard){
-      appPayoutCard.classList.toggle('partial',Boolean(ledgerDebug&&!ledgerDebug.cacheComplete));
+      appPayoutCard.classList.toggle('partial',Boolean(ledgerDebug&&!appCoverageHealthy));
       if(ledgerDebug){
         const debug=[
           'cache '+appCached+'/'+appLinked,
@@ -3915,13 +4014,15 @@
           'outside tracked fields '+Number(ledgerDebug.outsideTrackedSystemRows||0),
           'unresolved systems '+Number(ledgerDebug.unresolvedSystemRows??ledgerDebug.unmatchedSystemRows??0),
           'non-T3 '+Number(ledgerDebug.unmatchedOreRows||0),
+          'needs EVE access '+Number(ledgerDebug.needsAccessCharacters||0),
+          'coverage '+Number(ledgerDebug.coveragePercent??appCoverageRatio*100).toFixed(1)+'%',
         ];
         appPayoutCard.title='Combined payout value for all linked JLR characters. '+debug.join(' • ')+(state.esi.lastSyncAt?' • synced '+ago(state.esi.lastSyncAt):'');
       }
     }
     $('actualTodayIskSub').textContent=unpricedM3>0
-      ?fmt(appTodayM3,'m3')+' m³ mined • '+fmt(unpricedM3,'m3')+' m³ awaiting price • '+payoutPriceBasis
-      :fmt(appTodayM3,'m3')+' m³ mined • exact T3 grade • '+(payout*100).toFixed(1)+'% payout • '+payoutPriceBasis;
+      ?'EVE day (UTC) • '+fmt(appTodayM3,'m3')+' m³ mined • '+fmt(unpricedM3,'m3')+' m³ awaiting price • '+payoutPriceBasis
+      :'EVE day (UTC) • '+fmt(appTodayM3,'m3')+' m³ mined • exact T3 grade • '+(payout*100).toFixed(1)+'% payout • '+payoutPriceBasis;
 
     const myTotals=myLedgerSummary?.totals||null;
     const myRawValue=Math.max(0,Number(myTotals?.jbv)||0);
@@ -3932,15 +4033,17 @@
       const myCached=Number(myLedgerSummary?.cachedCharacters||0);
       const myLinked=Number(myLedgerSummary?.linkedCharacters||0);
       const myBadge=$('myLedgerCoverageBadge');
+      const myCoverageRatio=myLinked>0?myCached/myLinked:0;
+      const myCoverageHealthy=Boolean(myLedgerSummary&&myCoverageRatio>=.8);
       if(myBadge){
-        myBadge.textContent=myLedgerSummary?(myCached+'/'+myLinked+' SYNCED'):'LOADING';
-        myBadge.classList.toggle('partial',Boolean(myLedgerSummary&&myCached<myLinked));
+        myBadge.textContent=myLedgerSummary?(myCached+'/'+myLinked+' '+(myCoverageHealthy?'HEALTHY':'SYNCING')):'LOADING';
+        myBadge.classList.toggle('partial',Boolean(myLedgerSummary&&!myCoverageHealthy));
       }
-      if($('myLedgerPayoutCard'))$('myLedgerPayoutCard').classList.toggle('partial',Boolean(myLedgerSummary&&myCached<myLinked));
+      if($('myLedgerPayoutCard'))$('myLedgerPayoutCard').classList.toggle('partial',Boolean(myLedgerSummary&&!myCoverageHealthy));
       $('actualMyTodayIskSub').textContent=myLedgerSummary
         ?(myUnpricedM3>0
-          ?fmt(myM3,'m3')+' m³ mined • '+fmt(myUnpricedM3,'m3')+' m³ awaiting price • click for audit'
-          :fmt(myM3,'m3')+' m³ mined • exact T3 grade • '+(payout*100).toFixed(1)+'% payout • click for audit')
+          ?'EVE day (UTC) • '+fmt(myM3,'m3')+' m³ mined • '+fmt(myUnpricedM3,'m3')+' m³ awaiting price • click for audit'
+          :'EVE day (UTC) • '+fmt(myM3,'m3')+' m³ mined • exact T3 grade • '+(payout*100).toFixed(1)+'% payout • click for audit')
         :'Loading your toon ledger…';
     }
     $('actualExpTodayM3').textContent=`${fmt(state.esi.actual.today.m3,'m3')} m³`;
@@ -5593,6 +5696,12 @@
         toast('Tracker voice enabled.');
       }
       updateSoundStatus();
+    }else if(target?.id==='scoutCharacterSelect'){
+      scoutSelectedCharacterId=String(target.value||'');
+      localStorage.setItem('jlrScoutCharacter',scoutSelectedCharacterId);
+      scoutTargets=[];scoutTargetsError='';scoutTargetsOriginSystem='';
+      await pollScoutLocation(true);
+      await loadScoutTargets(true);
     }else if(target?.id==='brainFollowEnabled'){
       scoutFollowEnabled=target.value==='on';
       localStorage.setItem('jlrScoutFollow',String(scoutFollowEnabled));
@@ -5638,9 +5747,25 @@
       await revokeCompanionDevices();
       return;
     }
+    const scoutTarget=target.closest('[data-scout-field]');
+    if(scoutTarget){
+      const system=String(scoutTarget.dataset.scoutField||'');
+      if(system){
+        if(scoutSelectedCharacterId&&(me?.characters||[]).some(ch=>String(ch.characterId)===String(scoutSelectedCharacterId))){
+          scanCharacterId=scoutSelectedCharacterId;
+          localStorage.setItem('jlrScanCharacter',scanCharacterId);
+          renderScanCharacters();
+        }
+        applyTab('fields');
+        chooseSystem(system);
+        toast('Scout target: '+system);
+      }
+      return;
+    }
     if(target.closest('#scoutCheckNow')){
       await pollScoutLocation(true);
-      toast('Scout location check complete.');
+      await loadScoutTargets(true);
+      toast('Scout routes refreshed.');
       return;
     }
     if(target.closest('#trackerRepeatLast')){
@@ -5700,7 +5825,7 @@
       if(submit)submit.disabled=true;
       try{
         const context=diagnostics?{
-          version:state?.app?.version||'2.9.141',
+          version:state?.app?.version||'2.9.142',
           sourceTab:feedbackOpenedFrom||'unknown',
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           userAgent:String(navigator.userAgent||'').slice(0,500),
