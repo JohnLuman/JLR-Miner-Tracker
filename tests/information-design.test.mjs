@@ -9,14 +9,12 @@ const trackerCss=fs.readFileSync(new URL('../public/tracker.css',import.meta.url
 const trackerLoader=fs.readFileSync(new URL('../public/tracker.js',import.meta.url),'utf8');
 const pkg=JSON.parse(fs.readFileSync(new URL('../package.json',import.meta.url),'utf8'));
 
-assert.match(index,/class="kpis information-kpis"/,'top summary uses the decision-first KPI template');
-assert.match(index,/class="kpi kpi-primary api-kpi app-payout-kpi"/,'app payout is a primary KPI');
-assert.match(index,/class="kpi kpi-secondary fleet-target-kpi"/,'fleet target is a compact secondary KPI');
 assert.match(index,/class="kpis information-kpis operations-summary-bar"/,'top metrics are presented as one summary bar');
-assert.match(index,/MY TOONS PAYOUT • EVE DAY/,'personal payout is a primary KPI');
-assert.match(index,/class="kpi kpi-secondary"/,'secondary metrics remain available');
+assert.match(index,/class="kpi summary-cell summary-cell-payout api-kpi app-payout-kpi"/,'app payout leads the one-line summary');
+assert.match(index,/class="kpi summary-cell fleet-target-kpi"/,'fleet target remains a compact summary metric');
+assert.match(index,/>MY TOONS<\/span>/,'personal payout stays in the top summary');
+assert.match(index,/>JITA \/ HR<\/span>[\s\S]*>C-N \/ HR<\/span>/,'Jita and C-N remain adjacent in the summary flow');
 assert.match(styles,/v2\.9\.144 — one-line decision summary/,'top summary uses the one-line decision bar');
-assert.match(styles,/\.information-kpis\{grid-template-columns:repeat\(4,minmax\(0,1fr\)\);max-width:1040px/,'summary is capped and uses four equal columns');
 assert.match(styles,/\.operations-summary-bar\{display:grid;grid-template-columns:/,'all six summary metrics share one horizontal grid');
 assert.match(styles,/repeat\(6,minmax\(105px,1fr\)\)/,'summary compresses evenly before mobile overflow');
 assert.doesNotMatch(index,/market-payout-pair/,'summary no longer needs a nested market row');
