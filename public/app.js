@@ -4758,7 +4758,7 @@
       el.innerHTML='<div class="visual-empty">Live activity history will begin after the next ESI ledger sync.</div>';
       return;
     }
-    const W=760,H=205,L=52,R=92,T=20,B=28,pw=W-L-R,ph=H-T-B;
+    const W=760,H=205,L=52,R=118,T=20,B=28,pw=W-L-R,ph=H-T-B;
     const values=rows.map(row=>Math.max(0,Number(row.actualM3PerHour)||0));
     const max=Math.max(1,Number(target)||0,...values)*1.12;
     const x=i=>rows.length<=1?L+pw/2:L+i/(rows.length-1)*pw;
@@ -4783,7 +4783,9 @@
       return '<circle cx="'+x(i).toFixed(1)+'" cy="'+y(values[i]).toFixed(1)+'" r="7" class="fleet-chart-hit"><title>'+esc(title)+'</title></circle>';
     }).join('');
     const latestDot='<circle cx="'+x(latestIndex).toFixed(1)+'" cy="'+y(latestValue).toFixed(1)+'" r="4" class="fleet-activity-dot"><title>'+esc(latestTitle)+'</title></circle>';
-    const latestLabel='<text x="'+(W-R+7)+'" y="'+Math.max(T+8,Math.min(T+ph-2,y(latestValue)+3)).toFixed(1)+'" class="fleet-latest-label">'+esc(compactNumber(latestValue))+'</text>';
+    const latestPct=Number(target)>0?latestValue/Number(target)*100:null;
+    const latestLabelText=compactNumber(latestValue)+(latestPct!=null?' • '+latestPct.toFixed(0)+'%':'');
+    const latestLabel='<text x="'+(W-R+7)+'" y="'+Math.max(T+8,Math.min(T+ph-2,y(latestValue)+3)).toFixed(1)+'" class="fleet-latest-label">'+esc(latestLabelText)+'</text>';
     const labelIndexes=[0,Math.floor((rows.length-1)/2),rows.length-1];
     const labels=[...new Set(labelIndexes)].map(i=>'<text x="'+x(i).toFixed(1)+'" y="'+(H-8)+'" text-anchor="middle" class="fleet-chart-axis">'+esc(new Date(rows[i].at).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}))+'</text>').join('');
     el.innerHTML='<svg class="fleet-chart-svg" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Live fleet mining rate from recent ESI ledger samples">'+
@@ -4949,9 +4951,11 @@
     $('fleetRangeTotalSub').textContent=`${fmt(rangeValue)} ISK tracked payout`;
     $('fleetBestDay').textContent=best&&Number(best.m3)>0?`${fmt(best.m3,'m3')} m³`:'—';
     $('fleetBestDaySub').textContent=best&&Number(best.m3)>0?chartDateLabel(best.date):'no production history yet';
-    $('fleetHistoryTitle').textContent=fleetHistoryMetric==='value'?'DAILY ISK PAYOUT':'DAILY MINING VOLUME';
-    $('fleetHistorySubtitle').textContent=fleetHistoryMetric==='value'?`assigned miners • ISK payout • last ${fleetHistoryDays} days`:`assigned miners • mined m³ • last ${fleetHistoryDays} days`;
-    $('fleetOreMixSubtitle').textContent=`assigned miners • last ${fleetHistoryDays} days • mined m³ by ore`;
+    $('fleetHistoryTitle').textContent=fleetHistoryMetric==='value'?'DAILY PAYOUT':'DAILY OUTPUT';
+    $('fleetHistorySubtitle').textContent=fleetHistoryMetric==='value'
+      ?`How much tracked payout did the selected fleet generate each day? • last ${fleetHistoryDays} days`
+      :`How much did the selected fleet mine each day? • last ${fleetHistoryDays} days`;
+    $('fleetOreMixSubtitle').textContent=`What made up the mined volume? • selected fleet • last ${fleetHistoryDays} days`;
     renderFleetActivityChart($('fleetActivityChart'),samples,target);
     renderFleetDailyChart($('fleetHistoryChart'),daily,fleetHistoryMetric);
     renderFleetOreMix($('fleetOreMix'),daily);
