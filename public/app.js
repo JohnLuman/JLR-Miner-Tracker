@@ -2751,7 +2751,7 @@
             </div>
           </aside>
           <a class="doctrine-nyx-buyback" href="https://discord.com/channels/1275408985171820585/1465988346185515078" target="_blank" rel="noopener noreferrer" aria-label="Open the Nyx Buyback Discord channel">
-            <img src="/assets/nyx-buyback.webp?v=2.9.144" alt="Nyx Buyback — open the Discord channel">
+            <img src="/assets/nyx-buyback.webp?v=2.9.144-buyback2" alt="Nyx Buyback — open the Discord channel">
             <span>OPEN BUYBACK CHANNEL ↗</span>
           </a>
           </div>
