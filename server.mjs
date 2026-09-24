@@ -7449,8 +7449,12 @@ async function trackerIntelObservedRows(kind,originSystemId){
       systemId:Number(row.systemId)||0,
       system:String(row.system||row.systemId||'Unknown'),
       value:Math.max(0,Number(latest.value)||0),
+      reserveValue:kind==='ess'&&Number.isFinite(Number(latest.reserveValue))?Math.max(0,Number(latest.reserveValue)):null,
+      payoutAt:kind==='ess'&&latest.payoutAt?String(latest.payoutAt):null,
       observedAt:latest.at,
       reportedAt:latest.at,
+      changedAt:row.changedAt||latest.at,
+      activeSince:kind==='interference'&&Number(latest.value)>0?(row.activeSince||latest.activeSince||latest.at):null,
       source:'eve-client-public',
       samples:history.length,
       delta:trend.delta,
@@ -7526,11 +7530,32 @@ async function trackerIntelSnapshot(user,{force=false,regionId=TRACKER_INTEL_DEF
     interferenceReports,
     reportTtlHours:TRACKER_INTEL_REPORT_TTL_MS/3600000,
     hotZoneRefreshMinutes:TRACKER_INTEL_HOT_CACHE_MS/60000,
-    sources:{
-      hotZones:{automatic:true,source:'ESI system activity + zKillboard',refreshMinutes:TRACKER_INTEL_HOT_CACHE_MS/60000},
-      ess:{automatic:false,source:'eve-client-public',status:'collector-required'},
-      interference:{automatic:false,source:'eve-client-public',status:'collector-required'},
-    },
+    sources:(()=>{
+      const collector=trackerIntelStore().publicMapCollector||{};
+      const freshMs=5*60*1000;
+      const essAge=Date.now()-Date.parse(collector.lastEssAt||'');
+      const interferenceAge=Date.now()-Date.parse(collector.lastInterferenceAt||'');
+      return{
+        hotZones:{automatic:true,source:'ESI system activity + zKillboard',refreshMinutes:TRACKER_INTEL_HOT_CACHE_MS/60000},
+        ess:{
+          automatic:Number.isFinite(essAge)&&essAge<freshMs,
+          source:'JLR Companion public EVE client map/Agency feed',
+          status:Number.isFinite(essAge)&&essAge<freshMs?'online':'waiting',
+          lastObservedAt:collector.lastEssAt||null,
+        },
+        interference:{
+          automatic:Number.isFinite(interferenceAge)&&interferenceAge<freshMs,
+          source:'JLR Companion public EVE client map feed',
+          status:Number.isFinite(interferenceAge)&&interferenceAge<freshMs?'online':'waiting',
+          lastObservedAt:collector.lastInterferenceAt||null,
+        },
+        collector:{
+          lastSeenAt:collector.lastSeenAt||null,
+          deviceId:collector.deviceId||null,
+          deviceName:collector.deviceName||null,
+        },
+      };
+    })(),
   };
 }
 
