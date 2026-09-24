@@ -2309,7 +2309,6 @@
             <div class="feedback-type-grid" role="group" aria-label="Feedback type">
               <button class="feedback-type active" data-feedback-type="bug" type="button"><b>BUG</b><span>Something is broken</span></button>
               <button class="feedback-type" data-feedback-type="suggestion" type="button"><b>FEATURE IDEA</b><span>Something JLR should add</span></button>
-              <button class="feedback-type" data-feedback-type="speech" type="button"><b>SPEECH / VOICE</b><span>Mic, wake word, or spoken reply</span></button>
               <button class="feedback-type" data-feedback-type="data" type="button"><b>DATA / ESI</b><span>Wrong, stale, or missing data</span></button>
               <button class="feedback-type" data-feedback-type="ui" type="button"><b>UI / UX</b><span>Layout, readability, or controls</span></button>
               <button class="feedback-type" data-feedback-type="other" type="button"><b>OTHER</b><span>Anything else</span></button>
@@ -2361,7 +2360,6 @@
               <div class="feedback-guide-list">
                 <div><b>BUG</b><span>Something worked differently than intended.</span></div>
                 <div><b>FEATURE IDEA</b><span>A new tool, metric, alert, or workflow.</span></div>
-                <div><b>SPEECH / VOICE</b><span>Wake word, microphone, recognition, or voice output.</span></div>
                 <div><b>DATA / ESI</b><span>Values do not match EVE, zKill, market data, or another source.</span></div>
                 <div><b>UI / UX</b><span>Hard to read, clipped, confusing, or too many clicks.</span></div>
               </div>
