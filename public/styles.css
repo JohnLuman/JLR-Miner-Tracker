@@ -3545,3 +3545,32 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
   font:700 9px/1 "Segoe UI",Arial,sans-serif;
   letter-spacing:.06em;
 }
+
+
+/* v2.9.144-navfit — keep the complete compact nav visible on one bar.
+   The later natural-width accessibility rule was overriding the compact
+   shrink-to-fit rule and clipping FEEDBACK at narrower desktop widths. */
+@media(min-width:761px){
+  .app.compact .information-tabs{
+    flex-wrap:nowrap;
+    overflow:hidden;
+    width:100%;
+  }
+  .app.compact .information-tabs .app-tab{
+    flex:1 1 auto;
+    min-width:0;
+    min-height:34px;
+    padding:6px 5px;
+    font:800 8.5px/1.1 "Segoe UI",Arial,sans-serif;
+    letter-spacing:.015em;
+  }
+  .app.compact .information-tabs .app-tab-group-label{
+    flex:0 1 auto;
+    min-width:0;
+    min-height:34px;
+    margin-left:3px;
+    padding:0 2px 0 4px;
+    font:700 7px/1 "Segoe UI",Arial,sans-serif;
+    letter-spacing:.04em;
+  }
+}
