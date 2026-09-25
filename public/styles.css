@@ -3494,3 +3494,21 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
   .app .operations-summary-bar>.summary-cell{flex:0 0 155px}
   .app .operations-summary-bar>.summary-cell-payout{flex-basis:200px}
 }
+
+.adam-quick-row textarea{
+  min-width:0;
+  height:38px;
+  max-height:120px;
+  resize:vertical;
+  border:1px solid #343e49;
+  border-radius:18px;
+  background:#101720;
+  color:var(--text);
+  padding:9px 13px;
+  outline:none;
+  font:600 10px "Segoe UI",Arial,sans-serif;
+}
+.adam-quick-row textarea:focus{
+  border-color:var(--theme-accent,var(--purple));
+  box-shadow:0 0 0 2px color-mix(in srgb,var(--theme-accent,var(--purple)) 20%,transparent);
+}
