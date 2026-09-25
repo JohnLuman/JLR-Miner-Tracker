@@ -963,6 +963,8 @@ function scanActivityPublic() {
       lastDeltaM3:Math.max(0,Number(row.lastDeltaM3)||0),
       minedM3SinceBaseline:Math.max(0,Number(row.minedM3SinceBaseline)||0),
       minedM3SinceSite:Math.max(0,Number(row.minedM3SinceSite)||0),
+      verifiedM3SinceScan:Math.max(0,Number(row.verifiedM3SinceScan)||0),
+      verifiedFromScanAt:row.verifiedFromScanAt||null,
       activityStartedAt:row.activityStartedAt||null,
       siteM3:Math.max(0,Number(row.siteM3)||0),
       depletionPct,
