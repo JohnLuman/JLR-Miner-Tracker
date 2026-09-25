@@ -27,11 +27,12 @@ This version is designed to work like a normal EVE web app:
 - **Green** = site is up / untouched.
 - **Yellow** = picked at / in progress.
 - **🍒 Cherry Picked** is a separate persistent report flag.
-- **Red** = cleared. Starting Red requires confirmation and starts a 10-hour timer.
+- **Red** = cleared. Players confirm manual Red reports. JLR can also start Red automatically when linked ESI mining observed after a Probe Scanner report confirming the current T3 site reaches its full field m³ cap.
 - An active Red timer cannot be restarted or changed. The field becomes Green when the ten hours end.
 - Signed-in players can add timestamped notes to each system while its current field cycle is active.
 - Cherry Picked remains visible through Green / Yellow / Red changes.
 - When a Red timer reaches zero, the field automatically returns to Green and clears 🍒 and all notes for that system.
+- ESI's daily system total can contain an older site cycle. It can suggest a new scan but cannot start an automatic Red timer by itself; the verified mining since a confirmed site scan is tracked separately.
 - All signed-in browsers share the same board and receive changes live.
 
 ## Compact / Expanded UI

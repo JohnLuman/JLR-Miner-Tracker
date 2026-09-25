@@ -4172,6 +4172,15 @@
     const pctKnown=Number.isFinite(pct);
     const mined=Math.max(0,Number(ledger.minedM3SinceSite)||0);
     const site=Math.max(0,Number(ledger.siteM3)||0);
+    const fieldState=state?.fields?.[system];
+    if(fieldState?.status==='cleared'&&fieldState.autoClearReason==='esi-ledger-cap'){
+      const verified=Math.max(0,Number(fieldState.autoClearM3)||0);
+      return{
+        text:`AUTO RED • ${fmt(verified,'m3')} / ${fmt(site,'m3')} m³`,
+        tone:'danger',
+        title:`Linked ESI ledgers reported ${Math.round(verified).toLocaleString()} m³ after a Probe Scanner report confirmed this T3 site. Reaching the estimated ${Math.round(site).toLocaleString()} m³ field cap started the 10-hour timer. A new scan showing the deposit is still present can correct it.`,
+      };
+    }
     const minedText=mined>0&&site>0
       ?`LEDGER • ${fmt(mined,'m3')} / ${fmt(site,'m3')} m³ REPORTED MINED`
       :null;
@@ -4180,7 +4189,7 @@
       return{
         text:`${minedText||'LEDGER • '+Math.round(pct)+'% REPORTED MINED'} • SCAN NOW`,
         tone:'danger',
-        title:`Linked ESI mining ledgers report ${Math.round(mined).toLocaleString()} m³ mined from this site cycle, about ${Math.round(pct)}% of the ${Math.round(site).toLocaleString()} m³ site. Probe Scanner confirmation is still required before clearing it.`,
+        title:`Linked ESI mining ledgers report ${Math.round(mined).toLocaleString()} m³ attributed to this site cycle, about ${Math.round(pct)}% of ${Math.round(site).toLocaleString()} m³. Automatic RED needs a confirmed current-site scan followed by ${Math.round(site).toLocaleString()} m³ of new linked-ledger mining; otherwise scan to confirm depletion.`,
       };
     }
     if(ledger.needsScan&&pctKnown){
