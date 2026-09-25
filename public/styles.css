@@ -479,6 +479,9 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .system-node .sys-evidence.active{color:#83efad}
 .system-node .sys-evidence.warning{color:#ffd071}
 .system-node .sys-evidence.danger{color:#ff8a94;text-shadow:0 0 7px #ff334455}
+.field-board .system-node[data-status="cleared"]{background:linear-gradient(180deg,#67202b,#391018);border:2px solid #ff5367;box-shadow:inset 0 0 0 1px #ff879955,0 0 12px #ff304455}
+.field-board .system-node[data-status="cleared"] .sys-state{color:#fff0f1;text-shadow:0 0 7px #ff5268}
+.field-board .system-node[data-status="cleared"] .sys-name{color:#fff}
 @media(min-width:761px){
   .field-board.board-size-small .system-node{min-height:48px}
   .field-board.board-size-medium .system-node{min-height:56px}
