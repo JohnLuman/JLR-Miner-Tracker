@@ -3512,3 +3512,36 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
   border-color:var(--theme-accent,var(--purple));
   box-shadow:0 0 0 2px color-mix(in srgb,var(--theme-accent,var(--purple)) 20%,transparent);
 }
+
+/* Let navigation use its natural width instead of shrinking labels to 7px. */
+.app .information-tabs{
+  display:flex;
+  width:100%;
+  max-width:100%;
+  justify-content:flex-start;
+  flex-wrap:nowrap;
+  overflow-x:auto;
+  overflow-y:hidden;
+  white-space:nowrap;
+  scrollbar-width:thin;
+}
+.app .information-tabs .app-tab,
+.app.compact .information-tabs .app-tab{
+  flex:0 0 auto;
+  min-width:max-content;
+  min-height:36px;
+  padding:7px 12px;
+  font:800 10.5px/1.15 "Segoe UI",Arial,sans-serif;
+  letter-spacing:.025em;
+}
+.app .information-tabs .app-tab-group-label,
+.app.compact .information-tabs .app-tab-group-label{
+  display:inline-flex;
+  flex:0 0 auto;
+  min-height:36px;
+  margin-left:8px;
+  padding:0 5px 0 9px;
+  color:#b8c3d0;
+  font:700 9px/1 "Segoe UI",Arial,sans-serif;
+  letter-spacing:.06em;
+}
