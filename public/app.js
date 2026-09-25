@@ -380,6 +380,7 @@
   async function askAdamText(question){
     const text=String(question||'').trim();
     if(!text||adamAskBusy)return;
+    const isProbeScan=/(?:^|\n)\s*[A-Z]{3}-\d{3}\s+Cosmic\s+(?:Anomaly|Signature)\b/i.test(text);
     const inputs=[$('adamQuestion'),$('adamQuickQuestion')].filter(Boolean);
     const buttons=[$('adamAsk'),$('adamQuickAsk')].filter(Boolean);
     const replies=[$('adamReply'),$('adamQuickReply')].filter(Boolean);
@@ -398,6 +399,14 @@
       reply.textContent='Checking JLR context…';
     }
     try{
+      if(isProbeScan){
+        await analyzeProbeScan(text,{fromAdam:true});
+        const scanStatus=$('scanStatus');
+        const answer=String(scanStatus?.textContent||'Adam could not process that scan.').trim();
+        for(const reply of replies){reply.classList.remove('loading');reply.textContent=answer}
+        if(scanStatus?.className!=='error')for(const input of inputs)input.value='';
+        return;
+      }
       const context=adamContextSnapshot();
       const response=await api('/api/tracker/brain/ask',{
         method:'POST',
@@ -2487,7 +2496,7 @@
             <div class="adam-message adam-message-adam"><span>ADAM</span><p id="adamReply">I’m here. Ask me about what you’re looking at, what changed, or where to go next.</p></div>
           </div>
           <div class="adam-question-row">
-            <textarea id="adamQuestion" rows="2" maxlength="900" placeholder="Ask Adam naturally…"></textarea>
+            <textarea id="adamQuestion" rows="2" maxlength="100000" placeholder="Ask Adam or paste Probe Scanner rows…"></textarea>
             <button id="adamAsk" class="adam-send" type="button" aria-label="Send question to Adam">SEND ↵</button>
           </div>
         </section>
@@ -6461,11 +6470,14 @@
     setTimeout(()=>$('scanPasteText').focus(),0);
   }
   function closeScanPaste(){$('scanPastePanel').classList.add('hidden')}
-  async function analyzeProbeScan(text){
-    if(scanBusy)return;
+  async function analyzeProbeScan(text,{fromAdam=false}={}){
+    if(scanBusy){setScanStatus('A scan is already being checked.','warning');return}
     const selected=(me?.characters||[]).find(c=>String(c.characterId)===String(scanCharacterId));
-    if(!selected){toast('Choose a linked mining toon first.');return}
-    if(!selected.locationAccess){location.href='/auth/eve/start?intent=link';return}
+    if(!selected){setScanStatus('Choose a linked mining toon before sending a scan.','error');toast('Choose a linked mining toon first.');return}
+    if(!selected.locationAccess){
+      if(fromAdam){setScanStatus('Update the selected toon’s EVE location access before sending scans to Adam.','error');return}
+      location.href='/auth/eve/start?intent=link';return;
+    }
     scanBusy=true;renderScanCharacters();setScanStatus(`Checking ${selected.name} location…`);
     try{
       const scanRequestAt=Date.now();
