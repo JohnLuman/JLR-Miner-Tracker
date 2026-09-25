@@ -537,10 +537,15 @@
     const latest=losses[0]||null;
     const sourceUrl=data&&data.sourceUrl||'https://zkillboard.com/group/'+GROUP_ID+'/losses/';
     const live={...((data&&data.live)||{}),...(trackerStreamStatus||{})};
+    const serverRecentlyLive=live.caughtUp&&Date.now()-Date.parse(live.lastPollAt||'')<60_000;
     const liveLabel=trackerStreamConnected
       ?(live.caughtUp?'LIVE':'CATCHING UP')
-      :(trackerStreamState==='reconnecting'?'RECONNECTING':(live.caughtUp?'SERVER LIVE':'OFFLINE'));
-    const liveDetail=live.caughtUp
+      :(trackerStreamState==='reconnecting'?'ALERT LINK RETRYING':(serverRecentlyLive?'SERVER LIVE':'OFFLINE'));
+    const liveDetail=trackerStreamState==='reconnecting'&&serverRecentlyLive
+      ?'R2Z2 server live • browser alert stream reconnecting'
+      :trackerStreamState==='reconnecting'
+      ?'Browser alert stream reconnecting • live ingest status unconfirmed'
+      :serverRecentlyLive
       ?'R2Z2 at live edge • '+fmt(live.edgeWaitSeconds||6)+'s edge checks'
       :(live.lastError?String(live.lastError).slice(0,90):'connecting to R2Z2 live sequence');
     const status=trackerError
