@@ -3464,3 +3464,33 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
   overflow-wrap:anywhere;
   line-height:1.25;
 }
+
+/* The summary is one continuous reading row in either display mode. Earlier
+   .kpis grid rules otherwise take precedence and stack these six cells. */
+.app .operations-summary-bar{
+  display:flex!important;
+  flex-wrap:nowrap;
+  align-items:stretch;
+  max-width:none;
+  overflow-x:auto;
+  overflow-y:hidden;
+  scrollbar-width:thin;
+}
+.app .operations-summary-bar>.summary-cell{
+  grid-column:auto!important;
+  flex:1 0 135px;
+  min-height:66px;
+  max-width:none;
+}
+.app .operations-summary-bar>.summary-cell-payout{flex:1.35 0 185px}
+.app .operations-summary-bar>.summary-cell>small{
+  display:block!important;
+  white-space:nowrap!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis;
+  -webkit-line-clamp:unset;
+}
+@media(max-width:760px){
+  .app .operations-summary-bar>.summary-cell{flex:0 0 155px}
+  .app .operations-summary-bar>.summary-cell-payout{flex-basis:200px}
+}
