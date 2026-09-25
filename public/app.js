@@ -38,6 +38,7 @@
   let scoutTargets = [];
   let scoutNearestMining = null;
   let scoutTargetsLoading = false;
+  let scoutTargetsRefreshPending = false;
   let scoutTargetsError = '';
   let scoutTargetsOriginSystem = '';
   let scoutPromptKey = '';
@@ -1716,7 +1717,8 @@
   }
 
   async function loadScoutTargets(force=false){
-    if(!me||scoutTargetsLoading)return;
+    if(!me)return;
+    if(scoutTargetsLoading){if(force)scoutTargetsRefreshPending=true;return;}
     const chars=(me.characters||[]).filter(ch=>ch.locationAccess);
     if(!chars.length){
       scoutNearestMining=null;scoutTargets=[];scoutTargetsError='No toon currently has EVE location access.';renderScoutTargets();return;
@@ -1750,6 +1752,7 @@
       scoutTargetsLoading=false;
       renderScoutFollow();
       renderScoutTargets();
+      if(scoutTargetsRefreshPending){scoutTargetsRefreshPending=false;void loadScoutTargets(true);}
     }
   }
 
@@ -2188,7 +2191,11 @@
   $('soundStatus').addEventListener('click',async()=>{
     soundEnabled=!soundEnabled;
     localStorage.setItem('jlrSoundEnabled',String(soundEnabled));
-    if(!soundEnabled)window.jlrReleaseAutoVoice?.();
+    if(!soundEnabled){
+      window.jlrReleaseAutoVoice?.();
+      window.jlrStopVoice?.();
+      try{window.speechSynthesis?.cancel?.()}catch(error){}
+    }
     if(soundEnabled){
       unlockAudio();
       if(audio?.state==='suspended'){
@@ -4182,7 +4189,7 @@
       };
     }
     const minedText=mined>0&&site>0
-      ?`LEDGER • ${fmt(mined,'m3')} / ${fmt(site,'m3')} m³ REPORTED MINED`
+      ?`LEDGER • ${fmt(mined,'m3')} / ${fmt(site,'m3')} m³`
       :null;
 
     if(ledger.likelyDepleted&&pctKnown){
@@ -4202,7 +4209,7 @@
     if(minedText){
       return{
         text:ledger.seeded&&!ledger.active
-          ?`LEDGER • ${fmt(mined,'m3')} / ${fmt(site,'m3')} m³ MINED TODAY`
+          ?`LEDGER TODAY • ${fmt(mined,'m3')} / ${fmt(site,'m3')} m³`
           :minedText,
         tone:ledger.active?'active':'',
         title:ledger.seeded&&!ledger.active
@@ -4314,7 +4321,7 @@
       appTodaySub.textContent='EVE day '+eveDay+' UTC\nNo T3 rows • '+(payout*100).toFixed(1)+'% payout';
       appPayoutDetail='EVE day '+eveDay+' UTC • no T3 ledger rows since 00:00 UTC • '+(payout*100).toFixed(1)+'% payout';
     }else{
-      appTodaySub.textContent='EVE day '+eveDay+' UTC • '+fmt(appTodayM3,'m3')+' m³\nExact T3 • '+(payout*100).toFixed(1)+'% payout • '+payoutPriceBasis;
+      appTodaySub.textContent='EVE day '+eveDay+' UTC • '+fmt(appTodayM3,'m3')+' m³\nT3 • '+(payout*100).toFixed(1)+'% payout • '+payoutPriceBasis;
       appPayoutDetail='EVE day '+eveDay+' UTC • '+fmt(appTodayM3,'m3')+' m³ mined • exact T3 grade • '+(payout*100).toFixed(1)+'% payout • '+payoutPriceBasis;
     }
     appTodaySub.title=appPayoutDetail;
@@ -4338,8 +4345,8 @@
       if($('myLedgerPayoutCard'))$('myLedgerPayoutCard').classList.toggle('partial',Boolean(myLedgerSummary&&!myCoverageHealthy));
       $('actualMyTodayIskSub').textContent=myLedgerSummary
         ?(myUnpricedM3>0
-          ?'EVE day (UTC) • '+fmt(myM3,'m3')+' m³ mined • '+fmt(myUnpricedM3,'m3')+' m³ awaiting price • click for audit'
-          :'EVE day (UTC) • '+fmt(myM3,'m3')+' m³ mined • exact T3 grade • '+(payout*100).toFixed(1)+'% payout • click for audit')
+          ?'EVE day UTC • '+fmt(myM3,'m3')+' m³\n'+fmt(myUnpricedM3,'m3')+' m³ awaiting price'
+          :'EVE day UTC • '+fmt(myM3,'m3')+' m³\nT3 • '+(payout*100).toFixed(1)+'% payout • click for audit')
         :'Loading your toon ledger…';
     }
     $('actualExpTodayM3').textContent=`${fmt(state.esi.actual.today.m3,'m3')} m³`;
@@ -4721,26 +4728,9 @@
     const distanceText=Number.isFinite(distance)?` • ${distance.toFixed(2)} LY`:'';
     const scanLine=boardScanLine(d.system);
     const evidence=boardEvidenceLine(d.system);
-    const esiToday=Math.max(0,Number(state?.scans?.[d.system]?.esiTodayM3)||0);
-    const ledgerDebug=state?.esi?.ledgerDebug||null;
-    const cachedCount=Number(ledgerDebug?.cachedCharacters||0);
-    const linkedCount=Number(ledgerDebug?.linkedCharacters||state?.esi?.linkedCharacters||0);
-    const ledgerReady=Boolean(ledgerDebug?.cacheComplete);
-    const ledgerSyncing=Boolean(state?.esi?.syncing);
-    let esiTodayText=`ESI TODAY • ${fmt(esiToday,'m3')} m³`;
-    if(!ledgerReady){
-      const progress=`${cachedCount}/${linkedCount}`;
-      esiTodayText=esiToday>0
-        ?`${esiTodayText} • ${ledgerSyncing?'SYNC':'PARTIAL'} ${progress}`
-        :`ESI TODAY • ${ledgerSyncing?'SYNC':'PARTIAL'} ${progress}`;
-    }
-    const esiTodayTitle=ledgerReady
-      ?'Raw linked ESI mining ledger total matched to this T3 system for the current Eve day. This diagnostic is independent of GREEN/YELLOW status.'
-      :`Mining-ledger cache has ${cachedCount} of ${linkedCount} linked characters. ${ledgerSyncing?'The current ESI refresh is still running.':'The refresh is not running, so any missing characters likely failed or have not completed a ledger refresh.'}`;
-    const esiTodayHtml=`<span class="sys-evidence ${esiToday>0?'active':''}" title="${esc(esiTodayTitle)}">${esc(esiTodayText)}</span>`;
     const evidenceHtml=evidence?`<span class="sys-evidence ${esc(evidence.tone||'')}">${esc(evidence.text)}</span>`:'';
-    b.innerHTML=`${f.cherryPicked?'<span class="cherry-pin">🍒</span>':''}<button class="favorite-toggle" type="button" aria-pressed="${favorite}" title="${favorite?'Remove from favorites':'Favorite this system'}">${favorite?'★':'☆'}</button>${boardArrangeMode?'<span class="drag-grip" aria-hidden="true">⠿</span>':''}<span class="sys-name">${esc(d.system)}</span><span class="sys-ore">#${d.rank} ${esc(d.ore)}</span>${includeTimer?`<span class="sys-state">${line}${distanceText}</span>`:''}<span class="sys-scan${scanLine.stale?' stale':''}">${esc(scanLine.text)}</span>${esiTodayHtml}${evidenceHtml}`;
-    b.title=`${d.system} • ${d.ore} • ${statusText[f.status]}${favorite?' • Favorite':''}${f.autoReopenedAt?` • ESI mining detected ${ago(f.autoReopenedAt)}`:''}${Number.isFinite(distance)?` • ${distance.toFixed(2)} LY from C-N4OD`:''} • ${scanLine.title} • ESI today ${Math.round(esiToday).toLocaleString()} m³${evidence?' • '+evidence.title:''}${f.cherryPicked?' • Cherry Picked':''}${f.notes?.length?` • ${f.notes.length} notes`:''}`;
+    b.innerHTML=`${f.cherryPicked?'<span class="cherry-pin">🍒</span>':''}<button class="favorite-toggle" type="button" aria-pressed="${favorite}" title="${favorite?'Remove from favorites':'Favorite this system'}">${favorite?'★':'☆'}</button>${boardArrangeMode?'<span class="drag-grip" aria-hidden="true">⠿</span>':''}<span class="sys-name">${esc(d.system)}</span><span class="sys-ore">#${d.rank} ${esc(d.ore)}</span>${includeTimer?`<span class="sys-state">${line}${distanceText}</span>`:''}<span class="sys-scan${scanLine.stale?' stale':''}">${esc(scanLine.text)}</span>${evidenceHtml}`;
+    b.title=`${d.system} • ${d.ore} • ${statusText[f.status]}${favorite?' • Favorite':''}${f.autoReopenedAt?` • ESI mining detected ${ago(f.autoReopenedAt)}`:''}${Number.isFinite(distance)?` • ${distance.toFixed(2)} LY from C-N4OD`:''} • ${scanLine.title}${evidence?' • '+evidence.title:''}${f.cherryPicked?' • Cherry Picked':''}${f.notes?.length?` • ${f.notes.length} notes`:''}`;
 
     b.querySelector('.favorite-toggle').addEventListener('click',e=>{
       e.preventDefault();e.stopPropagation();toggleBoardFavorite('t3',d.system);sfx('select');
@@ -6507,8 +6497,11 @@
           $('brainScanPrompt')?.classList.add('hidden');
           scoutPromptKey='';
         }
+        scoutTargets=[];
+        scoutTargetsOriginSystem='';
+        void loadScoutTargets(true);
       }
-      if(preview?.boardScan?.recorded||preview?.tracked||preview?.a0?.tracked||preview?.gasWormhole?.recorded){
+      if(preview?.boardScan?.recorded||preview?.gasWormhole?.recorded){
         speakJlr('scan',{system:preview.system},scanVoiceFallback(preview));
       }
       if(preview.a0?.tracked){

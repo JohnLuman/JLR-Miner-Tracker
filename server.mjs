@@ -7,10 +7,11 @@ import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { DOCTRINE_SEED_B64 } from './lib/doctrine-seed.mjs';
 import { parseProbeScan, parseA0Scan, parseIceScan, parseWormholeGasScan } from './lib/probe-scan.mjs';
-import { nearestTrackedSystems } from './lib/brain-location.mjs';
+import { nearestTrackedSystems, needsScanUpdate, actionableLedgerScanWarning, recentlyScannedSystem } from './lib/brain-location.mjs';
 import { addVerifiedSiteMining, autoClearFieldAtCap, FIELD_AUTO_CLEAR_REASON } from './lib/field-auto-clear.mjs';
 import { positiveLedgerDeltas, dueRouteStops, fountainRouteDestination, brainLiveIntent } from './lib/brain-intel.mjs';
 import { isDoctrineDataQuestion, answerDoctrineQuestion, answerMiningMarketQuestion } from './lib/adam-data.mjs';
+import { explicitAdamHelpQuestion, adamOverviewQuestion, adamUnknownText } from './lib/adam-prompts.mjs';
 import { createTrackerSupportClient } from './lib/tracker-support-client.mjs';
 import { parseThreatPaste, compactThreatStats, threatActivityLabels, fountainThreatTags, jlrThreatScore, threatIgnoreReason } from './lib/threat-scan.mjs';
 import {
@@ -951,7 +952,7 @@ function scanActivityPublic() {
     const seededMs=Date.parse(row?.seededAt||'');
     const seeded=Number.isFinite(seededMs)&&(!Number.isFinite(lastMs)||seededMs>lastMs);
     const evidenceAt=seeded?row.seededAt:(row?.lastLedgerAt||row?.seededAt||null);
-    if(!row||(!evidenceAt&&minedM3SinceSite<=0))return null;
+    if(!row||(!evidenceAt&&minedM3SinceSite<=0&&!row.respawnCompletedAt))return null;
     const active=Number.isFinite(lastMs)&&at-lastMs<=45*60*1000;
     const depletionPct=Number.isFinite(Number(row.depletionPct))?Math.max(0,Math.min(100,Number(row.depletionPct))):null;
     return{
@@ -969,6 +970,7 @@ function scanActivityPublic() {
       likelyDepleted:Boolean(row.likelyDepleted),
       baselineAt:row.baselineAt||null,
       baselineDetected:Boolean(row.baselineDetected),
+      respawnCompletedAt:row.respawnCompletedAt||null,
       confidence:row.likelyDepleted?'inferred-depletion':active?'ledger-confirmed-active':'ledger-history',
     };
   };
@@ -1017,6 +1019,13 @@ function scanActivityPublic() {
   for(const system of Object.keys(esiTodayBySystem)){
     if(!out[system])add(system,{});
     else out[system].esiTodayM3=Math.max(0,Number(esiTodayBySystem[system])||0);
+  }
+  for(const row of Object.values(out)){
+    if(row.ledger&&!actionableLedgerScanWarning(row)){
+      row.ledger.needsScan=false;
+      row.ledger.likelyDepleted=false;
+      if(row.ledger.confidence==='inferred-depletion')row.ledger.confidence='ledger-history';
+    }
   }
   return out;
 }
@@ -3240,9 +3249,9 @@ async function scoutLocationSnapshot(ch,user=null,activity=null){
   const lastScanAt=scan?.lastScanAt||null;
   const scanMs=Date.parse(lastScanAt||'');
   const stale=!Number.isFinite(scanMs)||Date.now()-scanMs>=A0_REPORT_TTL;
-  const ledgerNeedsScan=Boolean(ledger?.needsScan||ledger?.likelyDepleted);
+  const ledgerNeedsScan=actionableLedgerScanWarning(scan);
   const respawning=t3&&!ice&&!a0&&state.fields?.[system]?.status==='cleared'&&Date.parse(state.fields[system].timerEndsAt||'')>Date.now();
-  const needsScan=tracked&&(stale||ledgerNeedsScan)&&(!respawning||ledgerNeedsScan);
+  const needsScan=tracked&&needsScanUpdate(scan)&&(!respawning||ledgerNeedsScan);
   return{
     characterId:String(ch.characterId),
     characterName:String(ch.name||'Adam toon'),
@@ -3444,14 +3453,14 @@ function trackerBrainWhySystem(system){
     facts.push(`Linked Eve mining ledgers report ${trackerBrainVolumeText(rawToday)} mined in this system today.`);
   }
 
-  if(field?.status==='ready'&&rawToday>0&&mined<=0){
+  if(field?.status==='ready'&&rawToday>0&&mined<=0&&stale){
     priority='attention';
     facts.push('Tracker has not safely assigned that daily total to the current site cycle, so the field has not been changed from green yet.');
   }else if(mined>0){
     facts.push(`Tracker has attributed ${trackerBrainVolumeText(mined)} to the current site cycle.`);
   }
 
-  if(field?.status!=='cleared'&&Number.isFinite(pct)){
+  if(field?.status!=='cleared'&&actionableLedgerScanWarning(scan)&&Number.isFinite(pct)){
     if(pct>=95){
       priority='high';
       facts.push(`Estimated depletion is ${Math.round(pct)} percent. A new scan is needed.`);
@@ -3553,7 +3562,7 @@ function trackerBrainSnapshot(scans=scanActivityPublic(),debug=miningLedgerDebug
     const stale=!Number.isFinite(scanMs)||Date.now()-scanMs>=A0_REPORT_TTL;
     const spoken=trackerSpokenSystem(system);
 
-    if(field?.status==='ready'&&rawToday>0&&mined<=0){
+    if(field?.status==='ready'&&rawToday>0&&mined<=0&&stale){
       add({
         id:'field-attribution-'+system,
         type:'field-attribution',
@@ -3567,7 +3576,7 @@ function trackerBrainSnapshot(scans=scanActivityPublic(),debug=miningLedgerDebug
       continue;
     }
 
-    if(field?.status!=='cleared'&&Number.isFinite(pct)&&pct>=95){
+    if(field?.status!=='cleared'&&actionableLedgerScanWarning(scan)&&Number.isFinite(pct)&&pct>=95){
       add({
         id:'field-depletion-'+system,
         type:'field-depletion',
@@ -3581,7 +3590,7 @@ function trackerBrainSnapshot(scans=scanActivityPublic(),debug=miningLedgerDebug
       continue;
     }
 
-    if(field?.status!=='cleared'&&Boolean(ledger?.needsScan)){
+    if(field?.status!=='cleared'&&actionableLedgerScanWarning(scan)){
       add({
         id:'field-scan-'+system,
         type:'field-scan',
@@ -3741,7 +3750,7 @@ async function trackerBrainCharacterLocation(ch,user=null){
   }
 }
 
-async function trackerBrainNearestSystems(originSystemId,{updatesOnly=false,limit=1,fieldOnly=false,availableOnly=false}={}){
+async function trackerBrainNearestSystems(originSystemId,{updatesOnly=false,excludeSystem='',limit=1,fieldOnly=false,availableOnly=false}={}){
   const activity=scanActivityPublic();
   const names=new Set((fieldOnly
     ?SYSTEM_DEFS.map(row=>row.system)
@@ -3754,12 +3763,11 @@ async function trackerBrainNearestSystems(originSystemId,{updatesOnly=false,limi
   const eligible=[...names].filter(system=>{
     const field=state.fields?.[system];
     const respawning=field?.status==='cleared'&&Date.parse(field.timerEndsAt||'')>Date.now();
-    const ledger=activity[system]?.ledger;
     if(availableOnly&&respawning)return false;
-    return !updatesOnly||!respawning||Boolean(ledger?.needsScan||ledger?.likelyDepleted);
+    return !updatesOnly||!respawning||actionableLedgerScanWarning(activity[system]);
   });
   return nearestTrackedSystems(originSystemId,{
-    names:eligible,activity,updatesOnly,limit,
+    names:eligible,activity,updatesOnly,excludeSystem,limit,
     resolveIds:resolveUniverseIds,
     routeJumps:async(origin,id,system)=>{
       try{
@@ -3927,13 +3935,15 @@ async function trackerBrainDataAnswer(user,question,options={}){
   }
 
   const mentioned=SYSTEM_DEFS.find(row=>String(question).toUpperCase().includes(row.system))?.system;
-  const selected=/\b(?:this|that|selected|current) (?:system|field)\b/.test(q)&&tab==='fields'?context.selectedSystem:'';
+  const selectedPrompt=/^(?:(?:what is|whats|show|explain|give me|tell me) )?(?:the )?(?:(?:field|system) (?:status|state|timer|respawn|scan|condition)|(?:respawn|scan) (?:status|timer|time|age))\b/.test(q);
+  const selected=tab==='fields'&&(/\b(?:this|that|selected|current) (?:system|field)\b/.test(q)||selectedPrompt)
+    ?context.selectedSystem:'';
   const system=mentioned||selected;
   if(system&&/\b(?:worth|value|isk)\b/.test(q)){
     const definition=effectiveSystems().find(row=>row.system===system);
     if(definition)return response('field-value',system+' has an estimated full-site Jita refined value of '+Math.round(definition.siteJBV).toLocaleString()+' ISK for '+definition.ore+'. That assumes the whole site is mined and does not account for travel, fleet yield, interruptions or current depletion.',{focusSystem:system});
   }
-  if(system&&/\b(?:status|state|ready|scan|picked|cleared|respawn|timer|why|deplet|mined|what|how long)\b/.test(q)){
+  if(system&&/\b(?:status|state|ready|scan|picked|cleared|respawn|timer|why|when|back|remaining|deplet|mined|what|how long)\b/.test(q)){
     const detail=trackerBrainWhySystem(system);
     if(detail)return response('field-detail',detail.system+' ('+detail.ore+'): '+detail.facts.join(' '),{focusSystem:detail.system,field:detail});
   }
@@ -4020,9 +4030,12 @@ async function trackerBrainLiveAnswer(user,question,options={}){
   }
 
   const updatesOnly=Boolean(intent.updatesOnly);
+  const excludeSystem=updatesOnly&&/\b(?:next|another)\b/i.test(String(options.originalQuestion||''))
+    ?recentlyScannedSystem(options.context?.recentActions,state.scans)
+    :'';
   let nearest={candidates:1,rows:[]};
   try{
-    nearest=await trackerBrainNearestSystems(location.systemId,{updatesOnly,limit:1});
+    nearest=await trackerBrainNearestSystems(location.systemId,{updatesOnly,excludeSystem,limit:1});
   }catch(error){
     console.warn('Tracker nearest-system lookup failed',String(error?.message||error));
   }
@@ -4037,7 +4050,7 @@ async function trackerBrainLiveAnswer(user,question,options={}){
 
   const first=nearest.rows[0];
   const qualifier=updatesOnly?' tracked system needing a scan update':' tracked mining system';
-  const ledgerDue=Boolean(first.activity?.ledger?.needsScan||first.activity?.ledger?.likelyDepleted);
+  const ledgerDue=actionableLedgerScanWarning(first.activity);
   const reason=updatesOnly?(ledgerDue?' Mining ledger activity flags another scan.':first.activity?.lastScanAt?' Its last Probe Scanner copy is out of date.':' No Probe Scanner copy is recorded for that system.'):'';
   const text='Closest'+qualifier+': '+first.system+'. '+first.jumps+' jump'+(first.jumps===1?'':'s')+' from '+ch.name+' in '+location.system+'.'
     +reason
@@ -4380,7 +4393,7 @@ function trackerBrainAnswer(user,question,options={}){
     });
   }
 
-  if(/\b(what can you do|what do you do|help me|help|capabilities|commands|what can i ask|what should i ask)\b/.test(q)){
+  if(explicitAdamHelpQuestion(raw)){
     return answer('capabilities',
       'I can use your current JLR context to answer short follow-ups, find the next scan update while you are working Fields or Adam, explain Fleet Performance variance, check toon location, find scan stops on a Fountain route, estimate observed mining payout, and explain JLR tabs, data and workflows. You do not need to repeat the selected system or toon when Adam already has that context.',
       {voiceText:'I can check observed mining payout this hour, Fountain route scan stops, and linked toon locations, and I can ask for new scans when needed.'}
@@ -4395,121 +4408,133 @@ function trackerBrainAnswer(user,question,options={}){
     return answer('version','JLR Miner Tracker is running version '+appVersion+'.');
   }
 
-  // A factual question without a supported data calculation should never
-  // receive a generic feature description that sounds like its answer.
+  if(/\b(?:voice|sound|speak|speaking)\b/.test(q)&&/\b(?:scan|scanner|paste)\b/.test(q)){
+    return answer('scan-voice','With Sound On, an accepted Probe Scanner paste gets a spoken confirmation. Sound Off in the top bar mutes Tracker speech.');
+  }
+
+  if(/\b(?:how|where)\b/.test(q)&&/\b(?:paste|submit|import)\b/.test(q)&&/\b(?:scan|scanner)\b/.test(q)){
+    return answer('scan-instructions','In EVE, copy the complete unfiltered Probe Scanner list. Select the toon in Fields and press Paste Scan. JLR checks that toon’s system and records the scan time when the rows are valid.');
+  }
+
+  // A factual question without a supported calculation gets a direct answer
+  // about the missing evidence, not an unrelated app tour.
   if(/\b(?:which|best|highest|lowest|how much|how many|roi|return on investment|profit|margin|worth|current price|compare|should i buy)\b/.test(q)){
     return answer('data-not-available',
-      'I cannot verify that answer from the data and context JLR currently exposes to Adam. Name the item, field, toon or metric you want compared, or open its tab so I can use the selected context.',
+      adamUnknownText(context),
       {handled:false});
   }
 
-  if(/\b(field|fields|t3|respawn|cherry|cherry picked|ore site)\b/.test(q)){
-    const needs=snapshot.issues.filter(row=>row.type==='scan-stale').length;
-    return answer('fields',
-      'The Fields board tracks T3 mining systems, whether a field is ready, picked, cleared, or waiting on its respawn timer. It also combines scan information with ledger activity so JLR can flag fields that may need another scan. Right now '+needs+' tracked system'+(needs===1?'':'s')+' need'+(needs===1?'s':'')+' a scan update.'
-    );
-  }
+  // Feature descriptions are only for explanation requests; an unanswered
+  // operational question should never get a general tour of the app.
+  if(adamOverviewQuestion(raw)){
+    if(/\b(field|fields|t3|respawn|cherry|cherry picked|ore site)\b/.test(q)){
+      const needs=snapshot.issues.filter(row=>row.type==='scan-stale').length;
+      return answer('fields',
+        'The Fields board tracks T3 mining systems, whether a field is ready, picked, cleared, or waiting on its respawn timer. It also combines scan information with ledger activity so JLR can flag fields that may need another scan. Right now '+needs+' tracked system'+(needs===1?'':'s')+' need'+(needs===1?'s':'')+' a scan update.'
+      );
+    }
 
-  if(/\b(scan|probe scanner|scanner|needs scan|scan update)\b/.test(q)){
-    return answer('scanning',
-      'Probe Scanner imports update the systems JLR tracks. A scan can confirm T3 ore, ice fields, or A0 sites, correct a field that reposted early, and reset stale scan warnings. Tracker can also tell you when a system needs another scan.'
-    );
-  }
+    if(/\b(scan|probe scanner|scanner|needs scan|scan update)\b/.test(q)){
+      return answer('scanning',
+        'Probe Scanner imports update the systems JLR tracks. A scan can confirm T3 ore, ice fields, or A0 sites, correct a field that reposted early, and reset stale scan warnings. Tracker can also tell you when a system needs another scan.'
+      );
+    }
 
-  if(/\b(fleet|fit|fits|hulk|mackinaw|abyssal|laser|strip miner|boost|booster|rorqual|porpoise|commander burst)\b/.test(q)){
-    return answer('fleet',
-      'Fleet and Fits is where you select miners, ships, saved EVE fits, abyssal mining lasers, and booster configuration. JLR stores each fit separately, calculates unboosted and boosted mining performance, and uses the selected fleet setup for projected cubic meters and ISK per hour.'
-    );
-  }
+    if(/\b(fleet|fit|fits|hulk|mackinaw|abyssal|laser|strip miner|boost|booster|rorqual|porpoise|commander burst)\b/.test(q)){
+      return answer('fleet',
+        'Fleet and Fits is where you select miners, ships, saved EVE fits, abyssal mining lasers, and booster configuration. JLR stores each fit separately, calculates unboosted and boosted mining performance, and uses the selected fleet setup for projected cubic meters and ISK per hour.'
+      );
+    }
 
-  if(/\b(performance|fleet performance|uptime|isk per hour|isk\/hr|m3|cubic|mining rate)\b/.test(q)){
-    return answer('performance',
-      'Fleet Performance is a post-mining review. It uses ESI ledger intervals and your configured fleet to compare recent measured output with the fitted target, daily production, payout, contributing miners, ore mix and history. It can show the variance, but ESI cannot prove whether reds, hostiles, travel, hauling, compression, pauses or mining efficiency caused it.'
-    );
-  }
+    if(/\b(performance|fleet performance|uptime|isk per hour|isk\/hr|m3|cubic|mining rate)\b/.test(q)){
+      return answer('performance',
+        'Fleet Performance is a post-mining review. It uses ESI ledger intervals and your configured fleet to compare recent measured output with the fitted target, daily production, payout, contributing miners, ore mix and history. It can show the variance, but ESI cannot prove whether reds, hostiles, travel, hauling, compression, pauses or mining efficiency caused it.'
+      );
+    }
 
-  if(/\b(app ledger|my toons|ledger|payout|payouts)\b/.test(q)){
-    return answer('ledger',
-      'App Ledger is the combined mining activity JLR can see across participating app users. My Toons Payout is limited to the characters linked to your account. Keeping them separate lets you compare the whole operation with only your own mining and payout.'
-    );
-  }
+    if(/\b(app ledger|my toons|ledger|payout|payouts)\b/.test(q)){
+      return answer('ledger',
+        'App Ledger is the combined mining activity JLR can see across participating app users. My Toons Payout is limited to the characters linked to your account. Keeping them separate lets you compare the whole operation with only your own mining and payout.'
+      );
+    }
 
-  if(/\b(market|price|prices|jita|c-n|local price|refine|refined value)\b/.test(q)){
-    return answer('market',
-      'JLR compares Jita values with local C-N market data, tracks raw and refined ore value, and uses the configured refine assumptions for mining estimates. Market data is shared across the app so users should see the same published values after refresh.'
-    );
-  }
+    if(/\b(market|price|prices|jita|c-n|local price|refine|refined value)\b/.test(q)){
+      return answer('market',
+        'JLR compares Jita values with local C-N market data, tracks raw and refined ore value, and uses the configured refine assumptions for mining estimates. Market data is shared across the app so users should see the same published values after refresh.'
+      );
+    }
 
-  if(/\b(ice|ice field|ice mining)\b/.test(q)){
-    return answer('ice',
-      'The Ice tab tracks known ice fields, their scan status, location and value information, and the ice systems useful to your operation. Ice is kept separate from T3 ore so its fields and valuation do not clutter the main mining board.'
-    );
-  }
+    if(/\b(ice|ice field|ice mining)\b/.test(q)){
+      return answer('ice',
+        'The Ice tab tracks known ice fields, their scan status, location and value information, and the ice systems useful to your operation. Ice is kept separate from T3 ore so its fields and valuation do not clutter the main mining board.'
+      );
+    }
 
-  if(/\b(gas|gas site|gas mining)\b/.test(q)){
-    return answer('gas',
-      'The Gas tab is the dedicated gas view. It keeps gas locations, availability and value information separate from ore and ice so miners can quickly compare the gas opportunities JLR knows about.'
-    );
-  }
+    if(/\b(gas|gas site|gas mining)\b/.test(q)){
+      return answer('gas',
+        'The Gas tab is the dedicated gas view. It keeps gas locations, availability and value information separate from ore and ice so miners can quickly compare the gas opportunities JLR knows about.'
+      );
+    }
 
-  if(/\b(doctrine|doctrine market|doctrine stock)\b/.test(q)){
-    return answer('doctrine',
-      'Doctrine Market compares local doctrine availability with Jita reference data so you can see what is stocked locally, what may be missing, and how local pricing compares with the trade hub.'
-    );
-  }
+    if(/\b(doctrine|doctrine market|doctrine stock)\b/.test(q)){
+      return answer('doctrine',
+        'Doctrine Market compares local doctrine availability with Jita reference data so you can see what is stocked locally, what may be missing, and how local pricing compares with the trade hub.'
+      );
+    }
 
-  if(/\b(init pvp|pvp|killboard|zkill|killmail|final blow|damage leaderboard)\b/.test(q)){
-    return answer('pvp',
-      'INIT PVP uses JLR cached kill data to show alliance and corporation activity without making every screen load depend directly on zKill. It includes recent rankings, final blows, damage views, and links back to killboard details where available.'
-    );
-  }
+    if(/\b(init pvp|pvp|killboard|zkill|killmail|final blow|damage leaderboard)\b/.test(q)){
+      return answer('pvp',
+        'INIT PVP uses JLR cached kill data to show alliance and corporation activity without making every screen load depend directly on zKill. It includes recent rankings, final blows, damage views, and links back to killboard details where available.'
+      );
+    }
 
-  if(/\b(heavy fighter|heavy fighters|fighter loss|tracker tab|fighter tracker)\b/.test(q)){
-    return answer('heavy-fighter-tracker',
-      'Heavy Fighter Tracker watches the live zKill R2Z2 feed for Heavy Fighter losses. When a qualifying loss appears, JLR can alert with the fighter type, system, estimated value and kill details. Access is restricted to the configured corporation.'
-    );
-  }
+    if(/\b(heavy fighter|heavy fighters|fighter loss|tracker tab|fighter tracker)\b/.test(q)){
+      return answer('heavy-fighter-tracker',
+        'Heavy Fighter Tracker watches the live zKill R2Z2 feed for Heavy Fighter losses. When a qualifying loss appears, JLR can alert with the fighter type, system, estimated value and kill details. Access is restricted to the configured corporation.'
+      );
+    }
 
-  if(/\b(threat|threat scan|dscan|d-scan|local scan|hostile|neutral|neut|cyno)\b/.test(q)){
-    return answer('threat-scan',
-      'Threat Scan analyzes pasted Local or D-scan information, removes known friendly characters, and summarizes useful hostile information such as character age, ships, kill history and Fountain activity. JLR weighs relevant Fountain and cyno activity more heavily when presenting the threat.'
-    );
-  }
+    if(/\b(threat|threat scan|dscan|d-scan|local scan|hostile|neutral|neut|cyno)\b/.test(q)){
+      return answer('threat-scan',
+        'Threat Scan analyzes pasted Local or D-scan information, removes known friendly characters, and summarizes useful hostile information such as character age, ships, kill history and Fountain activity. JLR weighs relevant Fountain and cyno activity more heavily when presenting the threat.'
+      );
+    }
 
-  if(/\b(mer|mer intel|monthly economic|economic report)\b/.test(q)){
-    return answer('mer',
-      'MER Intel turns Monthly Economic Report data into mining and economic context inside JLR, so you can compare activity and trends without leaving the app.'
-    );
-  }
+    if(/\b(mer|mer intel|monthly economic|economic report)\b/.test(q)){
+      return answer('mer',
+        'MER Intel turns Monthly Economic Report data into mining and economic context inside JLR, so you can compare activity and trends without leaving the app.'
+      );
+    }
 
-  if(/\b(toon|toons|character|characters|esi|eve sso|sso|link character|add character)\b/.test(q)){
-    return answer('toons',
-      'The Toons tab manages EVE characters linked through EVE SSO. JLR uses the granted ESI scopes for features such as fits, assets, mining ledger and location where required. Your account currently has '+linked.length+' linked character'+(linked.length===1?'':'s')+'.'
-    );
-  }
+    if(/\b(toon|toons|character|characters|esi|eve sso|sso|link character|add character)\b/.test(q)){
+      return answer('toons',
+        'The Toons tab manages EVE characters linked through EVE SSO. JLR uses the granted ESI scopes for features such as fits, assets, mining ledger and location where required. Your account currently has '+linked.length+' linked character'+(linked.length===1?'':'s')+'.'
+      );
+    }
 
-  if(/\b(mic|microphone|voice|speech|wake word|say adam|say tracker|talk to tracker|not hearing|error code)\b/.test(q)){
-    return answer('voice',
-      'Adam currently uses typed questions rather than the retired live microphone pipeline. He carries JLR context between questions, including the current tab, selected system or toon, recent scan workflow and Fleet Performance state. Adam location tracking continues to work without a microphone.'
-    );
-  }
+    if(/\b(mic|microphone|voice|speech|wake word|say adam|say tracker|talk to tracker|not hearing|error code)\b/.test(q)){
+      return answer('voice',
+        'Adam currently uses typed questions rather than the retired live microphone pipeline. He carries JLR context between questions, including the current tab, selected system or toon, recent scan workflow and Fleet Performance state. Adam location tracking continues to work without a microphone.'
+      );
+    }
 
-  if(/\b(feedback|report bug|bug report|suggestion|feature idea|submit idea)\b/.test(q)){
-    return answer('feedback',
-      'The Feedback tab lets you report bugs, feature ideas, data issues and UI problems. JLR automatically attaches safe app context such as the source tab, display mode and EVE-data health. Impact, reproduction steps and expected behavior are optional, and recent submissions stay visible there.'
-    );
-  }
+    if(/\b(feedback|report bug|bug report|suggestion|feature idea|submit idea)\b/.test(q)){
+      return answer('feedback',
+        'The Feedback tab lets you report bugs, feature ideas, data issues and UI problems. JLR automatically attaches safe app context such as the source tab, display mode and EVE-data health. Impact, reproduction steps and expected behavior are optional, and recent submissions stay visible there.'
+      );
+    }
 
-  if(/\b(theme|themes|compact|expanded|layout|display|ui)\b/.test(q)){
-    return answer('interface',
-      'JLR supports multiple visual themes plus compact and expanded views. Compact mode reduces secondary detail for monitoring, while expanded mode keeps the richer fit, mining and operational information visible.'
-    );
-  }
+    if(/\b(theme|themes|compact|expanded|layout|display|ui)\b/.test(q)){
+      return answer('interface',
+        'JLR supports multiple visual themes plus compact and expanded views. Compact mode reduces secondary detail for monitoring, while expanded mode keeps the richer fit, mining and operational information visible.'
+      );
+    }
 
-  if(/\b(safe|security|secure|token|tokens|privacy|credentials)\b/.test(q)){
-    return answer('security',
-      'JLR uses EVE SSO and stores the access needed for enabled ESI features on the server side. Tracker diagnostics are designed not to include EVE access tokens or passwords. Corporation-restricted features also check the linked EVE identity before returning protected data.'
-    );
+    if(/\b(safe|security|secure|token|tokens|privacy|credentials)\b/.test(q)){
+      return answer('security',
+        'JLR uses EVE SSO and stores the access needed for enabled ESI features on the server side. Tracker diagnostics are designed not to include EVE access tokens or passwords. Corporation-restricted features also check the linked EVE identity before returning protected data.'
+      );
+    }
   }
 
   if(/\b(status|health|anything wrong|need attention|what needs attention)\b/.test(q)){
@@ -4517,10 +4542,7 @@ function trackerBrainAnswer(user,question,options={}){
     return answer('status',snapshot.attentionCount+' item'+(snapshot.attentionCount===1?'':'s')+' currently require attention. Ask me for a briefing and I will read the priority items.');
   }
 
-  return answer('general',
-    'I can answer questions about JLR Miner Tracker and use the current app context when the question is short. I do not have a general internet knowledge engine built into Adam. Ask me about the current tab, a selected system or toon, field status, mining metrics, ESI data, threat scan, PVP, market data, or what to do next.',
-    {handled:false,voiceText:'I can help with Tracker features, mining numbers, and E S I. Ask me about a specific tab or value.'}
-  );
+  return answer('not-verified',adamUnknownText(context),{handled:false});
 }
 
 async function a0CandidateForScan(systemId,system,a0Detected=false){
@@ -8380,8 +8402,9 @@ async function routeApi(req,res,url) {
       const targets=nearest.rows.map(row=>{
         const activity=row.activity||{};
         const ledger=activity.ledger||null;
-        const reason=ledger?.likelyDepleted?'LIKELY DEPLETED'
-          :ledger?.needsScan?'LEDGER REQUESTS SCAN'
+        const ledgerDue=actionableLedgerScanWarning(activity);
+        const reason=ledgerDue&&ledger?.likelyDepleted?'LIKELY DEPLETED'
+          :ledgerDue&&ledger?.needsScan?'LEDGER REQUESTS SCAN'
           :activity.lastScanAt?'SCAN STALE'
           :'NEVER SCANNED';
         return{
@@ -8389,7 +8412,7 @@ async function routeApi(req,res,url) {
           jumps:row.jumps,
           reason,
           lastScanAt:activity.lastScanAt||null,
-          ledgerNeedsScan:Boolean(ledger?.needsScan||ledger?.likelyDepleted),
+          ledgerNeedsScan:ledgerDue,
         };
       });
       return json(res,200,{characterId,characterName:ch.name,location,nearestMining,targets,candidates:nearest.candidates,checkedAt:now()});
@@ -8457,6 +8480,7 @@ async function routeApi(req,res,url) {
         characterId:body?.characterId,
         currentTab,
         context,
+        originalQuestion:question,
       });
     }
     void trackerSupport.rememberAnswer({
