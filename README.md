@@ -33,6 +33,7 @@ This version is designed to work like a normal EVE web app:
 - Cherry Picked remains visible through Green / Yellow / Red changes.
 - When a Red timer reaches zero, the field automatically returns to Green and clears 🍒 and all notes for that system.
 - ESI's daily system total can contain an older site cycle. It can suggest a new scan but cannot start an automatic Red timer by itself; the verified mining since a confirmed site scan is tracked separately.
+- Field tiles show scan age and attributable site-cycle ledger evidence. Raw daily ESI cache progress stays in the payout and ledger diagnostics instead of occupying every Field tile.
 - All signed-in browsers share the same board and receive changes live.
 
 ## Compact / Expanded UI
@@ -67,9 +68,13 @@ Actuals on the dashboard come from EVE mining-ledger API data. Projected values 
 1. Select all rows in EVE's Probe Scanner and copy them.
 2. Choose the linked toon in JLR and press **Paste Scan**.
 3. JLR reads that toon's current solar system through ESI and looks for the expected T3 deposit in the copied rows.
-4. A detected deposit marks the tracked field green. A missing deposit always requires confirmation before JLR marks it red and starts the fixed 10-hour timer.
+4. A detected deposit updates the scan time and marks an untouched tracked field green; a field with linked mining evidence stays yellow. A missing deposit requires confirmation before JLR marks it red and starts the fixed 10-hour timer.
 
 Clipboard access requires a user click. If the browser blocks direct clipboard reading, JLR opens a paste box instead. JLR does not control the EVE client, scrape its cache, or store copied scanner rows.
+
+Accepted scans refresh Adam's closest scan updates. Asking for the next system skips the field just scanned; an older ledger warning cannot make a fresh scan due again, but later mining activity can. With Sound On, JLR speaks a scan confirmation. Sound Off mutes and stops Tracker speech.
+
+Adam gives feature overviews when asked about a feature. If he cannot verify an operational answer from JLR data, he says so directly instead of listing his capabilities.
 
 ### Threat Scan
 

@@ -3441,3 +3441,23 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
   overflow-wrap:anywhere;
   -webkit-line-clamp:unset;
 }
+
+/* Keep both payout captions inside their cards as the summary bar narrows. */
+.operations-summary-bar>.summary-cell-payout{
+  grid-template-rows:max-content max-content auto;
+  align-content:start;
+  height:auto;
+}
+.operations-summary-bar>.summary-cell-payout>small{
+  line-height:1.3!important;
+  min-width:0;
+}
+
+/* Scanner and ledger evidence are full lines on narrow Field Board tiles. */
+.field-board .system-node .sys-evidence{
+  white-space:normal;
+  overflow:visible;
+  text-overflow:clip;
+  overflow-wrap:anywhere;
+  line-height:1.25;
+}
