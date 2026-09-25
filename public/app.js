@@ -4188,8 +4188,8 @@
         title:`Linked ESI ledgers reported ${Math.round(verified).toLocaleString()} m³ after a Probe Scanner report confirmed this T3 site. Reaching the estimated ${Math.round(site).toLocaleString()} m³ field cap started the 10-hour timer. A new scan showing the deposit is still present can correct it.`,
       };
     }
-    const minedText=mined>0&&site>0
-      ?`LEDGER • ${fmt(mined,'m3')} / ${fmt(site,'m3')} m³`
+    const minedText=site>0
+      ?`${fmt(mined,'m3')} m³ MINED OUT OF ${fmt(site,'m3')} m³`
       :null;
 
     if(ledger.likelyDepleted&&pctKnown){
@@ -4219,7 +4219,7 @@
     }
     if(ledger.active){
       return{
-        text:'LEDGER • MINING ACTIVE',
+        text:site>0?`${fmt(mined,'m3')} m³ MINED OUT OF ${fmt(site,'m3')} m³`:'LEDGER • MINING DETECTED',
         tone:'active',
         title:`ESI mining-ledger activity detected ${ago(ledger.lastActivityAt)}. This confirms mining activity, not field depletion.`,
       };
@@ -6500,9 +6500,6 @@
         scoutTargets=[];
         scoutTargetsOriginSystem='';
         void loadScoutTargets(true);
-      }
-      if(preview?.boardScan?.recorded||preview?.gasWormhole?.recorded){
-        speakJlr('scan',{system:preview.system},scanVoiceFallback(preview));
       }
       if(preview.a0?.tracked){
         if(preview.a0.scan?.detected){
