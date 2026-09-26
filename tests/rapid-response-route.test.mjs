@@ -16,10 +16,10 @@ const whB = {id:'B',sourceId:3,targetId:4};
 
 {
   const routes = chooseRapidResponseRoutes([
-    {key:'same-1',transitions:4,gateJumps:3,wormholes:[whA],wormholeCount:1,riskPenalty:0},
-    {key:'same-2',transitions:5,gateJumps:4,wormholes:[whA],wormholeCount:1,riskPenalty:0},
+    {key:'same-1',systemIds:[1,2,3,4,5],transitions:4,gateJumps:3,wormholes:[whA],wormholeCount:1,riskPenalty:0},
+    {key:'same-2',systemIds:[1,2,3,6,5,7],transitions:5,gateJumps:4,wormholes:[whA],wormholeCount:1,riskPenalty:0},
   ]);
-  assert.deepEqual(routes.map(row=>row.key), ['same-1','same-2'], 'falls back to the next route when no independent route exists');
+  assert.deepEqual(routes.map(row=>row.key), ['same-1','same-2'], 'falls back to the next distinct route when no independent wormhole route exists');
 }
 
 {
