@@ -611,7 +611,9 @@
           '<div><span>OWNER / VICTIM</span><strong>'+esc(owner)+'</strong><small>'+esc(org)+'</small></div>'+
           '<div><span>FINAL BLOW</span><strong>'+esc(finalName)+'</strong><small>'+esc(((finalBlow&&finalBlow.corporationName)||'Unknown corporation')+finalShip)+'</small></div>'+
           '<div><span>ATTACKERS</span><strong>'+fmt(row.attackerCount||0)+'</strong><small>'+(row.solo?'solo kill':'attackers on mail')+'</small></div>'+
-        '</div>'+\n        trackerResponseRouteHtml(row)+\n      '</div>'+
+        '</div>'+ 
+        trackerResponseRouteHtml(row)+
+      '</div>'+
       '<a class="tracker-kill-link" href="'+esc(row.href||(trackerData&&trackerData.sourceUrl)||'#')+'" target="_blank" rel="noopener noreferrer">OPEN KILLMAIL ↗</a>'+
     '</article>';
   }
