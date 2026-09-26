@@ -6149,7 +6149,7 @@ async function trackerRapidResponseRoutes(destinationSystemId,destinationSystemN
       if(usedIds.size){
         const remaining=esi.filter(row=>!usedIds.has(String(row.wormholeId)));
         secondPath=await trackerEsiRoute(originId,destinationId,{connections:remaining});
-      }else if(fastest.systemIds.length>3){
+      }else if(fastest.systemIds.length>2){
         const midpoint=fastest.systemIds[Math.floor(fastest.systemIds.length/2)];
         secondPath=await trackerEsiRoute(originId,destinationId,{connections:esi,avoidSystems:[midpoint]});
       }
