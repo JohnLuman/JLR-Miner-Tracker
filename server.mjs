@@ -13,6 +13,7 @@ import { positiveLedgerDeltas, dueRouteStops, fountainRouteDestination, brainLiv
 import { isDoctrineDataQuestion, answerDoctrineQuestion, answerMiningMarketQuestion } from './lib/adam-data.mjs';
 import { explicitAdamHelpQuestion, adamOverviewQuestion, adamUnknownText } from './lib/adam-prompts.mjs';
 import { createTrackerSupportClient } from './lib/tracker-support-client.mjs';
+import { chooseRapidResponseRoutes, wandererRiskPenalty, wandererWarnings } from './lib/rapid-response-route.mjs';
 import { parseThreatPaste, compactThreatStats, threatActivityLabels, fountainThreatTags, jlrThreatScore, threatIgnoreReason } from './lib/threat-scan.mjs';
 import {
   BASE_T3_ORE_REPROCESSING,
@@ -146,6 +147,12 @@ const TRACKER_R2Z2_REQUEST_GAP_MS = 120;
 const TRACKER_R2Z2_ERROR_WAIT_MS = 5 * 1000;
 const TRACKER_LIVE_RETENTION_MS = 24 * 60 * 60 * 1000;
 const TRACKER_R2Z2_ENABLED = String(process.env.TRACKER_R2Z2_ENABLED || 'true').trim().toLowerCase() !== 'false';
+const WANDERER_BASE_URL = String(process.env.WANDERER_BASE_URL || 'https://wanderer.the-initiative.rocks').trim().replace(/\/$/,'');
+const WANDERER_MAP_SLUG = String(process.env.WANDERER_MAP_SLUG || '').trim();
+const WANDERER_MAP_ID = String(process.env.WANDERER_MAP_ID || '').trim();
+const WANDERER_MAP_TOKEN = String(process.env.WANDERER_MAP_TOKEN || '').trim();
+const WANDERER_ROUTE_CACHE_MS = 20 * 1000;
+const TRACKER_ROUTE_ORIGIN = String(process.env.TRACKER_ROUTE_ORIGIN || 'C-N4OD').trim() || 'C-N4OD';
 const TRACKER_TTS_WORKER_URL = String(process.env.TRACKER_SUPPORT_URL || process.env.TRACKER_TTS_WORKER_URL || '').trim().replace(/\/$/,'');
 const TRACKER_TTS_WORKER_TOKEN = String(TRACKER_SUPPORT_SHARED_SECRET || process.env.TRACKER_TTS_WORKER_TOKEN || '').trim();
 const TRACKER_VOICE_CACHE_VERSION = String(process.env.TRACKER_VOICE_CACHE_VERSION || 'v3-speaker-20260922-core-unified').trim() || 'v3-speaker-20260922-core-unified';
@@ -332,6 +339,8 @@ const trackerLiveClients = new Set();
 let heavyFighterTypeIdsCache = {at:0,ids:null,promise:null};
 let trackerLiveLosses = [];
 let fountainRouteSystemsCache = {at:0,ids:null,promise:null};
+let wandererConnectionsCache = {at:0,data:null,promise:null};
+let trackerRouteOriginCache = {at:0,id:null};
 const trackerLiveSeenKillIds = new Set();
 const trackerVoiceJobs = new Map();
 const trackerBrainAnnouncementMemory = new Map();
@@ -5931,6 +5940,247 @@ async function streamTrackerVoiceToResponse(res,text,cacheKey,{priority='normal'
     throw err;
   }
 }
+function wandererConfigured(){
+  return Boolean(WANDERER_MAP_TOKEN && (WANDERER_MAP_SLUG || WANDERER_MAP_ID));
+}
+
+function wandererMapQuery(){
+  if(WANDERER_MAP_SLUG)return 'slug='+encodeURIComponent(WANDERER_MAP_SLUG);
+  if(WANDERER_MAP_ID)return 'map_id='+encodeURIComponent(WANDERER_MAP_ID);
+  return '';
+}
+
+async function wandererLiveConnections(force=false){
+  if(!wandererConfigured()){
+    return {configured:false,connected:false,fetchedAt:null,connections:[],message:'Wanderer map token/slug is not configured.'};
+  }
+  if(!force&&wandererConnectionsCache.data&&Date.now()-wandererConnectionsCache.at<WANDERER_ROUTE_CACHE_MS){
+    return wandererConnectionsCache.data;
+  }
+  if(wandererConnectionsCache.promise)return wandererConnectionsCache.promise;
+  const pending=(async()=>{
+    const response=await fetch(`${WANDERER_BASE_URL}/api/map/connections?${wandererMapQuery()}`,{
+      headers:{
+        'Authorization':`Bearer ${WANDERER_MAP_TOKEN}`,
+        'Accept':'application/json',
+        'User-Agent':`${ESI_USER_AGENT} | JLR Rapid Response Router`,
+      },
+      signal:AbortSignal.timeout(8_000),
+    });
+    if(!response.ok){
+      const detail=(await response.text().catch(()=>'' )).slice(0,180);
+      throw new Error(`Wanderer ${response.status}: ${detail||response.statusText}`);
+    }
+    const payload=await response.json();
+    const rows=Array.isArray(payload?.data)?payload.data:[];
+    const connections=rows
+      .filter(row=>Number(row?.type)===0)
+      .map(row=>({
+        id:String(row?.id||`${row?.solar_system_source||''}:${row?.solar_system_target||''}`),
+        sourceId:Number(row?.solar_system_source)||0,
+        targetId:Number(row?.solar_system_target)||0,
+        type:Number(row?.type)||0,
+        mass_status:Number(row?.mass_status)||0,
+        time_status:Number(row?.time_status)||0,
+        ship_size_type:Number(row?.ship_size_type)||0,
+        wormhole_type:row?.wormhole_type||null,
+        locked:Boolean(row?.locked),
+        updatedAt:row?.updated_at||null,
+      }))
+      .filter(row=>row.sourceId>0&&row.targetId>0&&row.sourceId!==row.targetId);
+    const data={
+      configured:true,
+      connected:true,
+      fetchedAt:now(),
+      map:WANDERER_MAP_SLUG||WANDERER_MAP_ID,
+      connectionCount:connections.length,
+      connections,
+    };
+    wandererConnectionsCache={at:Date.now(),data,promise:null};
+    return data;
+  })().catch(err=>{
+    const stale=wandererConnectionsCache.data;
+    if(stale){
+      return {...stale,connected:false,stale:true,message:String(err?.message||err)};
+    }
+    return {configured:true,connected:false,fetchedAt:null,connections:[],message:String(err?.message||err)};
+  }).finally(()=>{
+    if(wandererConnectionsCache.promise===pending)wandererConnectionsCache.promise=null;
+  });
+  wandererConnectionsCache.promise=pending;
+  return pending;
+}
+
+async function trackerRouteOriginId(){
+  if(trackerRouteOriginCache.id&&Date.now()-trackerRouteOriginCache.at<24*60*60*1000)return trackerRouteOriginCache.id;
+  const ids=await resolveUniverseIds([TRACKER_ROUTE_ORIGIN]);
+  const id=Number(ids.get(TRACKER_ROUTE_ORIGIN))||0;
+  if(!id)throw new Error(`Could not resolve response origin ${TRACKER_ROUTE_ORIGIN}.`);
+  trackerRouteOriginCache={at:Date.now(),id};
+  return id;
+}
+
+function trackerRouteEdgeKey(from,to){return `${Number(from)}:${Number(to)}`}
+
+async function trackerEsiRoute(originId,destinationId,{connections=[],avoidSystems=[]}={}){
+  const a=Number(originId),b=Number(destinationId);
+  if(!a||!b)throw new Error('Route origin and destination are required.');
+  if(a===b)return[a];
+  const body={
+    preference:'Shorter',
+    security_penalty:50,
+    connections:(Array.isArray(connections)?connections:[]).map(row=>({from:Number(row.from),to:Number(row.to)})).filter(row=>row.from>0&&row.to>0),
+    avoid_systems:[...new Set((Array.isArray(avoidSystems)?avoidSystems:[]).map(Number).filter(id=>id>0&&id!==a&&id!==b))],
+  };
+  const {data}=await esiPost(`https://esi.evetech.net/route/${a}/${b}/?datasource=tranquility`,body);
+  const route=Array.isArray(data)?data:(Array.isArray(data?.route)?data.route:[]);
+  if(!route.length)throw new Error('ESI returned no route.');
+  return route.map(Number).filter(id=>id>0);
+}
+
+function trackerCustomConnectionIndex(rows){
+  const byEdge=new Map();
+  const esi=[];
+  for(const wh of Array.isArray(rows)?rows:[]){
+    for(const [from,to] of [[wh.sourceId,wh.targetId],[wh.targetId,wh.sourceId]]){
+      const edge={from:Number(from),to:Number(to),wormhole:wh};
+      byEdge.set(trackerRouteEdgeKey(from,to),edge);
+      esi.push({from:Number(from),to:Number(to),wormholeId:String(wh.id)});
+    }
+  }
+  return{byEdge,esi};
+}
+
+function trackerRouteCandidate(path,byEdge,key){
+  const ids=Array.isArray(path)?path.map(Number).filter(id=>id>0):[];
+  if(ids.length<1)return null;
+  const wormholes=[];
+  const seen=new Set();
+  for(let i=1;i<ids.length;i++){
+    const edge=byEdge.get(trackerRouteEdgeKey(ids[i-1],ids[i]));
+    const wh=edge?.wormhole;
+    if(!wh)continue;
+    const id=String(wh.id);
+    if(seen.has(id))continue;
+    seen.add(id);
+    wormholes.push({
+      id,
+      sourceId:ids[i-1],
+      targetId:ids[i],
+      massStatus:Number(wh.mass_status)||0,
+      timeStatus:Number(wh.time_status)||0,
+      shipSizeType:Number(wh.ship_size_type)||0,
+      wormholeType:wh.wormhole_type||null,
+      locked:Boolean(wh.locked),
+      warnings:wandererWarnings(wh),
+    });
+  }
+  return{
+    key,
+    systemIds:ids,
+    transitions:Math.max(0,ids.length-1),
+    gateJumps:Math.max(0,ids.length-1-wormholes.length),
+    wormholeCount:wormholes.length,
+    wormholes,
+    riskPenalty:wormholes.reduce((sum,wh)=>sum+wandererRiskPenalty({
+      mass_status:wh.massStatus,time_status:wh.timeStatus,locked:wh.locked
+    }),0),
+  };
+}
+
+async function decorateTrackerRoute(candidate){
+  const ids=Array.isArray(candidate?.systemIds)?candidate.systemIds:[];
+  const names=await resolveUniverseNames(ids);
+  const whEdges=new Map();
+  for(const wh of candidate?.wormholes||[])whEdges.set(trackerRouteEdgeKey(wh.sourceId,wh.targetId),wh);
+  const steps=ids.map((id,index)=>{
+    const previous=index>0?ids[index-1]:null;
+    const wh=previous?whEdges.get(trackerRouteEdgeKey(previous,id)):null;
+    return{
+      id:Number(id),
+      name:names.get(Number(id))||String(id),
+      via:index===0?'origin':(wh?'wormhole':'gate'),
+      wormholeId:wh?.id||null,
+    };
+  });
+  const wormholes=(candidate?.wormholes||[]).map(wh=>({
+    ...wh,
+    sourceName:names.get(Number(wh.sourceId))||String(wh.sourceId),
+    targetName:names.get(Number(wh.targetId))||String(wh.targetId),
+  }));
+  return{...candidate,steps,wormholes};
+}
+
+async function trackerRapidResponseRoutes(destinationSystemId,destinationSystemName=''){
+  const originId=await trackerRouteOriginId();
+  const destinationId=Number(destinationSystemId)||0;
+  if(!destinationId)throw new Error('Heavy Fighter loss system is required.');
+  const wanderer=await wandererLiveConnections(false);
+  const {byEdge,esi}=trackerCustomConnectionIndex(wanderer.connections);
+  const candidates=[];
+
+  let fastest=null;
+  try{
+    fastest=trackerRouteCandidate(
+      await trackerEsiRoute(originId,destinationId,{connections:esi}),
+      byEdge,
+      'all-live-wormholes'
+    );
+    if(fastest)candidates.push(fastest);
+  }catch(err){
+    console.warn('Rapid response primary route failed',String(err?.message||err));
+  }
+
+  try{
+    const gateOnly=trackerRouteCandidate(
+      await trackerEsiRoute(originId,destinationId),
+      new Map(),
+      'gate-only'
+    );
+    if(gateOnly)candidates.push(gateOnly);
+  }catch(err){
+    console.warn('Rapid response gate route failed',String(err?.message||err));
+  }
+
+  if(fastest){
+    try{
+      const usedIds=new Set((fastest.wormholes||[]).map(row=>String(row.id)));
+      let secondPath=null;
+      if(usedIds.size){
+        const remaining=esi.filter(row=>!usedIds.has(String(row.wormholeId)));
+        secondPath=await trackerEsiRoute(originId,destinationId,{connections:remaining});
+      }else if(fastest.systemIds.length>2){
+        const midpoint=fastest.systemIds[Math.floor(fastest.systemIds.length/2)];
+        secondPath=await trackerEsiRoute(originId,destinationId,{connections:esi,avoidSystems:[midpoint]});
+      }
+      const alternate=trackerRouteCandidate(secondPath,byEdge,'independent-alternate');
+      if(alternate)candidates.push(alternate);
+    }catch(err){
+      console.warn('Rapid response alternate route failed',String(err?.message||err));
+    }
+  }
+
+  const selected=chooseRapidResponseRoutes(candidates,2);
+  const routes=[];
+  for(let i=0;i<selected.length;i++)routes.push({...await decorateTrackerRoute(selected[i]),rank:i+1});
+  const nameMap=await resolveUniverseNames([originId,destinationId]);
+  return{
+    origin:{id:originId,name:nameMap.get(originId)||TRACKER_ROUTE_ORIGIN},
+    destination:{id:destinationId,name:destinationSystemName||nameMap.get(destinationId)||String(destinationId)},
+    generatedAt:now(),
+    wanderer:{
+      configured:Boolean(wanderer.configured),
+      connected:Boolean(wanderer.connected),
+      stale:Boolean(wanderer.stale),
+      fetchedAt:wanderer.fetchedAt||null,
+      map:wanderer.map||null,
+      connectionCount:Number(wanderer.connectionCount)||0,
+      message:wanderer.message||null,
+    },
+    routes,
+  };
+}
+
 function trackerLiveStatus(){
   return{
     enabled:TRACKER_R2Z2_ENABLED,
@@ -8746,6 +8996,21 @@ async function routeApi(req,res,url) {
     catch(err){
       console.warn('Tracker intel failed',String(err.message||err));
       return json(res,502,{error:'TRACKER_INTEL_FAILED',message:String(err.message||err)});
+    }
+  }
+
+  if(req.method==='GET'&&url.pathname==='/api/tracker/heavy-fighters/route'){
+    let access;
+    try{access=await trackerAccessForUser(user)}
+    catch(err){return json(res,503,{error:'TRACKER_ACCESS_CHECK_FAILED',message:'Tracker access could not be verified with EVE right now.'})}
+    if(!access.allowed)return json(res,403,{error:'TRACKER_CORPORATION_REQUIRED',message:'Tracker is restricted to the configured corporation.'});
+    const systemId=Number(url.searchParams.get('systemId'))||0;
+    const systemName=String(url.searchParams.get('systemName')||'').trim();
+    if(!systemId)return json(res,400,{error:'TRACKER_ROUTE_SYSTEM_REQUIRED',message:'A destination solar system is required.'});
+    try{return json(res,200,await trackerRapidResponseRoutes(systemId,systemName))}
+    catch(err){
+      console.warn('Heavy Fighter rapid response route failed',String(err?.message||err));
+      return json(res,502,{error:'TRACKER_ROUTE_FAILED',message:String(err?.message||err)});
     }
   }
 
