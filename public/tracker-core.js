@@ -5,6 +5,9 @@
   const ALERT_PREF='jlrHeavyFighterAlerts';
 
   let trackerData=null;
+  const trackerRouteByKill=new Map();
+  const trackerRouteLoading=new Set();
+  const trackerRouteErrors=new Map();
   let trackerLoading=false;
   let trackerError='';
   let trackerPoll=null;
@@ -501,6 +504,90 @@
     '</section>';
   }
 
+  function trackerRoutePathHtml(route){
+    const steps=Array.isArray(route?.steps)?route.steps:[];
+    if(!steps.length)return '<span class="tracker-route-path-empty">Route details unavailable.</span>';
+    return steps.map(function(step,index){
+      const wh=step?.via==='wormhole';
+      return '<span class="tracker-route-step'+(wh?' wormhole':'')+'">'+(wh?'🌀 ':'')+esc(step?.name||step?.id||'?')+'</span>'+
+        (index<steps.length-1?'<b>→</b>':'');
+    }).join('');
+  }
+
+  function trackerRouteWarnings(route){
+    const warnings=[];
+    for(const wh of Array.isArray(route?.wormholes)?route.wormholes:[]){
+      for(const warning of Array.isArray(wh?.warnings)?wh.warnings:[]){
+        const label=(wh?.sourceName&&wh?.targetName?wh.sourceName+' ↔ '+wh.targetName+': ':'')+warning;
+        if(!warnings.includes(label))warnings.push(label);
+      }
+    }
+    return warnings;
+  }
+
+  function trackerResponseRouteHtml(row){
+    const key=String(row?.killmailId||'');
+    const data=trackerRouteByKill.get(key);
+    const loading=trackerRouteLoading.has(key);
+    const error=trackerRouteErrors.get(key);
+    if(loading&&!data){
+      return '<div class="tracker-response-router loading"><div><span>RESPONSE FROM C-N4OD</span><strong>CALCULATING BEST 2 ROUTES…</strong></div></div>';
+    }
+    if(error&&!data){
+      return '<div class="tracker-response-router error"><div><span>RESPONSE FROM C-N4OD</span><strong>ROUTE CHECK FAILED</strong><small>'+esc(error)+'</small></div>'+
+        '<button class="tracker-route-load" data-kill-id="'+esc(key)+'" type="button">RETRY ROUTES</button></div>';
+    }
+    if(!data){
+      return '<div class="tracker-response-router"><div><span>RESPONSE FROM C-N4OD</span><strong>BEST 2 ROUTES</strong><small>Gates + live Wanderer wormholes</small></div>'+
+        '<button class="tracker-route-load" data-kill-id="'+esc(key)+'" type="button">CALCULATE</button></div>';
+    }
+
+    const routes=Array.isArray(data?.routes)?data.routes:[];
+    const routeHtml=routes.map(function(route,index){
+      const warnings=trackerRouteWarnings(route);
+      return '<div class="tracker-route-option">'+
+        '<div class="tracker-route-option-head">'+
+          '<strong>ROUTE '+(index+1)+'</strong>'+
+          '<span>'+fmt(route?.transitions||0)+' transitions • '+fmt(route?.wormholeCount||0)+' WH • '+fmt(route?.gateJumps||0)+' gates</span>'+
+        '</div>'+
+        '<div class="tracker-route-path">'+trackerRoutePathHtml(route)+'</div>'+
+        (warnings.length?'<small class="tracker-route-warning">⚠ '+esc(warnings.join(' • '))+'</small>':'')+
+      '</div>';
+    }).join('');
+
+    const wanderer=data?.wanderer||{};
+    const sourceNote=wanderer.configured
+      ?(wanderer.connected
+        ?'Wanderer live • '+fmt(wanderer.connectionCount||0)+' wormhole connections'
+        :'Wanderer unavailable'+(wanderer.message?' • '+esc(wanderer.message):''))
+      :'Wanderer WH routing not configured — showing available ESI alternatives.';
+    return '<div class="tracker-response-routes">'+
+      '<div class="tracker-response-route-head"><div><span>RAPID RESPONSE</span><strong>BEST 2 FROM '+esc(data?.origin?.name||'C-N4OD')+'</strong></div><small>'+sourceNote+'</small></div>'+
+      (routeHtml||'<div class="tracker-route-none">No valid response route was returned.</div>')+
+      '<button class="tracker-route-load subtle" data-kill-id="'+esc(key)+'" type="button">REFRESH ROUTES</button>'+
+    '</div>';
+  }
+
+  async function ensureLossRoute(row,force=false){
+    const key=String(row?.killmailId||'');
+    const systemId=Number(row?.systemId)||0;
+    if(!key||!systemId||trackerRouteLoading.has(key))return;
+    if(!force&&trackerRouteByKill.has(key))return;
+    trackerRouteLoading.add(key);
+    trackerRouteErrors.delete(key);
+    render();
+    try{
+      const query=new URLSearchParams({systemId:String(systemId),systemName:String(row?.systemName||'')});
+      const data=await api('/api/tracker/heavy-fighters/route?'+query.toString());
+      trackerRouteByKill.set(key,data);
+    }catch(error){
+      trackerRouteErrors.set(key,String(error?.message||error));
+    }finally{
+      trackerRouteLoading.delete(key);
+      render();
+    }
+  }
+
   function lossCard(row){
     const victim=row&&row.victim||{};
     const finalBlow=row&&row.finalBlow||null;
@@ -524,8 +611,7 @@
           '<div><span>OWNER / VICTIM</span><strong>'+esc(owner)+'</strong><small>'+esc(org)+'</small></div>'+
           '<div><span>FINAL BLOW</span><strong>'+esc(finalName)+'</strong><small>'+esc(((finalBlow&&finalBlow.corporationName)||'Unknown corporation')+finalShip)+'</small></div>'+
           '<div><span>ATTACKERS</span><strong>'+fmt(row.attackerCount||0)+'</strong><small>'+(row.solo?'solo kill':'attackers on mail')+'</small></div>'+
-        '</div>'+
-      '</div>'+
+        '</div>'+\n        trackerResponseRouteHtml(row)+\n      '</div>'+
       '<a class="tracker-kill-link" href="'+esc(row.href||(trackerData&&trackerData.sourceUrl)||'#')+'" target="_blank" rel="noopener noreferrer">OPEN KILLMAIL ↗</a>'+
     '</article>';
   }
@@ -604,6 +690,19 @@
     if(test)test.addEventListener('click',testSiren);
     if(stop)stop.addEventListener('click',stopAlarm);
     if(refresh)refresh.addEventListener('click',function(){loadTracker(true,false);loadTrackerIntel(true);});
+    document.querySelectorAll('.tracker-route-load').forEach(function(button){
+      button.addEventListener('click',function(){
+        const id=String(button.dataset.killId||'');
+        const row=losses.find(item=>String(item?.killmailId||'')===id);
+        if(row)ensureLossRoute(row,true);
+      });
+    });
+    if(latest){
+      const latestKey=String(latest.killmailId||'');
+      if(latestKey&&!trackerRouteByKill.has(latestKey)&&!trackerRouteLoading.has(latestKey)&&!trackerRouteErrors.has(latestKey)){
+        setTimeout(function(){ensureLossRoute(latest,false);},0);
+      }
+    }
     document.querySelectorAll('[data-hot-mode]').forEach(function(button){
       button.addEventListener('click',function(){
         trackerHotMode=HOT_MODES.has(button.dataset.hotMode)?button.dataset.hotMode:'composite';
