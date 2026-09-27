@@ -8,6 +8,9 @@ const cmd=fs.readFileSync(new URL('../public/downloads/INSTALL-JLR-TRACKER-COMPA
 
 assert.match(server,/\/api\/companion\/pair\/claim/);
 assert.match(server,/\/api\/companion\/location/);
+assert.match(server,/\/api\/companion\/scan/,'owner companion can submit observed Probe Scanner text');
+assert.match(server,/OBSERVER_NOT_ALLOWED/,'observer endpoint is owner-gated');
+assert.match(server,/OBSERVER_SYSTEM_CHANGED/,'observer rejects a frame after the toon changes systems');
 assert.doesNotMatch(server,/\/api\/companion\/tracker-map/,'removed ESS/interference watch endpoint stays disabled');
 assert.match(server,/source:'companion'/);
 assert.match(server,/COMPANION_LOCATION_TTL_MS/);
@@ -26,6 +29,10 @@ assert.match(ps,/Encoding\]::Unicode/,'EVE chat logs are read as UTF-16LE/Unicod
 assert.match(ps,/Channel changed to Local/);
 assert.match(ps,/Listener:/);
 assert.match(ps,/\/api\/companion\/location/);
+assert.match(ps,/Windows\.Media\.Ocr\.OcrEngine/,'observer uses Windows built-in OCR');
+assert.match(ps,/GetForegroundWindow/,'observer reads only the foreground EVE client');
+assert.match(ps,/\/api\/companion\/scan/,'observer submits recognized scanner text through companion auth');
+assert.doesNotMatch(ps,/SendKeys|mouse_event/i,'observer never automates EVE input');
 assert.match(ps,/ConvertFrom-SecureString/,'pair token is protected with Windows DPAPI through SecureString');
 assert.match(ps,/SecureStringToBSTR/,'protected pair token can be restored for API calls');
 assert.match(ps,/LastSentAt/,'companion heartbeats unchanged locations');
