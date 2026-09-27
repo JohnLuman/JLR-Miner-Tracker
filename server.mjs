@@ -4766,7 +4766,7 @@ function recordBoardScan({system,text,a0,t3Scan=null,definition=null}){
   };
 }
 
-async function probeScanPreview(ch,text){
+async function probeScanPreview(ch,text,expectedSystem=null){
   const {access,identity}=await characterAccess(ch);
   if(!identity.scopes.includes(LOCATION_SCOPE)){
     const error=new Error('Update this toon’s EVE access before importing scans.');
@@ -4778,6 +4778,12 @@ async function probeScanPreview(ch,text){
   if(!systemId)throw new Error('EVE did not return a current solar system for this toon.');
   await ensureSystem([systemId]);
   const system=state.esi.systemCache[systemId]?.name||`System ${systemId}`;
+  const expected=String(expectedSystem||'').trim();
+  if(expected&&system.toLowerCase()!==expected.toLowerCase()){
+    const error=new Error(`Observer frame was captured in ${expected}, but EVE now reports ${system}. Waiting for the next frame.`);
+    error.code='OBSERVER_SYSTEM_CHANGED';
+    throw error;
+  }
   trackerLocationCache.set(String(ch.characterId),{systemId,system,checkedAt:now(),live:true});
   const definition=SYSTEM_MAP.get(system)||null;
   const scan=definition?parseProbeScan(text,definition.ore):null;
@@ -8408,7 +8414,7 @@ async function routeApi(req,res,url) {
     };
     companionPairCodes.delete(code);
     await save();
-    return json(res,200,{paired:true,token,account:pairUser.displayName||'JLR pilot',server:requestBaseUrl(req)});
+    return json(res,200,{paired:true,token,account:pairUser.displayName||'JLR pilot',server:requestBaseUrl(req),observerAllowed:jlrOwnerAccess(pairUser)});
   }
   if(req.method==='POST'&&url.pathname==='/api/companion/locations'){
     const auth=companionAuth(req);
@@ -8491,7 +8497,7 @@ async function routeApi(req,res,url) {
         });
       }
     }
-    return json(res,200,{ok:errors.length===0,results,errors,checkedAt});
+    return json(res,200,{ok:errors.length===0,results,errors,checkedAt,observerAllowed:jlrOwnerAccess(auth.user)});
   }
 
   if(req.method==='POST'&&url.pathname==='/api/companion/location'){
@@ -8529,7 +8535,38 @@ async function routeApi(req,res,url) {
       await save();
     }
     const snapshot=await scoutLocationSnapshot(ch,auth.user);
-    return json(res,200,{ok:true,...snapshot});
+    return json(res,200,{ok:true,...snapshot,observerAllowed:jlrOwnerAccess(auth.user)});
+  }
+
+  if(req.method==='POST'&&url.pathname==='/api/companion/scan'){
+    const auth=companionAuth(req);
+    if(!auth)return json(res,401,{error:'COMPANION_AUTH_REQUIRED',message:'Companion pairing is missing or has been revoked.'});
+    if(!jlrOwnerAccess(auth.user))return json(res,403,{error:'OBSERVER_NOT_ALLOWED',message:'Automatic Probe Scanner observation is enabled only for the JLR owner account.'});
+    let body;
+    try{body=await readBody(req,180_000)}
+    catch(err){return json(res,400,{error:'BAD_OBSERVER_SCAN',message:String(err.message||err)})}
+    const ch=companionCharacterForUser(auth.user,body);
+    if(!ch)return json(res,404,{error:'CHARACTER_NOT_LINKED',message:'The foreground EVE character is not linked to this JLR account.'});
+    const observedSystem=companionText(body?.system,96);
+    if(!observedSystem)return json(res,400,{error:'SYSTEM_REQUIRED',message:'Observer is waiting for the current Local system before importing a scan.'});
+    const scanText=String(body?.text||'').trim();
+    if(!scanText)return json(res,400,{error:'EMPTY_SCAN',message:'Observer did not recognize Probe Scanner text.'});
+    if(!(Array.isArray(ch.scopes)&&ch.scopes.includes(LOCATION_SCOPE)))return json(res,409,{error:'LOCATION_SCOPE_REQUIRED',message:'Update this toon’s EVE access before automatic scan imports.'});
+    try{
+      const preview=await probeScanPreview(ch,scanText,observedSystem);
+      const valid=Boolean(preview.scan?.valid||preview.a0?.scan?.valid||preview.gasWormhole?.scan?.valid||preview.boardScan?.valid);
+      if((preview.tracked||preview.a0?.tracked||preview.gasWormhole?.tracked||preview.boardScan?.boardTracked)&&!valid){
+        return json(res,400,{error:'INVALID_SCAN',message:'Observer text did not contain enough Probe Scanner rows to update Tracker.',preview});
+      }
+      auth.device.lastSeenAt=now();
+      await save();
+      if(preview.correction?.applied||preview.a0?.tracked||preview.gasWormhole?.recorded||preview.boardScan?.recorded)broadcast();
+      return json(res,200,{ok:true,observer:true,observerAllowed:true,...preview});
+    }catch(err){
+      if(err?.code==='OBSERVER_SYSTEM_CHANGED')return json(res,409,{error:err.code,message:String(err.message||err)});
+      if(err?.code==='LOCATION_SCOPE_REQUIRED')return json(res,409,{error:err.code,message:String(err.message||err)});
+      throw err;
+    }
   }
 
   const user=requireUser(req,res);if(!user)return;
