@@ -51,6 +51,8 @@ const trackerSupport = createTrackerSupportClient({
 });
 const MINING_SCOPE = 'esi-industry.read_character_mining.v1';
 const LEDGER_HEALTH_RATIO = 0.80;
+const CHARACTER_API_GRACE_MS = 24 * 60 * 60 * 1000;
+const DETACHED_LEDGER_RETENTION_DAYS = 8;
 const SKILLS_SCOPE = 'esi-skills.read_skills.v1';
 const FITTINGS_SCOPE = 'esi-fittings.read_fittings.v1';
 const ASSETS_SCOPE = 'esi-assets.read_assets.v1';
@@ -549,7 +551,7 @@ function freshState() {
       autoClearedAt: null, autoClearReason: null, autoClearM3: null,
     }])),
     esi: {
-      typeCache: {}, systemCache: {}, dailyFleet: [], dailyFleetValuationVersion: LEDGER_VALUATION_VERSION, performanceSamples: [], hourlyObservations: {}, ledgerActivity: {}, ledgerFieldSnapshots: {}, fieldInference: {}, lastSyncAt: null, lastError: null,
+      typeCache: {}, systemCache: {}, dailyFleet: [], dailyFleetValuationVersion: LEDGER_VALUATION_VERSION, performanceSamples: [], hourlyObservations: {}, ledgerActivity: {}, ledgerFieldSnapshots: {}, fieldInference: {}, detachedLedgerRows: {}, apiRemovalHistory: [], lastSyncAt: null, lastError: null,
     },
     market: {
       prices: {}, minerals: {}, icePrices: {}, iceProducts: {}, gasPrices: {}, iceFields: [], a0Fields: [], a0Reports: {}, a0ScannedAt: null, wormholeGasReports: {}, t3Distances: {}, history: { ore:{}, ice:{} },
@@ -601,6 +603,8 @@ async function loadState() {
     if(!Array.isArray(parsed.esi.performanceSamples))parsed.esi.performanceSamples=[];
     if(!parsed.esi.hourlyObservations||typeof parsed.esi.hourlyObservations!=='object'||Array.isArray(parsed.esi.hourlyObservations))parsed.esi.hourlyObservations={};
     parsed.esi.ledgerActivity ||= {}; parsed.esi.ledgerFieldSnapshots ||= {}; parsed.esi.fieldInference ||= {};
+    if(!parsed.esi.detachedLedgerRows||typeof parsed.esi.detachedLedgerRows!=='object'||Array.isArray(parsed.esi.detachedLedgerRows))parsed.esi.detachedLedgerRows={};
+    if(!Array.isArray(parsed.esi.apiRemovalHistory))parsed.esi.apiRemovalHistory=[];
     parsed.market = { ...base.market, ...(parsed.market || {}) };
     parsed.market.prices ||= {};
     parsed.market.minerals ||= {};
@@ -1157,13 +1161,13 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.145',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.146',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}])),wormholes:{reports:wormholeGasPublicReports(),reportHours:WORMHOLE_GAS_REPORT_TTL/3600000}},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans,
     trackerBrain:trackerBrainSnapshot(scans,ledgerDebug),
     market:{lastUpdatedAt:state.market.lastUpdatedAt,lastError:state.market.lastError,privateLastError:state.market.privateLastError||null,refreshing:marketRefreshInProgress,valuation:'MAX REFINE',maxRefineYield:MAX_REFINE_YIELD,jita:'Jita IV - Moon 4 - Caldari Navy Assembly Plant',jitaBuyBasis:state.market.jitaBuyBasis||'unavailable',janiceConfigured:Boolean(JANICE_API_KEY),janiceLastError:state.market.janiceLastError||null,local:CN_SYSTEM_NAME,titanBridgeRangeLy:TITAN_BRIDGE_RANGE_LY,history:marketHistoryPublic(),privateAccess:Boolean(state.market.refreshTokenEnc),marketCharacterName:state.market.characterName||null,structureName:state.market.structureName||null},
-    esi:{configured:Boolean(EVE_CLIENT_ID),linkedCharacters:Object.keys(state.characters).length,lastSyncAt:state.esi.lastSyncAt,lastError:/temporarily unavailable\s*\(HTTP\s*\d+\)/i.test(String(state.esi.lastError||''))?null:state.esi.lastError,syncing:syncInProgress||manualSyncCount>0,ledgerDebug,scheduler:{...autoSyncPlan(Object.keys(state.characters).length||1),active:esiCharacterSyncActive,queued:esiCharacterSyncWaiters.length,backoffUntil:esiBackoffUntil>Date.now()?new Date(esiBackoffUntil).toISOString():null},actual:{today:todayActual,week:weekActual,basis:{day:'UTC',exactTypeId:true,exactGrade:true,valuationVersion:LEDGER_VALUATION_VERSION}},performance:{daily:daily.slice(0,90).map(row=>({date:String(row.date||''),m3:Number(row.m3||0),jbv:Number(row.jbv||0),unpricedM3:Number(row.unpricedM3||0),ores:row.ores&&typeof row.ores==='object'?row.ores:{}})),samples:(state.esi.performanceSamples||[]).slice(-672)}},
+    esi:{configured:Boolean(EVE_CLIENT_ID),linkedCharacters:Object.keys(state.characters).length,lastSyncAt:state.esi.lastSyncAt,lastError:/temporarily unavailable\s*\(HTTP\s*\d+\)/i.test(String(state.esi.lastError||''))?null:state.esi.lastError,syncing:syncInProgress||manualSyncCount>0,ledgerDebug,scheduler:{...autoSyncPlan(Object.keys(state.characters).length||1),active:esiCharacterSyncActive,queued:esiCharacterSyncWaiters.length,backoffUntil:esiBackoffUntil>Date.now()?new Date(esiBackoffUntil).toISOString():null},actual:{today:todayActual,week:weekActual,basis:{day:'UTC',source:'actual-mining-ledger',exactTypeId:true,exactGrade:true,retainsRemovedCurrentDay:true,valuationVersion:LEDGER_VALUATION_VERSION}},performance:{daily:daily.slice(0,90).map(row=>({date:String(row.date||''),m3:Number(row.m3||0),jbv:Number(row.jbv||0),unpricedM3:Number(row.unpricedM3||0),ores:row.ores&&typeof row.ores==='object'?row.ores:{}})),samples:(state.esi.performanceSamples||[]).slice(-672)}},
     serverNow:now(),
   };
 }
@@ -1947,8 +1951,90 @@ async function fetchJaniceMineralBuyPrices(){
   return prices;
 }
 
+function sanitizeLedgerRow(row){
+  return{
+    date:String(row?.date||''),
+    solar_system_id:Number(row?.solar_system_id)||0,
+    type_id:Number(row?.type_id)||0,
+    quantity:Math.max(0,Number(row?.quantity)||0),
+  };
+}
+function clearDetachedLedgerRowsForCharacter(characterId){
+  const id=String(characterId);
+  const store=state.esi.detachedLedgerRows;
+  if(!store||typeof store!=='object')return;
+  for(const [day,byCharacter] of Object.entries(store)){
+    if(!byCharacter||typeof byCharacter!=='object'){delete store[day];continue}
+    delete byCharacter[id];
+    if(!Object.keys(byCharacter).length)delete store[day];
+  }
+}
+function detachedLedgerRowsForPayout(){
+  state.esi.detachedLedgerRows ||= {};
+  const cutoff=dateUTC(new Date(Date.now()-DETACHED_LEDGER_RETENTION_DAYS*24*60*60*1000));
+  const rows=[];
+  for(const [day,byCharacter] of Object.entries(state.esi.detachedLedgerRows)){
+    if(String(day)<cutoff){delete state.esi.detachedLedgerRows[day];continue}
+    if(!byCharacter||typeof byCharacter!=='object'){delete state.esi.detachedLedgerRows[day];continue}
+    for(const [characterId,storedRows] of Object.entries(byCharacter)){
+      if(!Array.isArray(storedRows)){delete byCharacter[characterId];continue}
+      for(const raw of storedRows){
+        const row=sanitizeLedgerRow(raw);
+        if(row.date&&row.solar_system_id>0&&row.type_id>0&&row.quantity>=0)rows.push(row);
+      }
+    }
+  }
+  return rows;
+}
+function archiveCharacterCurrentDayLedger(characterId,sampleAt=now()){
+  const id=String(characterId);
+  const day=dateUTC(new Date(sampleAt));
+  const rows=(ledgerRowsByCharacter.get(id)||[])
+    .filter(row=>String(row?.date||'')===day)
+    .map(sanitizeLedgerRow)
+    .filter(row=>row.date&&row.solar_system_id>0&&row.type_id>0&&row.quantity>=0);
+  if(!rows.length)return 0;
+  state.esi.detachedLedgerRows ||= {};
+  state.esi.detachedLedgerRows[day] ||= {};
+  state.esi.detachedLedgerRows[day][id]=rows;
+  return rows.length;
+}
+function autoUnlinkCharacterAfterApiGrace(characterId,sampleAt=now()){
+  const id=String(characterId);
+  const character=state.characters[id];
+  if(!character)return null;
+  const archivedRows=archiveCharacterCurrentDayLedger(id,sampleAt);
+  const name=String(character.name||id);
+
+  for(const user of Object.values(state.users||{})){
+    if(!Array.isArray(user.characterIds)||!user.characterIds.includes(id))continue;
+    user.characterIds=user.characterIds.filter(value=>String(value)!==id);
+    if(String(user.primaryCharacterId||'')===id){
+      user.primaryCharacterId=user.characterIds[0]||null;
+      const next=user.primaryCharacterId?state.characters[String(user.primaryCharacterId)]:null;
+      if(next)user.displayName=next.name;
+    }
+  }
+
+  if(String(state.market.characterId||'')===id){
+    state.market.characterId=null;state.market.characterName=null;state.market.refreshTokenEnc=null;
+    state.market.scopes=[];state.market.authorizedAt=null;state.market.structureId=null;state.market.structureName=null;
+  }
+  delete state.characters[id];
+  if(state.esi.ledgerFieldSnapshots)delete state.esi.ledgerFieldSnapshots[id];
+  if(state.esi.ledgerActivity)delete state.esi.ledgerActivity[id];
+  if(state.esi.hourlyObservations)delete state.esi.hourlyObservations[id];
+  ledgerRowsByCharacter.delete(id);
+  ledgerSnapshotAtByCharacter.delete(id);
+
+  state.esi.apiRemovalHistory ||= [];
+  state.esi.apiRemovalHistory.push({characterId:id,name,removedAt:sampleAt,reason:'api-grace-expired',archivedTodayRows:archivedRows});
+  state.esi.apiRemovalHistory=state.esi.apiRemovalHistory.slice(-50);
+  return{id,name,archivedRows};
+}
 function rebuildDailyFleetFromLedgerCache(){
   const rows=[...ledgerRowsByCharacter.values()].flat();
+  rows.push(...detachedLedgerRowsForPayout());
   state.esi.dailyFleet=aggregateTrackedT3Ledger({
     rows,
     typeById:state.esi.typeCache,
@@ -4321,7 +4407,7 @@ function trackerBrainAnswer(user,question,options={}){
   const snapshot=trackerBrainSnapshot();
   const linked=(user?.characterIds||[]).map(String).filter(Boolean);
   const primaryName=trackerBrainPrimaryName(user);
-  const appVersion='2.9.145';
+  const appVersion='2.9.146';
 
   const voiceSummary=(text,max=120)=>{
     const clean=trackerSpeechSafe(text,1200).replace(/\s+/g,' ').trim();
@@ -5137,9 +5223,14 @@ async function syncCharacterOnce(ch,{forceMetadata=false}={}){
       metadataRefreshed=true;
     }
     ch.lastSyncAt=now();ch.lastError=null;
+    delete ch.apiFailureSince;delete ch.apiFailureLastAt;delete ch.apiFailureError;
     return{characterId:String(ch.characterId),rows,ok:true,metadataRefreshed};
   }catch(err){
+    const failedAt=now();
     ch.lastError=String(err.message||err);
+    ch.apiFailureSince=ch.apiFailureSince||failedAt;
+    ch.apiFailureLastAt=failedAt;
+    ch.apiFailureError=ch.lastError;
     return{characterId:String(ch.characterId),rows:[],ok:false,error:ch.lastError,metadataRefreshed:false};
   }
 }
@@ -5225,6 +5316,7 @@ async function applyLedgerResults(results,{fullCycle=false}={}){
   const today=dateUTC(new Date(sampleAt));
   for(const ledger of successful){
     const id=String(ledger.characterId);
+    clearDetachedLedgerRowsForCharacter(id);
     const previous=ledgerRowsByCharacter.get(id);
     const sinceAt=ledgerSnapshotAtByCharacter.get(id);
     if(previous&&sinceAt){
@@ -5257,6 +5349,21 @@ async function applyLedgerResults(results,{fullCycle=false}={}){
 
   const reconciledFields=reconcileFieldCardsFromLedgerCache(sampleAt);
   if(reconciledFields.length)console.log('ESI daily ledger reconciled field cards:',reconciledFields.join(', '));
+
+  // A toon gets 24 hours to repair a continuously failing ESI/API connection.
+  // Only prune during an otherwise healthy full-fleet cycle so a broad CCP/ESI
+  // outage cannot mass-unlink characters.
+  const graceFailedRows=results.filter(result=>!result.ok);
+  const cycleSuccessRatio=results.length?successful.length/results.length:0;
+  if(fullCycle&&cycleSuccessRatio>=LEDGER_HEALTH_RATIO){
+    for(const failed of graceFailedRows){
+      const character=state.characters[String(failed.characterId)];
+      const sinceMs=Date.parse(character?.apiFailureSince||'');
+      if(!character||!Number.isFinite(sinceMs)||Date.now()-sinceMs<CHARACTER_API_GRACE_MS)continue;
+      const removed=autoUnlinkCharacterAfterApiGrace(failed.characterId,sampleAt);
+      if(removed)console.warn('Auto-unlinked EVE character after 24h API grace: '+removed.name+' ('+removed.id+'); retained '+removed.archivedRows+' current-day ledger rows for payout.');
+    }
+  }
 
   // Only full automatic cycles become fleet-wide chart points. A single user's
   // manual refresh may cover only part of the fleet and would create a false dip.
@@ -5362,6 +5469,11 @@ function myProfile(user) {
         connectedAt:c.connectedAt,
         lastSyncAt:c.lastSyncAt,
         lastError:/temporarily unavailable\s*\(HTTP\s*\d+\)/i.test(String(c.lastError||''))?null:c.lastError,
+        apiFailureSince:c.apiFailureSince||null,
+        apiGraceExpiresAt:(()=>{
+          const since=Date.parse(c.apiFailureSince||'');
+          return Number.isFinite(since)?new Date(since+CHARACTER_API_GRACE_MS).toISOString():null;
+        })(),
         portrait:`https://images.evetech.net/characters/${c.characterId}/portrait?size=64`,
         scopes,
         miningAccess:scopes.includes(MINING_SCOPE),
@@ -8375,7 +8487,7 @@ async function routeApi(req,res,url) {
     });
     return res.end(ref.audio);
   }
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.145',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.146',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -8625,7 +8737,7 @@ async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname==='/api/tracker/speech/diagnostics'){
     const voiceWorker=await trackerVoiceHealth().catch(err=>({configured:Boolean(TRACKER_TTS_WORKER_URL),reachable:false,message:String(err?.message||err)}));
     return json(res,200,{
-      version:'2.9.145',
+      version:'2.9.146',
       modelCached:Boolean(voskModelArchive),
       modelBytes:voskModelArchive?.length||0,
       modelSource:voskModelSource||null,
@@ -9327,7 +9439,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.145 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.146 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>{
   Promise.all([
     loadVoskRuntimeAsset(VOSK_RUNTIME_FILES['/vendor/vosk/vosk-0.0.8.js']),
