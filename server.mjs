@@ -5970,7 +5970,7 @@ function forgeSharePublic(row){
   return{
     id:String(row.id||''),token:String(row.token||''),title:String(row.title||'JLR Build'),
     status:FORGE_STATUSES.includes(String(row.status))?String(row.status):'planning',
-    notes:String(row.notes||''),owner:row.owner||{name:'JLR Pilot'},
+    notes:String(row.notes||''),owner:{name:String(row.owner?.name||'JLR Pilot')},
     createdAt:row.createdAt||null,updatedAt:row.updatedAt||null,updatedBy:row.updatedBy||null,
     plan:row.plan||{items:[],materials:[],summary:{}},
   };
