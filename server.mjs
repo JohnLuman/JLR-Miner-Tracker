@@ -2348,10 +2348,16 @@ async function refreshMarketPrices(force=false) {
   const desiredJitaBuyBasis=JANICE_API_KEY?'janice-immediate-buy':'reachable-from-jita-4-4';
   const jitaBuyBasisCurrent=state.market?.jitaBuyBasis===desiredJitaBuyBasis;
   const ledgerValuationCurrent=Number(state.market?.ledgerValuationVersion)===LEDGER_VALUATION_VERSION;
+  const mineralCoverageCurrent=REFINING_MINERALS.every(name=>{
+    const row=state.market?.minerals?.[name];
+    if(!row)return false;
+    const price=Number(row.effectiveJitaBuy ?? row.janice?.buy ?? row.jita?.buy);
+    return Number.isFinite(price)&&price>0;
+  });
   const t3DistancesCurrent=SYSTEM_DEFS.every(d=>typeof state.market?.t3Distances?.[d.system]==='number'&&Number.isFinite(state.market.t3Distances[d.system]));
   const a0ScanAt=Date.parse(state.market?.a0ScannedAt||'');
   const a0Current=Array.isArray(state.market?.a0Fields)&&Number.isFinite(a0ScanAt)&&Date.now()-a0ScanAt<MARKET_REFRESH_MS;
-  if(!force&&valuationCurrent&&historyCurrent&&jitaBuyBasisCurrent&&ledgerValuationCurrent&&t3DistancesCurrent&&a0Current&&Number.isFinite(last)&&Date.now()-last<MARKET_REFRESH_MS)return;
+  if(!force&&valuationCurrent&&historyCurrent&&jitaBuyBasisCurrent&&ledgerValuationCurrent&&mineralCoverageCurrent&&t3DistancesCurrent&&a0Current&&Number.isFinite(last)&&Date.now()-last<MARKET_REFRESH_MS)return;
   marketRefreshInProgress=true;
   state.market.lastError=null;
   state.market.privateLastError=null;
