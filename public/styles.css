@@ -3665,3 +3665,175 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .board-tool.danger{border-color:#7a3030;color:#ffb0b0}
 .board-tool.danger:hover{background:rgba(150,40,40,.18)}
 @media(max-width:720px){.appraisal-quick-entry{grid-template-columns:1fr}.forge-plan-row{align-items:flex-start;flex-direction:column}.forge-plan-actions{width:100%}}
+
+
+/* v2.10.2 — grouped navigation dropdowns */
+.nav-dropdown-bar{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:6px;
+  align-items:stretch;
+  width:100%;
+  max-width:1360px;
+  margin:0 auto 8px;
+  padding:4px;
+  overflow:visible;
+  position:sticky;
+  top:4px;
+  z-index:35;
+  border-color:#292c36;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--theme-panel-hi,#151722) 92%,black 8%),color-mix(in srgb,var(--theme-panel-lo,#0c0d13) 94%,black 6%));
+  box-shadow:0 8px 22px #0005,inset 0 1px #ffffff08;
+}
+.nav-menu{position:relative;min-width:0}
+.nav-menu>summary{list-style:none}
+.nav-menu>summary::-webkit-details-marker{display:none}
+.nav-menu-trigger{
+  position:relative;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  align-items:center;
+  gap:10px;
+  min-height:43px;
+  padding:7px 10px 7px 12px;
+  border:1px solid #292d38;
+  border-radius:8px;
+  background:linear-gradient(180deg,#151821,#0f1118);
+  color:#d8dbe3;
+  cursor:pointer;
+  user-select:none;
+  overflow:hidden;
+  transition:border-color .14s ease,background .14s ease,filter .14s ease,transform .14s ease;
+}
+.nav-menu-trigger:before{
+  content:"";
+  position:absolute;
+  left:0;
+  top:7px;
+  bottom:7px;
+  width:2px;
+  border-radius:999px;
+  background:#3c414e;
+  transition:background .14s ease,box-shadow .14s ease;
+}
+.nav-menu-trigger:hover{filter:brightness(1.08);transform:translateY(-1px)}
+.nav-menu-trigger:focus-visible{outline:2px solid var(--theme-accent-hi,#ce68ff);outline-offset:2px}
+.nav-menu.active>.nav-menu-trigger,.nav-menu[open]>.nav-menu-trigger{
+  border-color:color-mix(in srgb,var(--theme-accent,#9d34ed) 62%,#3b3f4b 38%);
+  background:linear-gradient(180deg,color-mix(in srgb,var(--theme-accent,#9d34ed) 18%,#171922 82%),#10121a);
+  color:#fff;
+}
+.nav-menu.active>.nav-menu-trigger:before,.nav-menu[open]>.nav-menu-trigger:before{
+  background:var(--theme-accent-hi,#ce68ff);
+  box-shadow:0 0 10px color-mix(in srgb,var(--theme-accent,#9d34ed) 68%,transparent 32%);
+}
+.nav-menu-copy{display:flex;align-items:baseline;gap:8px;min-width:0}
+.nav-menu-copy>strong{
+  flex:none;
+  color:inherit;
+  font:900 10px/1 Oxanium,Segoe UI,sans-serif;
+  letter-spacing:.09em;
+}
+.nav-menu-current{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:#747b89;
+  font:900 7px/1 "Share Tech Mono",monospace;
+  letter-spacing:.08em;
+}
+.nav-menu.active .nav-menu-current{color:color-mix(in srgb,var(--theme-accent-hi,#ce68ff) 62%,#fff 38%)}
+.nav-menu-chevron{
+  display:grid;
+  place-items:center;
+  width:22px;
+  height:22px;
+  border:1px solid #323643;
+  border-radius:6px;
+  color:#818795;
+  font:900 13px/1 Arial,sans-serif;
+  transition:transform .16s ease,color .16s ease,border-color .16s ease;
+}
+.nav-menu[open] .nav-menu-chevron{transform:rotate(180deg);color:#fff;border-color:color-mix(in srgb,var(--theme-accent,#9d34ed) 60%,#3a3e49 40%)}
+.nav-menu-panel{
+  position:absolute;
+  top:calc(100% + 5px);
+  left:0;
+  z-index:80;
+  display:grid;
+  gap:4px;
+  width:min(320px,calc(100vw - 24px));
+  padding:7px;
+  border:1px solid #343844;
+  border-radius:10px;
+  background:linear-gradient(180deg,#171923,#0d0f15 78%);
+  box-shadow:0 18px 48px #000c,inset 0 1px #ffffff0d;
+  transform-origin:top left;
+  animation:jlrNavDrop .14s ease-out;
+}
+.nav-menu:nth-child(3) .nav-menu-panel,.nav-menu:nth-child(4) .nav-menu-panel{left:auto;right:0;transform-origin:top right}
+.nav-menu-heading{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  min-height:28px;
+  padding:2px 4px 5px;
+  border-bottom:1px solid #252934;
+}
+.nav-menu-heading>span{color:#daddE6;font:900 8px/1 Oxanium,Segoe UI,sans-serif;letter-spacing:.11em}
+.nav-menu-heading>small{color:#646b78;font:900 7px/1 "Share Tech Mono",monospace;text-align:right}
+.nav-menu-panel .app-tab{
+  position:relative;
+  display:block;
+  width:100%;
+  min-height:46px;
+  padding:8px 10px 17px;
+  border:1px solid transparent;
+  border-radius:7px;
+  background:#11131a;
+  color:#c9cdd6;
+  text-align:left;
+  font:900 9px/1 Oxanium,Segoe UI,sans-serif;
+  letter-spacing:.07em;
+  box-shadow:none;
+  transition:background .12s ease,border-color .12s ease,color .12s ease,transform .12s ease;
+}
+.nav-menu-panel .app-tab:after{
+  content:attr(data-nav-desc);
+  position:absolute;
+  left:10px;
+  right:8px;
+  bottom:6px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:#69707d;
+  font:800 7px/1 "Share Tech Mono",monospace;
+  letter-spacing:.02em;
+}
+.nav-menu-panel .app-tab:hover{background:#191c25;border-color:#303541;color:#fff;transform:translateX(2px);filter:none}
+.nav-menu-panel .app-tab.active{
+  border-color:color-mix(in srgb,var(--theme-accent,#9d34ed) 60%,#373b47 40%);
+  background:linear-gradient(90deg,color-mix(in srgb,var(--theme-accent,#9d34ed) 20%,#171923 80%),#141720);
+  color:#fff;
+  box-shadow:inset 3px 0 var(--theme-accent-hi,#ce68ff);
+}
+.nav-menu-panel .app-tab.active:after{color:#9ca2ae}
+@keyframes jlrNavDrop{from{opacity:0;transform:translateY(-5px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+@media(max-width:760px){
+  .nav-dropdown-bar{grid-template-columns:repeat(2,minmax(0,1fr));position:static;overflow:visible;max-width:none}
+  .nav-menu:nth-child(odd) .nav-menu-panel{left:0;right:auto;transform-origin:top left}
+  .nav-menu:nth-child(even) .nav-menu-panel{left:auto;right:0;transform-origin:top right}
+  .nav-menu-trigger{min-height:42px}
+}
+@media(max-width:430px){
+  .nav-dropdown-bar{gap:4px;padding:3px}
+  .nav-menu-trigger{padding:6px 8px 6px 10px}
+  .nav-menu-copy{gap:5px}
+  .nav-menu-copy>strong{font-size:9px}
+  .nav-menu-current{font-size:6px}
+  .nav-menu-panel{width:min(300px,calc(100vw - 18px))}
+}
+@media(prefers-reduced-motion:reduce){.nav-menu-panel{animation:none}.nav-menu-trigger,.nav-menu-chevron,.nav-menu-panel .app-tab{transition:none!important}}
