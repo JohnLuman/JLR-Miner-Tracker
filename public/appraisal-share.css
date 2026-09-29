@@ -1,0 +1,181 @@
+:root{
+  color-scheme:dark;
+  --bg:#070910;
+  --panel:#0d111a;
+  --panel2:#121724;
+  --line:#2f3748;
+  --line2:#463256;
+  --text:#f2f5ff;
+  --muted:#8f98aa;
+  --accent:#aa4dff;
+  --accent-hi:#d58cff;
+  --buy:#74b9ff;
+  --split:#d58cff;
+  --sell:#65e6a8;
+  font-family:Oxanium,Segoe UI,system-ui,sans-serif;
+  background:var(--bg);
+  color:var(--text);
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{
+  min-height:100vh;
+  background:
+    radial-gradient(circle at 14% -12%,rgba(143,43,206,.34),transparent 36rem),
+    radial-gradient(circle at 100% 0,rgba(39,84,160,.18),transparent 31rem),
+    linear-gradient(180deg,#0b0e17 0%,#070910 58%,#06070b 100%);
+  padding:22px;
+}
+a{color:inherit}
+.share-shell{max-width:1480px;margin:0 auto}
+.share-brand{
+  display:flex;align-items:center;justify-content:space-between;gap:16px;
+  min-height:48px;margin-bottom:10px;padding:0 3px;
+}
+.brand-lockup{display:flex;align-items:center;gap:10px;text-decoration:none}
+.brand-mark{
+  display:grid;place-items:center;width:46px;height:32px;border-radius:8px;
+  border:1px solid #dc9cff;background:linear-gradient(180deg,#cf67ff,#6c159f);
+  box-shadow:inset 0 1px #fff7,0 0 26px #8f2bd044;
+  font-size:12px;font-weight:800;letter-spacing:.05em;
+}
+.brand-copy{display:grid;line-height:1.05}
+.brand-copy strong{font-size:12px;letter-spacing:.11em}
+.brand-copy small{margin-top:4px;color:#b49cc2;font:10px "Share Tech Mono",monospace;letter-spacing:.14em}
+.open-jlr{
+  text-decoration:none;border:1px solid #49335a;border-radius:999px;padding:8px 12px;
+  background:#10131d;color:#d9b8f2;font:10px "Share Tech Mono",monospace;letter-spacing:.08em;
+}
+.open-jlr:hover{border-color:#9053b8;background:#16111e;color:#fff}
+.panel{
+  overflow:hidden;border:1px solid #3d314a;border-radius:18px;
+  background:linear-gradient(180deg,rgba(16,19,30,.98),rgba(9,12,20,.98));
+  box-shadow:0 28px 90px #0009,0 0 0 1px #ffffff05 inset;
+}
+.loading-panel{padding:26px;color:var(--muted);font-family:"Share Tech Mono",monospace}
+.share-hero{
+  display:grid;grid-template-columns:minmax(0,1fr) auto;gap:28px;align-items:center;
+  padding:24px 26px 22px;border-bottom:1px solid #2d2638;
+  background:
+    linear-gradient(100deg,rgba(117,38,159,.16),transparent 56%),
+    linear-gradient(180deg,#121624,#0f121c);
+}
+.hero-kicker{
+  display:flex;gap:8px;align-items:center;color:#bf9ad1;
+  font:10px "Share Tech Mono",monospace;letter-spacing:.11em;text-transform:uppercase;
+}
+.hero-kicker span:first-child{color:#e1baff}
+.hero-dot{opacity:.5}
+.hero-copy h1{
+  margin:8px 0 5px;font-size:clamp(28px,4vw,48px);line-height:1;
+  letter-spacing:-.035em;overflow-wrap:anywhere;
+}
+.sub{margin:0;color:#aab2c2;font-size:13px}
+.sub strong{color:#fff}
+.snapshot{margin:7px 0 0;color:#677184;font:10px "Share Tech Mono",monospace}
+.hero-value{
+  min-width:270px;border:1px solid #704a87;border-radius:14px;padding:16px 18px;
+  background:
+    radial-gradient(circle at 85% 0,rgba(199,105,255,.18),transparent 55%),
+    linear-gradient(180deg,#1a1321,#100f18);
+  box-shadow:inset 0 1px #ffffff12,0 10px 30px #0005;
+}
+.hero-value>span,.hero-value>em{
+  display:block;font:10px "Share Tech Mono",monospace;letter-spacing:.1em;color:#bba1c9;font-style:normal
+}
+.hero-value strong{
+  display:block;margin:6px 0 5px;color:#fff;font-size:clamp(27px,3vw,40px);
+  line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap;
+}
+.hero-value strong small{font-size:.42em;color:#aa93b8;letter-spacing:.07em}
+.hero-value em{color:#d58cff}
+.kpis{
+  display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;
+  padding:12px 14px;background:#090c13;border-bottom:1px solid #242b39;
+}
+.kpi{
+  min-width:0;padding:11px 12px;border:1px solid #283142;border-radius:10px;
+  background:linear-gradient(180deg,#121722,#0d1119);
+}
+.kpi.selected{border-color:#8757a0;box-shadow:inset 0 0 0 1px #bd6bea33;background:linear-gradient(180deg,#1b1424,#111019)}
+.kpi span{display:block;color:#778297;font:9px "Share Tech Mono",monospace;letter-spacing:.09em}
+.kpi strong{
+  display:block;margin-top:5px;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  font-variant-numeric:tabular-nums;
+}
+.items-panel{padding:14px}
+.section-head{
+  display:flex;align-items:flex-end;justify-content:space-between;gap:18px;padding:2px 2px 10px;
+}
+.section-head>div{display:grid;gap:2px}
+.section-head span{color:#9b77ae;font:9px "Share Tech Mono",monospace;letter-spacing:.12em}
+.section-head strong{font-size:14px}
+.section-head small{color:#717b8d;font-size:10px}
+.table-wrap{
+  overflow:auto;border:1px solid #293243;border-radius:12px;background:#0b0e15;
+  scrollbar-width:thin;scrollbar-color:#744397 #0b0e15;
+}
+.table{width:100%;min-width:1120px;border-collapse:separate;border-spacing:0;font-size:12px}
+th,td{padding:10px 11px;border-bottom:1px solid #202735;white-space:nowrap}
+th{
+  position:sticky;top:0;z-index:3;background:#151a26;color:#909aac;
+  font:9px "Share Tech Mono",monospace;letter-spacing:.07em;text-align:right;
+  box-shadow:0 1px #323a4b;
+}
+th:first-child,td:first-child{text-align:left}
+tbody tr:nth-child(even){background:#0d1119}
+tbody tr:hover{background:#141522}
+tbody tr:last-child td{border-bottom:0}
+.item{min-width:300px}
+.item-name{display:flex;align-items:center;gap:9px}
+.item-icon{
+  width:32px;height:32px;flex:0 0 32px;border-radius:6px;border:1px solid #30394a;background:#090b10;
+  object-fit:cover;
+}
+.item-icon.placeholder{display:grid;place-items:center;color:#ff9ea8;font-weight:800}
+.item strong{display:block;max-width:320px;overflow:hidden;text-overflow:ellipsis;font-size:12px}
+.item small{display:block;margin-top:2px;color:#667186;font:8px "Share Tech Mono",monospace;letter-spacing:.06em}
+.num{text-align:right;font-variant-numeric:tabular-nums;color:#dfe5f0}
+.qty{color:#fff;font-weight:700}
+.buy{color:#a8d4ff}.split{color:#dca5ff}.sell{color:#88efbb}
+.total{font-weight:700}
+.unresolved{background:#1b1116!important}.bad{color:#ff8e9b}
+.empty-row{text-align:center!important;padding:24px;color:#758095}
+.footer{
+  display:flex;justify-content:space-between;align-items:center;gap:18px;
+  padding:13px 16px;border-top:1px solid #232936;background:#090c12;
+}
+.footer>div{display:grid;gap:3px}
+.footer strong{color:#9f74b5;font:9px "Share Tech Mono",monospace;letter-spacing:.1em}
+.footer span{color:#697386;font-size:9px}
+.footer a{
+  flex:0 0 auto;text-decoration:none;color:#d3a6ee;border:1px solid #49335a;border-radius:999px;
+  padding:7px 10px;font:9px "Share Tech Mono",monospace;letter-spacing:.07em;
+}
+.error-state{padding:34px}
+.error-state>span{font:10px "Share Tech Mono",monospace;color:#ad7ec4;letter-spacing:.11em}
+.error-state h1{margin:8px 0 6px;font-size:34px}
+.error-state p{color:#ff9aa5}
+.error-state a{display:inline-block;margin-top:8px;color:#d5a7ef}
+@media(max-width:1050px){
+  body{padding:14px}
+  .share-hero{grid-template-columns:1fr}
+  .hero-value{min-width:0}
+  .kpis{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:680px){
+  body{padding:8px}
+  .share-brand{padding:3px 4px}
+  .brand-copy strong{font-size:10px}.brand-copy small{font-size:8px}
+  .open-jlr{padding:7px 9px;font-size:8px}
+  .panel{border-radius:13px}
+  .share-hero{padding:18px 16px}
+  .hero-copy h1{font-size:30px}
+  .hero-kicker{flex-wrap:wrap}
+  .hero-value strong{font-size:30px}
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr));padding:9px}
+  .kpi{padding:9px}.kpi strong{font-size:14px}
+  .items-panel{padding:9px}
+  .section-head{display:block}.section-head small{display:block;margin-top:4px}
+  .footer{display:block}.footer a{display:inline-block;margin-top:10px}
+}
