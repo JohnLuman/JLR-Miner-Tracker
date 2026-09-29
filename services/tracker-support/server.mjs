@@ -4,7 +4,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {fileURLToPath} from 'node:url';
-import {TrackerSessionStore} from './core.mjs';
+import {TrackerSessionStore,appraisalCompressionCandidateName,appraisalSelectedValue,appraisalIntelTargets,summarizeAppraisalMarketHistory} from './core.mjs';
 
 const __dirname=path.dirname(fileURLToPath(import.meta.url));
 const PORT=Math.max(1,Number(process.env.PORT)||3191);
@@ -27,6 +27,14 @@ const voiceJobs=new Map();
 const VOICE_PACK_FILE=String(process.env.TRACKER_SUPPORT_VOICE_PACK_FILE||path.join(path.dirname(STATE_FILE),'voice','JLR_Voice_Worker_v3_PATCH.zip')).trim();
 const UPLOAD_TOKEN=String(process.env.TRACKER_SUPPORT_UPLOAD_TOKEN||'').trim();
 const VOICE_PACK_MAX_BYTES=20*1024*1024;
+const APPRAISAL_INTEL_CACHE_TTL_MS=Math.max(30_000,Number(process.env.TRACKER_SUPPORT_APPRAISAL_CACHE_MS)||5*60*1000);
+const APPRAISAL_HISTORY_CACHE_TTL_MS=Math.max(60_000,Number(process.env.TRACKER_SUPPORT_MARKET_HISTORY_CACHE_MS)||30*60*1000);
+const APPRAISAL_MAIN_TIMEOUT_MS=Math.max(2_000,Number(process.env.TRACKER_SUPPORT_APPRAISAL_MAIN_TIMEOUT_MS)||8_000);
+const APPRAISAL_ESI_TIMEOUT_MS=Math.max(2_000,Number(process.env.TRACKER_SUPPORT_APPRAISAL_ESI_TIMEOUT_MS)||6_000);
+const APPRAISAL_MAX_ITEMS=80;
+const APPRAISAL_HISTORY_LIMIT=10;
+const appraisalIntelCache=new Map();
+const appraisalHistoryCache=new Map();
 
 if(SHARED_SECRET.length<24){
   console.error('TRACKER_SUPPORT_SHARED_SECRET must be set to a random value of at least 24 characters.');
@@ -389,6 +397,187 @@ async function voiceHealth(){
   };
 }
 
+
+function pruneTimedCache(map,maxEntries=500){
+  const t=Date.now();
+  for(const [key,row] of map)if(!row||Number(row.expiresAt||0)<=t)map.delete(key);
+  if(map.size<=maxEntries)return;
+  const rows=[...map.entries()].sort((a,b)=>Number(a[1]?.createdAt||0)-Number(b[1]?.createdAt||0));
+  for(const [key] of rows.slice(0,map.size-maxEntries))map.delete(key);
+}
+function appraisalCacheKey(appraisal){
+  const source=appraisal&&typeof appraisal==='object'?appraisal:{};
+  const items=(Array.isArray(source.items)?source.items:[]).slice(0,APPRAISAL_MAX_ITEMS).map(row=>[
+    Number(row?.typeId)||0,String(row?.name||'').trim(),Number(row?.amount)||0,
+    Number(row?.buyTotal)||0,Number(row?.splitTotal)||0,Number(row?.sellTotal)||0,Number(row?.totalVolume)||0
+  ]);
+  return crypto.createHash('sha256').update(JSON.stringify({
+    market:Number(source?.market?.id)||0,marketName:String(source?.market?.name||''),
+    pricing:String(source?.pricing||'split'),pricingVariant:String(source?.pricingVariant||'immediate'),items,
+  })).digest('hex');
+}
+function historyRegionForMarket(market){
+  const id=Number(market?.id)||0;
+  const name=String(market?.name||'').toLowerCase();
+  if(id===2||name.includes('jita'))return{regionId:10000002,regionName:'The Forge'};
+  if(name.includes('amarr'))return{regionId:10000043,regionName:'Domain'};
+  if(name.includes('dodixie'))return{regionId:10000032,regionName:'Sinq Laison'};
+  if(name.includes('rens'))return{regionId:10000030,regionName:'Heimatar'};
+  if(name.includes('hek'))return{regionId:10000042,regionName:'Metropolis'};
+  return null;
+}
+async function supportMainAppraisal(text,{market,pricing,pricingVariant}={}){
+  const response=await fetch(MAIN_APP_URL+'/api/internal/support/appraisal',{
+    method:'POST',
+    headers:{
+      'content-type':'application/json',
+      'authorization':'Bearer '+SHARED_SECRET,
+      'user-agent':'JLR-Tracker-Support/appraisal-intel',
+    },
+    body:JSON.stringify({text,market,pricing,pricingVariant}),
+    signal:AbortSignal.timeout(APPRAISAL_MAIN_TIMEOUT_MS),
+  });
+  let payload=null;
+  try{payload=await response.json()}catch{}
+  if(!response.ok)throw new Error(String(payload?.message||payload?.error||('MAIN_APPRAISAL_HTTP_'+response.status)));
+  return payload;
+}
+async function esiMarketHistory(regionId,typeId){
+  const key=String(regionId)+':'+String(typeId);
+  const cached=appraisalHistoryCache.get(key);
+  if(cached&&cached.expiresAt>Date.now())return cached.value;
+  const url='https://esi.evetech.net/latest/markets/'+encodeURIComponent(regionId)+'/history/?datasource=tranquility&type_id='+encodeURIComponent(typeId);
+  const response=await fetch(url,{
+    headers:{'accept':'application/json','user-agent':'JLR-Tracker-Support/appraisal-history'},
+    signal:AbortSignal.timeout(APPRAISAL_ESI_TIMEOUT_MS),
+  });
+  if(!response.ok)throw new Error('ESI_HISTORY_HTTP_'+response.status);
+  const rows=await response.json();
+  const value=summarizeAppraisalMarketHistory(Array.isArray(rows)?rows:[]);
+  appraisalHistoryCache.set(key,{createdAt:Date.now(),expiresAt:Date.now()+APPRAISAL_HISTORY_CACHE_TTL_MS,value});
+  pruneTimedCache(appraisalHistoryCache,1500);
+  return value;
+}
+function appraisalIntelItem(row){
+  return{
+    resolved:row?.resolved!==false,
+    typeId:Number(row?.typeId)||null,
+    name:String(row?.name||'').trim().slice(0,180),
+    amount:Math.max(0,Math.floor(Number(row?.amount)||0)),
+    totalVolume:Math.max(0,Number(row?.totalVolume)||0),
+    buy:Math.max(0,Number(row?.buy)||0),
+    split:Math.max(0,Number(row?.split)||0),
+    sell:Math.max(0,Number(row?.sell)||0),
+    buyTotal:Math.max(0,Number(row?.buyTotal)||0),
+    splitTotal:Math.max(0,Number(row?.splitTotal)||0),
+    sellTotal:Math.max(0,Number(row?.sellTotal)||0),
+  };
+}
+async function buildSupportAppraisalIntel(body){
+  const source=body?.appraisal&&typeof body.appraisal==='object'?body.appraisal:{};
+  const pricing=['buy','split','sell'].includes(String(source.pricing||'').toLowerCase())?String(source.pricing).toLowerCase():'split';
+  const pricingVariant=String(source.pricingVariant||'immediate').toLowerCase()==='top5percent'?'top5percent':'immediate';
+  const market={id:Number(source?.market?.id)||2,name:String(source?.market?.name||'Jita 4-4').trim().slice(0,120)};
+  const items=(Array.isArray(source.items)?source.items:[]).slice(0,APPRAISAL_MAX_ITEMS).map(appraisalIntelItem)
+    .filter(row=>row.resolved!==false&&row.name&&row.amount>0);
+  if(!items.length)return{available:true,generatedAt:new Date().toISOString(),market,pricing,pricingVariant,compression:[],history:[],warnings:['No resolved appraisal items were available for Support intel.']};
+
+  const key=appraisalCacheKey({market,pricing,pricingVariant,items});
+  const cached=appraisalIntelCache.get(key);
+  if(cached&&cached.expiresAt>Date.now()){
+    return{...cached.value,cache:{hit:true,ageMs:Math.max(0,Date.now()-cached.createdAt),ttlMs:APPRAISAL_INTEL_CACHE_TTL_MS}};
+  }
+
+  const warnings=[];
+  const ranked=[...items].sort((a,b)=>appraisalSelectedValue(b,pricing)-appraisalSelectedValue(a,pricing));
+  const candidateRows=[];
+  const seenTargets=new Set();
+  for(const row of ranked){
+    const candidate=appraisalCompressionCandidateName(row.name);
+    if(!candidate)continue;
+    const targetKey=candidate.targetName.toLowerCase();
+    if(seenTargets.has(targetKey))continue;
+    seenTargets.add(targetKey);
+    candidateRows.push({row,candidate});
+    if(candidateRows.length>=40)break;
+  }
+
+  let compression=[];
+  if(candidateRows.length){
+    try{
+      const candidateText=candidateRows.map(({row,candidate})=>candidate.targetName+'\t'+row.amount).join('\n');
+      const alternate=await supportMainAppraisal(candidateText,{market:market.id,pricing,pricingVariant});
+      const targetRows=new Map((Array.isArray(alternate?.items)?alternate.items:[])
+        .filter(row=>row?.resolved!==false&&row?.name)
+        .map(row=>[String(row.name).trim().toLowerCase(),appraisalIntelItem(row)]));
+      compression=candidateRows.map(({row,candidate})=>{
+        const target=targetRows.get(candidate.targetName.toLowerCase());
+        if(!target)return null;
+        const sourceValue=appraisalSelectedValue(row,pricing);
+        const targetValue=appraisalSelectedValue(target,pricing);
+        const sourceVolume=Math.max(0,Number(row.totalVolume)||0);
+        const targetVolume=Math.max(0,Number(target.totalVolume)||0);
+        return{
+          sourceName:row.name,
+          sourceTypeId:row.typeId,
+          targetName:target.name,
+          targetTypeId:target.typeId,
+          direction:candidate.direction,
+          amount:row.amount,
+          pricing,
+          sourceValue,
+          targetValue,
+          valueDelta:targetValue-sourceValue,
+          valueDeltaPct:sourceValue>0?((targetValue/sourceValue)-1)*100:null,
+          sourceVolume,
+          targetVolume,
+          volumeDelta:targetVolume-sourceVolume,
+          volumeReductionPct:sourceVolume>0?(1-targetVolume/sourceVolume)*100:null,
+        };
+      }).filter(Boolean).sort((a,b)=>Math.abs(b.sourceValue)-Math.abs(a.sourceValue));
+    }catch(error){
+      warnings.push('Compression comparison unavailable: '+String(error?.message||error).slice(0,140));
+    }
+  }
+
+  const region=historyRegionForMarket(market);
+  let history=[];
+  if(region){
+    const targets=appraisalIntelTargets(items,{pricing,limit:APPRAISAL_HISTORY_LIMIT});
+    const settled=await Promise.all(targets.map(async row=>{
+      try{
+        const summary=await esiMarketHistory(region.regionId,row.typeId);
+        return{
+          typeId:row.typeId,name:row.name,amount:row.amount,
+          selectedValue:appraisalSelectedValue(row,pricing),
+          regionId:region.regionId,regionName:region.regionName,
+          ...summary,
+        };
+      }catch{return null}
+    }));
+    history=settled.filter(Boolean);
+    if(!history.length&&targets.length)warnings.push('ESI market history is temporarily unavailable for these items.');
+  }else{
+    warnings.push('Market history is currently mapped for Jita, Amarr, Dodixie, Rens, and Hek.');
+  }
+
+  const value={
+    available:true,
+    generatedAt:new Date().toISOString(),
+    market,pricing,pricingVariant,
+    compression,
+    history,
+    warnings,
+    cache:{
+      hit:false,ageMs:0,ttlMs:APPRAISAL_INTEL_CACHE_TTL_MS,
+      compressionCandidates:compression.length,historyRows:history.length,
+    },
+  };
+  appraisalIntelCache.set(key,{createdAt:Date.now(),expiresAt:Date.now()+APPRAISAL_INTEL_CACHE_TTL_MS,value});
+  pruneTimedCache(appraisalIntelCache,300);
+  return value;
+}
+
 await loadState();
 
 const startedAt=Date.now();
@@ -407,6 +596,8 @@ const server=http.createServer(async(req,res)=>{
       sessions:store.size,
       uptimeSeconds:Math.floor((Date.now()-startedAt)/1000),
       persistence:Boolean(STATE_FILE),
+      appraisalIntelCacheEntries:appraisalIntelCache.size,
+      marketHistoryCacheEntries:appraisalHistoryCache.size,
       ...voice,
     });
   }
@@ -461,6 +652,16 @@ const server=http.createServer(async(req,res)=>{
     const session=store.remember(userKey,{question:body?.question,currentTab:body?.currentTab,context:body?.context,answer:body?.answer});
     scheduleSave();
     return json(res,200,{ok:true,session});
+  }
+  if(req.method==='POST'&&url.pathname==='/v1/appraisal/intel'){
+    let body;
+    try{body=await readBody(req,220_000)}
+    catch(error){return json(res,400,{error:String(error?.message||'BAD_REQUEST')})}
+    try{return json(res,200,await buildSupportAppraisalIntel(body))}
+    catch(error){
+      console.warn('Support appraisal intel failed:',String(error?.message||error));
+      return json(res,503,{error:'APPRAISAL_INTEL_FAILED',message:String(error?.message||error)});
+    }
   }
   if(req.method==='POST'&&url.pathname==='/v1/session'){
     let body;

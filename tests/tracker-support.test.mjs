@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {TrackerSessionStore,trackerSupportAnswerContext} from '../services/tracker-support/core.mjs';
+import {TrackerSessionStore,trackerSupportAnswerContext,appraisalCompressionCandidateName,appraisalIntelTargets,summarizeAppraisalMarketHistory} from '../services/tracker-support/core.mjs';
 
 let now=1_000_000;
 const store=new TrackerSessionStore({nowFn:()=>now,focusTtlMs:30*60*1000,ttlMs:12*60*60*1000});
@@ -76,4 +76,32 @@ const snapshot=store.exportState();
 const restored=new TrackerSessionStore({nowFn:()=>now});
 restored.importState(snapshot);
 assert.equal(restored.size,1);
+const rawCandidate=appraisalCompressionCandidateName('Arkonor II-Grade');
+assert.deepEqual(rawCandidate,{sourceName:'Arkonor II-Grade',targetName:'Compressed Arkonor II-Grade',direction:'compress'});
+const compressedCandidate=appraisalCompressionCandidateName('Compressed Arkonor II-Grade');
+assert.deepEqual(compressedCandidate,{sourceName:'Compressed Arkonor II-Grade',targetName:'Arkonor II-Grade',direction:'decompress'});
+
+const intelTargets=appraisalIntelTargets([
+  {resolved:true,typeId:1,name:'Low',amount:1,splitTotal:10},
+  {resolved:true,typeId:2,name:'High',amount:1,splitTotal:100},
+  {resolved:false,typeId:3,name:'Nope',amount:1,splitTotal:1000},
+],{pricing:'split',limit:1});
+assert.equal(intelTargets.length,1);
+assert.equal(intelTargets[0].name,'High');
+
+const history=summarizeAppraisalMarketHistory([
+  {date:'2026-09-01',average:100,highest:110,lowest:90,volume:10,order_count:2},
+  {date:'2026-09-02',average:110,highest:120,lowest:100,volume:20,order_count:3},
+  {date:'2026-09-03',average:120,highest:130,lowest:110,volume:30,order_count:4},
+  {date:'2026-09-04',average:130,highest:140,lowest:120,volume:40,order_count:5},
+  {date:'2026-09-05',average:140,highest:150,lowest:130,volume:50,order_count:6},
+  {date:'2026-09-06',average:150,highest:160,lowest:140,volume:60,order_count:7},
+  {date:'2026-09-07',average:160,highest:170,lowest:150,volume:70,order_count:8},
+]);
+assert.equal(history.days,7);
+assert.equal(history.latestAverage,160);
+assert.equal(history.volume7,280);
+assert.ok(history.avg7>100&&history.avg7<160);
+console.log('Compression candidate helpers and market-history summary passed.');
+
 console.log('Tracker support session tests passed.');
