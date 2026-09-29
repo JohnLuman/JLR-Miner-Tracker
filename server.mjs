@@ -6064,19 +6064,6 @@ async function appraisalMarketOrders(regionId,typeId){
   }
   return rows;
 }
-async function appraisalBuyOrderReachableAt(row,hub){
-  const range=String(row?.range||'station');
-  const sameStation=hub.locationId&&Number(row?.location_id)===Number(hub.locationId);
-  const sameSystem=Number(row?.system_id)===Number(hub.systemId);
-  if(range==='station')return Boolean(sameStation);
-  if(range==='solarsystem')return sameSystem;
-  if(range==='region')return true;
-  const jumpRange=Number(range);
-  if(!Number.isFinite(jumpRange))return false;
-  if(sameSystem)return true;
-  const jumps=await routeJumps(row?.system_id,hub.systemId);
-  return jumps<=jumpRange;
-}
 async function appraisalOrdersAtHub(orders,hub){
   const source=Array.isArray(orders)?orders:[];
   const sellOrders=source.filter(row=>{
@@ -6084,10 +6071,11 @@ async function appraisalOrdersAtHub(orders,hub){
     if(hub.locationId)return Number(row?.location_id)===Number(hub.locationId);
     return Number(row?.system_id)===Number(hub.systemId);
   });
-  const buyCandidates=source.filter(row=>row?.is_buy_order);
   const buyOrders=[];
-  const routeChecks=new Map();
-  for(const row of buyCandidates){
+  const ranged=[];
+  const origins=new Set();
+  for(const row of source){
+    if(!row?.is_buy_order)continue;
     const range=String(row?.range||'station');
     const sameStation=hub.locationId&&Number(row?.location_id)===Number(hub.locationId);
     const sameSystem=Number(row?.system_id)===Number(hub.systemId);
@@ -6111,9 +6099,20 @@ async function appraisalOrdersAtHub(orders,hub){
     }
     const origin=Number(row?.system_id)||0;
     if(!origin)continue;
-    if(!routeChecks.has(origin))routeChecks.set(origin,routeJumps(origin,hub.systemId));
-    const jumps=await routeChecks.get(origin);
-    if(jumps<=jumpRange)buyOrders.push(row);
+    ranged.push({row,origin,jumpRange});
+    origins.add(origin);
+  }
+
+  const originList=[...origins];
+  const distances=new Map();
+  const resolved=await forgeMapLimit(originList,8,async origin=>({
+    origin,
+    jumps:await routeJumps(origin,hub.systemId),
+  }));
+  for(const row of resolved||[])if(row)distances.set(row.origin,row.jumps);
+  for(const entry of ranged){
+    const jumps=distances.get(entry.origin);
+    if(Number.isFinite(jumps)&&jumps<=entry.jumpRange)buyOrders.push(entry.row);
   }
   return{buyOrders,sellOrders};
 }
