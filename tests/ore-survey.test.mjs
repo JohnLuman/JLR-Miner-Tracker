@@ -109,5 +109,5 @@ assert.match(server,/'spodumain ii-grade':\{[^\n]+Tritanium:50400/,'Spodumain II
 assert.match(server,/'bezdnacine ii-grade':\{[^\n]+Isogen:5040/,'Bezdnacine II-Grade uses current 5% refine output');
 assert.match(server,/'rakovene i-grade':\{[^\n]+Zydrine:200/,'Rakovene I-Grade aliases base refine output');
 assert.match(server,/'talassonite ii-grade':\{[^\n]+Nocxium:1008/,'Talassonite II-Grade uses current 5% refine output');
-assert.match(server,/'mercoxit':\{[^\n]+Morphite:140/,'Mercoxit refine output is covered');
+assert.match(server,/mercoxit:\{[^\n]+Morphite:140/,'Mercoxit refine output is covered');
 assert.match(server,/REFINING_MINERALS=.*'Morphite'/,'Morphite receives live Jita mineral pricing');
