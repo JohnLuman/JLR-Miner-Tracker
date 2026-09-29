@@ -782,7 +782,7 @@
       }).join('')||'<div class="visual-empty">No outputs.</div>';
     }
     if(materials){
-      materials.innerHTML=(forgePlan.materials||[]).map(row=>`<article class="forge-row material"><div><strong>${esc(row.name)}</strong><small>TYPE ${esc(row.typeId||'—')}</small></div><span>${Number(row.quantity||0).toLocaleString()} • ${forgeIsk(row.cost)} ISK</span></article>`).join('')||'<div class="visual-empty">No manufacturing materials in this list.</div>';
+      materials.innerHTML=(forgePlan.materials||[]).map(row=>`<article class="forge-row material"><div><strong>${esc(row.name)}</strong><small>MATERIAL</small></div><span>${Number(row.quantity||0).toLocaleString()} • ${forgeIsk(row.cost)} ISK</span></article>`).join('')||'<div class="visual-empty">No manufacturing materials in this list.</div>';
     }
     if(share)share.disabled=!(forgePlan.items||[]).length;
   }
@@ -804,6 +804,7 @@
           </select>
           <button class="board-tool" type="button" data-forge-copy="${esc(url)}">COPY SHARE LINK</button>
           <a class="board-tool" href="${esc(url)}" target="_blank" rel="noopener">OPEN</a>
+          ${row.canDelete?'<button class="board-tool forge-delete" type="button" data-forge-delete="'+esc(row.id)+'">REMOVE BUILD</button>':''}
         </div>
       </article>`;
     }).join('');
@@ -873,6 +874,20 @@
       }
       toast('Build status: '+forgeStatusLabel(status));
     }catch(error){toast('Could not update build status: '+String(error.message||error));await loadForgeBoard(true)}
+  }
+  async function removeForgeBuild(id){
+    const row=forgeBoard.find(item=>String(item.id)===String(id));
+    if(!row)return;
+    if(!confirm('Remove "'+String(row.title||'this build')+'" from the JLR Build Board?'))return;
+    try{
+      await api('/api/forge/share/'+encodeURIComponent(id)+'/delete',{method:'POST',body:'{}'});
+      forgeBoard=forgeBoard.filter(item=>String(item.id)!==String(id));
+      renderForgeBoard();
+      toast('Build removed from the JLR Build Board.');
+    }catch(error){
+      toast('Could not remove build: '+String(error.message||error));
+      await loadForgeBoard(true);
+    }
   }
 
   async function refreshCompanionStatus(){
@@ -2831,7 +2846,7 @@
             <label class="forge-field"><span>ME</span><input id="forgeMe" type="number" min="0" max="10" value="10"></label>
             <label class="forge-field"><span>TE</span><input id="forgeTe" type="number" min="0" max="20" value="20"></label>
           </div>
-          <textarea id="forgePaste" class="forge-paste" rows="8" maxlength="100000" placeholder="Paste one item per line…&#10;10 Hulk&#10;5 Rorqual&#10;250000 Kylixium"></textarea>
+          <textarea id="forgePaste" class="forge-paste" rows="8" maxlength="100000" placeholder="Type a build and press Enter…&#10;10 Hulk&#10;Shift+Enter = another line"></textarea>
           <div class="forge-actions">
             <button id="forgePasteClipboard" class="orb silver" type="button">PASTE CLIPBOARD</button>
             <button id="forgeCalculate" class="orb purple" type="button">CALCULATE BUILD</button>
@@ -2854,6 +2869,11 @@
     // Forge controls are created dynamically inside initTabs, so bind only
     // after the Forge DOM exists.
     $('forgeCalculate')?.addEventListener('click',()=>void calculateForge());
+    $('forgePaste')?.addEventListener('keydown',event=>{
+      if(event.key!=='Enter'||event.shiftKey||event.ctrlKey||event.altKey||event.metaKey||event.isComposing)return;
+      event.preventDefault();
+      void calculateForge();
+    });
     $('forgeShare')?.addEventListener('click',()=>void shareForge());
     $('forgeRefresh')?.addEventListener('click',()=>void loadForgeBoard(true));
     $('forgePasteClipboard')?.addEventListener('click',async()=>{
@@ -2869,7 +2889,14 @@
       if(select)void setForgeStatus(String(select.dataset.forgeStatus||''),String(select.value||'planning'));
     });
     $('forgeBoard')?.addEventListener('click',async event=>{
-      const button=event.target instanceof Element?event.target.closest('[data-forge-copy]'):null;
+      const target=event.target instanceof Element?event.target:null;
+      if(!target)return;
+      const remove=target.closest('[data-forge-delete]');
+      if(remove){
+        void removeForgeBuild(String(remove.dataset.forgeDelete||''));
+        return;
+      }
+      const button=target.closest('[data-forge-copy]');
       if(!button)return;
       try{await navigator.clipboard.writeText(String(button.dataset.forgeCopy||''));toast('Build share link copied.')}
       catch{toast('Could not copy the build link.')}

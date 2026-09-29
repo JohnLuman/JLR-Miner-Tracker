@@ -6007,9 +6007,10 @@ function forgeSharePublic(row){
     plan:row.plan||{items:[],materials:[],summary:{}},
   };
 }
-function forgeBoardRows(){
+function forgeBoardRows(user=null){
+  const userId=String(user?.id||'');
   return Object.values(state.forge?.shares||{})
-    .map(forgeSharePublic)
+    .map(row=>({...forgeSharePublic(row),canDelete:Boolean(userId&&String(row?.owner?.id||'')===userId)}))
     .sort((a,b)=>Date.parse(b.updatedAt||b.createdAt||0)-Date.parse(a.updatedAt||a.createdAt||0))
     .slice(0,100);
 }
@@ -9187,7 +9188,7 @@ async function routeApi(req,res,url) {
     return json(res,200,await doctrineMarketSnapshot());
   }
   if(req.method==='GET'&&url.pathname==='/api/forge/board'){
-    return json(res,200,{shares:forgeBoardRows(),statuses:FORGE_STATUSES});
+    return json(res,200,{shares:forgeBoardRows(user),statuses:FORGE_STATUSES});
   }
   if(req.method==='POST'&&url.pathname==='/api/forge/plan'){
     if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
@@ -9232,6 +9233,16 @@ async function routeApi(req,res,url) {
     row.status=status;row.updatedAt=now();row.updatedBy=user.displayName||'JLR Pilot';
     await save();broadcast();
     return json(res,200,{share:forgeSharePublic(row)});
+  }
+  if(req.method==='POST'&&url.pathname.match(/^\/api\/forge\/share\/[^/]+\/delete$/)){
+    if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
+    const id=String(url.pathname.split('/')[4]||'');
+    const row=state.forge?.shares?.[id];
+    if(!row)return json(res,404,{error:'FORGE_SHARE_NOT_FOUND'});
+    if(String(row?.owner?.id||'')!==String(user.id))return json(res,403,{error:'FORGE_DELETE_FORBIDDEN',message:'Only the pilot who posted this build can remove it.'});
+    delete state.forge.shares[id];
+    await save();broadcast();
+    return json(res,200,{ok:true,removed:id});
   }
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
   if(req.method==='POST'&&url.pathname==='/api/fleet-performance'){
