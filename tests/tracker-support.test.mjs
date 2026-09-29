@@ -8,7 +8,6 @@ const answer={
   handled:true,
   topic:'nearest-system',
   text:'Closest tracked system needing a scan update: Y-2ANO. 3 jumps from John Luman in C-N4OD. Its last Probe Scanner copy is out of date.',
-  voiceText:'Y-2ANO is closest. 3 jumps.',
   closest:{system:'Y-2ANO',jumps:3},
   location:{system:'C-N4OD'},
 };
