@@ -33,6 +33,7 @@
   let appraisalBusy = false;
   let appraisalMarkets = [];
   let appraisalMarketsBusy = false;
+  let appraisalRefineRateTouched = false;
   let stateRenderFrame = 0;
   let stateRenderPending = false;
   const scoutLastSystem = new Map();
@@ -762,6 +763,54 @@
   function appraisalVariantLabel(value){
     return String(value||'immediate')==='top5percent'?'TOP 5% AVG':'IMMEDIATE';
   }
+  function appraisalRefineRatePct(){
+    const refine=appraisalData?.refine||{};
+    const fallback=Math.max(0,Math.min(1,Number(refine.selectedRate??refine.defaultRate??0)||0))*100;
+    const input=$('appraisalRefineRate');
+    const raw=Number(input?.value);
+    return Math.max(0,Math.min(100,Number.isFinite(raw)?raw:fallback));
+  }
+  function renderAppraisalRefine(){
+    const section=$('appraisalRefineSection');
+    const summary=$('appraisalRefineSummary');
+    const breakdown=$('appraisalRefineBreakdown');
+    const input=$('appraisalRefineRate');
+    if(!section||!summary||!breakdown)return;
+    const refine=appraisalData?.refine||null;
+    if(!refine){
+      summary.innerHTML='<div class="visual-empty">Run an appraisal to calculate ore refine value.</div>';
+      breakdown.innerHTML='';
+      return;
+    }
+    const defaultPct=Math.max(0,Math.min(100,Number(refine.selectedRate??refine.defaultRate??0)*100));
+    if(input&&!appraisalRefineRateTouched)input.value=defaultPct.toFixed(2);
+    const ratePct=appraisalRefineRatePct();
+    const rate=ratePct/100;
+    const lines=Math.max(0,Number(refine.recognizedLines)||0);
+    const refinedValue=Math.max(0,Number(refine.buyAt100)||0)*rate;
+    const rawBuy=Math.max(0,Number(refine.eligibleBuy)||0);
+    const delta=refinedValue-rawBuy;
+    if(!lines){
+      summary.innerHTML='<div class="visual-empty">No refinable ore was recognized in this appraisal. Market appraisal values above are unchanged.</div>';
+      breakdown.innerHTML='<small class="appraisal-refine-note">JLR refine currently recognizes ore and compressed ore. Modules, ships, loot, and other items stay appraisal-only.</small>';
+      return;
+    }
+    const deltaLabel=(delta>=0?'+':'−')+appraisalIsk(Math.abs(delta))+' ISK';
+    const deltaClass=delta>=0?'positive':'negative';
+    summary.innerHTML=`
+      <article class="appraisal-refine-primary"><span>REFINED BUY @ ${ratePct.toFixed(2)}%</span><strong>${appraisalIsk(refinedValue)} ISK</strong><small>Jita mineral buy estimate</small></article>
+      <article><span>RAW ORE BUY</span><strong>${appraisalIsk(rawBuy)} ISK</strong><small>recognized ore lines only</small></article>
+      <article class="${deltaClass}"><span>REFINE DIFFERENCE</span><strong>${deltaLabel}</strong><small>refined − raw buy</small></article>
+      <article><span>REFINABLE</span><strong>${lines.toLocaleString()} LINE${lines===1?'':'S'}</strong><small>${Math.max(0,Number(refine.recognizedUnits)||0).toLocaleString()} units</small></article>`;
+    const minerals=(Array.isArray(refine.minerals)?refine.minerals:[]).slice(0,12);
+    breakdown.innerHTML=minerals.length
+      ?'<div class="appraisal-refine-minerals">'+minerals.map(row=>{
+          const qty=Math.max(0,Number(row.quantityAt100)||0)*rate;
+          const value=Math.max(0,Number(row.valueAt100)||0)*rate;
+          return '<div><span>'+esc(row.mineral)+'</span><strong>'+Math.floor(qty).toLocaleString()+'</strong><small>'+appraisalIsk(value)+' ISK</small></div>';
+        }).join('')+'</div><small class="appraisal-refine-note">Estimate uses '+esc(refine.pricingBasis||'Jita mineral buy')+'. Partial reprocessing batches are valued proportionally for appraisal comparison.</small>'
+      :'<small class="appraisal-refine-note">Mineral breakdown is unavailable for this appraisal.</small>';
+  }
   async function loadAppraisalMarkets(){
     if(appraisalMarketsBusy)return;
     appraisalMarketsBusy=true;
@@ -790,6 +839,7 @@
       if(summary)summary.innerHTML='';
       if(items)items.innerHTML='<div class="visual-empty">Paste an EVE item list and click APPRAISE.</div>';
       if(share)share.disabled=true;
+      renderAppraisalRefine();
       return;
     }
     const s=appraisalData.summary||{};
@@ -811,6 +861,7 @@
       </table></div>`;
     }
     if(share)share.disabled=!Array.isArray(appraisalData.items)||!appraisalData.items.some(row=>row.resolved!==false);
+    renderAppraisalRefine();
   }
   async function calculateAppraisal(){
     if(appraisalBusy)return;
@@ -857,6 +908,7 @@
         market:Number($('appraisalMarket')?.value||2),
         pricing:String($('appraisalPricing')?.value||'split'),
         pricingVariant:String($('appraisalVariant')?.value||'immediate'),
+        refineRate:appraisalRefineRatePct(),
       })});
       const url=String(payload?.shareUrl||'');
       if(url){
@@ -1900,41 +1952,11 @@
   }
 
   async function speakJlr(type,payload,fallbackText){
-    if(!soundEnabled)return false;
-    if(typeof window.jlrSpeakEvent!=='function'){
-      console.warn('JLR voice wrapper is not ready yet.');
-      return false;
-    }
-    try{
-      const played=Boolean(await window.jlrSpeakEvent(type,payload||{},fallbackText||'Tracker notification.'));
-      if(played&&type!=='repeat')recordBrainSpeech(type,fallbackText||'Tracker notification.');
-      return played;
-    }catch(error){
-      console.warn('JLR voice event failed',error);
-      return false;
-    }
+    return true;
   }
 
   function browserSpeakTracker(text){
-    if(!soundEnabled)return false;
-    if(!('speechSynthesis' in window))return false;
-    try{
-      const synth=window.speechSynthesis;
-      synth.cancel();
-      const utterance=new SpeechSynthesisUtterance(String(text||'Tracker response.'));
-      const voices=synth.getVoices()||[];
-      const voice=voices.find(v=>/^en-US/i.test(String(v.lang||'')))||voices.find(v=>/^en/i.test(String(v.lang||'')))||null;
-      if(voice)utterance.voice=voice;
-      utterance.lang=voice?.lang||'en-US';
-      utterance.rate=.92;
-      utterance.pitch=.86;
-      utterance.volume=1;
-      synth.speak(utterance);
-      return true;
-    }catch(error){
-      console.warn('Tracker browser speech fallback failed',error);
-      return false;
-    }
+    return false;
   }
 
   function restoreBrainListenAfterVoice(){
@@ -1952,33 +1974,11 @@
   }
 
   async function speakBrainAnswer(text,type='brain',payload={}){
-    const spoken=String(text||'').trim();
-    if(!spoken||!soundEnabled)return false;
-    brainSetListen('TRACKER SPEAKING','Generating JLR custom voice response…');
-    let played=false;
-    if(typeof window.jlrSpeakEvent==='function'){
-      try{
-        played=Boolean(await window.jlrSpeakEvent(type,payload||{},spoken));
-      }catch(error){
-        console.warn('Tracker conversational custom voice failed',error);
-      }
-    }
-    if(!soundEnabled){
-      brainSetListen(brainMicWanted?'MIC ON':'VOICE OFF','Tracker voice is muted. Text responses remain enabled.');
-      return false;
-    }
-    if(played){
-      if(type!=='repeat')recordBrainSpeech(type,spoken);
-      restoreBrainListenAfterVoice();
-      return true;
-    }
-    const detail=String(window.jlrVoiceLastError||'The JLR custom voice worker did not return audio.');
-    brainRecordMicDiag('VOICE-E501','CUSTOM_VOICE',detail);
-    brainSetListen('CUSTOM VOICE ERROR • VOICE-E501',detail+' • Use COPY DIAGNOSTICS and send me the result.');
-    if($('brainReply'))$('brainReply').textContent=spoken+'\n\nCUSTOM VOICE ERROR: '+detail;
-    brainMicLastError=brainRecordMicDiag('VOICE-E501','CUSTOM_VOICE',detail);
-    renderBrainMicDiagnostic();
-    return false;
+    const response=String(text||'').trim();
+    if(!response)return false;
+    if($('brainReply')&&!String($('brainReply').textContent||'').trim())$('brainReply').textContent=response;
+    brainSetListen(brainMicWanted?'MIC ON':'TEXT ONLY','Spoken output is disabled. Adam responses remain available as text.');
+    return true;
   }
 
   function scanVoiceFallback(preview){
@@ -2844,6 +2844,14 @@
             <div class="brain-card-head"><strong>APPRAISAL ITEMS</strong><small>Market values shown per item and for the full pasted quantity</small></div>
             <div id="appraisalItems" class="forge-list appraisal-list"><div class="visual-empty">Paste an EVE item list and click APPRAISE.</div></div>
           </section>
+          <section id="appraisalRefineSection" class="appraisal-refine">
+            <div class="appraisal-refine-head">
+              <div><span class="eyebrow">JLR REPROCESS // ORE</span><strong>REFINE ESTIMATE</strong><small>Compare raw ore buy value with the minerals after reprocessing.</small></div>
+              <label class="appraisal-refine-rate"><span>ORE EFFICIENCY</span><div><input id="appraisalRefineRate" type="number" min="0" max="100" step="0.01" value="90.63" inputmode="decimal"><b>%</b></div></label>
+            </div>
+            <div id="appraisalRefineSummary" class="appraisal-refine-summary"><div class="visual-empty">Run an appraisal to calculate ore refine value.</div></div>
+            <div id="appraisalRefineBreakdown" class="appraisal-refine-breakdown"></div>
+          </section>
         </section>
       </section>`;
 
@@ -2854,6 +2862,10 @@
       void calculateAppraisal();
     });
     $('appraisalShare')?.addEventListener('click',()=>void shareAppraisal());
+    $('appraisalRefineRate')?.addEventListener('input',()=>{
+      appraisalRefineRateTouched=true;
+      renderAppraisalRefine();
+    });
     $('appraisalPasteClipboard')?.addEventListener('click',async()=>{
       try{
         const text=await navigator.clipboard.readText();
@@ -6531,18 +6543,12 @@
   document.addEventListener('change',async event=>{
     const target=event.target;
     if(target?.id==='brainVoiceEnabled'){
-      soundEnabled=target.value==='on';
-      localStorage.setItem('jlrSoundEnabled',String(soundEnabled));
-      if(!soundEnabled){
-        window.jlrReleaseAutoVoice?.();
-        window.jlrStopVoice?.();
-        try{window.speechSynthesis?.cancel?.()}catch(error){}
-        brainSetListen(brainMicWanted?'MIC ON':'VOICE OFF','Tracker voice is muted. Text responses remain enabled.');
-        toast('Tracker voice muted.');
-      }else{
-        toast('Tracker voice enabled.');
-      }
-      updateSoundStatus();
+      target.value='off';
+      window.jlrReleaseAutoVoice?.();
+      window.jlrStopVoice?.();
+      try{window.speechSynthesis?.cancel?.()}catch(error){}
+      brainSetListen(brainMicWanted?'MIC ON':'TEXT ONLY','Spoken output has been removed. Text responses remain enabled.');
+      toast('JLR spoken voice is disabled permanently.');
     }else if(target?.id==='scoutCharacterSelect'){
       scoutSelectedCharacterId=String(target.value||'');
       localStorage.setItem('jlrScoutCharacter',scoutSelectedCharacterId);
