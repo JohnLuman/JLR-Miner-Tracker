@@ -6227,20 +6227,6 @@ function attachAppraisalRefine(appraisal){
   if(!appraisal||typeof appraisal!=='object')return appraisal;
   return{...appraisal,refine:appraisalRefinePreview(appraisal.items)};
 }
-async function buildAppraisal(text,options={}){
-  const market=Math.max(1,Number(options.market)||2);
-  const pricing=appraisalMode(options.pricing);
-  const pricingVariant=appraisalVariant(options.pricingVariant);
-  if(JANICE_API_KEY){
-    try{return attachAppraisalRefine(await janiceAppraisal(text,{market,pricing,pricingVariant}))}
-    catch(error){
-      if(market!==2||pricingVariant!=='immediate')throw error;
-      console.warn('Janice appraisal failed; using Jita ESI fallback',String(error?.message||error));
-    }
-  }
-  if(market!==2)throw new Error('This market requires the configured appraisal provider.');
-  return attachAppraisalRefine(await fallbackJitaAppraisal(text,{pricing,pricingVariant}));
-}
 function appraisalSharePublic(row){
   if(!row)return null;
   return{
