@@ -17,12 +17,12 @@ import { createTrackerSupportClient } from './lib/tracker-support-client.mjs';
 import { chooseRapidResponseRoutes, wandererRiskPenalty, wandererWarnings } from './lib/rapid-response-route.mjs';
 import { parseThreatPaste, compactThreatStats, threatActivityLabels, fountainThreatTags, jlrThreatScore, threatIgnoreReason } from './lib/threat-scan.mjs';
 import { parseForgePaste, aggregateForgeMaterials, forgeSummary, sanitizeForgeShare, FORGE_STATUSES } from './lib/forge/forge.mjs';
-import { appraisalSummary, normalizeJaniceAppraisal, sanitizeAppraisalShare, APPRAISAL_PRICING, APPRAISAL_VARIANTS } from './lib/appraisal/appraisal.mjs';
+import { appraisalSummary, sanitizeAppraisalShare, APPRAISAL_PRICING, APPRAISAL_VARIANTS } from './lib/appraisal/appraisal.mjs';
+import { nativeAppraisalPriceSet } from './lib/appraisal/native-market.mjs';
 import {
   BASE_T3_ORE_REPROCESSING,
   T3_ORE_VARIANTS_BY_TYPE_ID,
   aggregateTrackedT3Ledger,
-  janiceImmediateBuyPrices,
   t3OreVariant,
   trackedT3OreVariant,
 } from './lib/ledger-valuation.mjs';
@@ -76,8 +76,6 @@ const DEFAULT_TRACKER_CORPORATION_ID = 1831383486; // TEMPLAR. [TMP.]
 const TRACKER_CORPORATION_ID_ENV = Number(process.env.TRACKER_CORPORATION_ID)||DEFAULT_TRACKER_CORPORATION_ID;
 const TRACKER_ACCESS_CACHE_MS = 5 * 60 * 1000;
 const MARKET_STRUCTURE_ID_ENV = String(process.env.MARKET_STRUCTURE_ID || '').trim();
-const JANICE_API_KEY = String(process.env.JANICE_API_KEY || '').trim();
-const JANICE_API_URL = String(process.env.JANICE_API_URL || 'https://janice.e-351.com/api/rest/v2').trim().replace(/\/$/,'');
 const DOCTRINE_MARKET_STRUCTURE_ID = String(process.env.DOCTRINE_MARKET_STRUCTURE_ID || '1045667241057').trim();
 const DOCTRINE_CN_REFRESH_MS = 10 * 60 * 1000;
 const DOCTRINE_JITA_REFRESH_MS = 60 * 60 * 1000;
@@ -1299,7 +1297,7 @@ function publicState() {
     fields:state.fields,
     scans,
     trackerBrain:trackerBrainSnapshot(scans,ledgerDebug),
-    market:{lastUpdatedAt:state.market.lastUpdatedAt,lastError:state.market.lastError,privateLastError:state.market.privateLastError||null,refreshing:marketRefreshInProgress,valuation:'MAX REFINE',maxRefineYield:MAX_REFINE_YIELD,jita:'Jita IV - Moon 4 - Caldari Navy Assembly Plant',jitaBuyBasis:state.market.jitaBuyBasis||'unavailable',janiceConfigured:Boolean(JANICE_API_KEY),janiceLastError:state.market.janiceLastError||null,local:CN_SYSTEM_NAME,titanBridgeRangeLy:TITAN_BRIDGE_RANGE_LY,history:marketHistoryPublic(),privateAccess:Boolean(state.market.refreshTokenEnc),marketCharacterName:state.market.characterName||null,structureName:state.market.structureName||null},
+    market:{lastUpdatedAt:state.market.lastUpdatedAt,lastError:state.market.lastError,privateLastError:state.market.privateLastError||null,refreshing:marketRefreshInProgress,valuation:'MAX REFINE',maxRefineYield:MAX_REFINE_YIELD,jita:'Jita IV - Moon 4 - Caldari Navy Assembly Plant',jitaBuyBasis:state.market.jitaBuyBasis||'unavailable',appraisalProvider:'jlr-native-esi',local:CN_SYSTEM_NAME,titanBridgeRangeLy:TITAN_BRIDGE_RANGE_LY,history:marketHistoryPublic(),privateAccess:Boolean(state.market.refreshTokenEnc),marketCharacterName:state.market.characterName||null,structureName:state.market.structureName||null},
     esi:{configured:Boolean(EVE_CLIENT_ID),linkedCharacters:Object.keys(state.characters).length,lastSyncAt:state.esi.lastSyncAt,lastError:/temporarily unavailable\s*\(HTTP\s*\d+\)/i.test(String(state.esi.lastError||''))?null:state.esi.lastError,syncing:syncInProgress||manualSyncCount>0,ledgerDebug,scheduler:{...autoSyncPlan(Object.keys(state.characters).length||1),active:esiCharacterSyncActive,queued:esiCharacterSyncWaiters.length,backoffUntil:esiBackoffUntil>Date.now()?new Date(esiBackoffUntil).toISOString():null},actual:{today:todayActual,week:weekActual,basis:{day:'UTC',source:'actual-mining-ledger',exactTypeId:true,exactGrade:true,retainsRemovedCurrentDay:true,valuationVersion:LEDGER_VALUATION_VERSION}},performance:{daily:daily.slice(0,90).map(row=>({date:String(row.date||''),m3:Number(row.m3||0),jbv:Number(row.jbv||0),unpricedM3:Number(row.unpricedM3||0),ores:row.ores&&typeof row.ores==='object'?row.ores:{}})),samples:(state.esi.performanceSamples||[]).slice(-672)}},
     serverNow:now(),
   };
@@ -2060,27 +2058,13 @@ function effectiveJitaMineralPrices(){
   const prices={};
   for(const mineral of REFINING_MINERALS){
     const detail=state.market?.minerals?.[mineral]||{};
-    const direct=Number(detail.effectiveJitaBuy ?? detail.janice?.buy ?? detail.jita?.buy);
+    const direct=Number(detail.effectiveJitaBuy ?? detail.jita?.buy);
     if(Number.isFinite(direct)&&direct>0){prices[mineral]=direct;continue}
     for(const ore of Object.values(state.market?.prices||{})){
       const fallback=Number(ore?.jita?.breakdown?.[mineral]?.unitPrice);
       if(Number.isFinite(fallback)&&fallback>0){prices[mineral]=fallback;break}
     }
   }
-  return prices;
-}
-
-async function fetchJaniceMineralBuyPrices(){
-  if(!JANICE_API_KEY)return null;
-  const response=await fetch(`${JANICE_API_URL}/pricer?market=2`,{
-    method:'POST',
-    headers:{'Content-Type':'text/plain','X-ApiKey':JANICE_API_KEY,'User-Agent':ESI_USER_AGENT},
-    body:REFINING_MINERALS.join('\n'),
-    signal:AbortSignal.timeout(20_000),
-  });
-  if(!response.ok)throw new Error(`Janice pricer ${response.status}`);
-  const prices=janiceImmediateBuyPrices(await response.json(),REFINING_MINERALS);
-  if(!prices)throw new Error('Janice returned incomplete Jita mineral buy prices');
   return prices;
 }
 
@@ -2353,13 +2337,13 @@ async function refreshMarketPrices(force=false) {
   const today=dateUTC();
   const historyCurrent=MARKET_ORE_NAMES.every(name=>(state.market?.history?.ore?.[name]||[]).some(x=>x.date===today))
     &&Object.keys(ICE_REPROCESSING).every(name=>(state.market?.history?.ice?.[name]||[]).some(x=>x.date===today));
-  const desiredJitaBuyBasis=JANICE_API_KEY?'janice-immediate-buy':'reachable-from-jita-4-4';
+  const desiredJitaBuyBasis='reachable-from-jita-4-4';
   const jitaBuyBasisCurrent=state.market?.jitaBuyBasis===desiredJitaBuyBasis;
   const ledgerValuationCurrent=Number(state.market?.ledgerValuationVersion)===LEDGER_VALUATION_VERSION;
   const mineralCoverageCurrent=REFINING_MINERALS.every(name=>{
     const row=state.market?.minerals?.[name];
     if(!row)return false;
-    const price=Number(row.effectiveJitaBuy ?? row.janice?.buy ?? row.jita?.buy);
+    const price=Number(row.effectiveJitaBuy ?? row.jita?.buy);
     return Number.isFinite(price)&&price>0;
   });
   const t3DistancesCurrent=SYSTEM_DEFS.every(d=>typeof state.market?.t3Distances?.[d.system]==='number'&&Number.isFinite(state.market.t3Distances[d.system]));
@@ -2414,25 +2398,12 @@ async function refreshMarketPrices(force=false) {
       };
     }
 
-    let jitaBuyBasis='reachable-from-jita-4-4';
-    state.market.janiceLastError=null;
-    if(JANICE_API_KEY){
-      try{
-        const janicePrices=await fetchJaniceMineralBuyPrices();
-        Object.assign(mineralPrices.jita,janicePrices);
-        jitaBuyBasis='janice-immediate-buy';
-        state.market.janiceLastUpdatedAt=now();
-      }catch(err){
-        state.market.janiceLastError=String(err.message||err);
-        console.warn('Janice Jita-buy refresh unavailable; using ESI fallback',state.market.janiceLastError);
-      }
-    }
+    const jitaBuyBasis='reachable-from-jita-4-4';
     for(const mineral of REFINING_MINERALS){
       const effectiveJitaBuy=Number(mineralPrices.jita[mineral]);
       if(!mineralPrices.detail[mineral])continue;
       mineralPrices.detail[mineral].effectiveJitaBuy=Number.isFinite(effectiveJitaBuy)&&effectiveJitaBuy>0?effectiveJitaBuy:null;
       mineralPrices.detail[mineral].effectiveJitaSource=jitaBuyBasis;
-      mineralPrices.detail[mineral].janice=jitaBuyBasis==='janice-immediate-buy'?{buy:effectiveJitaBuy,marketId:2}:null;
     }
 
     const iceProductPrices={jita:{},cn:{},detail:{}};
@@ -6024,7 +5995,18 @@ function forgeBoardRows(user=null){
 }
 
 
-const appraisalMarketsCache={at:0,data:null};
+const APPRAISAL_ORDER_CACHE_MS=5*60*1000;
+const APPRAISAL_MAX_ITEM_TYPES=200;
+const NATIVE_APPRAISAL_MARKETS=Object.freeze([
+  {id:2,name:'Jita 4-4',regionName:'The Forge',regionId:JITA_REGION_ID,systemName:'Jita',systemId:JITA_SYSTEM_ID,stationName:'Jita IV - Moon 4 - Caldari Navy Assembly Plant',locationId:JITA_44_STATION_ID},
+  {id:3,name:'Amarr',regionName:'Domain',systemName:'Amarr',stationName:'Amarr VIII (Oris) - Emperor Family Academy'},
+  {id:4,name:'Dodixie',regionName:'Sinq Laison',systemName:'Dodixie',stationName:'Dodixie IX - Moon 20 - Federation Navy Assembly Plant'},
+  {id:5,name:'Rens',regionName:'Heimatar',systemName:'Rens',stationName:'Rens VI - Moon 8 - Brutor Tribe Treasury'},
+  {id:6,name:'Hek',regionName:'Metropolis',systemName:'Hek',stationName:'Hek VIII - Moon 12 - Boundless Creation Factory'},
+]);
+const appraisalHubCache=new Map();
+const appraisalOrderCache=new Map();
+const appraisalItemResolveCache=new Map();
 
 function appraisalMode(value){
   const key=String(value||'split').toLowerCase();
@@ -6035,92 +6017,155 @@ function appraisalVariant(value){
   return APPRAISAL_VARIANTS.includes(key)?key:'immediate';
 }
 async function appraisalMarkets(){
-  if(appraisalMarketsCache.data&&Date.now()-appraisalMarketsCache.at<60*60*1000)return appraisalMarketsCache.data;
-  if(JANICE_API_KEY){
-    try{
-      const response=await fetch(JANICE_API_URL+'/markets',{
-        headers:{'Accept':'application/json','X-ApiKey':JANICE_API_KEY,'User-Agent':ESI_USER_AGENT},
-        signal:AbortSignal.timeout(12_000),
-      });
-      if(response.ok){
-        const payload=await response.json();
-        const rows=(Array.isArray(payload)?payload:[])
-          .map(row=>({id:Number(row?.id),name:String(row?.name||'').trim()}))
-          .filter(row=>Number.isFinite(row.id)&&row.id>0&&row.name);
-        if(rows.length){
-          appraisalMarketsCache.at=Date.now();
-          appraisalMarketsCache.data=rows;
-          return rows;
-        }
-      }
-    }catch(error){
-      console.warn('Janice appraisal markets unavailable',String(error?.message||error));
+  return NATIVE_APPRAISAL_MARKETS.map(row=>({id:row.id,name:row.name}));
+}
+async function resolveAppraisalHub(value){
+  const marketId=Math.max(1,Number(value)||2);
+  const base=NATIVE_APPRAISAL_MARKETS.find(row=>row.id===marketId)||NATIVE_APPRAISAL_MARKETS[0];
+  const cached=appraisalHubCache.get(base.id);
+  if(cached)return cached;
+  if(base.regionId&&base.systemId){
+    const resolved={...base};
+    appraisalHubCache.set(base.id,resolved);
+    return resolved;
+  }
+  const ids=await resolveUniverseIds([base.regionName,base.systemName,base.stationName]);
+  const regionId=Number(ids.get(base.regionName))||0;
+  const systemId=Number(ids.get(base.systemName))||0;
+  const locationId=Number(ids.get(base.stationName))||0;
+  if(!regionId||!systemId)throw new Error(base.name+' market location could not be resolved from CCP ESI.');
+  const resolved={...base,regionId,systemId,locationId:locationId||null};
+  appraisalHubCache.set(base.id,resolved);
+  return resolved;
+}
+async function appraisalResolveItem(name){
+  const query=String(name||'').trim();
+  if(query.length<2)return null;
+  const key=query.toLowerCase();
+  const cached=appraisalItemResolveCache.get(key);
+  if(cached&&Date.now()-cached.at<24*60*60*1000)return cached.value;
+  const {data}=await esiPost('https://esi.evetech.net/latest/universe/ids/?datasource=tranquility',[query]);
+  const rows=Array.isArray(data?.inventory_types)?data.inventory_types:[];
+  const exact=rows.find(row=>String(row?.name||'').trim().toLowerCase()===key);
+  const best=exact||rows[0]||null;
+  const value=best&&Number(best.id)>0?{typeId:Number(best.id),name:String(best.name||query)}:null;
+  appraisalItemResolveCache.set(key,{at:Date.now(),value});
+  return value;
+}
+async function appraisalMarketOrders(regionId,typeId){
+  const key=String(regionId)+':'+String(typeId);
+  const cached=appraisalOrderCache.get(key);
+  if(cached&&Date.now()-cached.at<APPRAISAL_ORDER_CACHE_MS)return cached.rows;
+  const rows=await marketOrders(regionId,typeId);
+  appraisalOrderCache.set(key,{at:Date.now(),rows});
+  if(appraisalOrderCache.size>2500){
+    const oldest=[...appraisalOrderCache.entries()].sort((a,b)=>a[1].at-b[1].at).slice(0,500);
+    for(const [cacheKey] of oldest)appraisalOrderCache.delete(cacheKey);
+  }
+  return rows;
+}
+async function appraisalBuyOrderReachableAt(row,hub){
+  const range=String(row?.range||'station');
+  const sameStation=hub.locationId&&Number(row?.location_id)===Number(hub.locationId);
+  const sameSystem=Number(row?.system_id)===Number(hub.systemId);
+  if(range==='station')return Boolean(sameStation);
+  if(range==='solarsystem')return sameSystem;
+  if(range==='region')return true;
+  const jumpRange=Number(range);
+  if(!Number.isFinite(jumpRange))return false;
+  if(sameSystem)return true;
+  const jumps=await routeJumps(row?.system_id,hub.systemId);
+  return jumps<=jumpRange;
+}
+async function appraisalOrdersAtHub(orders,hub){
+  const source=Array.isArray(orders)?orders:[];
+  const sellOrders=source.filter(row=>{
+    if(row?.is_buy_order)return false;
+    if(hub.locationId)return Number(row?.location_id)===Number(hub.locationId);
+    return Number(row?.system_id)===Number(hub.systemId);
+  });
+  const buyCandidates=source.filter(row=>row?.is_buy_order);
+  const buyOrders=[];
+  const routeChecks=new Map();
+  for(const row of buyCandidates){
+    const range=String(row?.range||'station');
+    const sameStation=hub.locationId&&Number(row?.location_id)===Number(hub.locationId);
+    const sameSystem=Number(row?.system_id)===Number(hub.systemId);
+    if(range==='station'){
+      if(sameStation)buyOrders.push(row);
+      continue;
     }
+    if(range==='solarsystem'){
+      if(sameSystem)buyOrders.push(row);
+      continue;
+    }
+    if(range==='region'){
+      buyOrders.push(row);
+      continue;
+    }
+    const jumpRange=Number(range);
+    if(!Number.isFinite(jumpRange))continue;
+    if(sameSystem){
+      buyOrders.push(row);
+      continue;
+    }
+    const origin=Number(row?.system_id)||0;
+    if(!origin)continue;
+    if(!routeChecks.has(origin))routeChecks.set(origin,routeJumps(origin,hub.systemId));
+    const jumps=await routeChecks.get(origin);
+    if(jumps<=jumpRange)buyOrders.push(row);
   }
-  const fallback=[{id:2,name:'Jita 4-4'}];
-  appraisalMarketsCache.at=Date.now();
-  appraisalMarketsCache.data=fallback;
-  return fallback;
+  return{buyOrders,sellOrders};
 }
-async function janiceAppraisal(text,{market=2,pricing='split',pricingVariant='immediate'}={}){
-  if(!JANICE_API_KEY)return null;
-  const params=new URLSearchParams({
-    market:String(Math.max(1,Number(market)||2)),
-    designation:'appraisal',
-    pricing:appraisalMode(pricing),
-    pricingVariant:appraisalVariant(pricingVariant),
-    persist:'false',
-    compactize:'true',
-  });
-  const response=await fetch(JANICE_API_URL+'/appraisal?'+params.toString(),{
-    method:'POST',
-    headers:{'Accept':'application/json','Content-Type':'text/plain','X-ApiKey':JANICE_API_KEY,'User-Agent':ESI_USER_AGENT},
-    body:String(text||'').slice(0,100_000),
-    signal:AbortSignal.timeout(30_000),
-  });
-  if(!response.ok){
-    let detail='';
-    try{detail=String((await response.json())?.detail||'')}catch{}
-    throw new Error('Appraisal provider '+response.status+(detail?': '+detail:''));
-  }
-  return normalizeJaniceAppraisal(await response.json(),{marketId:market,pricing,pricingVariant});
-}
-async function fallbackJitaAppraisal(text,{pricing='split',pricingVariant='immediate'}={}){
-  if(appraisalVariant(pricingVariant)!=='immediate')throw new Error('Top 5% pricing requires the configured appraisal provider.');
+async function nativeEsiAppraisal(text,{market=2,pricing='split',pricingVariant='immediate'}={}){
   const parsed=parseForgePaste(String(text||'').slice(0,100_000));
   if(!parsed.valid)throw new Error('Paste one or more EVE items first.');
-  const items=await forgeMapLimit(parsed.rows.slice(0,100),4,async input=>{
+  const hub=await resolveAppraisalHub(market);
+  const mode=appraisalMode(pricing);
+  const variant=appraisalVariant(pricingVariant);
+  const selectedRows=parsed.rows.slice(0,APPRAISAL_MAX_ITEM_TYPES);
+  const items=await forgeMapLimit(selectedRows,4,async input=>{
     try{
-      const resolved=await forgeResolveItem(input.name);
-      if(!resolved)return{resolved:false,typeId:null,name:input.name,amount:Number(input.quantity)||0,totalVolume:0,totalPackagedVolume:0,buy:0,split:0,sell:0,buyTotal:0,splitTotal:0,sellTotal:0};
+      const resolved=await appraisalResolveItem(input.name);
+      if(!resolved)return{resolved:false,typeId:null,name:input.name,amount:Number(input.quantity)||0,totalVolume:0,totalPackagedVolume:0,buy:0,split:0,sell:0,buyTotal:0,splitTotal:0,sellTotal:0,error:'ITEM_NOT_FOUND'};
       await ensureType([resolved.typeId]);
       const type=state.esi.typeCache[String(resolved.typeId)]||{};
-      const orders=await marketOrders(JITA_REGION_ID,resolved.typeId);
-      const price=await bestPricesReachableAt(orders,JITA_SYSTEM_ID,JITA_44_STATION_ID);
-      const buy=Math.max(0,Number(price.buy)||0),sell=Math.max(0,Number(price.sell)||0);
-      const split=buy>0&&sell>0?(buy+sell)/2:(buy||sell||0);
+      const orders=await appraisalMarketOrders(hub.regionId,resolved.typeId);
+      const eligible=await appraisalOrdersAtHub(orders,hub);
+      const prices=nativeAppraisalPriceSet({...eligible,variant});
       const amount=Math.max(1,Number(input.quantity)||1);
       const volumePerUnit=Math.max(0,Number(type.volume)||0);
+      const packagedVolumePerUnit=Math.max(0,Number(type.packaged_volume??type.packagedVolume??type.volume)||0);
       return{
         resolved:true,typeId:resolved.typeId,name:resolved.name,amount,
-        volumePerUnit,packagedVolumePerUnit:volumePerUnit,
-        totalVolume:volumePerUnit*amount,totalPackagedVolume:volumePerUnit*amount,
-        buyOrderCount:orders.filter(row=>row?.is_buy_order).length,
-        buyVolume:orders.filter(row=>row?.is_buy_order).reduce((sum,row)=>sum+Math.max(0,Number(row?.volume_remain)||0),0),
-        sellOrderCount:orders.filter(row=>!row?.is_buy_order).length,
-        sellVolume:orders.filter(row=>!row?.is_buy_order).reduce((sum,row)=>sum+Math.max(0,Number(row?.volume_remain)||0),0),
-        buy,split,sell,buyTotal:buy*amount,splitTotal:split*amount,sellTotal:sell*amount,
+        volumePerUnit,packagedVolumePerUnit,
+        totalVolume:volumePerUnit*amount,totalPackagedVolume:packagedVolumePerUnit*amount,
+        buyOrderCount:prices.buyOrderCount,buyVolume:prices.buyVolume,
+        sellOrderCount:prices.sellOrderCount,sellVolume:prices.sellVolume,
+        buy:prices.buy,split:prices.split,sell:prices.sell,
+        buyTotal:prices.buy*amount,splitTotal:prices.split*amount,sellTotal:prices.sell*amount,
       };
     }catch(error){
-      return{resolved:false,typeId:null,name:input.name,amount:Number(input.quantity)||0,totalVolume:0,totalPackagedVolume:0,buy:0,split:0,sell:0,buyTotal:0,splitTotal:0,sellTotal:0,error:String(error?.message||error).slice(0,160)};
+      return{resolved:false,typeId:null,name:input.name,amount:Number(input.quantity)||0,totalVolume:0,totalPackagedVolume:0,buy:0,split:0,sell:0,buyTotal:0,splitTotal:0,sellTotal:0,error:String(error?.message||error).slice(0,180)};
     }
   });
-  const mode=appraisalMode(pricing);
+  const failures=[...parsed.rejected];
+  if(parsed.rows.length>APPRAISAL_MAX_ITEM_TYPES)failures.push('Appraisal limited to the first '+APPRAISAL_MAX_ITEM_TYPES+' item types.');
+  for(const row of items)if(row?.resolved===false&&row?.error)failures.push(row.name+': '+row.error);
   return{
-    generatedAt:now(),datasetTime:null,source:'esi-jita-fallback',
-    market:{id:2,name:'Jita 4-4'},pricing:mode,pricingVariant:'immediate',
-    failures:parsed.rejected.join('\n'),items,summary:appraisalSummary(items,mode),
+    generatedAt:now(),
+    datasetTime:null,
+    source:'jlr-native-esi',
+    market:{id:hub.id,name:hub.name},
+    pricing:mode,
+    pricingVariant:variant,
+    failures:failures.join('\n'),
+    items,
+    summary:appraisalSummary(items,mode),
   };
+}
+async function buildAppraisal(text,options={}){
+  return attachAppraisalRefine(await nativeEsiAppraisal(text,options));
 }
 function appraisalOreRecipe(name){
   const key=String(name||'').trim().toLowerCase().replace(/^compressed\s+/,'');
@@ -9495,7 +9540,7 @@ async function routeApi(req,res,url) {
     return json(res,200,await doctrineMarketSnapshot());
   }
   if(req.method==='GET'&&url.pathname==='/api/appraisal/markets'){
-    return json(res,200,{markets:await appraisalMarkets(),provider:JANICE_API_KEY?'janice-v2':'esi-fallback'});
+    return json(res,200,{markets:await appraisalMarkets(),provider:'jlr-native-esi'});
   }
   if(req.method==='POST'&&url.pathname==='/api/appraisal'){
     if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
