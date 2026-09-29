@@ -25,7 +25,7 @@ assert.equal(parsed.nearest[0].distanceMeters,1594);
 
 const text=oreSurveySummaryText(parsed);
 assert.match(text,/Ore survey read: 6 rocks/);
-assert.match(text,/2 rocks have no ISK value/);
+assert.match(text,/2 rocks could not be valued/);
 assert.match(text,/Ueganite II-Grade 1\.59 km/);
 
 const fallbackSample='Kylixium\t100\t1,000 m3\t-\t1 km';
