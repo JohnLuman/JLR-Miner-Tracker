@@ -25,6 +25,9 @@
   const modeLabel=value=>String(value||'split')==='buy'?'BUY':String(value||'split')==='sell'?'SELL':'SPLIT';
   const variantLabel=value=>String(value||'immediate')==='top5percent'?'TOP 5% AVG':'IMMEDIATE';
   let appraisal=null;
+  let appraisalIntel=null;
+  let appraisalIntelBusy=false;
+  let appraisalIntelSeq=0;
   let payoutPct=clamp(Number(localStorage.getItem(STORAGE_KEY))||100,0,200);
   let observerTimer=0;
 
@@ -41,7 +44,11 @@
     if(path==='/api/appraisal'&&response.ok){
       response.clone().json().then(data=>{
         appraisal=data&&typeof data==='object'?data:null;
-        setTimeout(()=>renderEnhanced(true),0);
+        appraisalIntel=null;
+        setTimeout(()=>{
+          renderEnhanced(true);
+          if(appraisal)void loadAppraisalIntel(appraisal);
+        },0);
       }).catch(()=>{});
       return response;
     }
@@ -128,6 +135,17 @@
           '<label class="jlr-payout-input"><span>CUSTOM</span><div><input id="jlrAppraisalPayoutPct" type="number" min="0" max="200" step="0.1" inputmode="decimal" value="'+esc(payoutPct)+'"><b>%</b></div></label>';
         controls.insertAdjacentElement('afterend',bar);
       }
+    }
+    if(!document.getElementById('jlrAppraisalIntelSection')){
+      const section=document.createElement('section');
+      section.id='jlrAppraisalIntelSection';
+      section.className='jlr-appraisal-intel';
+      section.innerHTML=
+        '<div class="brain-card-head"><strong>SUPPORT MARKET INTEL</strong><small>Compression comparison + cached ESI market history</small></div>'+
+        '<div id="jlrAppraisalIntelBody" class="jlr-appraisal-intel-body"><div class="visual-empty">Run an appraisal to load Support market intel.</div></div>';
+      const refine=panel.querySelector('#appraisalRefineSection');
+      if(refine)refine.insertAdjacentElement('afterend',section);
+      else panel.appendChild(section);
     }
     const actions=panel.querySelector('.forge-actions');
     if(actions&&!document.getElementById('jlrAppraisalCopySummary')){
@@ -283,6 +301,120 @@
     });
   }
 
+  function signed(value){
+    const n=Number(value);
+    return Number.isFinite(n)?n:0;
+  }
+  function signedPct(value){
+    const n=Number(value);
+    if(!Number.isFinite(n))return '—';
+    const prefix=n>0?'+':'';
+    return prefix+n.toFixed(Math.abs(n)>=10?1:2)+'%';
+  }
+  function intelPayload(value){
+    const source=value&&typeof value==='object'?value:{};
+    return{
+      generatedAt:source.generatedAt||null,
+      source:source.source||'',
+      market:source.market||null,
+      pricing:source.pricing||'split',
+      pricingVariant:source.pricingVariant||'immediate',
+      items:(Array.isArray(source.items)?source.items:[]).slice(0,120).map(row=>({
+        resolved:row?.resolved!==false,
+        typeId:Number(row?.typeId)||null,
+        name:String(row?.name||''),
+        amount:Number(row?.amount)||0,
+        totalVolume:Number(row?.totalVolume)||0,
+        buy:Number(row?.buy)||0,
+        split:Number(row?.split)||0,
+        sell:Number(row?.sell)||0,
+        buyTotal:Number(row?.buyTotal)||0,
+        splitTotal:Number(row?.splitTotal)||0,
+        sellTotal:Number(row?.sellTotal)||0,
+      })),
+    };
+  }
+  function renderAppraisalIntel(){
+    const host=document.getElementById('jlrAppraisalIntelBody');
+    if(!host)return;
+    if(appraisalIntelBusy){
+      host.innerHTML='<div class="jlr-intel-loading"><span class="status-pill">● SUPPORT</span><strong>Building compression + market history…</strong><small>Cached results are reused across JLR users when available.</small></div>';
+      return;
+    }
+    if(!appraisalIntel){
+      host.innerHTML='<div class="visual-empty">Run an appraisal to load Support market intel.</div>';
+      return;
+    }
+    if(appraisalIntel.available===false){
+      host.innerHTML='<div class="visual-empty">Support market intel is temporarily unavailable. Core appraisal values are unaffected.</div>';
+      return;
+    }
+    const compression=Array.isArray(appraisalIntel.compression)?appraisalIntel.compression:[];
+    const history=Array.isArray(appraisalIntel.history)?appraisalIntel.history:[];
+    const warnings=Array.isArray(appraisalIntel.warnings)?appraisalIntel.warnings.filter(Boolean):[];
+    const cache=appraisalIntel.cache||{};
+    const cacheText=cache.hit?'CACHE HIT':'FRESH SUPPORT DATA';
+
+    const compressionRows=compression.length?compression.slice(0,30).map(row=>{
+      const delta=signed(row.valueDelta);
+      const volumeDrop=Number(row.volumeReductionPct);
+      const direction=String(row.direction||'compress').toUpperCase();
+      return '<tr>'+
+        '<td><strong>'+esc(row.sourceName)+'</strong><small>'+direction+' → '+esc(row.targetName)+'</small></td>'+
+        '<td>'+copyCell(row.sourceValue,shortIsk(row.sourceValue)+' ISK','source market value')+'</td>'+
+        '<td>'+copyCell(row.targetValue,shortIsk(row.targetValue)+' ISK','alternate market value')+'</td>'+
+        '<td class="'+(delta>=0?'jlr-intel-positive':'jlr-intel-negative')+'">'+(delta>=0?'+':'')+shortIsk(Math.abs(delta))+' ISK</td>'+
+        '<td>'+(Number.isFinite(volumeDrop)?volumeDrop.toFixed(1)+'%':'—')+'</td>'+
+      '</tr>';
+    }).join(''):'<tr><td colspan="5" class="jlr-intel-empty">No compressible/decompressible matches were resolved for this appraisal.</td></tr>';
+
+    const historyRows=history.length?history.map(row=>{
+      const trend=Number(row.trend7Pct);
+      const trendClass=!Number.isFinite(trend)?'':trend>0?'jlr-intel-positive':trend<0?'jlr-intel-negative':'';
+      return '<tr>'+
+        '<td><strong>'+esc(row.name)+'</strong><small>'+esc(row.regionName||'Market history')+'</small></td>'+
+        '<td>'+copyCell(row.avg7,shortIsk(row.avg7)+' ISK','7 day average')+'</td>'+
+        '<td>'+copyCell(row.avg30,shortIsk(row.avg30)+' ISK','30 day average')+'</td>'+
+        '<td class="'+trendClass+'">'+signedPct(row.trend7Pct)+'</td>'+
+        '<td>'+Number(row.avgDailyVolume7||0).toLocaleString(undefined,{maximumFractionDigits:0})+'</td>'+
+      '</tr>';
+    }).join(''):'<tr><td colspan="5" class="jlr-intel-empty">No market-history rows were available for this market.</td></tr>';
+
+    host.innerHTML=
+      '<div class="jlr-intel-meta"><span class="status-pill">● SUPPORT</span><strong>'+esc(cacheText)+'</strong><small>'+
+        compression.length+' compression matches • '+history.length+' history rows</small></div>'+
+      '<div class="jlr-intel-grid">'+
+        '<article class="jlr-intel-card"><div class="jlr-intel-card-head"><div><span>COMPRESSION</span><strong>RAW ↔ COMPRESSED VALUE</strong></div><small>Selected '+esc(modeLabel(appraisalIntel.pricing))+' basis</small></div>'+
+          '<div class="appraisal-table-wrap"><table class="appraisal-table jlr-intel-table"><thead><tr><th>ITEM</th><th>CURRENT</th><th>ALTERNATE</th><th>VALUE Δ</th><th>VOLUME ↓</th></tr></thead><tbody>'+compressionRows+'</tbody></table></div></article>'+
+        '<article class="jlr-intel-card"><div class="jlr-intel-card-head"><div><span>MARKET HISTORY</span><strong>7D / 30D CONTEXT</strong></div><small>ESI history • cached by Support</small></div>'+
+          '<div class="appraisal-table-wrap"><table class="appraisal-table jlr-intel-table"><thead><tr><th>ITEM</th><th>7D AVG</th><th>30D AVG</th><th>7D TREND</th><th>AVG DAILY VOL</th></tr></thead><tbody>'+historyRows+'</tbody></table></div></article>'+
+      '</div>'+
+      (warnings.length?'<div class="jlr-intel-warnings">'+warnings.map(row=>'<small>• '+esc(row)+'</small>').join('')+'</div>':'');
+  }
+  async function loadAppraisalIntel(snapshot){
+    const seq=++appraisalIntelSeq;
+    appraisalIntelBusy=true;
+    renderAppraisalIntel();
+    try{
+      const response=await originalFetch('/api/appraisal/intel',{
+        method:'POST',
+        headers:{'content-type':'application/json'},
+        body:JSON.stringify({appraisal:intelPayload(snapshot)}),
+      });
+      const payload=await response.json().catch(()=>null);
+      if(seq!==appraisalIntelSeq)return;
+      appraisalIntel=response.ok&&payload?payload:{available:false,error:String(payload?.message||payload?.error||'Support intel unavailable')};
+    }catch(error){
+      if(seq!==appraisalIntelSeq)return;
+      appraisalIntel={available:false,error:String(error?.message||error)};
+    }finally{
+      if(seq===appraisalIntelSeq){
+        appraisalIntelBusy=false;
+        renderAppraisalIntel();
+      }
+    }
+  }
+
   async function copySummary(){
     if(!appraisal)return false;
     const summary=appraisal.summary||{};
@@ -331,6 +463,7 @@
     renderSummary(force);
     renderItems(force);
     enhanceRefine();
+    renderAppraisalIntel();
   }
 
   const observer=new MutationObserver(()=>{
