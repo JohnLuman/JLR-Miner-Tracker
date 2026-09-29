@@ -9130,6 +9130,19 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
+  if(req.method==='POST'&&url.pathname==='/api/internal/support/appraisal'){
+    if(!trackerSupportInternalAuth(req))return json(res,401,{error:'SUPPORT_AUTH_REQUIRED'});
+    let body;
+    try{body=await readBody(req,140_000)}
+    catch(err){return json(res,400,{error:'BAD_SUPPORT_APPRAISAL',message:String(err.message||err)})}
+    const textInput=String(body?.text||'').trim();
+    if(!textInput)return json(res,400,{error:'EMPTY_APPRAISAL',message:'Support appraisal text is required.'});
+    try{
+      return json(res,200,await buildAppraisal(textInput,{market:body?.market,pricing:body?.pricing,pricingVariant:body?.pricingVariant}));
+    }catch(err){
+      return json(res,502,{error:'SUPPORT_APPRAISAL_FAILED',message:String(err.message||err)});
+    }
+  }
   if(req.method==='GET'&&url.pathname==='/api/internal/support/voice-reference'){
     if(!trackerSupportInternalAuth(req))return json(res,401,{error:'SUPPORT_AUTH_REQUIRED'});
     const ref=await trackerCoreVoiceReference();
@@ -9496,6 +9509,16 @@ async function routeApi(req,res,url) {
     }catch(err){
       return json(res,502,{error:'APPRAISAL_FAILED',message:String(err.message||err)});
     }
+  }
+  if(req.method==='POST'&&url.pathname==='/api/appraisal/intel'){
+    if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
+    let body;
+    try{body=await readBody(req,220_000)}
+    catch(err){return json(res,400,{error:'BAD_APPRAISAL_INTEL',message:String(err.message||err)})}
+    const appraisal=body?.appraisal&&typeof body.appraisal==='object'?body.appraisal:null;
+    if(!appraisal)return json(res,400,{error:'APPRAISAL_REQUIRED',message:'Run an appraisal before loading market intel.'});
+    const intel=await trackerSupport.appraisalIntel({appraisal});
+    return json(res,200,intel);
   }
   if(req.method==='POST'&&url.pathname==='/api/appraisal/share'){
     if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
