@@ -136,6 +136,16 @@
         controls.insertAdjacentElement('afterend',bar);
       }
     }
+    if(!document.getElementById('jlrAppraisalFreshness')){
+      const payoutBar=document.getElementById('jlrAppraisalPayoutBar');
+      if(payoutBar){
+        const freshness=document.createElement('div');
+        freshness.id='jlrAppraisalFreshness';
+        freshness.className='jlr-appraisal-freshness';
+        freshness.innerHTML='<span class="status-pill">● JLR NATIVE</span><strong>MARKET DATA READY</strong><small>Run an appraisal to load CCP ESI market data.</small>';
+        payoutBar.insertAdjacentElement('afterend',freshness);
+      }
+    }
     if(!document.getElementById('jlrAppraisalIntelSection')){
       const section=document.createElement('section');
       section.id='jlrAppraisalIntelSection';
@@ -203,6 +213,9 @@
           localStorage.setItem(STORAGE_KEY,String(payoutPct));
           renderEnhanced(true);
         }
+        if(event.target&&event.target.id==='appraisalRefineRate'){
+          renderAppraisalIntel();
+        }
       });
     }
     return panel;
@@ -219,6 +232,45 @@
     const table=document.getElementById('jlrAppraisalCopyTable');
     if(summary)summary.disabled=!ready;
     if(table)table.disabled=!ready;
+  }
+
+  function ageText(ms){
+    const value=Math.max(0,Number(ms)||0);
+    if(value<60_000)return Math.max(1,Math.round(value/1000))+'s';
+    if(value<60*60_000)return Math.round(value/60_000)+'m';
+    if(value<24*60*60_000)return (value/(60*60_000)).toFixed(value<10*60*60_000?1:0)+'h';
+    return (value/(24*60*60_000)).toFixed(1)+'d';
+  }
+  function itemMarketAge(row){
+    const parsed=Date.parse(String(row?.marketDataAt||''));
+    return Number.isFinite(parsed)?Math.max(0,Date.now()-parsed):Math.max(0,Number(row?.marketDataAgeMs)||0);
+  }
+  function marketSourceLabel(source){
+    const key=String(source||'');
+    if(key==='esi-live')return'CCP ESI LIVE';
+    if(key==='support-cache')return'JLR SHARED CACHE';
+    if(key==='local-order-cache')return'JLR LOCAL CACHE';
+    if(key==='support-stale')return'JLR STALE FALLBACK';
+    return key?key.toUpperCase().replaceAll('-',' '):'JLR NATIVE';
+  }
+  function renderMarketFreshness(){
+    const host=document.getElementById('jlrAppraisalFreshness');
+    if(!host)return;
+    if(!appraisal){
+      host.classList.remove('jlr-stale');
+      host.innerHTML='<span class="status-pill">● JLR NATIVE</span><strong>MARKET DATA READY</strong><small>Run an appraisal to load CCP ESI market data.</small>';
+      return;
+    }
+    const rows=(Array.isArray(appraisal.items)?appraisal.items:[]).filter(row=>row?.resolved!==false&&row?.marketDataAt);
+    const stale=rows.filter(row=>row.marketDataStale);
+    const ages=rows.map(itemMarketAge);
+    const maxAge=ages.length?Math.max(...ages):num(appraisal.marketData?.maxAgeMs);
+    const sources=[...new Set(rows.map(row=>marketSourceLabel(row.marketDataSource)).filter(Boolean))];
+    host.classList.toggle('jlr-stale',stale.length>0);
+    host.innerHTML=
+      '<span class="status-pill">'+(stale.length?'● STALE FALLBACK':'● JLR NATIVE')+'</span>'+
+      '<strong>'+esc(appraisal.market?.name||'MARKET')+' • '+esc(variantLabel(appraisal.pricingVariant))+'</strong>'+
+      '<small>'+esc(sources.join(' + ')||'CCP ESI')+' • oldest price '+esc(ageText(maxAge))+' ago • '+stale.length+' stale / '+rows.length+' priced</small>';
   }
 
   function renderSummary(force){
@@ -253,7 +305,9 @@
         return '<tr class="appraisal-unresolved"><td><strong>'+esc(row.name)+'</strong><small>UNRESOLVED</small></td><td colspan="9">—</td></tr>';
       }
       const payout=selectedTotal(row)*factor;
-      return '<tr><td><strong>'+esc(row.name)+'</strong><small>'+Number(row.buyOrderCount||0).toLocaleString()+' buy orders • '+Number(row.sellOrderCount||0).toLocaleString()+' sell orders</small></td>'+
+      const dataAge=row.marketDataAt?ageText(itemMarketAge(row)):'—';
+      const dataSource=marketSourceLabel(row.marketDataSource);
+      return '<tr><td><strong>'+esc(row.name)+'</strong><small>'+Number(row.buyOrderCount||0).toLocaleString()+' buy orders • '+Number(row.sellOrderCount||0).toLocaleString()+' sell orders • '+esc(dataSource)+' '+esc(dataAge)+(row.marketDataStale?' STALE':'')+'</small></td>'+
         '<td>'+copyCell(row.amount,Number(row.amount||0).toLocaleString(),'quantity')+'</td>'+
         '<td>'+copyCell(row.totalVolume,volume(row.totalVolume),'volume')+'</td>'+
         '<td>'+copyCell(row.buy,price(row.buy),'buy per item')+'</td>'+
@@ -319,26 +373,91 @@
       market:source.market||null,
       pricing:source.pricing||'split',
       pricingVariant:source.pricingVariant||'immediate',
+      marketData:source.marketData||null,
+      refine:source.refine?{
+        selectedRate:Number(source.refine.selectedRate??source.refine.defaultRate)||0,
+        defaultRate:Number(source.refine.defaultRate)||0,
+        recognizedLines:Number(source.refine.recognizedLines)||0,
+        recognizedUnits:Number(source.refine.recognizedUnits)||0,
+        buyAt100:Number(source.refine.buyAt100)||0,
+        eligibleBuy:Number(source.refine.eligibleBuy)||0,
+        eligibleSplit:Number(source.refine.eligibleSplit)||0,
+        eligibleSell:Number(source.refine.eligibleSell)||0,
+        pricingBasis:source.refine.pricingBasis||'',
+        items:(Array.isArray(source.refine.items)?source.refine.items:[]).slice(0,120),
+      }:null,
       items:(Array.isArray(source.items)?source.items:[]).slice(0,120).map(row=>({
         resolved:row?.resolved!==false,
         typeId:Number(row?.typeId)||null,
         name:String(row?.name||''),
         amount:Number(row?.amount)||0,
         totalVolume:Number(row?.totalVolume)||0,
+        buyOrderCount:Number(row?.buyOrderCount)||0,
+        buyVolume:Number(row?.buyVolume)||0,
+        sellOrderCount:Number(row?.sellOrderCount)||0,
+        sellVolume:Number(row?.sellVolume)||0,
         buy:Number(row?.buy)||0,
         split:Number(row?.split)||0,
         sell:Number(row?.sell)||0,
         buyTotal:Number(row?.buyTotal)||0,
         splitTotal:Number(row?.splitTotal)||0,
         sellTotal:Number(row?.sellTotal)||0,
+        marketDataAt:row?.marketDataAt||null,
+        marketDataAgeMs:Number(row?.marketDataAgeMs)||0,
+        marketDataStale:Boolean(row?.marketDataStale),
+        marketDataSource:row?.marketDataSource||'',
       })),
     };
   }
+  function decisionAtCurrentRate(){
+    const source=appraisalIntel?.decision;
+    const rows=Array.isArray(source?.rows)?source.rows:[];
+    if(!source||!rows.length)return null;
+    const input=document.getElementById('appraisalRefineRate');
+    const defaultPct=num(source.refineRate)*100;
+    const pct=clamp(Number(input&&input.value)||defaultPct,0,100);
+    const rate=pct/100;
+    let rawValue=0,compressedValue=0,refinedValue=0;
+    let rawCovered=0,compressedCovered=0;
+    const recalculated=rows.map(row=>{
+      const raw=Number(row.rawValue);
+      const compressed=Number(row.compressedValue);
+      const refined=num(row.refineValueAt100)*rate;
+      if(Number.isFinite(raw)){rawValue+=Math.max(0,raw);rawCovered++}
+      if(Number.isFinite(compressed)){compressedValue+=Math.max(0,compressed);compressedCovered++}
+      refinedValue+=refined;
+      const options=[
+        Number.isFinite(raw)?{key:'raw',label:'RAW',value:Math.max(0,raw)}:null,
+        Number.isFinite(compressed)?{key:'compressed',label:'COMPRESSED',value:Math.max(0,compressed)}:null,
+        {key:'refine',label:'REFINE',value:refined},
+      ].filter(Boolean).sort((a,b)=>b.value-a.value);
+      return{...row,refinedValue:refined,winner:options[0]?.key||null,winnerLabel:options[0]?.label||null,advantageValue:options.length>1?Math.max(0,options[0].value-options[1].value):0};
+    });
+    const options=[
+      rawCovered===rows.length?{key:'raw',label:'RAW',value:rawValue}:null,
+      compressedCovered===rows.length?{key:'compressed',label:'COMPRESSED',value:compressedValue}:null,
+      {key:'refine',label:'REFINE',value:refinedValue},
+    ].filter(Boolean).sort((a,b)=>b.value-a.value);
+    return{
+      ...source,
+      refineRate:rate,
+      rawValue:rawCovered===rows.length?rawValue:null,
+      compressedValue:compressedCovered===rows.length?compressedValue:null,
+      refinedValue,
+      winner:options[0]?.key||null,
+      winnerLabel:options[0]?.label||null,
+      winnerValue:options[0]?.value||0,
+      advantageValue:options.length>1?Math.max(0,options[0].value-options[1].value):0,
+      rows:recalculated,
+      fullCompressionCoverage:compressedCovered===rows.length,
+    };
+  }
+
   function renderAppraisalIntel(){
     const host=document.getElementById('jlrAppraisalIntelBody');
     if(!host)return;
     if(appraisalIntelBusy){
-      host.innerHTML='<div class="jlr-intel-loading"><span class="status-pill">● SUPPORT</span><strong>Building compression + market history…</strong><small>Cached results are reused across JLR users when available.</small></div>';
+      host.innerHTML='<div class="jlr-intel-loading"><span class="status-pill">● SUPPORT</span><strong>Building decision + liquidity intel…</strong><small>Shared price snapshots and history are reused across JLR users.</small></div>';
       return;
     }
     if(!appraisalIntel){
@@ -354,6 +473,37 @@
     const warnings=Array.isArray(appraisalIntel.warnings)?appraisalIntel.warnings.filter(Boolean):[];
     const cache=appraisalIntel.cache||{};
     const cacheText=cache.hit?'CACHE HIT':'FRESH SUPPORT DATA';
+    const decision=decisionAtCurrentRate();
+
+    let decisionHtml='';
+    if(decision){
+      const optionCards=[
+        {key:'raw',label:'RAW SALE',value:decision.rawValue},
+        {key:'compressed',label:'COMPRESSED SALE',value:decision.compressedValue},
+        {key:'refine',label:'REFINED MINERALS',value:decision.refinedValue},
+      ].filter(row=>Number.isFinite(Number(row.value)));
+      const cards=optionCards.map(row=>
+        '<article class="jlr-decision-option '+(decision.winner===row.key?'winner':'')+'"><span>'+esc(row.label)+'</span>'+
+        copyStrong(row.value,shortIsk(row.value)+' ISK',row.label.toLowerCase(),'jlr-decision-copy')+
+        (decision.winner===row.key?'<small>HIGHEST VALUE</small>':'')+'</article>'
+      ).join('');
+      const decisionRows=decision.rows.slice(0,30).map(row=>
+        '<tr><td><strong>'+esc(row.name)+'</strong><small>'+Number(row.amount||0).toLocaleString()+' units</small></td>'+
+        '<td>'+(Number.isFinite(Number(row.rawValue))?copyCell(row.rawValue,shortIsk(row.rawValue)+' ISK','raw value'):'—')+'</td>'+
+        '<td>'+(Number.isFinite(Number(row.compressedValue))?copyCell(row.compressedValue,shortIsk(row.compressedValue)+' ISK','compressed value'):'—')+'</td>'+
+        '<td>'+copyCell(row.refinedValue,shortIsk(row.refinedValue)+' ISK','refined value')+'</td>'+
+        '<td class="jlr-decision-winner">'+esc(row.winnerLabel||'—')+(num(row.advantageValue)>0?'<small> +'+shortIsk(row.advantageValue)+'</small>':'')+'</td></tr>'
+      ).join('');
+      decisionHtml=
+        '<article class="jlr-intel-card jlr-decision-card"><div class="jlr-intel-card-head"><div><span>DECISION ENGINE</span><strong>RAW vs COMPRESSED vs REFINE</strong></div>'+
+        '<small>'+esc((decision.refineRate*100).toFixed(2).replace(/0+$/,'').replace(/\.$/,''))+'% refine • '+esc(modeLabel(appraisalIntel.pricing))+' market basis</small></div>'+
+        '<div class="jlr-decision-options">'+cards+'</div>'+
+        '<div class="jlr-decision-banner"><span>WINNER</span><strong>'+esc(decision.winnerLabel||'—')+'</strong>'+
+        '<small>'+copyCell(decision.winnerValue,shortIsk(decision.winnerValue)+' ISK','winning value')+
+        (num(decision.advantageValue)>0?' • +'+shortIsk(decision.advantageValue)+' vs next option':'')+
+        (!decision.fullCompressionCoverage?' • compression coverage partial':'')+'</small></div>'+
+        '<div class="appraisal-table-wrap"><table class="appraisal-table jlr-intel-table jlr-decision-table"><thead><tr><th>ORE</th><th>RAW</th><th>COMPRESSED</th><th>REFINE</th><th>WINNER</th></tr></thead><tbody>'+decisionRows+'</tbody></table></div></article>';
+    }
 
     const compressionRows=compression.length?compression.slice(0,30).map(row=>{
       const delta=signed(row.valueDelta);
@@ -371,26 +521,35 @@
     const historyRows=history.length?history.map(row=>{
       const trend=Number(row.trend7Pct);
       const trendClass=!Number.isFinite(trend)?'':trend>0?'jlr-intel-positive':trend<0?'jlr-intel-negative':'';
+      const spread=Number(row.spreadPct);
+      const buyDays=Number(row.buyBookDays),sellDays=Number(row.sellBookDays);
       return '<tr>'+
-        '<td><strong>'+esc(row.name)+'</strong><small>'+esc(row.regionName||'Market history')+'</small></td>'+
+        '<td><strong>'+esc(row.name)+'</strong><small>'+esc(row.regionName||'Market history')+' • '+Number(row.buyOrderCount||0)+' buy / '+Number(row.sellOrderCount||0)+' sell orders</small></td>'+
         '<td>'+copyCell(row.avg7,shortIsk(row.avg7)+' ISK','7 day average')+'</td>'+
         '<td>'+copyCell(row.avg30,shortIsk(row.avg30)+' ISK','30 day average')+'</td>'+
         '<td class="'+trendClass+'">'+signedPct(row.trend7Pct)+'</td>'+
         '<td>'+Number(row.avgDailyVolume7||0).toLocaleString(undefined,{maximumFractionDigits:0})+'</td>'+
+        '<td>'+(Number.isFinite(spread)?spread.toFixed(2)+'%':'—')+'</td>'+
+        '<td>'+(Number.isFinite(buyDays)?buyDays.toFixed(buyDays<10?1:0)+'d':'—')+' / '+(Number.isFinite(sellDays)?sellDays.toFixed(sellDays<10?1:0)+'d':'—')+'</td>'+
       '</tr>';
-    }).join(''):'<tr><td colspan="5" class="jlr-intel-empty">No market-history rows were available for this market.</td></tr>';
+    }).join(''):'<tr><td colspan="7" class="jlr-intel-empty">No market-history rows were available for this market.</td></tr>';
 
+    const marketData=appraisal?.marketData||appraisalIntel.marketData||{};
+    const maxAge=num(marketData.maxAgeMs);
+    const staleCount=num(marketData.staleCount);
     host.innerHTML=
-      '<div class="jlr-intel-meta"><span class="status-pill">● SUPPORT</span><strong>'+esc(cacheText)+'</strong><small>'+
-        compression.length+' compression matches • '+history.length+' history rows</small></div>'+
+      '<div class="jlr-intel-meta '+(staleCount?'jlr-stale':'')+'"><span class="status-pill">● SUPPORT</span><strong>'+esc(cacheText)+'</strong><small>'+
+        compression.length+' compression matches • '+history.length+' history rows • prices '+esc(ageText(maxAge))+' old'+(staleCount?' • '+staleCount+' stale fallback':'')+'</small></div>'+
       '<div class="jlr-intel-grid">'+
+        decisionHtml+
         '<article class="jlr-intel-card"><div class="jlr-intel-card-head"><div><span>COMPRESSION</span><strong>RAW ↔ COMPRESSED VALUE</strong></div><small>Selected '+esc(modeLabel(appraisalIntel.pricing))+' basis</small></div>'+
           '<div class="appraisal-table-wrap"><table class="appraisal-table jlr-intel-table"><thead><tr><th>ITEM</th><th>CURRENT</th><th>ALTERNATE</th><th>VALUE Δ</th><th>VOLUME ↓</th></tr></thead><tbody>'+compressionRows+'</tbody></table></div></article>'+
-        '<article class="jlr-intel-card"><div class="jlr-intel-card-head"><div><span>MARKET HISTORY</span><strong>7D / 30D CONTEXT</strong></div><small>ESI history • cached by Support</small></div>'+
-          '<div class="appraisal-table-wrap"><table class="appraisal-table jlr-intel-table"><thead><tr><th>ITEM</th><th>7D AVG</th><th>30D AVG</th><th>7D TREND</th><th>AVG DAILY VOL</th></tr></thead><tbody>'+historyRows+'</tbody></table></div></article>'+
+        '<article class="jlr-intel-card"><div class="jlr-intel-card-head"><div><span>LIQUIDITY + HISTORY</span><strong>PRICE TREND & BOOK DEPTH</strong></div><small>CCP ESI history • cached by Support</small></div>'+
+          '<div class="appraisal-table-wrap"><table class="appraisal-table jlr-intel-table jlr-liquidity-table"><thead><tr><th>ITEM</th><th>7D AVG</th><th>30D AVG</th><th>7D TREND</th><th>AVG DAILY VOL</th><th>SPREAD</th><th>BOOK DAYS B/S</th></tr></thead><tbody>'+historyRows+'</tbody></table></div></article>'+
       '</div>'+
       (warnings.length?'<div class="jlr-intel-warnings">'+warnings.map(row=>'<small>• '+esc(row)+'</small>').join('')+'</div>':'');
   }
+
   async function loadAppraisalIntel(snapshot){
     const seq=++appraisalIntelSeq;
     appraisalIntelBusy=true;
@@ -459,6 +618,7 @@
   function renderEnhanced(force=false){
     if(!ensureUi())return;
     syncControls();
+    renderMarketFreshness();
     if(!appraisal)return;
     renderSummary(force);
     renderItems(force);
