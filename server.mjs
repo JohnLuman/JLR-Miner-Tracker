@@ -11,7 +11,7 @@ import { parseOreSurvey, oreSurveySummaryText } from './lib/ore-survey.mjs';
 import { nearestTrackedSystems, needsScanUpdate, actionableLedgerScanWarning, recentlyScannedSystem } from './lib/brain-location.mjs';
 import { addVerifiedSiteMining, autoClearFieldAtCap, FIELD_AUTO_CLEAR_REASON } from './lib/field-auto-clear.mjs';
 import { positiveLedgerDeltas, dueRouteStops, fountainRouteDestination, brainLiveIntent } from './lib/brain-intel.mjs';
-import { isDoctrineDataQuestion, answerDoctrineQuestion, answerMiningMarketQuestion, isAppraisalDataQuestion, appraisalQuestionNeedsMarket, appraisalMarketIdFromQuestion, appraisalQuantityFromQuestion, answerAppraisalStaticQuestion, answerAppraisalMarketQuestion } from './lib/adam-data.mjs';
+import { isDoctrineDataQuestion, answerDoctrineQuestion, answerMiningMarketQuestion, normalizeAdamQuestion, isAppraisalDataQuestion, appraisalQuestionNeedsMarket, appraisalMarketIdFromQuestion, appraisalQuantityFromQuestion, answerAppraisalStaticQuestion, answerAppraisalMarketQuestion } from './lib/adam-data.mjs';
 import { explicitAdamHelpQuestion, adamOverviewQuestion, adamUnknownText } from './lib/adam-prompts.mjs';
 import { createTrackerSupportClient } from './lib/tracker-support-client.mjs';
 import { chooseRapidResponseRoutes, wandererRiskPenalty, wandererWarnings } from './lib/rapid-response-route.mjs';
@@ -4103,6 +4103,17 @@ async function trackerBrainAppraisalAnswer(question,currentTab=''){
   if(!isAppraisalDataQuestion(question,currentTab))return null;
   const matched=await trackerSupport.sdeMatch({question,limit:5});
   const candidates=Array.isArray(matched?.items)?matched.items:[];
+  if(matched?.ambiguous&&candidates.length>1){
+    const choices=candidates.slice(0,3).map(row=>row.name).filter(Boolean);
+    return{
+      handled:true,
+      topic:'appraisal-item-ambiguous',
+      text:'I found a few close EVE item matches: '+choices.join(', ')+'. Which one did you mean?',
+      voiceText:'I found a few close item matches. Which one did you mean?',
+      generatedAt:now(),
+      matchCandidates:choices,
+    };
+  }
   const item=candidates[0]||null;
   if(!item){
     if(currentTab==='forge'||currentTab==='appraisal'){
@@ -4117,7 +4128,7 @@ async function trackerBrainAppraisalAnswer(question,currentTab=''){
     return null;
   }
 
-  const quantity=appraisalQuantityFromQuestion(question,item.name);
+  const quantity=appraisalQuantityFromQuestion(question,item.name,item.matchedText);
   if(!appraisalQuestionNeedsMarket(question)){
     let materialRow=null;
     if(/\b(?:refine|refines|reprocess|reprocessing|material|materials)\b/i.test(question)){
@@ -4138,9 +4149,10 @@ async function trackerBrainAppraisalAnswer(question,currentTab=''){
   }
 
   const market=appraisalMarketIdFromQuestion(question);
-  const pricing=/\bbuy\b/i.test(question)&&!/\bsell\b/i.test(question)?'buy':
-    /\bsell\b/i.test(question)&&!/\bbuy\b/i.test(question)?'sell':'split';
-  const pricingVariant=/\b(?:top\s*5|5\s*percent|5%)\b/i.test(question)?'top5percent':'immediate';
+  const intentQuestion=normalizeAdamQuestion(question);
+  const pricing=/\bbuy\b/.test(intentQuestion)&&!/\bsell\b/.test(intentQuestion)?'buy':
+    /\bsell\b/.test(intentQuestion)&&!/\bbuy\b/.test(intentQuestion)?'sell':'split';
+  const pricingVariant=/\b(?:top\s*5|5\s*percent|5%)\b/.test(intentQuestion)?'top5percent':'immediate';
   let appraisal;
   try{
     appraisal=await buildAppraisal(item.name+'\t'+quantity,{market,pricing,pricingVariant});
