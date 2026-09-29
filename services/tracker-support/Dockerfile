@@ -31,7 +31,7 @@ RUN /opt/conda/bin/conda run -n gptsovits python -m pip uninstall -y torchaudio 
 
 WORKDIR /app
 COPY package.json ./
-COPY core.mjs server.mjs start.sh tts-cpu.yaml ./
+COPY core.mjs server.mjs sde-catalog.mjs sde_import.py start.sh tts-cpu.yaml ./
 RUN chmod +x /app/start.sh && mkdir -p /app/data /data/voice
 
 ENV PORT=8080

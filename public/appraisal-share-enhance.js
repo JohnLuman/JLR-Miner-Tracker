@@ -86,6 +86,7 @@
         '<div class="share-copy-actions">'+
           '<div class="share-payout-badge"><span>PAYOUT</span><strong>'+esc(pct.toFixed(1).replace(/\.0$/,''))+'%</strong></div>'+
           '<div class="share-payout-badge"><span>MARKET DATA</span><strong>'+esc(ageText(appraisal.marketData?.maxAgeMs||0))+'</strong></div>'+
+          '<div class="share-payout-badge"><span>STATIC DATA</span><strong>'+esc(Number(appraisal.staticData?.buildNumber)>0?'SDE '+Number(appraisal.staticData.buildNumber).toLocaleString():'ESI FALLBACK')+'</strong></div>'+
           '<button type="button" data-share-action="summary">COPY SUMMARY</button>'+
           '<button type="button" data-share-action="table">COPY TABLE</button>'+
         '</div>');

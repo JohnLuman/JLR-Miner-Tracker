@@ -4308,8 +4308,8 @@ const TRACKER_APP_KNOWLEDGE = {
   forge:{
     label:'JLR Appraisal',
     aliases:['appraisal','jlr appraisal','price check','market appraisal','item appraisal','forge'],
-    description:'JLR Appraisal is JLR’s native CCP ESI market-value workspace. Paste EVE inventory, cargo, ore, modules, loot or a simple item-and-quantity list. JLR resolves the item types through CCP ESI, prices them with its own cached market-order engine, shows Buy, Split and Sell values, supports Immediate and Top 5 percent volume-weighted pricing, compares raw/compressed/refined economics, adds cached market-history context through Support, totals volume, and can create a public JLR share link without exposing EVE tokens or private account data.',
-    panels:['item-list paste','JLR native market selector','buy split sell pricing','immediate or top 5 percent basis','compression comparison','refine economics','market history','volume and value totals','item price table','public appraisal link']
+    description:'JLR Appraisal is JLR’s native market-value workspace. Static item names, type IDs, volumes, compression pairs and reprocessing materials are resolved from JLR’s persistent local copy of CCP’s official Static Data Export (SDE), with CCP ESI used as a fallback while the catalog is warming or for missing data. Live market orders and history still come from CCP ESI. JLR calculates Buy, Split and Sell values, supports Immediate and Top 5 percent volume-weighted pricing, compares raw/compressed/refined economics, shows data age and cache source, and can create a public JLR share link without exposing EVE tokens or private account data.',
+    panels:['item-list paste','CCP SDE static catalog status','JLR native market selector','buy split sell pricing','immediate or top 5 percent basis','compression comparison','refine economics','market history and liquidity','data age and source','volume and value totals','item price table','public appraisal link']
   },
   doctrine:{
     label:'Doctrine Market',
@@ -6038,44 +6038,91 @@ async function resolveAppraisalHub(value){
   appraisalHubCache.set(base.id,resolved);
   return resolved;
 }
-async function appraisalResolveItem(name){
-  const query=String(name||'').trim();
-  if(query.length<2)return null;
-  const key=query.toLowerCase();
-  const cached=appraisalItemResolveCache.get(key);
-  if(cached&&Date.now()-cached.at<24*60*60*1000)return cached.value;
-  const {data}=await esiPost('https://esi.evetech.net/latest/universe/ids/?datasource=tranquility',[query]);
-  const rows=Array.isArray(data?.inventory_types)?data.inventory_types:[];
-  const exact=rows.find(row=>String(row?.name||'').trim().toLowerCase()===key);
-  const best=exact||rows[0]||null;
-  const value=best&&Number(best.id)>0?{typeId:Number(best.id),name:String(best.name||query)}:null;
-  appraisalItemResolveCache.set(key,{at:Date.now(),value});
-  return value;
-}
 async function appraisalResolveItems(rows){
   const inputs=Array.isArray(rows)?rows:[];
   const names=[...new Set(inputs.map(row=>String(row?.name||'').trim()).filter(name=>name.length>=2))];
   const resolvedByKey=new Map();
+  let sdeMeta=null;
+  let sdeResolved=0;
+  let esiResolved=0;
   const missing=[];
+
   for(const name of names){
     const key=name.toLowerCase();
     const cached=appraisalItemResolveCache.get(key);
-    if(cached&&Date.now()-cached.at<24*60*60*1000)resolvedByKey.set(key,cached.value);
-    else missing.push(name);
+    if(cached&&Date.now()-cached.at<24*60*60*1000){
+      resolvedByKey.set(key,cached.value);
+      if(cached.value?.staticSource==='sde')sdeResolved++;
+      else if(cached.value)esiResolved++;
+    }else missing.push(name);
   }
-  if(missing.length){
-    const {data}=await esiPost('https://esi.evetech.net/latest/universe/ids/?datasource=tranquility',missing.slice(0,APPRAISAL_MAX_ITEM_TYPES));
+
+  let unresolved=[...missing];
+  if(unresolved.length){
+    const sde=await trackerSupport.sdeResolve({names:unresolved});
+    if(sde?.available){
+      sdeMeta=sde.meta||null;
+      const found=new Map((Array.isArray(sde.items)?sde.items:[])
+        .filter(row=>row?.name&&Number(row?.typeId)>0)
+        .map(row=>[String(row.name).trim().toLowerCase(),row]));
+      const next=[];
+      for(const name of unresolved){
+        const key=name.toLowerCase();
+        const row=found.get(key);
+        if(!row){next.push(name);continue}
+        const value={
+          typeId:Number(row.typeId),
+          name:String(row.name||name),
+          groupId:Number(row.groupId)||null,
+          groupName:String(row.groupName||''),
+          categoryId:Number(row.categoryId)||null,
+          categoryName:String(row.categoryName||''),
+          marketGroupId:Number(row.marketGroupId)||null,
+          marketGroupName:String(row.marketGroupName||''),
+          volume:Math.max(0,Number(row.volume)||0),
+          packagedVolume:Math.max(0,Number(row.packagedVolume)||0),
+          portionSize:Math.max(1,Number(row.portionSize)||1),
+          published:Boolean(row.published),
+          compressedTypeId:Number(row.compressedTypeId)||null,
+          compressedName:String(row.compressedName||''),
+          rawTypeId:Number(row.rawTypeId)||null,
+          rawName:String(row.rawName||''),
+          staticSource:'sde',
+          sdeBuildNumber:Number(sde.meta?.buildNumber)||null,
+        };
+        appraisalItemResolveCache.set(key,{at:Date.now(),value});
+        resolvedByKey.set(key,value);
+        sdeResolved++;
+      }
+      unresolved=next;
+    }
+  }
+
+  if(unresolved.length){
+    const {data}=await esiPost('https://esi.evetech.net/latest/universe/ids/?datasource=tranquility',unresolved.slice(0,APPRAISAL_MAX_ITEM_TYPES));
     const inventory=Array.isArray(data?.inventory_types)?data.inventory_types:[];
     const found=new Map(inventory.filter(row=>row?.name&&Number(row?.id)>0)
-      .map(row=>[String(row.name).trim().toLowerCase(),{typeId:Number(row.id),name:String(row.name)}]));
-    for(const name of missing){
+      .map(row=>[String(row.name).trim().toLowerCase(),{typeId:Number(row.id),name:String(row.name),staticSource:'esi'}]));
+    for(const name of unresolved){
       const key=name.toLowerCase();
       const value=found.get(key)||null;
       appraisalItemResolveCache.set(key,{at:Date.now(),value});
       resolvedByKey.set(key,value);
+      if(value)esiResolved++;
     }
   }
-  return resolvedByKey;
+
+  return{
+    map:resolvedByKey,
+    staticData:{
+      provider:sdeResolved>0?'ccp-sde':(esiResolved>0?'ccp-esi':'unresolved'),
+      buildNumber:Number(sdeMeta?.buildNumber)||null,
+      releaseDate:sdeMeta?.releaseDate||null,
+      sdeResolved,
+      esiFallbackResolved:esiResolved,
+      totalRequested:names.length,
+    },
+  };
 }
 async function appraisalMarketOrders(regionId,typeId){
   const key=String(regionId)+':'+String(typeId);
@@ -6172,6 +6219,19 @@ function appraisalSnapshotItem(base,snapshot,{marketDataSource='support-cache',m
     marketDataAgeMs:Number.isFinite(parsedAge)?parsedAge:0,
     marketDataStale:Boolean(marketDataStale),
     marketDataSource:String(marketDataSource||'jlr-native-esi'),
+    staticSource:String(base?.staticSource||''),
+    sdeBuildNumber:Number(base?.sdeBuildNumber)||null,
+    groupId:Number(base?.groupId)||null,
+    groupName:String(base?.groupName||''),
+    categoryId:Number(base?.categoryId)||null,
+    categoryName:String(base?.categoryName||''),
+    marketGroupId:Number(base?.marketGroupId)||null,
+    marketGroupName:String(base?.marketGroupName||''),
+    portionSize:Math.max(1,Number(base?.portionSize)||1),
+    compressedTypeId:Number(base?.compressedTypeId)||null,
+    compressedName:String(base?.compressedName||''),
+    rawTypeId:Number(base?.rawTypeId)||null,
+    rawName:String(base?.rawName||''),
   };
 }
 function appraisalMarketDataSummary(items,freshMs=APPRAISAL_ORDER_CACHE_MS){
@@ -6203,21 +6263,41 @@ async function nativeEsiAppraisal(text,{market=2,pricing='split',pricingVariant=
   const mode=appraisalMode(pricing);
   const variant=appraisalVariant(pricingVariant);
   const selectedRows=parsed.rows.slice(0,APPRAISAL_MAX_ITEM_TYPES);
-  const resolvedNames=await appraisalResolveItems(selectedRows);
+  const resolvedLookup=await appraisalResolveItems(selectedRows);
+  const resolvedNames=resolvedLookup.map;
 
   const bases=await forgeMapLimit(selectedRows,6,async input=>{
     try{
       const resolved=resolvedNames.get(String(input.name||'').trim().toLowerCase())||null;
       if(!resolved)return{resolved:false,typeId:null,name:input.name,amount:Number(input.quantity)||0,error:'ITEM_NOT_FOUND'};
-      await ensureType([resolved.typeId]);
-      const type=state.esi.typeCache[String(resolved.typeId)]||{};
+      let volumePerUnit=Number(resolved.volume);
+      let packagedVolumePerUnit=Number(resolved.packagedVolume);
+      if(resolved.staticSource!=='sde'){
+        await ensureType([resolved.typeId]);
+        const type=state.esi.typeCache[String(resolved.typeId)]||{};
+        volumePerUnit=Math.max(0,Number(type.volume)||0);
+        packagedVolumePerUnit=Math.max(0,Number(type.packagedVolume??type.packaged_volume??type.volume)||0);
+      }
       return{
         resolved:true,
         typeId:resolved.typeId,
         name:resolved.name,
         amount:Math.max(1,Number(input.quantity)||1),
-        volumePerUnit:Math.max(0,Number(type.volume)||0),
-        packagedVolumePerUnit:Math.max(0,Number(type.packagedVolume??type.packaged_volume??type.volume)||0),
+        volumePerUnit:Math.max(0,Number(volumePerUnit)||0),
+        packagedVolumePerUnit:Math.max(0,Number(packagedVolumePerUnit)||0),
+        staticSource:String(resolved.staticSource||'esi'),
+        sdeBuildNumber:Number(resolved.sdeBuildNumber)||null,
+        groupId:Number(resolved.groupId)||null,
+        groupName:String(resolved.groupName||''),
+        categoryId:Number(resolved.categoryId)||null,
+        categoryName:String(resolved.categoryName||''),
+        marketGroupId:Number(resolved.marketGroupId)||null,
+        marketGroupName:String(resolved.marketGroupName||''),
+        portionSize:Math.max(1,Number(resolved.portionSize)||1),
+        compressedTypeId:Number(resolved.compressedTypeId)||null,
+        compressedName:String(resolved.compressedName||''),
+        rawTypeId:Number(resolved.rawTypeId)||null,
+        rawName:String(resolved.rawName||''),
       };
     }catch(error){
       return{resolved:false,typeId:null,name:input.name,amount:Number(input.quantity)||0,error:String(error?.message||error).slice(0,180)};
@@ -6309,27 +6389,51 @@ async function nativeEsiAppraisal(text,{market=2,pricing='split',pricingVariant=
     failures:failures.join('\n'),
     items,
     summary:appraisalSummary(items,mode),
+    staticData:resolvedLookup.staticData,
     marketData:appraisalMarketDataSummary(items,freshMs),
   };
 }
 
 async function buildAppraisal(text,options={}){
-  return attachAppraisalRefine(await nativeEsiAppraisal(text,options));
+  const appraisal=await nativeEsiAppraisal(text,options);
+  const typeIds=[...new Set((appraisal.items||[]).flatMap(row=>[
+    Number(row?.typeId)||0,
+    Number(row?.rawTypeId)||0,
+  ]).filter(id=>id>0))];
+  const sdeMaterials=await trackerSupport.sdeMaterials({typeIds});
+  return attachAppraisalRefine(appraisal,sdeMaterials?.available?sdeMaterials.items:[]);
 }
 function appraisalOreRecipe(name){
   const key=String(name||'').trim().toLowerCase().replace(/^compressed\s+/,'');
   if(!key)return null;
   return ORE_SURVEY_T3_REPROCESSING[key]||ORE_SURVEY_EXTRA_REPROCESSING[key]||null;
 }
-function appraisalRefinePreview(items){
+function appraisalRefinePreview(items,sdeMaterialRows=[]){
   const prices=effectiveJitaMineralPrices();
   const mineralTotals=new Map();
   const refineItems=[];
+  const sdeMaterials=new Map((Array.isArray(sdeMaterialRows)?sdeMaterialRows:[])
+    .filter(row=>Number(row?.typeId)>0)
+    .map(row=>[Number(row.typeId),row]));
   let recognizedLines=0,recognizedUnits=0,buyAt100=0,eligibleBuy=0,eligibleSplit=0,eligibleSell=0;
+  let sdeRecipeLines=0,legacyRecipeLines=0;
   for(const row of Array.isArray(items)?items:[]){
     if(row?.resolved===false)continue;
-    const recipe=appraisalOreRecipe(row?.name);
     const amount=Math.max(0,Number(row?.amount)||0);
+    const category=String(row?.categoryName||'').trim().toLowerCase();
+    const sdeRow=sdeMaterials.get(Number(row?.typeId))||sdeMaterials.get(Number(row?.rawTypeId))||null;
+    let recipe=null;
+    let recipeSource='legacy';
+    if(sdeRow&&Array.isArray(sdeRow.materials)&&sdeRow.materials.length&&(category==='asteroid'||row?.compressedTypeId||row?.rawTypeId)){
+      recipe={
+        portionSize:Math.max(1,Number(sdeRow.portionSize)||Number(row?.portionSize)||1),
+        minerals:Object.fromEntries(sdeRow.materials
+          .filter(material=>String(material?.name||'').trim()&&Number(material?.quantity)>0)
+          .map(material=>[String(material.name),Number(material.quantity)])),
+      };
+      recipeSource='ccp-sde';
+    }
+    if(!recipe)recipe=appraisalOreRecipe(row?.name);
     const portionSize=Math.max(1,Number(recipe?.portionSize)||0);
     if(!recipe||!amount||!portionSize)continue;
     const batches=amount/portionSize;
@@ -6351,6 +6455,7 @@ function appraisalRefinePreview(items){
     eligibleBuy+=Math.max(0,Number(row?.buyTotal)||0);
     eligibleSplit+=Math.max(0,Number(row?.splitTotal)||0);
     eligibleSell+=Math.max(0,Number(row?.sellTotal)||0);
+    if(recipeSource==='ccp-sde')sdeRecipeLines++;else legacyRecipeLines++;
     refineItems.push({
       typeId:Number(row?.typeId)||null,
       name:String(row?.name||'').trim(),
@@ -6359,6 +6464,7 @@ function appraisalRefinePreview(items){
       splitTotal:Math.max(0,Number(row?.splitTotal)||0),
       sellTotal:Math.max(0,Number(row?.sellTotal)||0),
       valueAt100:lineValue,
+      recipeSource,
     });
     for(const mineral of lineMinerals){
       const current=mineralTotals.get(mineral.mineral)||{mineral:mineral.mineral,quantityAt100:0,unitBuy:mineral.unitBuy,valueAt100:0};
@@ -6381,11 +6487,14 @@ function appraisalRefinePreview(items){
     items:refineItems,
     minerals:[...mineralTotals.values()].sort((a,b)=>b.valueAt100-a.valueAt100||a.mineral.localeCompare(b.mineral)),
     pricingBasis:'Jita mineral buy',
+    recipeSource:sdeRecipeLines>0?'ccp-sde':(legacyRecipeLines>0?'legacy-fallback':'none'),
+    sdeRecipeLines,
+    legacyRecipeLines,
   };
 }
-function attachAppraisalRefine(appraisal){
+function attachAppraisalRefine(appraisal,sdeMaterialRows=[]){
   if(!appraisal||typeof appraisal!=='object')return appraisal;
-  return{...appraisal,refine:appraisalRefinePreview(appraisal.items)};
+  return{...appraisal,refine:appraisalRefinePreview(appraisal.items,sdeMaterialRows)};
 }
 function appraisalSharePublic(row){
   if(!row)return null;

@@ -3,8 +3,10 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import {execFile} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {TrackerSessionStore,appraisalCompressionCandidateName,appraisalSelectedValue,appraisalIntelTargets,summarizeAppraisalMarketHistory} from './core.mjs';
+import {JlrSdeCatalog,sdeCompressionCandidate} from './sde-catalog.mjs';
 
 const __dirname=path.dirname(fileURLToPath(import.meta.url));
 const PORT=Math.max(1,Number(process.env.PORT)||3191);
@@ -36,6 +38,11 @@ const APPRAISAL_HISTORY_LIMIT=10;
 const APPRAISAL_PRICE_FRESH_MS=Math.max(60_000,Number(process.env.TRACKER_SUPPORT_APPRAISAL_PRICE_FRESH_MS)||5*60*1000);
 const APPRAISAL_PRICE_RETAIN_MS=Math.max(APPRAISAL_PRICE_FRESH_MS,Number(process.env.TRACKER_SUPPORT_APPRAISAL_PRICE_RETAIN_MS)||72*60*60*1000);
 const APPRAISAL_PRICE_FILE=String(process.env.TRACKER_SUPPORT_APPRAISAL_PRICE_FILE||path.join(path.dirname(STATE_FILE),'appraisal-price-snapshots.json')).trim();
+const SDE_DB_FILE=String(process.env.TRACKER_SUPPORT_SDE_DB_FILE||path.join(path.dirname(STATE_FILE),'jlr-sde.sqlite')).trim();
+const SDE_IMPORTER_FILE=String(process.env.TRACKER_SUPPORT_SDE_IMPORTER_FILE||path.join(__dirname,'sde_import.py')).trim();
+const SDE_PYTHON=String(process.env.TRACKER_SUPPORT_SDE_PYTHON||'/opt/conda/bin/python').trim();
+const SDE_REFRESH_MS=Math.max(60*60*1000,Number(process.env.TRACKER_SUPPORT_SDE_REFRESH_MS)||6*60*60*1000);
+const SDE_REFRESH_TIMEOUT_MS=Math.max(60_000,Number(process.env.TRACKER_SUPPORT_SDE_REFRESH_TIMEOUT_MS)||8*60*1000);
 const appraisalIntelCache=new Map();
 const appraisalHistoryCache=new Map();
 const appraisalPriceSnapshots=new Map();
@@ -47,7 +54,17 @@ if(SHARED_SECRET.length<24){
 }
 
 const store=new TrackerSessionStore({ttlMs:SESSION_TTL_MS,focusTtlMs:FOCUS_TTL_MS,maxSessions:MAX_SESSIONS});
+const sdeCatalog=new JlrSdeCatalog({dbFile:SDE_DB_FILE});
+const sdeRefreshState={
+  running:false,
+  lastCheckedAt:null,
+  lastSuccessAt:null,
+  lastUpdated:false,
+  lastError:null,
+};
 let saveTimer=null;
+let sdeStartupTimer=null;
+let sdePeriodicTimer=null;
 
 function json(res,status,body){
   const raw=JSON.stringify(body);
@@ -245,6 +262,77 @@ function uploadAuthorized(req){
   const left=Buffer.from(supplied);const right=Buffer.from(UPLOAD_TOKEN);
   return left.length===right.length&&crypto.timingSafeEqual(left,right);
 }
+function sdeRuntimeStatus(){
+  return sdeCatalog.status({
+    refreshRunning:sdeRefreshState.running,
+    lastCheckedAt:sdeRefreshState.lastCheckedAt,
+    lastSuccessAt:sdeRefreshState.lastSuccessAt,
+    lastUpdated:Boolean(sdeRefreshState.lastUpdated),
+    lastError:sdeRefreshState.lastError,
+    refreshMs:SDE_REFRESH_MS,
+  });
+}
+async function refreshSdeCatalog({force=false}={}){
+  if(sdeRefreshState.running)return sdeRuntimeStatus();
+  sdeRefreshState.running=true;
+  sdeRefreshState.lastCheckedAt=new Date().toISOString();
+  sdeRefreshState.lastError=null;
+  try{
+    const args=[SDE_IMPORTER_FILE,'--db',SDE_DB_FILE];
+    if(force)args.push('--force');
+    const result=await new Promise((resolve,reject)=>{
+      execFile(SDE_PYTHON,args,{
+        timeout:SDE_REFRESH_TIMEOUT_MS,
+        maxBuffer:4*1024*1024,
+        env:{...process.env,PYTHONUNBUFFERED:'1'},
+      },(error,stdout,stderr)=>{
+        if(error){
+          const detail=String(stderr||stdout||error.message||error).trim().slice(-1800);
+          reject(new Error(detail||String(error.message||error)));
+          return;
+        }
+        const lines=String(stdout||'').trim().split(/\r?\n/).filter(Boolean);
+        let parsed=null;
+        for(let i=lines.length-1;i>=0;i--){
+          try{parsed=JSON.parse(lines[i]);break}catch{}
+        }
+        resolve(parsed||{ok:true,updated:false});
+      });
+    });
+    sdeRefreshState.lastSuccessAt=new Date().toISOString();
+    sdeRefreshState.lastUpdated=Boolean(result?.updated);
+    console.log('JLR SDE catalog '+(result?.updated?'updated':'checked')+
+      (result?.buildNumber?' at build '+result.buildNumber:'')+
+      (result?.typeCount?' ('+result.typeCount+' types)':''));
+    return{...sdeRuntimeStatus(),refreshResult:result};
+  }catch(error){
+    sdeRefreshState.lastError=String(error?.message||error).slice(0,1000);
+    console.warn('JLR SDE catalog refresh failed:',sdeRefreshState.lastError);
+    return sdeRuntimeStatus();
+  }finally{
+    sdeRefreshState.running=false;
+  }
+}
+function scheduleSdeRefresh(){
+  if(sdeStartupTimer||sdePeriodicTimer)return;
+  sdeStartupTimer=setTimeout(()=>{
+    sdeStartupTimer=null;
+    void refreshSdeCatalog();
+  },20_000);
+  sdeStartupTimer.unref?.();
+  sdePeriodicTimer=setInterval(()=>void refreshSdeCatalog(),SDE_REFRESH_MS);
+  sdePeriodicTimer.unref?.();
+}
+function sdeRouteError(res,error){
+  const message=String(error?.message||error||'JLR_SDE_UNAVAILABLE');
+  const unavailable=message.includes('JLR_SDE_UNAVAILABLE');
+  return json(res,unavailable?503:500,{
+    error:unavailable?'JLR_SDE_UNAVAILABLE':'JLR_SDE_FAILED',
+    message:message.slice(0,240),
+    sde:sdeRuntimeStatus(),
+  });
+}
+
 async function voicePackStatus(){
   if(!VOICE_PACK_FILE)return{configured:false,present:false,bytes:0};
   try{
@@ -711,11 +799,17 @@ async function buildSupportAppraisalIntel(body){
   const ranked=[...items].sort((a,b)=>appraisalSelectedValue(b,pricing)-appraisalSelectedValue(a,pricing));
   const candidateRows=[];
   const seenTargets=new Set();
+  let sdeTypesById=new Map();
+  try{
+    const lookup=sdeCatalog.types(ranked.map(row=>row.typeId));
+    sdeTypesById=new Map((lookup.items||[]).map(row=>[Number(row.typeId),row]));
+  }catch{}
   for(const row of ranked){
-    const candidate=appraisalCompressionCandidateName(row.name);
+    const exact=sdeCompressionCandidate(sdeTypesById.get(Number(row.typeId)));
+    const candidate=exact||appraisalCompressionCandidateName(row.name);
     if(!candidate)continue;
-    const targetKey=candidate.targetName.toLowerCase();
-    if(seenTargets.has(targetKey))continue;
+    const targetKey=String(candidate.targetName||'').toLowerCase();
+    if(!targetKey||seenTargets.has(targetKey))continue;
     seenTargets.add(targetKey);
     candidateRows.push({row,candidate});
     if(candidateRows.length>=40)break;
@@ -828,7 +922,7 @@ const server=http.createServer(async(req,res)=>{
     return json(res,200,{
       ok:true,
       service:'jlr-tracker-support',
-      version:'2.2.0',
+      version:'2.3.0',
       sessions:store.size,
       uptimeSeconds:Math.floor((Date.now()-startedAt)/1000),
       persistence:Boolean(STATE_FILE),
@@ -837,6 +931,7 @@ const server=http.createServer(async(req,res)=>{
       appraisalPriceSnapshots:appraisalPriceSnapshots.size,
       appraisalPriceFreshMs:APPRAISAL_PRICE_FRESH_MS,
       appraisalPriceRetainMs:APPRAISAL_PRICE_RETAIN_MS,
+      staticData:sdeRuntimeStatus(),
       ...voice,
     });
   }
@@ -892,6 +987,33 @@ const server=http.createServer(async(req,res)=>{
     scheduleSave();
     return json(res,200,{ok:true,session});
   }
+  if(req.method==='POST'&&url.pathname==='/v1/sde/status'){
+    return json(res,200,sdeRuntimeStatus());
+  }
+  if(req.method==='POST'&&url.pathname==='/v1/sde/resolve'){
+    let body;
+    try{body=await readBody(req,80_000)}
+    catch(error){return json(res,400,{error:String(error?.message||'BAD_REQUEST')})}
+    try{return json(res,200,sdeCatalog.resolveNames(body?.names))}
+    catch(error){return sdeRouteError(res,error)}
+  }
+  if(req.method==='POST'&&url.pathname==='/v1/sde/types'){
+    let body;
+    try{body=await readBody(req,40_000)}
+    catch(error){return json(res,400,{error:String(error?.message||'BAD_REQUEST')})}
+    try{return json(res,200,sdeCatalog.types(body?.typeIds))}
+    catch(error){return sdeRouteError(res,error)}
+  }
+  if(req.method==='POST'&&url.pathname==='/v1/sde/materials'){
+    let body;
+    try{body=await readBody(req,40_000)}
+    catch(error){return json(res,400,{error:String(error?.message||'BAD_REQUEST')})}
+    try{return json(res,200,sdeCatalog.materials(body?.typeIds))}
+    catch(error){return sdeRouteError(res,error)}
+  }
+  if(req.method==='POST'&&url.pathname==='/v1/sde/refresh'){
+    return json(res,200,await refreshSdeCatalog({force:Boolean((await readBody(req,4_000).catch(()=>({})))?.force)}));
+  }
   if(req.method==='POST'&&url.pathname==='/v1/appraisal/prices/get'){
     let body;
     try{body=await readBody(req,40_000)}
@@ -927,6 +1049,7 @@ const server=http.createServer(async(req,res)=>{
 
 server.listen(PORT,'0.0.0.0',()=>{
   console.log('JLR Tracker Support listening on '+PORT);
+  scheduleSdeRefresh();
   setTimeout(()=>ensureVoiceReference().then(ref=>{
     console.log('JLR core voice reference '+(ref.present?'ready':'missing')+' ('+ref.bytes+' bytes)');
   }).catch(error=>console.warn('JLR voice reference warmup deferred:',String(error?.message||error))),1500).unref?.();
@@ -936,6 +1059,8 @@ async function shutdown(){
   try{
     if(saveTimer)clearTimeout(saveTimer);
     if(appraisalPriceSaveTimer)clearTimeout(appraisalPriceSaveTimer);
+    if(sdeStartupTimer)clearTimeout(sdeStartupTimer);
+    if(sdePeriodicTimer)clearInterval(sdePeriodicTimer);
     await Promise.all([saveState(),saveAppraisalPriceSnapshots()]);
   }catch(error){}
   server.close(()=>process.exit(0));
