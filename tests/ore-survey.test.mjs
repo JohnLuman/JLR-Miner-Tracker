@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { parseOreSurvey, oreSurveySummaryText } from '../lib/ore-survey.mjs';
 
 const sample = [
@@ -101,3 +102,12 @@ assert.equal(parseOreSurvey('Ueganite II-Grade').valid,false);
 assert.equal(parseOreSurvey('random clipboard text').valid,false);
 
 console.log('Ore survey parser regression passed');
+
+const server=fs.readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
+assert.match(server,/'spodumain i-grade':\{[^\n]+Tritanium:48000/,'Spodumain I-Grade aliases base output');
+assert.match(server,/'spodumain ii-grade':\{[^\n]+Tritanium:50400/,'Spodumain II-Grade uses current 5% refine output');
+assert.match(server,/'bezdnacine ii-grade':\{[^\n]+Isogen:5040/,'Bezdnacine II-Grade uses current 5% refine output');
+assert.match(server,/'rakovene i-grade':\{[^\n]+Zydrine:200/,'Rakovene I-Grade aliases base refine output');
+assert.match(server,/'talassonite ii-grade':\{[^\n]+Nocxium:1008/,'Talassonite II-Grade uses current 5% refine output');
+assert.match(server,/'mercoxit':\{[^\n]+Morphite:140/,'Mercoxit refine output is covered');
+assert.match(server,/REFINING_MINERALS=.*'Morphite'/,'Morphite receives live Jita mineral pricing');
