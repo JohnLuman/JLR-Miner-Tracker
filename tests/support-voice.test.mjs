@@ -23,8 +23,9 @@ assert.match(support,/text_split_method:'cut2'/,'Support avoids tiny cut5 clause
 assert.match(support,/min_chunk_length:4/,'Support emits small early semantic chunks for lower first-audio latency');
 assert.match(support,/streaming_modes:\[2,3\]/,'Support advertises the streaming modes it actually implements');
 assert.match(support,/VOICE_HEALTH_TIMEOUT_MS/,'Support health probe allows normal CPU response latency');
-assert.match(tracker,/\/api\/voice\/stream\/brain\?text=/,'Adam conversational replies use the browser streaming endpoint');
-assert.match(tracker,/window\.jlrVoiceFirstAudioMs=latency/,'stream playback records true first-audio latency');
+assert.doesNotMatch(tracker,/\/api\/voice\/stream\/brain\?text=/,'live Tracker no longer calls the hosted spoken-voice service');
+assert.match(tracker,/window\.jlrSpeakEvent=async function\(\)\{return false\}/,'live Tracker exposes only a disabled compatibility speak hook');
+assert.match(main,/VOICE_REMOVED/,'main app rejects retired spoken-voice routes even though the isolated support service remains deployable');
 
 
 assert.match(docker,/RVC-Boss\/GPT-SoVITS/,'Support image installs GPT-SoVITS');
@@ -35,4 +36,4 @@ assert.match(start,/api_v2\.py/,'Support starts GPT-SoVITS API');
 assert.match(start,/127\.0\.0\.1/,'GPT-SoVITS binds only inside Support container');
 assert.doesNotMatch(start,/cloudflared|ngrok|tunnel/i,'Support voice does not depend on a PC tunnel');
 
-console.log('Tracker Support hosted voice architecture tests passed.');
+console.log('Tracker Support isolation / live voice removal tests passed.');
