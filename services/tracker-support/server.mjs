@@ -33,8 +33,13 @@ const APPRAISAL_MAIN_TIMEOUT_MS=Math.max(2_000,Number(process.env.TRACKER_SUPPOR
 const APPRAISAL_ESI_TIMEOUT_MS=Math.max(2_000,Number(process.env.TRACKER_SUPPORT_APPRAISAL_ESI_TIMEOUT_MS)||6_000);
 const APPRAISAL_MAX_ITEMS=80;
 const APPRAISAL_HISTORY_LIMIT=10;
+const APPRAISAL_PRICE_FRESH_MS=Math.max(60_000,Number(process.env.TRACKER_SUPPORT_APPRAISAL_PRICE_FRESH_MS)||5*60*1000);
+const APPRAISAL_PRICE_RETAIN_MS=Math.max(APPRAISAL_PRICE_FRESH_MS,Number(process.env.TRACKER_SUPPORT_APPRAISAL_PRICE_RETAIN_MS)||72*60*60*1000);
+const APPRAISAL_PRICE_FILE=String(process.env.TRACKER_SUPPORT_APPRAISAL_PRICE_FILE||path.join(path.dirname(STATE_FILE),'appraisal-price-snapshots.json')).trim();
 const appraisalIntelCache=new Map();
 const appraisalHistoryCache=new Map();
+const appraisalPriceSnapshots=new Map();
+let appraisalPriceSaveTimer=null;
 
 if(SHARED_SECRET.length<24){
   console.error('TRACKER_SUPPORT_SHARED_SECRET must be set to a random value of at least 24 characters.');
@@ -103,6 +108,132 @@ function scheduleSave(){
   },1000);
   saveTimer.unref?.();
 }
+function appraisalPriceSnapshotKey(marketId,variant,typeId){
+  const market=Math.max(1,Math.floor(Number(marketId)||0));
+  const type=Math.max(1,Math.floor(Number(typeId)||0));
+  const mode=String(variant||'immediate').toLowerCase()==='top5percent'?'top5percent':'immediate';
+  return market+':'+mode+':'+type;
+}
+function sanitizeAppraisalPriceSnapshot(input){
+  const marketId=Math.max(1,Math.floor(Number(input?.marketId)||0));
+  const typeId=Math.max(1,Math.floor(Number(input?.typeId)||0));
+  if(!marketId||!typeId)return null;
+  const variant=String(input?.variant||'immediate').toLowerCase()==='top5percent'?'top5percent':'immediate';
+  const fetchedAtRaw=String(input?.fetchedAt||new Date().toISOString());
+  const fetchedAtMs=Date.parse(fetchedAtRaw);
+  if(!Number.isFinite(fetchedAtMs))return null;
+  const nonNegative=value=>Math.max(0,Number(value)||0);
+  return{
+    marketId,
+    marketName:String(input?.marketName||'').trim().slice(0,120),
+    typeId,
+    typeName:String(input?.typeName||'').trim().slice(0,180),
+    variant,
+    buy:nonNegative(input?.buy),
+    split:nonNegative(input?.split),
+    sell:nonNegative(input?.sell),
+    buyOrderCount:Math.max(0,Math.floor(Number(input?.buyOrderCount)||0)),
+    sellOrderCount:Math.max(0,Math.floor(Number(input?.sellOrderCount)||0)),
+    buyVolume:nonNegative(input?.buyVolume),
+    sellVolume:nonNegative(input?.sellVolume),
+    fetchedAt:new Date(fetchedAtMs).toISOString(),
+    source:String(input?.source||'jlr-native-esi').trim().slice(0,40)||'jlr-native-esi',
+  };
+}
+function pruneAppraisalPriceSnapshots(){
+  const cutoff=Date.now()-APPRAISAL_PRICE_RETAIN_MS;
+  for(const [key,row] of appraisalPriceSnapshots){
+    const fetched=Date.parse(row?.fetchedAt||'');
+    if(!Number.isFinite(fetched)||fetched<cutoff)appraisalPriceSnapshots.delete(key);
+  }
+  if(appraisalPriceSnapshots.size<=10_000)return;
+  const rows=[...appraisalPriceSnapshots.entries()].sort((a,b)=>Date.parse(a[1]?.fetchedAt||0)-Date.parse(b[1]?.fetchedAt||0));
+  for(const [key] of rows.slice(0,appraisalPriceSnapshots.size-10_000))appraisalPriceSnapshots.delete(key);
+}
+async function loadAppraisalPriceSnapshots(){
+  if(!APPRAISAL_PRICE_FILE)return;
+  try{
+    const parsed=JSON.parse(await fsp.readFile(APPRAISAL_PRICE_FILE,'utf8'));
+    const rows=Array.isArray(parsed?.snapshots)?parsed.snapshots:[];
+    for(const raw of rows){
+      const row=sanitizeAppraisalPriceSnapshot(raw);
+      if(row)appraisalPriceSnapshots.set(appraisalPriceSnapshotKey(row.marketId,row.variant,row.typeId),row);
+    }
+    pruneAppraisalPriceSnapshots();
+    console.log('Loaded '+appraisalPriceSnapshots.size+' persistent Appraisal price snapshots.');
+  }catch(error){
+    if(error?.code!=='ENOENT')console.warn('Appraisal price snapshot load failed:',String(error?.message||error));
+  }
+}
+async function saveAppraisalPriceSnapshots(){
+  if(!APPRAISAL_PRICE_FILE)return;
+  pruneAppraisalPriceSnapshots();
+  await fsp.mkdir(path.dirname(APPRAISAL_PRICE_FILE),{recursive:true});
+  const tmp=APPRAISAL_PRICE_FILE+'.tmp';
+  const payload={
+    version:1,
+    savedAt:new Date().toISOString(),
+    freshMs:APPRAISAL_PRICE_FRESH_MS,
+    retainMs:APPRAISAL_PRICE_RETAIN_MS,
+    snapshots:[...appraisalPriceSnapshots.values()],
+  };
+  await fsp.writeFile(tmp,JSON.stringify(payload),'utf8');
+  await fsp.rename(tmp,APPRAISAL_PRICE_FILE);
+}
+function scheduleAppraisalPriceSave(){
+  if(!APPRAISAL_PRICE_FILE||appraisalPriceSaveTimer)return;
+  appraisalPriceSaveTimer=setTimeout(()=>{
+    appraisalPriceSaveTimer=null;
+    saveAppraisalPriceSnapshots().catch(error=>console.warn('Appraisal price snapshot save failed:',String(error?.message||error)));
+  },750);
+  appraisalPriceSaveTimer.unref?.();
+}
+function appraisalPriceSnapshotView(row){
+  if(!row)return null;
+  const fetchedMs=Date.parse(row.fetchedAt||'');
+  if(!Number.isFinite(fetchedMs))return null;
+  const ageMs=Math.max(0,Date.now()-fetchedMs);
+  if(ageMs>APPRAISAL_PRICE_RETAIN_MS)return null;
+  return{
+    ...row,
+    ageMs,
+    stale:ageMs>APPRAISAL_PRICE_FRESH_MS,
+    freshMs:APPRAISAL_PRICE_FRESH_MS,
+    retainMs:APPRAISAL_PRICE_RETAIN_MS,
+  };
+}
+function getAppraisalPriceSnapshots(body){
+  pruneAppraisalPriceSnapshots();
+  const marketId=Math.max(1,Math.floor(Number(body?.marketId)||0));
+  const variant=String(body?.variant||'immediate').toLowerCase()==='top5percent'?'top5percent':'immediate';
+  const ids=[...new Set((Array.isArray(body?.typeIds)?body.typeIds:[])
+    .map(value=>Math.max(1,Math.floor(Number(value)||0))).filter(Boolean))].slice(0,250);
+  const snapshots=[];
+  for(const typeId of ids){
+    const row=appraisalPriceSnapshotView(appraisalPriceSnapshots.get(appraisalPriceSnapshotKey(marketId,variant,typeId)));
+    if(row)snapshots.push(row);
+  }
+  return{
+    marketId,variant,
+    freshMs:APPRAISAL_PRICE_FRESH_MS,
+    retainMs:APPRAISAL_PRICE_RETAIN_MS,
+    snapshots,
+  };
+}
+function putAppraisalPriceSnapshots(body){
+  const rows=(Array.isArray(body?.snapshots)?body.snapshots:[]).slice(0,250);
+  let accepted=0;
+  for(const raw of rows){
+    const row=sanitizeAppraisalPriceSnapshot(raw);
+    if(!row)continue;
+    appraisalPriceSnapshots.set(appraisalPriceSnapshotKey(row.marketId,row.variant,row.typeId),row);
+    accepted++;
+  }
+  pruneAppraisalPriceSnapshots();
+  if(accepted)scheduleAppraisalPriceSave();
+  return{ok:true,accepted,total:appraisalPriceSnapshots.size};
+}
+
 function validUserKey(value){
   const key=String(value||'').trim();
   return /^[a-f0-9]{32,64}$/i.test(key)?key:'';
@@ -578,7 +709,7 @@ async function buildSupportAppraisalIntel(body){
   return value;
 }
 
-await loadState();
+await Promise.all([loadState(),loadAppraisalPriceSnapshots()]);
 
 const startedAt=Date.now();
 const server=http.createServer(async(req,res)=>{
@@ -598,6 +729,9 @@ const server=http.createServer(async(req,res)=>{
       persistence:Boolean(STATE_FILE),
       appraisalIntelCacheEntries:appraisalIntelCache.size,
       marketHistoryCacheEntries:appraisalHistoryCache.size,
+      appraisalPriceSnapshots:appraisalPriceSnapshots.size,
+      appraisalPriceFreshMs:APPRAISAL_PRICE_FRESH_MS,
+      appraisalPriceRetainMs:APPRAISAL_PRICE_RETAIN_MS,
       ...voice,
     });
   }
@@ -653,6 +787,18 @@ const server=http.createServer(async(req,res)=>{
     scheduleSave();
     return json(res,200,{ok:true,session});
   }
+  if(req.method==='POST'&&url.pathname==='/v1/appraisal/prices/get'){
+    let body;
+    try{body=await readBody(req,40_000)}
+    catch(error){return json(res,400,{error:String(error?.message||'BAD_REQUEST')})}
+    return json(res,200,getAppraisalPriceSnapshots(body));
+  }
+  if(req.method==='POST'&&url.pathname==='/v1/appraisal/prices/put'){
+    let body;
+    try{body=await readBody(req,180_000)}
+    catch(error){return json(res,400,{error:String(error?.message||'BAD_REQUEST')})}
+    return json(res,200,putAppraisalPriceSnapshots(body));
+  }
   if(req.method==='POST'&&url.pathname==='/v1/appraisal/intel'){
     let body;
     try{body=await readBody(req,220_000)}
@@ -682,7 +828,11 @@ server.listen(PORT,'0.0.0.0',()=>{
 });
 
 async function shutdown(){
-  try{if(saveTimer)clearTimeout(saveTimer);await saveState()}catch(error){}
+  try{
+    if(saveTimer)clearTimeout(saveTimer);
+    if(appraisalPriceSaveTimer)clearTimeout(appraisalPriceSaveTimer);
+    await Promise.all([saveState(),saveAppraisalPriceSnapshots()]);
+  }catch(error){}
   server.close(()=>process.exit(0));
   setTimeout(()=>process.exit(0),3000).unref?.();
 }
