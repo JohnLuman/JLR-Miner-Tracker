@@ -1,7 +1,8 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.145';
-  const CORE_URL='/tracker-core.js?v=2.9.145-cn-routes1';
+  const ALARM_VERSION='2.9.146';
+  const CORE_URL='/tracker-core.js?v=2.9.146-alert60';
+  const SPOKEN_VOICE_DISABLED=true;
 
   let alarmContext=null;
   let alarmSource=null;
@@ -58,7 +59,7 @@
   },15_000);
   window.addEventListener('pagehide',releaseAutoVoice);
 
-  async function warmVoiceRuntime(reason='voice warmup'){
+  async function warmVoiceRuntime(reason='alarm warmup'){
     const context=ensureAlarmContext();
     if(context&&context.state==='suspended'){
       try{await context.resume()}catch(error){}
@@ -68,9 +69,6 @@
       if(fresh&&fresh.state==='suspended'){
         try{await fresh.resume()}catch(error){}
       }
-    }
-    if('speechSynthesis' in window){
-      try{window.speechSynthesis.getVoices()}catch(error){}
     }
     return true;
   }
@@ -216,8 +214,7 @@
     if(context&&context.state==='suspended'){
       try{await context.resume();}catch(error){}
     }
-    if('speechSynthesis' in window)window.speechSynthesis.getVoices();
-    return Boolean((context&&context.state==='running')||('speechSynthesis' in window));
+    return Boolean(context&&context.state==='running');
   }
 
   function preferredFallbackVoice(){
@@ -237,6 +234,7 @@
   }
 
   function playFallbackText(text,generation){
+    if(SPOKEN_VOICE_DISABLED)return false;
     if(generation!==alarmGeneration||!('speechSynthesis' in window))return false;
     try{
       reportVoiceMode('fallback','Browser voice fallback');
@@ -813,6 +811,7 @@
   }
 
   async function speakEvent(type,payload,localFallback){
+    if(SPOKEN_VOICE_DISABLED)return false;
     const fallback=String(localFallback||'Tracker voice notification.');
     const kind=String(type||'');
     if(payload?.automatic&&!autoVoiceAllowed())return false;
@@ -919,7 +918,7 @@
   window.jlrStopFighterAlarm=stopVoiceAlert;
   window.jlrStopVoice=stopVoiceAlert;
   window.jlrUnlockFighterAlarm=unlockAlarm;
-  window.jlrSpeakEvent=speakEvent;
+  window.jlrSpeakEvent=async function(){return false;};
   window.jlrVoiceIsActive=voiceIsActive;
   window.jlrAutoVoiceAllowed=autoVoiceAllowed;
   window.jlrReleaseAutoVoice=releaseAutoVoice;
@@ -946,9 +945,9 @@
   window.addEventListener('pageshow',resumeVoiceRuntime);
   window.addEventListener('online',resumeVoiceRuntime);
 
-  if('speechSynthesis' in window){
-    window.speechSynthesis.onvoiceschanged=function(){window.speechSynthesis.getVoices();};
-  }
+  // Spoken/TTS output is intentionally disabled. The local Heavy Fighter
+  // oscillator alarm remains available through jlrPlayFighterAlarm.
+  try{window.speechSynthesis?.cancel?.()}catch(error){}
   watchTrackerUi();
 
   const core=document.createElement('script');
