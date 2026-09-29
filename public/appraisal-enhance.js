@@ -266,11 +266,15 @@
     const ages=rows.map(itemMarketAge);
     const maxAge=ages.length?Math.max(...ages):num(appraisal.marketData?.maxAgeMs);
     const sources=[...new Set(rows.map(row=>marketSourceLabel(row.marketDataSource)).filter(Boolean))];
+    const staticData=appraisal.staticData&&typeof appraisal.staticData==='object'?appraisal.staticData:{};
+    const staticLabel=Number(staticData.buildNumber)>0
+      ?'CCP SDE '+Number(staticData.buildNumber).toLocaleString()
+      :(staticData.provider==='ccp-esi'?'ESI STATIC FALLBACK':'STATIC CATALOG WARMING');
     host.classList.toggle('jlr-stale',stale.length>0);
     host.innerHTML=
       '<span class="status-pill">'+(stale.length?'● STALE FALLBACK':'● JLR NATIVE')+'</span>'+
       '<strong>'+esc(appraisal.market?.name||'MARKET')+' • '+esc(variantLabel(appraisal.pricingVariant))+'</strong>'+
-      '<small>'+esc(sources.join(' + ')||'CCP ESI')+' • oldest price '+esc(ageText(maxAge))+' ago • '+stale.length+' stale / '+rows.length+' priced</small>';
+      '<small>'+esc(staticLabel)+' • '+esc(sources.join(' + ')||'CCP ESI')+' • oldest price '+esc(ageText(maxAge))+' ago • '+stale.length+' stale / '+rows.length+' priced</small>';
   }
 
   function renderSummary(force){
@@ -497,7 +501,7 @@
       ).join('');
       decisionHtml=
         '<article class="jlr-intel-card jlr-decision-card"><div class="jlr-intel-card-head"><div><span>DECISION ENGINE</span><strong>RAW vs COMPRESSED vs REFINE</strong></div>'+
-        '<small>'+esc((decision.refineRate*100).toFixed(2).replace(/0+$/,'').replace(/\.$/,''))+'% refine • '+esc(modeLabel(appraisalIntel.pricing))+' market basis</small></div>'+
+        '<small>'+esc((decision.refineRate*100).toFixed(2).replace(/0+$/,'').replace(/\.$/,''))+'% refine • '+esc(modeLabel(appraisalIntel.pricing))+' market basis • '+esc(appraisal?.refine?.recipeSource==='ccp-sde'?'CCP SDE recipes':'fallback recipes')+'</small></div>'+
         '<div class="jlr-decision-options">'+cards+'</div>'+
         '<div class="jlr-decision-banner"><span>WINNER</span><strong>'+esc(decision.winnerLabel||'—')+'</strong>'+
         '<small>'+copyCell(decision.winnerValue,shortIsk(decision.winnerValue)+' ISK','winning value')+
