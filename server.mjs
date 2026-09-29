@@ -162,11 +162,6 @@ const WANDERER_MAP_ID = String(process.env.WANDERER_MAP_ID || '').trim();
 const WANDERER_MAP_TOKEN = String(process.env.WANDERER_MAP_TOKEN || '').trim();
 const WANDERER_ROUTE_CACHE_MS = 20 * 1000;
 const TRACKER_ROUTE_ORIGIN = String(process.env.TRACKER_ROUTE_ORIGIN || 'C-N4OD').trim() || 'C-N4OD';
-const TRACKER_TTS_WORKER_URL = String(process.env.TRACKER_SUPPORT_URL || process.env.TRACKER_TTS_WORKER_URL || '').trim().replace(/\/$/,'');
-const TRACKER_TTS_WORKER_TOKEN = String(TRACKER_SUPPORT_SHARED_SECRET || process.env.TRACKER_TTS_WORKER_TOKEN || '').trim();
-const TRACKER_VOICE_CACHE_VERSION = String(process.env.TRACKER_VOICE_CACHE_VERSION || 'v3-speaker-20260922-core-unified').trim() || 'v3-speaker-20260922-core-unified';
-const TRACKER_TTS_TIMEOUT_MS = clamp(process.env.TRACKER_TTS_TIMEOUT_MS,3_000,60_000,20_000);
-const TRACKER_TTS_CACHE_DIR = path.join(DATA_DIR,'tracker-voice-cache');
 const ZKILL_LIFETIME_DAMAGE_CACHE_MS = 24 * 60 * 60 * 1000;
 const ZKILL_LIFETIME_PAGE_GAP_MS = 700;
 const THREAT_CHARACTER_CACHE_MS = 6 * 60 * 60 * 1000;
@@ -410,7 +405,6 @@ let fountainRouteSystemsCache = {at:0,ids:null,promise:null};
 let wandererConnectionsCache = {at:0,data:null,promise:null};
 let trackerRouteOriginCache = {at:0,id:null};
 const trackerLiveSeenKillIds = new Set();
-const trackerVoiceJobs = new Map();
 const trackerBrainAnnouncementMemory = new Map();
 let trackerR2z2State = {
   running:false,
@@ -863,37 +857,6 @@ function trackerSupportInternalAuth(req){
   const expected=Buffer.from(TRACKER_SUPPORT_SHARED_SECRET);
   return supplied.length===expected.length&&crypto.timingSafeEqual(supplied,expected);
 }
-async function trackerCoreVoiceReference(){
-  let names=[];
-  try{names=await fsp.readdir(TRACKER_TTS_CACHE_DIR)}
-  catch{return null}
-  const candidates=[];
-  for(const name of names.filter(name=>name.endsWith('.json')).slice(-2500)){
-    try{
-      const meta=JSON.parse(await fsp.readFile(path.join(TRACKER_TTS_CACHE_DIR,name),'utf8'));
-      if(String(meta?.voice||'').toLowerCase()!=='core')continue;
-      if(!String(meta?.mime||'').toLowerCase().startsWith('audio/wav'))continue;
-      const transcript=String(meta?.text||'').replace(/\s+/g,' ').trim();
-      if(transcript.length<24||transcript.length>220)continue;
-      const stem=name.slice(0,-5);
-      const audioPath=path.join(TRACKER_TTS_CACHE_DIR,stem+'.audio');
-      const st=await fsp.stat(audioPath);
-      if(!st.isFile()||st.size<100_000||st.size>2_000_000)continue;
-      candidates.push({
-        audioPath,
-        bytes:st.size,
-        transcript,
-        createdMs:Date.parse(meta?.createdAt||'')||st.mtimeMs||0,
-      });
-    }catch{}
-  }
-  candidates.sort((a,b)=>b.createdMs-a.createdMs);
-  const pick=candidates[0]||null;
-  if(!pick)return null;
-  return{...pick,audio:await fsp.readFile(pick.audioPath)};
-}
-
-
 function companionText(value,max=120){
   return String(value||'').replace(/[\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim().slice(0,max);
 }
@@ -3489,7 +3452,7 @@ async function scoutLocationSnapshot(ch,user=null,activity=null){
     characterName:String(ch.name||'Adam toon'),
     systemId,
     system,
-    spokenSystem:trackerSpokenSystem(system),
+    systemLabel:trackerSystemLabel(system),
     tracked,
     kinds:[t3?'t3':null,ice?'ice':null,a0?'a0':null].filter(Boolean),
     lastScanAt,
@@ -3504,86 +3467,8 @@ async function scoutLocationSnapshot(ch,user=null,activity=null){
 }
 
 
-function trackerSpokenSystem(system){
-  const raw=trackerSpeechSafe(system,48);
-  if(!raw)return 'current system';
-  if(!/^[A-Z0-9]+(?:-[A-Z0-9]+)+$/.test(raw))return raw;
-
-  // Spell EVE system codes naturally and use hyphens as short pauses.
-  // C-N4OD -> "see, en four oh dee"
-  const letters={
-    A:'ay',B:'bee',C:'see',D:'dee',E:'ee',F:'eff',G:'gee',H:'aitch',
-    I:'eye',J:'jay',K:'kay',L:'el',M:'em',N:'en',O:'oh',P:'pee',
-    Q:'queue',R:'are',S:'ess',T:'tee',U:'you',V:'vee',W:'double you',
-    X:'ex',Y:'why',Z:'zee',
-  };
-  const digits={
-    '0':'oh','1':'one','2':'two','3':'three','4':'four',
-    '5':'five','6':'six','7':'seven','8':'eight','9':'nine',
-  };
-  return raw
-    .split('-')
-    .map(part=>[...part].map(ch=>digits[ch]||letters[ch]||ch).join(' '))
-    .join(', ');
-}
-
-
-
-function trackerSpeechCleanup(text){
-  let clean=String(text||'')
-    .replace(/[—–]+/g,'. ')
-    .replace(/;/g,'. ')
-    .replace(/m³/gi,'cubic meters')
-    .replace(/\bESI\b/g,'E S I')
-    .replace(/\bEVE\b/g,'Eve')
-    .replace(/\bISK\b/g,'isk')
-    .replace(/\bmetrics\b/gi,'metricks')
-    .replace(/\bmetric\b/gi,'metrick')
-    .replace(/\s+/g,' ')
-    .replace(/\s+([,.!?])/g,'$1')
-    .trim();
-  clean=clean.split(/(?<=[.!?])\s+/).map(sentence=>{
-    const row=sentence.trim();
-    return row.length>115?row.replace(/,\s+/g,'. '):row;
-  }).filter(Boolean).join(' ');
-  return clean.slice(0,600);
-}
-
-function jlrScoutVoiceText(characterName,system){
-  const safeSystem=trackerSpokenSystem(system);
-  const scan=scanActivityPublic()[system]||null;
-  const scanMs=Date.parse(scan?.lastScanAt||'');
-  const parts=[safeSystem+'. Scan update required.'];
-  if(Number.isFinite(scanMs)){
-    const minutes=Math.max(0,Math.floor((Date.now()-scanMs)/60000));
-    if(minutes>=120)parts.push('Last report, '+Math.floor(minutes/60)+' hours ago.');
-    else if(minutes>=60)parts.push('Last report, one hour ago.');
-  }else{
-    parts.push('No confirmed scan.');
-  }
-  return parts.join(' ');
-}
-
-
-function jlrFieldVoiceText(system){
-  const safeSystem=trackerSpokenSystem(system);
-  const scan=scanActivityPublic()[system]||null;
-  const ledger=scan?.ledger||null;
-  const field=state.fields?.[system]||null;
-  const pct=Number(ledger?.depletionPct);
-  const parts=[field?.status==='cleared'
-    ?safeSystem+'. Field cleared. Ten-hour respawn timer running.'
-    :safeSystem+'. Mining detected. Field marked picked.'];
-  if(field?.status==='cleared'&&field.autoClearReason===FIELD_AUTO_CLEAR_REASON){
-    parts.push('Linked mining reached the full site volume after a confirmed scan.');
-  }
-  if(field?.autoReopenedAt)parts.push('Respawn timer cancelled.');
-  if(field?.status!=='cleared'&&Number.isFinite(pct)&&pct>=95){
-    parts.push('Estimated depletion, '+Math.round(pct)+' percent. Fresh scan required.');
-  }else if(field?.status!=='cleared'&&Number.isFinite(pct)&&pct>=80){
-    parts.push('Estimated depletion, '+Math.round(pct)+' percent. Scan recommended.');
-  }
-  return parts.join(' ');
+function trackerSystemLabel(system){
+  return trackerTextSafe(system,48)||'current system';
 }
 
 function trackerBrainPriorityRank(priority){
@@ -3658,7 +3543,7 @@ function trackerBrainWhySystem(system){
   const pct=Number(ledger?.depletionPct);
   const scanMs=Date.parse(scan?.lastScanAt||'');
   const stale=!Number.isFinite(scanMs)||Date.now()-scanMs>=A0_REPORT_TTL;
-  const spoken=trackerSpokenSystem(system);
+  const spoken=trackerSystemLabel(system);
   const facts=[];
   let priority='info';
 
@@ -3792,7 +3677,7 @@ function trackerBrainSnapshot(scans=scanActivityPublic(),debug=miningLedgerDebug
     const pct=Number(ledger?.depletionPct);
     const scanMs=Date.parse(scan?.lastScanAt||'');
     const stale=!Number.isFinite(scanMs)||Date.now()-scanMs>=A0_REPORT_TTL;
-    const spoken=trackerSpokenSystem(system);
+    const spoken=trackerSystemLabel(system);
 
     if(field?.status==='ready'&&rawToday>0&&mined<=0&&stale){
       add({
@@ -3916,7 +3801,7 @@ function trackerBrainBriefing(user,{force=false}={}){
 function trackerBrainPrimaryName(user){
   const primaryId=String(user?.primaryCharacterId||'');
   const primary=primaryId?state.characters?.[primaryId]:null;
-  return trackerSpeechSafe(primary?.name||user?.displayName||'pilot',80)||'pilot';
+  return trackerTextSafe(primary?.name||user?.displayName||'pilot',80)||'pilot';
 }
 
 
@@ -4119,7 +4004,7 @@ async function trackerBrainRouteAnswer(user,raw,options){
     if(!stops.length){const text=prefix+'No tracked Fountain mining systems on that route currently need a scan update.'+caveat;return{handled:true,topic:'route-scans',text,voiceText:text,generatedAt:now(),route:{origin:origin.system,destination,jumps:route.length-1,stops:[]}}}
     const detail=stops.map(row=>row.system+' ('+(row.atDestination?'destination':row.jumpsFromOrigin+' jumps in')+'; '+row.kinds.join('/')+')').join(', ');
     const text=prefix+'Scan stops: '+detail+'. Copy the full Probe Scanner list while you are in each system, then choose that toon and paste it in Fields.'+caveat;
-    const voiceText='On the way to '+trackerSpokenSystem(destination)+', '+stops.map(row=>trackerSpokenSystem(row.system)).join(', ')+' need new scans. Please send a Probe Scanner copy when you arrive.';
+    const voiceText='On the way to '+trackerSystemLabel(destination)+', '+stops.map(row=>trackerSystemLabel(row.system)).join(', ')+' need new scans. Please send a Probe Scanner copy when you arrive.';
     return{handled:true,topic:'route-scans',text,voiceText,generatedAt:now(),route:{origin:origin.system,destination,jumps:route.length-1,stops}};
   }catch(error){console.warn('Tracker Fountain route lookup failed',String(error?.message||error));return{handled:true,topic:'route-error',text:'I could not verify a Fountain gate route from E S I right now. '+String(error?.message||error),voiceText:'I could not verify the Fountain route right now.',generatedAt:now()}}
 }
@@ -4210,7 +4095,7 @@ async function trackerBrainDataAnswer(user,question,options={}){
 }
 
 async function trackerBrainLiveAnswer(user,question,options={}){
-  const raw=trackerSpeechSafe(question,900);
+  const raw=trackerTextSafe(question,900);
   const intent=brainLiveIntent(raw);
   if(intent.kind==='earnings')return trackerBrainHourlyEarnings(user,options.payoutPct,intent.period);
   if(intent.kind==='route')return trackerBrainRouteAnswer(user,raw,options);
@@ -4257,7 +4142,7 @@ async function trackerBrainLiveAnswer(user,question,options={}){
     const text=location.stale
       ?ch.name+' was last seen in '+location.system+' within fifteen minutes. E S I did not return a live location.'
       :ch.name+' is currently in '+location.system+'.';
-    const voiceText=ch.name+(location.stale?' was last seen in ':' is in ')+trackerSpokenSystem(location.system)+(location.stale?'. Live E S I is unavailable.':'.');
+    const voiceText=ch.name+(location.stale?' was last seen in ':' is in ')+trackerSystemLabel(location.system)+(location.stale?'. Live E S I is unavailable.':'.');
     return{handled:true,topic:'toon-location',text,voiceText,generatedAt:now(),location};
   }
 
@@ -4287,7 +4172,7 @@ async function trackerBrainLiveAnswer(user,question,options={}){
   const text='Closest'+qualifier+': '+first.system+'. '+first.jumps+' jump'+(first.jumps===1?'':'s')+' from '+ch.name+' in '+location.system+'.'
     +reason
     +(location.stale?' Location is from the last successful E S I check, not a live response.':'');
-  const voiceText=trackerSpokenSystem(first.system)+' is closest. '+first.jumps+' jump'+(first.jumps===1?'':'s')+'.'
+  const voiceText=trackerSystemLabel(first.system)+' is closest. '+first.jumps+' jump'+(first.jumps===1?'':'s')+'.'
     +(location.stale?' This uses the last E S I location.':'');
   return{handled:true,topic:'nearest-system',text,voiceText,generatedAt:now(),location,nearest:nearest.rows,closest:first,updatesOnly};
 }
@@ -4481,7 +4366,7 @@ function trackerBrainContext(value){
   };
   const surveyInput=input.lastOreSurvey&&typeof input.lastOreSurvey==='object'?input.lastOreSurvey:null;
   const surveyGroups=(Array.isArray(surveyInput?.groups)?surveyInput.groups:[]).slice(0,12).map(group=>({
-    name:trackerSpeechSafe(group?.name,80),
+    name:trackerTextSafe(group?.name,80),
     rocks:finite(group?.rocks),
     volumeM3:finite(group?.volumeM3),
     pricedValueISK:finite(group?.pricedValueISK),
@@ -4490,51 +4375,51 @@ function trackerBrainContext(value){
     nearestMeters:finite(group?.nearestMeters),
   })).filter(group=>group.name);
   return{
-    currentTab:trackerSpeechSafe(input.currentTab,40),
-    workflow:trackerSpeechSafe(input.workflow,60),
-    selectedSystem:trackerSpeechSafe(input.selectedSystem,80),
-    selectedCharacterId:trackerSpeechSafe(input.selectedCharacterId,40),
-    selectedCharacterName:trackerSpeechSafe(input.selectedCharacterName,120),
+    currentTab:trackerTextSafe(input.currentTab,40),
+    workflow:trackerTextSafe(input.workflow,60),
+    selectedSystem:trackerTextSafe(input.selectedSystem,80),
+    selectedCharacterId:trackerTextSafe(input.selectedCharacterId,40),
+    selectedCharacterName:trackerTextSafe(input.selectedCharacterName,120),
     selectedFleetCount:finite(input.selectedFleetCount),
-    selectedMetric:trackerSpeechSafe(input.selectedMetric,60),
-    targetOre:trackerSpeechSafe(input.targetOre,120),
-    historyMetric:trackerSpeechSafe(input.historyMetric,30),
+    selectedMetric:trackerTextSafe(input.selectedMetric,60),
+    targetOre:trackerTextSafe(input.targetOre,120),
+    historyMetric:trackerTextSafe(input.historyMetric,30),
     historyDays:finite(input.historyDays),
-    fieldStatus:trackerSpeechSafe(input.fieldStatus,40),
-    selectedDoctrineItem:trackerSpeechSafe(input.selectedDoctrineItem,120),
+    fieldStatus:trackerTextSafe(input.fieldStatus,40),
+    selectedDoctrineItem:trackerTextSafe(input.selectedDoctrineItem,120),
     performance:{
       latestRate:finite(perf.latestRate),
       previousRate:finite(perf.previousRate),
       targetRate:finite(perf.targetRate),
       activeToons:finite(perf.activeToons),
       sampledToons:finite(perf.sampledToons),
-      sampleAt:trackerSpeechSafe(perf.sampleAt,40),
+      sampleAt:trackerTextSafe(perf.sampleAt,40),
     },
     lastOreSurvey:surveyInput?{
       at:finite(surveyInput.at),
-      system:trackerSpeechSafe(surveyInput.system,80),
+      system:trackerTextSafe(surveyInput.system,80),
       rowCount:finite(surveyInput.rowCount),
       totalVolumeM3:finite(surveyInput.totalVolumeM3),
       pricedValueISK:finite(surveyInput.pricedValueISK),
       unpricedRowCount:finite(surveyInput.unpricedRowCount),
-      pricingBasis:trackerSpeechSafe(surveyInput.pricingBasis,40),
-      sourceFormat:trackerSpeechSafe(surveyInput.sourceFormat,40),
+      pricingBasis:trackerTextSafe(surveyInput.pricingBasis,40),
+      sourceFormat:trackerTextSafe(surveyInput.sourceFormat,40),
       groups:surveyGroups,
     }:null,
     recentActions:(Array.isArray(input.recentActions)?input.recentActions:[]).slice(-8).map(row=>({
-      kind:trackerSpeechSafe(row?.kind,60),
+      kind:trackerTextSafe(row?.kind,60),
       at:finite(row?.at),
-      tab:trackerSpeechSafe(row?.tab,40),
-      system:trackerSpeechSafe(row?.system,80),
-      characterName:trackerSpeechSafe(row?.characterName,120),
-      detail:trackerSpeechSafe(row?.detail,160),
+      tab:trackerTextSafe(row?.tab,40),
+      system:trackerTextSafe(row?.system,80),
+      characterName:trackerTextSafe(row?.characterName,120),
+      detail:trackerTextSafe(row?.detail,160),
     })).filter(row=>row.kind),
   };
 }
 function trackerBrainContextualQuestion(question,currentTab,context){
-  const q=trackerSpeechSafe(question,900);
+  const q=trackerTextSafe(question,900);
   const ctx=trackerBrainContext(context);
-  const tab=trackerSpeechSafe(currentTab||ctx.currentTab,40);
+  const tab=trackerTextSafe(currentTab||ctx.currentTab,40);
   if(!q)return q;
   if(explicitSystemFromQuestion(q))return q;
   const recentScan=ctx.workflow==='scan-update'||ctx.recentActions.some(row=>row.kind==='scan-updated');
@@ -4566,7 +4451,7 @@ function trackerBrainOreSurveyAnswer(question,rawContext){
   const context=trackerBrainContext(rawContext);
   const survey=context.lastOreSurvey;
   if(!survey||!(Number(survey.rowCount)>0))return null;
-  const raw=trackerSpeechSafe(question,900);
+  const raw=trackerTextSafe(question,900);
   const q=raw.toLowerCase().replace(/[^a-z0-9%+\-/. ]+/g,' ').replace(/\s+/g,' ').trim();
   const explicit=/\b(?:ore survey|survey|rocks?|m3|volume|isk|worth|unpriced|priced|price|value)\b/.test(q);
   const followup=context.workflow==='ore-survey'&&/^(?:how much(?: is there| is in it)?|what(?: s| is) (?:there|in it)|which ore(?: is biggest| has the most)?|what ore(?: is there)?|largest|biggest|closest|where is this|what system(?: is this)?|summary|break it down)[\s?.!]*$/.test(q);
@@ -4584,7 +4469,7 @@ function trackerBrainOreSurveyAnswer(question,rawContext){
   const totalVolume=Math.max(0,Number(survey.totalVolumeM3)||0);
   const pricedValue=Math.max(0,Number(survey.pricedValueISK)||0);
   const unpriced=Math.max(0,Number(survey.unpricedRowCount)||0);
-  const system=trackerSpeechSafe(survey.system,80);
+  const system=trackerTextSafe(survey.system,80);
   const groups=Array.isArray(survey.groups)?survey.groups.filter(group=>group?.name):[];
   const volumeLabel=compactMetric(totalVolume)+' m³';
   const payoutBasis=survey.pricingBasis==='jlr-95-refined';
@@ -4616,8 +4501,8 @@ function trackerBrainOreSurveyAnswer(question,rawContext){
   return{
     handled:true,
     topic:'ore-survey-context',
-    text:trackerSpeechSafe(text,1200),
-    voiceText:trackerSpeechSafe(text,600),
+    text:trackerTextSafe(text,1200),
+    voiceText:trackerTextSafe(text,600),
     generatedAt:now(),
     focusSystem:system||undefined,
     oreSurvey:{system:system||null,rowCount,totalVolumeM3:totalVolume,pricedValueISK:pricedValue,unpricedRowCount:unpriced,pricingBasis:survey.pricingBasis||null,sourceFormat:survey.sourceFormat||null},
@@ -4625,7 +4510,7 @@ function trackerBrainOreSurveyAnswer(question,rawContext){
 }
 
 function trackerBrainAnswer(user,question,options={}){
-  const raw=trackerSpeechSafe(question,900);
+  const raw=trackerTextSafe(question,900);
   const q=raw.toLowerCase().replace(/[^a-z0-9%+\-/. ]+/g,' ').replace(/\s+/g,' ').trim();
   const context=trackerBrainContext(options.context);
   const snapshot=trackerBrainSnapshot();
@@ -4634,7 +4519,7 @@ function trackerBrainAnswer(user,question,options={}){
   const appVersion='2.10.0';
 
   const voiceSummary=(text,max=120)=>{
-    const clean=trackerSpeechSafe(text,1200).replace(/\s+/g,' ').trim();
+    const clean=trackerTextSafe(text,1200).replace(/\s+/g,' ').trim();
     if(clean.length<=max)return clean;
     const sentences=clean.split(/(?<=[.!?])\s+/);
     let out='';
@@ -4649,9 +4534,9 @@ function trackerBrainAnswer(user,question,options={}){
     return out||clean;
   };
   const answer=(topic,text,extra={})=>{
-    const safeText=trackerSpeechSafe(text,1200);
+    const safeText=trackerTextSafe(text,1200);
     const requestedVoice=extra&&typeof extra.voiceText==='string'?extra.voiceText:'';
-    const voiceText=trackerSpeechSafe(requestedVoice||voiceSummary(safeText),600)
+    const voiceText=trackerTextSafe(requestedVoice||voiceSummary(safeText),600)
       .replace(/[,;:]+/g,' ')
       .replace(/\s+/g,' ')
       .trim();
@@ -5741,127 +5626,6 @@ function myProfile(user) {
 }
 
 
-const VOSK_RUNTIME_BASE='https://cdn.jsdelivr.net/npm/@lichess-org/vosk-browser@0.0.3/dist/';
-const VOSK_RUNTIME_FILES={
-  '/vendor/vosk/vosk.wasm.js':{name:'vosk.wasm.js',type:'text/javascript; charset=utf-8'},
-  '/vendor/vosk/vosk.worker.js':{name:'vosk.worker.js',type:'text/javascript; charset=utf-8'},
-  '/vendor/vosk/vosk.wasm':{name:'vosk.wasm',type:'application/wasm'},
-  '/vendor/vosk/vosk-0.0.8.js':{name:'__classic__',type:'text/javascript; charset=utf-8'},
-};
-const voskRuntimeCache=new Map();
-const voskRuntimeErrors=new Map();
-
-async function loadVoskRuntimeAsset(spec){
-  if(voskRuntimeCache.has(spec.name))return voskRuntimeCache.get(spec.name);
-  const assetUrl=spec.name==='__classic__'
-    ?'https://cdn.jsdelivr.net/npm/vosk-browser@0.0.8/dist/vosk.js'
-    :VOSK_RUNTIME_BASE+spec.name;
-  const response=await fetch(assetUrl,{
-    cache:'no-store',
-    redirect:'follow',
-    headers:{'User-Agent':ESI_USER_AGENT,'Accept':'*/*'},
-    signal:AbortSignal.timeout(60000),
-  });
-  if(!response.ok)throw new Error('Vosk runtime '+spec.name+' HTTP '+response.status);
-  const body=Buffer.from(await response.arrayBuffer());
-  if(!body.length)throw new Error('Vosk runtime '+spec.name+' was empty');
-  voskRuntimeCache.set(spec.name,body);
-  voskRuntimeErrors.delete(spec.name);
-  return body;
-}
-
-async function serveVoskRuntime(req,res,pathname){
-  if(req.method!=='GET')return false;
-  const spec=VOSK_RUNTIME_FILES[pathname];
-  if(!spec)return false;
-  try{
-    const body=await loadVoskRuntimeAsset(spec);
-    securityHeaders(res);
-    res.writeHead(200,{
-      'Content-Type':spec.type,
-      'Content-Length':body.length,
-      'Cache-Control':'public, max-age=31536000, immutable',
-      'Cross-Origin-Resource-Policy':'same-origin',
-    });
-    res.end(body);
-  }catch(error){
-    const detail=String(error?.message||error||'Vosk runtime unavailable');
-    voskRuntimeErrors.set(spec.name,detail);
-    console.error('Vosk runtime asset failed',spec.name,detail);
-    if(!res.headersSent)text(res,502,'Speech runtime asset unavailable');
-  }
-  return true;
-}
-
-const VOSK_MODEL_PATH='/vendor/vosk/model-en-us-0.15.zip';
-const VOSK_MODEL_UPSTREAMS=[
-  'https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip',
-];
-let voskModelArchive=null;
-let voskModelLoadPromise=null;
-let voskModelSource='';
-let voskModelLoadedAt=null;
-let voskModelLastError='';
-
-async function loadVoskModelArchive(){
-  if(voskModelArchive)return voskModelArchive;
-  if(voskModelLoadPromise)return voskModelLoadPromise;
-  voskModelLoadPromise=(async()=>{
-    let lastError=null;
-    for(const upstreamUrl of VOSK_MODEL_UPSTREAMS){
-      const controller=new AbortController();
-      const timer=setTimeout(()=>controller.abort(),120000);
-      try{
-        const response=await fetch(upstreamUrl,{
-          cache:'no-store',
-          redirect:'follow',
-          headers:{'User-Agent':ESI_USER_AGENT,'Accept':'application/gzip, application/octet-stream;q=0.9, */*;q=0.1'},
-          signal:controller.signal,
-        });
-        if(!response.ok)throw new Error('HTTP '+response.status);
-        const body=Buffer.from(await response.arrayBuffer());
-        if(body.length<10_000_000)throw new Error('archive was unexpectedly small ('+body.length+' bytes)');
-        voskModelArchive=body;
-        voskModelSource=upstreamUrl;
-        voskModelLoadedAt=now();
-        voskModelLastError='';
-        console.log('Tracker speech model cached from '+upstreamUrl+' ('+Math.round(body.length/1024/1024)+' MB)');
-        return body;
-      }catch(error){
-        lastError=error;
-        voskModelLastError=String(error?.message||error||'Unknown model upstream error');
-        console.warn('Tracker speech model upstream failed:',upstreamUrl,voskModelLastError);
-      }finally{
-        clearTimeout(timer);
-      }
-    }
-    throw lastError||new Error('No Tracker speech model upstream was reachable.');
-  })().catch(error=>{
-    voskModelLoadPromise=null;
-    throw error;
-  });
-  return voskModelLoadPromise;
-}
-
-async function serveVoskModel(req,res,pathname){
-  if(req.method!=='GET'||pathname!==VOSK_MODEL_PATH)return false;
-  try{
-    const body=await loadVoskModelArchive();
-    securityHeaders(res);
-    res.writeHead(200,{
-      'Content-Type':'application/zip',
-      'Content-Length':body.length,
-      'Cache-Control':'public, max-age=31536000, immutable',
-      'Cross-Origin-Resource-Policy':'same-origin',
-    });
-    res.end(body);
-  }catch(error){
-    console.error('Tracker speech model route failed',error);
-    if(!res.headersSent)text(res,502,'Tracker speech model is temporarily unavailable');
-  }
-  return true;
-}
-
 async function serveStatic(req,res,pathname) {
   const rel=pathname==='/'?'index.html':pathname.slice(1);const file=path.resolve(PUBLIC_DIR,rel);if(!file.startsWith(path.resolve(PUBLIC_DIR)+path.sep)&&file!==path.join(PUBLIC_DIR,'index.html'))return false;
   try{const st=await fsp.stat(file);if(!st.isFile())return false;const ext=path.extname(file).toLowerCase();const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.gif':'image/gif','.svg':'image/svg+xml','.ico':'image/x-icon'};securityHeaders(res);res.writeHead(200,{'Content-Type':types[ext]||'application/octet-stream','Cache-Control':ext==='.html'?'no-cache':'public, max-age=60'});fs.createReadStream(file).pipe(res);return true}catch{return false}
@@ -6347,276 +6111,10 @@ async function heavyFighterTypeIds(){
   return pending;
 }
 
-function trackerVoiceConfigured(){
-  return Boolean(TRACKER_TTS_WORKER_URL&&TRACKER_TTS_WORKER_TOKEN);
-}
-
-async function trackerVoiceHealth(){
-  const checkedAt=now();
-  if(!trackerVoiceConfigured())return{configured:false,reachable:false,checkedAt,message:'Custom voice worker is not configured.'};
-  const started=Date.now();
-  try{
-    const response=await fetch(`${TRACKER_TTS_WORKER_URL}/health`,{
-      headers:{'Accept':'application/json','User-Agent':`${ESI_USER_AGENT} | JLR Voice Health`},
-      signal:AbortSignal.timeout(5_000),
-    });
-    const latencyMs=Date.now()-started;
-    if(!response.ok)return{configured:true,reachable:false,checkedAt,latencyMs,message:`Voice worker returned HTTP ${response.status}.`};
-    const payload=await response.json().catch(()=>null);
-    const healthy=payload?.ok===true&&payload?.reference_exists!==false;
-    return{
-      configured:true,
-      reachable:healthy,
-      checkedAt,
-      latencyMs,
-      service:trackerSpeechSafe(payload?.service||'JLR Voice Worker',80),
-      workerVersion:trackerSpeechSafe(payload?.version||'',24)||null,
-      streaming:Boolean(payload?.streaming),
-      streamingModes:Array.isArray(payload?.streaming_modes)?payload.streaming_modes.filter(v=>[1,2,3].includes(Number(v))).map(Number):[],
-      stableStreaming:Boolean(payload?.stable_streaming),
-      referenceReady:payload?.reference_exists!==false,
-      referencePack:Boolean(payload?.reference_pack),
-      referencePackVersion:trackerSpeechSafe(payload?.reference_pack_version||'',24)||null,
-      cacheVersion:TRACKER_VOICE_CACHE_VERSION,
-      voiceProfiles:Array.isArray(payload?.voice_profiles)?payload.voice_profiles.map(v=>trackerSpeechSafe(v,24)).filter(Boolean).slice(0,8):[],
-      systemPronunciations:Math.max(0,Number(payload?.system_pronunciations)||0),
-      message:healthy?(payload?.reference_pack?'JLR Voice v3 reference pack and stable streaming are online.':payload?.streaming?'Custom GPT-SoVITS streaming voice is online.':'Custom GPT-SoVITS voice is online; streaming upgrade is available.'):'Voice worker responded but is not ready.',
-    };
-  }catch(err){
-    return{configured:true,reachable:false,checkedAt,latencyMs:Date.now()-started,message:String(err?.message||err||'Voice worker unreachable.').slice(0,160)};
-  }
-}
-
-function trackerSpeechSafe(value,max=80){
+function trackerTextSafe(value,max=80){
   return String(value||'').replace(/[\r\n\t]+/g,' ').replace(/\s+/g,' ').replace(/[^\w .,'&()\-]/g,'').trim().slice(0,max);
 }
 
-function trackerSpokenIsk(value){
-  const n=Math.max(0,Number(value)||0);
-  if(n>=1e12)return (n/1e12).toFixed(n>=1e13?0:1)+' trillion';
-  if(n>=1e9)return (n/1e9).toFixed(n>=1e10?0:1)+' billion';
-  if(n>=1e6)return (n/1e6).toFixed(n>=1e7?0:1)+' million';
-  if(n>=1e3)return Math.round(n/1e3)+' thousand';
-  return Math.round(n).toLocaleString('en-US');
-}
-
-
-
-
-function trackerVoiceText(loss){
-  const fighter=trackerSpeechSafe(loss?.shipTypeName||'Heavy Fighter',64)||'Heavy Fighter';
-  const system=trackerSpokenSystem(loss?.systemName||'an unknown system');
-  const value=Number(loss?.totalValue)||0;
-  const parts=[fighter+' loss. '+system+'.'];
-  if(value>0)parts.push('Estimated value, '+trackerSpokenIsk(value)+' isk.');
-  return parts.join(' ');
-}
-
-function jlrPrimaryCharacterName(user){
-  const primaryId=String(user?.primaryCharacterId||'');
-  const primary=primaryId?state.characters?.[primaryId]:null;
-  return trackerSpeechSafe(primary?.name||user?.displayName||'pilot',80)||'pilot';
-}
-
-function jlrStartupVoiceText(user){
-  const name=jlrPrimaryCharacterName(user);
-  // Keep automatic startup speech short so it cannot monopolize the CPU voice
-  // worker before a manual Adam request arrives. Full status remains available
-  // through the briefing command.
-  return 'Welcome back, '+name+'. Adam is online.';
-}
-
-
-function jlrScanVoiceText(system){
-  const safeSystem=trackerSpokenSystem(system);
-  const definition=SYSTEM_MAP.get(system)||null;
-  const scan=state.scans?.[system]||null;
-  const parts=[safeSystem+'. Scan received.'];
-  if(definition){
-    const ore=trackerSpeechSafe(definition.ore,48)||'T three ore';
-    const detected=scan?.t3?.detected;
-    if(detected===true)parts.push(ore+' confirmed.');
-    else if(detected===false)parts.push(ore+' not detected.');
-  }
-  if(scan?.ice){
-    const seen=Math.max(0,Number(scan.ice.seen)||0);
-    const expected=Math.max(1,Number(scan.ice.expected)||1);
-    parts.push(seen+' of '+expected+' ice fields detected.');
-  }
-  const a0=state.market?.a0Reports?.[system];
-  if(a0)parts.push(a0.detected?'A zero site confirmed.':'No active A zero site detected.');
-  return parts.join(' ');
-}
-
-async function trackerVoiceWorkerAudio(text,cacheKey='tracker',voiceProfile='core',timeoutMs=TRACKER_TTS_TIMEOUT_MS){
-  if(!trackerVoiceConfigured()){
-    const err=new Error('JLR custom voice worker is not configured.');
-    err.code='TTS_NOT_CONFIGURED';
-    throw err;
-  }
-  const cleanText=trackerSpeechCleanup(text);
-  if(!cleanText)throw new Error('Tracker voice text was empty.');
-  // Speaker/reference changes must never reuse audio synthesized by an older voice.
-  // Bump TRACKER_VOICE_CACHE_VERSION (or override it in Railway) whenever the speaker changes.
-  const selectedVoice=['core','scout','alert'].includes(String(voiceProfile||''))?String(voiceProfile):'alert';
-  const versionedCacheKey=`${TRACKER_VOICE_CACHE_VERSION}|${selectedVoice}|${String(cacheKey||'alert')}`;
-  const hash=crypto.createHash('sha256').update(`${versionedCacheKey}|${cleanText}`).digest('hex');
-  const audioPath=path.join(TRACKER_TTS_CACHE_DIR,`${hash}.audio`);
-  const metaPath=path.join(TRACKER_TTS_CACHE_DIR,`${hash}.json`);
-  try{
-    const [bytes,metaRaw]=await Promise.all([fsp.readFile(audioPath),fsp.readFile(metaPath,'utf8')]);
-    const meta=JSON.parse(metaRaw);
-    if(bytes.length&&String(meta?.mime||'').startsWith('audio/'))return{bytes,mime:meta.mime,cached:true,text:cleanText};
-  }catch{}
-  if(trackerVoiceJobs.has(hash))return trackerVoiceJobs.get(hash);
-  const job=(async()=>{
-    await fsp.mkdir(TRACKER_TTS_CACHE_DIR,{recursive:true});
-    const response=await fetch(`${TRACKER_TTS_WORKER_URL}/synthesize`,{
-      method:'POST',
-      headers:{
-        'Authorization':`Bearer ${TRACKER_TTS_WORKER_TOKEN}`,
-        'Content-Type':'application/json',
-        'Accept':'audio/wav, audio/ogg, audio/mpeg, application/octet-stream',
-      },
-      body:JSON.stringify({text:cleanText,cache_key:versionedCacheKey,voice:selectedVoice}),
-      signal:AbortSignal.timeout(clamp(timeoutMs,3_000,120_000,TRACKER_TTS_TIMEOUT_MS)),
-    });
-    if(!response.ok){
-      const detail=(await response.text().catch(()=>'' )).slice(0,300);
-      throw new Error(`JLR voice worker ${response.status}: ${detail||response.statusText}`);
-    }
-    const mime=String(response.headers.get('content-type')||'audio/wav').split(';')[0].trim().toLowerCase();
-    if(!mime.startsWith('audio/'))throw new Error(`JLR voice worker returned ${mime||'an invalid content type'}.`);
-    const bytes=Buffer.from(await response.arrayBuffer());
-    if(!bytes.length||bytes.length>8_000_000)throw new Error(`JLR voice worker returned an invalid audio size (${bytes.length} bytes).`);
-    await Promise.all([
-      fsp.writeFile(audioPath,bytes),
-      fsp.writeFile(metaPath,JSON.stringify({mime,text:cleanText,cacheKey:versionedCacheKey,cacheVersion:TRACKER_VOICE_CACHE_VERSION,voice:selectedVoice,createdAt:now(),bytes:bytes.length}),'utf8'),
-    ]);
-    return{bytes,mime,cached:false,text:cleanText};
-  })().finally(()=>trackerVoiceJobs.delete(hash));
-  trackerVoiceJobs.set(hash,job);
-  return job;
-}
-
-
-async function trackerConversationalVoiceAudio(text,cacheKey='brain'){
-  try{
-    const audio=await trackerVoiceWorkerAudio(text,cacheKey+'-core','core',60_000);
-    return {...audio,voiceProfile:'core'};
-  }catch(error){
-    const err=new Error('JLR core voice failed. '+String(error?.message||error));
-    err.code='JLR_CUSTOM_VOICE_FAILED';
-    throw err;
-  }
-}
-
-async function trackerVoiceForLoss(loss){
-  const killId=String(loss?.killmailId||'unknown');
-  return trackerVoiceWorkerAudio(trackerVoiceText(loss),`kill-${killId}`,'core');
-}
-
-async function trackerVoiceLossById(killId){
-  const id=String(killId||'');
-  let loss=mergeTrackerLosses(heavyFighterTrackerCache.data?.losses).find(row=>String(row?.killmailId||'')===id)||null;
-  if(loss)return loss;
-  const snapshot=await heavyFighterTracker(false);
-  return (snapshot.losses||[]).find(row=>String(row?.killmailId||'')===id)||null;
-}
-
-function sendTrackerAudio(res,audio){
-  res.writeHead(200,{
-    'Content-Type':audio.mime||'audio/wav',
-    'Cache-Control':'private, max-age=86400',
-    'Content-Length':audio.bytes.length,
-    'X-JLR-Voice-Cache':audio.cached?'HIT':'MISS',
-    'X-JLR-Voice-Cache-Version':TRACKER_VOICE_CACHE_VERSION,
-  });
-  res.end(audio.bytes);
-}
-
-async function streamTrackerVoiceToResponse(res,text,cacheKey,{priority='normal',voice='core',streamingMode=3}={}){
-  if(!trackerVoiceConfigured()){
-    const err=new Error('JLR custom voice worker is not configured.');
-    err.code='TTS_NOT_CONFIGURED';
-    throw err;
-  }
-  const cleanText=trackerSpeechCleanup(text);
-  if(!cleanText)throw new Error('Tracker voice text was empty.');
-  const selectedVoice=['core','scout','alert'].includes(String(voice||''))?String(voice):'core';
-  const versionedCacheKey=`${TRACKER_VOICE_CACHE_VERSION}|${selectedVoice}|${String(cacheKey||'stream')}`;
-  const mode=[1,2,3].includes(Number(streamingMode))?Number(streamingMode):3;
-  const workerPayload={
-    text:cleanText,
-    cache_key:versionedCacheKey,
-    voice:selectedVoice,
-    priority:priority==='urgent'?'urgent':'normal',
-    streaming_mode:mode,
-  };
-  let response;
-  try{
-    response=await fetch(`${TRACKER_TTS_WORKER_URL}/synthesize-stream`,{
-      method:'POST',
-      headers:{
-        'Authorization':`Bearer ${TRACKER_TTS_WORKER_TOKEN}`,
-        'Content-Type':'application/json',
-        'Accept':'audio/wav, application/octet-stream',
-      },
-      body:JSON.stringify(workerPayload),
-      signal:AbortSignal.timeout(Math.max(TRACKER_TTS_TIMEOUT_MS,180_000)),
-    });
-  }catch(err){
-    throw new Error(`JLR streaming voice worker unavailable: ${String(err?.message||err)}`);
-  }
-
-  // Seamless migration: old v1 workers do not have /synthesize-stream yet.
-  // Fall back to the proven buffered endpoint until the PC worker is upgraded.
-  if(response.status===404||response.status===405){
-    return sendTrackerAudio(res,await trackerVoiceWorkerAudio(cleanText,cacheKey,selectedVoice));
-  }
-  if(!response.ok){
-    const detail=(await response.text().catch(()=>'' )).slice(0,300);
-    throw new Error(`JLR streaming voice worker ${response.status}: ${detail||response.statusText}`);
-  }
-  const mime=String(response.headers.get('content-type')||'audio/wav').split(';')[0].trim().toLowerCase();
-  if(!mime.startsWith('audio/'))throw new Error(`JLR streaming voice worker returned ${mime||'an invalid content type'}.`);
-  if(!response.body)throw new Error('JLR streaming voice worker returned no audio stream.');
-
-  res.writeHead(200,{
-    'Content-Type':mime,
-    'Cache-Control':'private, no-store, no-transform',
-    'Connection':'keep-alive',
-    'X-Accel-Buffering':'no',
-    'X-JLR-Voice-Stream':'1',
-    'X-JLR-Voice-Priority':priority==='urgent'?'urgent':'normal',
-    'X-JLR-Voice-Stream-Mode':String(mode),
-    'X-JLR-Voice-Cache-Version':TRACKER_VOICE_CACHE_VERSION,
-  });
-  res.flushHeaders?.();
-  res.socket?.setNoDelay?.(true);
-
-  const reader=response.body.getReader();
-  let total=0;
-  try{
-    for(;;){
-      const {done,value}=await reader.read();
-      if(done)break;
-      if(!value?.byteLength)continue;
-      total+=value.byteLength;
-      if(total>8_000_000)throw new Error('JLR streaming voice exceeded the maximum audio size.');
-      if(!res.destroyed)res.write(Buffer.from(value));
-    }
-    if(!res.destroyed)res.end();
-  }catch(err){
-    try{await reader.cancel()}catch{}
-    if(res.headersSent){
-      console.warn('JLR voice stream interrupted',String(err?.message||err));
-      if(!res.destroyed)res.end();
-      return;
-    }
-    throw err;
-  }
-}
 function wandererConfigured(){
   return Boolean(WANDERER_MAP_TOKEN && (WANDERER_MAP_SLUG || WANDERER_MAP_ID));
 }
@@ -6975,9 +6473,6 @@ async function processR2z2TrackerPayload(payload,sequence){
   trackerR2z2State.lastHeavyFighterAt=liveLoss.receivedAt;
 
   if(trackerR2z2State.caughtUp){
-    // Do not pre-generate a second copy here. The live streaming request now
-    // fills the worker cache as it speaks, avoiding two GPT-SoVITS jobs fighting
-    // over the user's GPU at the exact moment an urgent alert arrives.
     sendTrackerEvent('loss',liveLoss);
   }
 }
@@ -9032,20 +8527,6 @@ async function warmInitPvpCaches(){
 }
 
 async function routeApi(req,res,url) {
-  if(req.method==='GET'&&url.pathname==='/api/internal/support/voice-reference'){
-    if(!trackerSupportInternalAuth(req))return json(res,401,{error:'SUPPORT_AUTH_REQUIRED'});
-    const ref=await trackerCoreVoiceReference();
-    if(!ref)return json(res,404,{error:'CORE_VOICE_REFERENCE_UNAVAILABLE'});
-    res.writeHead(200,{
-      'Content-Type':'audio/wav',
-      'Content-Length':ref.audio.length,
-      'Cache-Control':'private, no-store',
-      'X-JLR-Reference-Text':encodeURIComponent(ref.transcript).slice(0,1200),
-      'X-JLR-Reference-Lang':'en',
-      'X-JLR-Reference-Voice':'core',
-    });
-    return res.end(ref.audio);
-  }
   if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.10.0',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
@@ -9318,10 +8799,6 @@ async function routeApi(req,res,url) {
   }
 
   const user=requireUser(req,res);if(!user)return;
-  if(url.pathname.startsWith('/api/voice/')||/^\/api\/tracker\/heavy-fighters\/voice(?:\/|$)/.test(url.pathname)){
-    return json(res,410,{error:'VOICE_REMOVED',message:'Spoken voice output has been removed from JLR. The Heavy Fighter alarm tone remains available.'});
-  }
-
   if(req.method==='GET'&&url.pathname==='/api/companion/clipboard/stream'){
     const uid=String(user.id);
     res.writeHead(200,{
@@ -9499,22 +8976,6 @@ async function routeApi(req,res,url) {
     }
     return json(res,200,fleetPerformanceSnapshotForUser(user,body?.characterIds||[]));
   }
-  if(req.method==='GET'&&url.pathname==='/api/tracker/speech/diagnostics'){
-    const voiceWorker=await trackerVoiceHealth().catch(err=>({configured:Boolean(TRACKER_TTS_WORKER_URL),reachable:false,message:String(err?.message||err)}));
-    return json(res,200,{
-      version:'2.10.0',
-      modelCached:Boolean(voskModelArchive),
-      modelBytes:voskModelArchive?.length||0,
-      modelSource:voskModelSource||null,
-      modelLoadedAt:voskModelLoadedAt,
-      modelLoadInFlight:Boolean(voskModelLoadPromise&&!voskModelArchive),
-      modelLastError:voskModelLastError||null,
-      modelPath:VOSK_MODEL_PATH,
-      runtimeCached:[...voskRuntimeCache.keys()],
-      runtimeErrors:Object.fromEntries(voskRuntimeErrors),
-      voiceWorker,
-    });
-  }
   if(req.method==='GET'&&url.pathname==='/api/scout/location'){
     const characterId=String(url.searchParams.get('characterId')||'');
     if(!characterId||!user.characterIds.map(String).includes(characterId))return json(res,404,{error:'CHARACTER_NOT_LINKED',message:'That Adam travel toon is not available on your account.'});
@@ -9618,9 +9079,9 @@ async function routeApi(req,res,url) {
     let body;
     try{body=await readBody(req,8_000)}
     catch(err){return json(res,400,{error:'BAD_BRAIN_QUESTION',message:String(err.message||err)})}
-    const question=trackerSpeechSafe(body?.question,900);
+    const question=trackerTextSafe(body?.question,900);
     if(!question)return json(res,400,{error:'QUESTION_REQUIRED',message:'Ask Adam a question first.'});
-    const currentTab=trackerSpeechSafe(body?.currentTab,40);
+    const currentTab=trackerTextSafe(body?.currentTab,40);
     const context=trackerBrainContext(body?.context);
     context.currentTab=currentTab||context.currentTab;
     const oreContextAnswer=trackerBrainOreSurveyAnswer(question,context);
@@ -9631,23 +9092,23 @@ async function routeApi(req,res,url) {
       currentTab,
       context,
     });
-    const sharedResolved=trackerSpeechSafe(supportResolution?.question,900)||question;
+    const sharedResolved=trackerTextSafe(supportResolution?.question,900)||question;
     const resolvedQuestion=trackerBrainContextualQuestion(sharedResolved,currentTab,context);
     const supportOverride=supportResolution?.answerOverride&&typeof supportResolution.answerOverride==='object'
       ?supportResolution.answerOverride
       :null;
     let answer;
     if(supportOverride?.text){
-      const focusSystem=trackerSpeechSafe(supportOverride.focusSystem,80);
-      const originSystem=trackerSpeechSafe(supportOverride.originSystem,80);
+      const focusSystem=trackerTextSafe(supportOverride.focusSystem,80);
+      const originSystem=trackerTextSafe(supportOverride.originSystem,80);
       const jumps=Number.isFinite(Number(supportOverride.jumps))?Number(supportOverride.jumps):null;
-      let voiceText=trackerSpeechSafe(supportOverride.voiceText||supportOverride.text,1200);
-      if(focusSystem&&voiceText)voiceText=voiceText.split(focusSystem).join(trackerSpokenSystem(focusSystem));
-      if(originSystem&&voiceText)voiceText=voiceText.split(originSystem).join(trackerSpokenSystem(originSystem));
+      let voiceText=trackerTextSafe(supportOverride.voiceText||supportOverride.text,1200);
+      if(focusSystem&&voiceText)voiceText=voiceText.split(focusSystem).join(trackerSystemLabel(focusSystem));
+      if(originSystem&&voiceText)voiceText=voiceText.split(originSystem).join(trackerSystemLabel(originSystem));
       answer={
         handled:true,
-        topic:trackerSpeechSafe(supportOverride.topic,80)||'support-context',
-        text:trackerSpeechSafe(supportOverride.text,1600),
+        topic:trackerTextSafe(supportOverride.topic,80)||'support-context',
+        text:trackerTextSafe(supportOverride.text,1600),
         voiceText,
         generatedAt:now(),
         focusSystem:focusSystem||undefined,
@@ -9705,13 +9166,13 @@ async function routeApi(req,res,url) {
     catch(err){return json(res,400,{error:'BAD_FEEDBACK',message:String(err.message||err)})}
     const rawType=String(body?.type||'');
     const type=['bug','suggestion','speech','data','ui','other'].includes(rawType)?rawType:'suggestion';
-    const title=trackerSpeechSafe(body?.title,120);
-    const message=trackerSpeechSafe(body?.message,2000);
-    const area=trackerSpeechSafe(body?.area,80)||'general';
+    const title=trackerTextSafe(body?.title,120);
+    const message=trackerTextSafe(body?.message,2000);
+    const area=trackerTextSafe(body?.area,80)||'general';
     const rawImpact=String(body?.impact||'normal');
     const impact=['low','normal','high','critical'].includes(rawImpact)?rawImpact:'normal';
-    const steps=trackerSpeechSafe(body?.steps,1500);
-    const expected=trackerSpeechSafe(body?.expected,1000);
+    const steps=trackerTextSafe(body?.steps,1500);
+    const expected=trackerTextSafe(body?.expected,1000);
     if(!message)return json(res,400,{error:'FEEDBACK_REQUIRED',message:'Add some details first.'});
     state.feedback ||= [];
     const row={
@@ -9733,142 +9194,6 @@ async function routeApi(req,res,url) {
     state.feedback=state.feedback.slice(0,500);
     await save();
     return json(res,201,{ok:true,id:row.id,at:row.at,status:row.status});
-  }
-  if(req.method==='GET'&&url.pathname==='/api/voice/stream/briefing'){
-    const force=url.searchParams.get('force')==='1';
-    const briefing=trackerBrainBriefing(user,{force});
-    try{return await streamTrackerVoiceToResponse(res,briefing.text,`brain-briefing-${crypto.createHash('sha1').update(briefing.text).digest('hex').slice(0,16)}`,{priority:'normal',voice:'core'})}
-    catch(err){
-      console.warn('Tracker Brain briefing voice failed',String(err.message||err));
-      return json(res,503,{error:err?.code||'JLR_VOICE_UNAVAILABLE',message:String(err.message||err)});
-    }
-  }
-  if(req.method==='POST'&&url.pathname==='/api/voice/stream/brain'){
-    if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
-    let body;
-    try{body=await readBody(req,16_000)}
-    catch(err){return json(res,400,{error:'BAD_VOICE_REQUEST',message:String(err.message||err)})}
-    const voiceText=trackerSpeechSafe(body?.text,1200);
-    if(!voiceText)return json(res,400,{error:'VOICE_TEXT_REQUIRED',message:'Tracker voice text was empty.'});
-    const cacheKey='brain-'+crypto.createHash('sha1').update(voiceText).digest('hex').slice(0,20);
-    try{
-      return await streamTrackerVoiceToResponse(res,voiceText,cacheKey,{priority:'normal',voice:'core',streamingMode:3});
-    }catch(err){
-      console.warn('Tracker conversational custom voice failed',String(err.message||err));
-      return json(res,503,{error:err?.code||'JLR_CUSTOM_VOICE_UNAVAILABLE',message:String(err.message||err)});
-    }
-  }
-  if(req.method==='GET'&&url.pathname==='/api/voice/stream/brain'){
-    const voiceText=trackerSpeechSafe(url.searchParams.get('text'),600);
-    if(!voiceText)return json(res,400,{error:'VOICE_TEXT_REQUIRED',message:'Tracker voice text was empty.'});
-    const cacheKey='brain-live-'+crypto.createHash('sha1').update(voiceText).digest('hex').slice(0,20);
-    try{
-      return await streamTrackerVoiceToResponse(res,voiceText,cacheKey,{priority:'normal',voice:'core',streamingMode:3});
-    }catch(err){
-      console.warn('Tracker conversational live voice failed',String(err.message||err));
-      return json(res,503,{error:err?.code||'JLR_CUSTOM_VOICE_UNAVAILABLE',message:String(err.message||err)});
-    }
-  }
-  if(req.method==='GET'&&url.pathname==='/api/voice/stream/why'){
-    const system=String(url.searchParams.get('system')||'').trim();
-    const explanation=trackerBrainWhySystem(system);
-    if(!explanation)return json(res,404,{error:'UNTRACKED_SYSTEM',message:'That system is not a tracked T3 field.'});
-    try{return await streamTrackerVoiceToResponse(res,explanation.voice,`brain-why-${system}-${crypto.createHash('sha1').update(explanation.voice).digest('hex').slice(0,16)}`,{priority:'normal',voice:'core'})}
-    catch(err){
-      console.warn('Tracker Brain why voice failed',system,String(err.message||err));
-      return json(res,503,{error:err?.code||'JLR_VOICE_UNAVAILABLE',message:String(err.message||err)});
-    }
-  }
-  if(req.method==='GET'&&url.pathname==='/api/voice/stream/scout'){
-    const system=String(url.searchParams.get('system')||'').trim();
-    const characterId=String(url.searchParams.get('characterId')||'').trim();
-    const scout=characterId&&user.characterIds.map(String).includes(characterId)?state.characters[characterId]:null;
-    if(!system||(!SYSTEM_MAP.has(system)&&!(state.market?.iceFields||[]).some(row=>row.system===system)&&!(state.market?.a0Fields||[]).some(row=>row.system===system)&&!state.market?.a0Reports?.[system])){
-      return json(res,400,{error:'UNTRACKED_SYSTEM',message:'That system is not on a JLR mining board.'});
-    }
-    if(!scout)return json(res,404,{error:'SCOUT_CHARACTER_REQUIRED',message:'An Adam travel toon is required for this announcement.'});
-    const scan=scanActivityPublic()[system]||null;
-    const scanMs=Date.parse(scan?.lastScanAt||'');
-    const due=!Number.isFinite(scanMs)||Date.now()-scanMs>=A0_REPORT_TTL||Boolean(scan?.ledger?.needsScan||scan?.ledger?.likelyDepleted);
-    if(!due)return json(res,409,{error:'SCAN_NOT_DUE',message:'This system does not currently require a scan update.'});
-    const voiceText=jlrScoutVoiceText(scout.name,system);
-    try{return await streamTrackerVoiceToResponse(res,voiceText,`scout-${system}-${Math.floor(Date.now()/900000)}`,{priority:'normal',voice:'core'})}
-    catch(err){
-      console.warn('JLR Adam travel announcement failed',system,String(err.message||err));
-      return json(res,503,{error:err?.code||'JLR_VOICE_UNAVAILABLE',message:String(err.message||err)});
-    }
-  }
-  if(req.method==='GET'&&url.pathname==='/api/voice/stream/field'){
-    const system=String(url.searchParams.get('system')||'').trim();
-    if(!system||!SYSTEM_MAP.has(system)){
-      return json(res,400,{error:'UNTRACKED_SYSTEM',message:'That system is not a tracked T3 field.'});
-    }
-    const voiceText=jlrFieldVoiceText(system);
-    const stamp=state.esi.fieldInference?.[system]?.lastLedgerAt||state.esi.fieldInference?.[system]?.seededAt||state.fields?.[system]?.updatedAt||now();
-    try{return await streamTrackerVoiceToResponse(res,voiceText,`field-${system}-${stamp}`,{priority:'normal',voice:'core'})}
-    catch(err){
-      console.warn('JLR field voice stream failed',system,String(err.message||err));
-      return json(res,503,{error:err?.code||'JLR_VOICE_UNAVAILABLE',message:String(err.message||err)});
-    }
-  }
-  if(req.method==='GET'&&url.pathname==='/api/voice/stream/startup'){
-    const voiceText=jlrStartupVoiceText(user);
-    try{return await streamTrackerVoiceToResponse(res,voiceText,`startup-${crypto.createHash('sha1').update(voiceText).digest('hex').slice(0,16)}`,{priority:'normal',voice:'core'})}
-    catch(err){
-      console.warn('JLR startup voice stream failed',String(err.message||err));
-      return json(res,503,{error:err?.code||'JLR_VOICE_UNAVAILABLE',message:String(err.message||err)});
-    }
-  }
-  if(req.method==='GET'&&url.pathname==='/api/voice/stream/scan'){
-    const system=String(url.searchParams.get('system')||'').trim();
-    const scanAt=Date.parse(state.scans?.[system]?.lastScanAt||state.market?.a0Reports?.[system]?.lastCheckedAt||'');
-    if(!system||!Number.isFinite(scanAt)||Date.now()-scanAt>10*60*1000){
-      return json(res,409,{error:'RECENT_SCAN_REQUIRED',message:'A recent Probe Scanner update is required before announcing a scan result.'});
-    }
-    const voiceText=jlrScanVoiceText(system);
-    try{return await streamTrackerVoiceToResponse(res,voiceText,`scan-${system}-${new Date(scanAt).toISOString()}`,{priority:'normal',voice:'core'})}
-    catch(err){
-      console.warn('JLR scan voice stream failed',system,String(err.message||err));
-      return json(res,503,{error:err?.code||'JLR_VOICE_UNAVAILABLE',message:String(err.message||err)});
-    }
-  }
-  if(req.method==='POST'&&url.pathname==='/api/voice/event'){
-    if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
-    let body;
-    try{body=await readBody(req,8_000)}
-    catch(err){return json(res,400,{error:'BAD_VOICE_EVENT',message:String(err.message||err)})}
-    const type=String(body?.type||'');
-    let voiceText='',cacheKey='';
-    if(type==='startup'){
-      voiceText=jlrStartupVoiceText(user);
-      cacheKey='startup';
-    }else if(type==='scan'){
-      const system=String(body?.system||'').trim();
-      const scanAt=Date.parse(state.scans?.[system]?.lastScanAt||state.market?.a0Reports?.[system]?.lastCheckedAt||'');
-      if(!system||!Number.isFinite(scanAt)||Date.now()-scanAt>10*60*1000){
-        return json(res,409,{error:'RECENT_SCAN_REQUIRED',message:'A recent Probe Scanner update is required before announcing a scan result.'});
-      }
-      voiceText=jlrScanVoiceText(system);
-      cacheKey=`scan-${system}-${new Date(scanAt).toISOString()}`;
-    }else if(type==='brain'||type==='repeat'){
-      voiceText=trackerSpeechSafe(body?.text,600);
-      if(!voiceText)return json(res,400,{error:'VOICE_TEXT_REQUIRED',message:'Tracker voice text was empty.'});
-      cacheKey=type+'-'+crypto.createHash('sha1').update(voiceText).digest('hex').slice(0,20);
-    }else{
-      return json(res,400,{error:'UNSUPPORTED_VOICE_EVENT',message:'That JLR voice event is not supported.'});
-    }
-    try{
-      if(type==='brain'||type==='repeat'){
-        const audio=await trackerConversationalVoiceAudio(voiceText,cacheKey);
-        res.setHeader('X-JLR-Voice-Profile',audio.voiceProfile||'unknown');
-        return sendTrackerAudio(res,audio);
-      }
-      return sendTrackerAudio(res,await trackerVoiceWorkerAudio(voiceText,cacheKey,'core',TRACKER_TTS_TIMEOUT_MS));
-    }
-    catch(err){
-      console.warn('JLR voice event failed',type,String(err.message||err));
-      return json(res,503,{error:err?.code||'JLR_VOICE_UNAVAILABLE',message:String(err.message||err),fallbackText:voiceText});
-    }
   }
   if(req.method==='GET'&&url.pathname==='/api/ledger-audit'){
     const date=dateUTC();
@@ -9943,46 +9268,6 @@ async function routeApi(req,res,url) {
     }
   }
 
-  if(req.method==='GET'&&url.pathname==='/api/tracker/heavy-fighters/voice/status'){
-    let access;
-    try{access=await trackerAccessForUser(user)}
-    catch(err){return json(res,503,{error:'TRACKER_ACCESS_CHECK_FAILED',message:'Tracker access could not be verified with EVE right now.'})}
-    if(!access.allowed)return json(res,403,{error:'TRACKER_CORPORATION_REQUIRED',message:'Tracker is restricted to the configured corporation.'});
-    return json(res,200,await trackerVoiceHealth());
-  }
-  if(req.method==='GET'&&url.pathname==='/api/tracker/heavy-fighters/voice/test'){
-    let access;
-    try{access=await trackerAccessForUser(user)}
-    catch(err){return json(res,503,{error:'TRACKER_ACCESS_CHECK_FAILED',message:'Tracker access could not be verified with EVE right now.'})}
-    if(!access.allowed)return json(res,403,{error:'TRACKER_CORPORATION_REQUIRED',message:'Tracker is restricted to the configured corporation.'});
-    try{
-      const text='Tracker voice online. Heavy Fighter tracking ready.';
-      if(url.searchParams.get('stream')==='1')return await streamTrackerVoiceToResponse(res,text,'test',{priority:'normal',voice:'core'});
-      const audio=await trackerVoiceWorkerAudio(text,'test','alert');
-      return sendTrackerAudio(res,audio);
-    }catch(err){
-      console.warn('Tracker voice test failed',String(err.message||err));
-      return json(res,503,{error:err?.code||'TRACKER_TTS_UNAVAILABLE',message:String(err.message||err)});
-    }
-  }
-  const trackerVoiceMatch=url.pathname.match(/^\/api\/tracker\/heavy-fighters\/voice\/(\d+)$/);
-  if(req.method==='GET'&&trackerVoiceMatch){
-    let access;
-    try{access=await trackerAccessForUser(user)}
-    catch(err){return json(res,503,{error:'TRACKER_ACCESS_CHECK_FAILED',message:'Tracker access could not be verified with EVE right now.'})}
-    if(!access.allowed)return json(res,403,{error:'TRACKER_CORPORATION_REQUIRED',message:'Tracker is restricted to the configured corporation.'});
-    try{
-      const loss=await trackerVoiceLossById(trackerVoiceMatch[1]);
-      if(!loss)return json(res,404,{error:'TRACKER_LOSS_NOT_FOUND',message:'That Heavy Fighter loss is not available in the current Tracker window.'});
-      if(url.searchParams.get('stream')==='1'){
-        return await streamTrackerVoiceToResponse(res,trackerVoiceText(loss),`kill-${String(loss.killmailId||trackerVoiceMatch[1])}`,{priority:'urgent',voice:'core'});
-      }
-      return sendTrackerAudio(res,await trackerVoiceForLoss(loss));
-    }catch(err){
-      console.warn('Tracker voice generation failed',String(err.message||err));
-      return json(res,503,{error:err?.code||'TRACKER_TTS_UNAVAILABLE',message:String(err.message||err)});
-    }
-  }
   if(req.method==='GET'&&url.pathname==='/api/tracker/heavy-fighters'){
     let access;
     try{access=await trackerAccessForUser(user)}
@@ -10220,18 +9505,10 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&/^\/appraisal\/[A-Za-z0-9_-]{8,}$/.test(url.pathname)){
     if(await serveStatic(req,res,'/appraisal-share.html'))return;
   }
-  if(await serveVoskRuntime(req,res,url.pathname))return;
-  if(await serveVoskModel(req,res,url.pathname))return;
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
 server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.10.0 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
-setTimeout(()=>{
-  Promise.all([
-    loadVoskRuntimeAsset(VOSK_RUNTIME_FILES['/vendor/vosk/vosk-0.0.8.js']),
-    loadVoskModelArchive(),
-  ]).catch(err=>console.warn('Tracker speech runtime warmup deferred:',String(err?.message||err)));
-},1_500).unref();
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
 setInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': tracker-heartbeat\n\n')}catch{trackerLiveClients.delete(res)}}},20_000).unref();
 setInterval(()=>resetExpired(true),15_000).unref();
