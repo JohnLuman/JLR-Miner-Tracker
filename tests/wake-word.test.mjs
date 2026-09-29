@@ -9,8 +9,8 @@ assert.match(app,/const ADAM_VOICE_ENABLED=false/,'Adam voice is hard-disabled i
 assert.match(app,/if\(!ADAM_VOICE_ENABLED\)return null/,'microphone acquisition is gated off');
 assert.doesNotMatch(app,/setTimeout\(\(\)=>startBrainListening\(\),1200\)/,'boot no longer starts microphone recognition');
 assert.doesNotMatch(app,/await refreshBrainMicrophones\(\);\s*startBrainLongUptimeWatchdog\(\)/,'boot no longer enumerates microphones or starts the mic watchdog');
-assert.match(index,/data-tab="brain" type="button">ADAM<\/button>/,'context assistant is presented as Adam');
-assert.doesNotMatch(index,/data-tab="brain" type="button">SCOUT<\/button>/,'Scout is a subsystem instead of the main tab identity');
+assert.match(index,/data-tab="brain"[^>]*type="button">ADAM<\/button>/,'context assistant is presented as Adam');
+assert.doesNotMatch(index,/data-tab="brain"[^>]*type="button">SCOUT<\/button>/,'Scout is a subsystem instead of the main tab identity');
 assert.match(app,/JLR ADAM \/\/ CONTEXT ASSISTANT/,'Adam context workspace is restored');
 assert.match(app,/id="adamQuestion"/,'Adam exposes typed contextual questions');
 assert.match(app,/id="adamAsk"/,'Adam has an explicit ask action');
@@ -25,6 +25,6 @@ assert.match(index,/id="scoutGlobalAlert"/,'Scout has a persistent app-wide upda
 assert.match(app,/ADAM • UPDATE/,'Adam tab highlights when Scout needs a scan update');
 
 assert.equal(pkg.version,'2.10.0','JLR release remains on the current app version');
-assert.match(index,/\/app\.js\?v=2\.10\.1-enterdelete1/,'browser cachebuster loads the current operations-fix build');
+assert.match(index,/\/app\.js\?v=2\.10\.2-navdropdown1/,'browser cachebuster loads the current operations-fix build');
 
 console.log('Adam context / retired-microphone regression tests passed.');
