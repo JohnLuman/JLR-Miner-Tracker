@@ -109,14 +109,14 @@ function scheduleSave(){
   saveTimer.unref?.();
 }
 function appraisalPriceSnapshotKey(marketId,variant,typeId){
-  const market=Math.max(1,Math.floor(Number(marketId)||0));
-  const type=Math.max(1,Math.floor(Number(typeId)||0));
+  const market=Math.floor(Number(marketId)||0);
+  const type=Math.floor(Number(typeId)||0);
   const mode=String(variant||'immediate').toLowerCase()==='top5percent'?'top5percent':'immediate';
   return market+':'+mode+':'+type;
 }
 function sanitizeAppraisalPriceSnapshot(input){
-  const marketId=Math.max(1,Math.floor(Number(input?.marketId)||0));
-  const typeId=Math.max(1,Math.floor(Number(input?.typeId)||0));
+  const marketId=Math.floor(Number(input?.marketId)||0);
+  const typeId=Math.floor(Number(input?.typeId)||0);
   if(!marketId||!typeId)return null;
   const variant=String(input?.variant||'immediate').toLowerCase()==='top5percent'?'top5percent':'immediate';
   const fetchedAtRaw=String(input?.fetchedAt||new Date().toISOString());
@@ -204,10 +204,10 @@ function appraisalPriceSnapshotView(row){
 }
 function getAppraisalPriceSnapshots(body){
   pruneAppraisalPriceSnapshots();
-  const marketId=Math.max(1,Math.floor(Number(body?.marketId)||0));
+  const marketId=Math.floor(Number(body?.marketId)||0);
   const variant=String(body?.variant||'immediate').toLowerCase()==='top5percent'?'top5percent':'immediate';
   const ids=[...new Set((Array.isArray(body?.typeIds)?body.typeIds:[])
-    .map(value=>Math.max(1,Math.floor(Number(value)||0))).filter(Boolean))].slice(0,250);
+    .map(value=>Math.floor(Number(value)||0)).filter(value=>value>0))].slice(0,250);
   const snapshots=[];
   for(const typeId of ids){
     const row=appraisalPriceSnapshotView(appraisalPriceSnapshots.get(appraisalPriceSnapshotKey(marketId,variant,typeId)));
