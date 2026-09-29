@@ -44,8 +44,8 @@ assert.doesNotMatch(tracker,/tracker-intel-valuebar/,'Hot Zones does not render 
 assert.match(trackerCss,/tracker-region-picker/,'region selector is styled');
 
 assert.equal(pkg.version,'2.10.0','Hot Zones-only Tracker release is versioned');
-assert.ok(index.includes('/tracker.css?v=2.9.145'),'browser loads Tracker intel CSS');
-assert.ok(index.includes('/tracker.js?v=2.9.146-alert60'),'browser loads Tracker loader');
+assert.ok(index.includes('/tracker.css?v=2.9.147-closest-init1'),'browser loads Tracker intel CSS');
+assert.ok(index.includes('/tracker.js?v=2.9.147-closest-init1'),'browser loads Tracker loader');
 assert.ok(index.includes('/app.js?v=2.10.2-navdropdown1'),'browser loads matching operations-fix app release');
 assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.146-alert60/,'Tracker core cache is busted');
 
