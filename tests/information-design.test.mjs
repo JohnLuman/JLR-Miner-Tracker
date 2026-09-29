@@ -46,6 +46,9 @@ assert.match(trackerCss,/\.tracker-intel-insight/,'Hot Zones insight treatment i
 assert.match(tracker,/trackerOverviewHtml\(losses,status,sourceUrl\)/,'Tracker pairs Hot Zones with recent Heavy Fighter losses');
 assert.match(trackerCss,/\.tracker-overview-grid\{display:grid;grid-template-columns:/,'paired Tracker intel uses a restrained two-column layout');
 assert.match(trackerCss,/\.fighter-loss-alarm-overlay/,'Heavy Fighter loss alarm has a dedicated visual overlay');
+assert.match(tracker,/const ALERT_MAX_AGE_MS=60\*1000/,'Heavy Fighter alert window is capped at 60 seconds');
+assert.match(tracker,/Date\.parse\(String\(row\?\.receivedAt\|\|''\)\)/,'Heavy Fighter alert freshness is based on JLR receive time');
+assert.match(tracker,/filter\(isAlertFresh\)/,'polling cannot alarm on historical losses that merely look unseen');
 assert.match(index,/id="scoutGlobalAlert"/,'Scout update requests are visible outside the Scout tab');
 assert.doesNotMatch(app,/NO MICROPHONE REQUIRED/,'Scout omits redundant microphone copy');
 assert.match(app,/id="scoutCharacterSelect"/,'Scout has a travel-toon selector');
@@ -57,11 +60,11 @@ assert.match(app,/outside tracked fields/,'ledger diagnostics distinguish payout
 assert.match(app,/fleetUptimeMeter/,'fleet target exposes the uptime assumption visually');
 
 assert.equal(pkg.version,'2.10.0');
-assert.ok(index.includes('/styles.css?v=2.10.0-appraisal1'),'main information-design CSS is cache-busted');
+assert.ok(index.includes('/styles.css?v=2.10.1-opsfix1'),'main information-design CSS is cache-busted');
 assert.ok(index.includes('/tracker.css?v=2.9.145-cn-routes1'),'Tracker information-design CSS is cache-busted');
-assert.ok(index.includes('/app.js?v=2.10.0-appraisal1'),'dashboard JS is cache-busted');
-assert.ok(index.includes('/tracker.js?v=2.9.145-cn-routes1'),'Tracker loader is cache-busted');
-assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.145-cn-routes1/,'Tracker core is cache-busted');
+assert.ok(index.includes('/app.js?v=2.10.1-opsfix1'),'dashboard JS is cache-busted');
+assert.ok(index.includes('/tracker.js?v=2.9.146-alert60'),'Tracker loader is cache-busted');
+assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.146-alert60/,'Tracker core is cache-busted');
 
 assert.match(styles,/\.app\.compact\{width:min\(1120px,calc\(100vw - 12px\)\);max-width:1120px\}/,'Compact app keeps a bounded design width');
 assert.match(styles,/\.app\.expanded\{width:min\(1600px,calc\(100vw - 12px\)\);max-width:1600px\}/,'Expanded app keeps a bounded design width');
