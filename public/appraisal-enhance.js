@@ -277,6 +277,7 @@
     const host=document.getElementById('appraisalSummary');
     if(!host||!appraisal)return;
     const summary=appraisal.summary||{};
+    const marketLabel=String(appraisal.market?.name||'MARKET').toUpperCase();
     const factor=payoutPct/100;
     const payout=selectedSummary(summary)*factor;
     const signature=[appraisal.generatedAt||'',appraisal.pricing||'',payoutPct,summary.buy,summary.split,summary.sell].join('|');
@@ -285,9 +286,9 @@
     host.innerHTML=
       '<article class="appraisal-primary jlr-appraisal-payout-card"><span>'+esc(modeLabel(appraisal.pricing))+' PAYOUT @ '+esc(payoutPct.toFixed(1).replace(/\.0$/,''))+'%</span>'+
         copyStrong(payout,shortIsk(payout)+' ISK','payout','jlr-summary-copy')+'<small>Click any value to copy exact number</small></article>'+
-      '<article><span>JITA BUY</span>'+copyStrong(summary.buy,shortIsk(summary.buy)+' ISK','Jita buy','jlr-summary-copy')+'</article>'+
+      '<article><span>'+esc(marketLabel)+' BUY</span>'+copyStrong(summary.buy,shortIsk(summary.buy)+' ISK','market buy','jlr-summary-copy')+'</article>'+
       '<article><span>SPLIT</span>'+copyStrong(summary.split,shortIsk(summary.split)+' ISK','split','jlr-summary-copy')+'</article>'+
-      '<article><span>JITA SELL</span>'+copyStrong(summary.sell,shortIsk(summary.sell)+' ISK','Jita sell','jlr-summary-copy')+'</article>'+
+      '<article><span>'+esc(marketLabel)+' SELL</span>'+copyStrong(summary.sell,shortIsk(summary.sell)+' ISK','market sell','jlr-summary-copy')+'</article>'+
       '<article><span>VOLUME</span>'+copyStrong(summary.volume,volume(summary.volume),'volume','jlr-summary-copy')+'</article>'+
       '<article><span>ITEM TYPES</span>'+copyStrong(summary.resolvedLines,Number(summary.resolvedLines||0).toLocaleString(),'item types','jlr-summary-copy')+'</article>';
   }
@@ -583,9 +584,9 @@
       title,
       (appraisal.market&&appraisal.market.name||'Jita 4-4')+' • '+variantLabel(appraisal.pricingVariant),
       'Basis: '+modeLabel(appraisal.pricing)+' • Payout: '+payoutPct.toFixed(1).replace(/\.0$/,'')+'%',
-      'Jita Buy: '+exactPretty(summary.buy)+' ISK',
+      (appraisal.market&&appraisal.market.name||'Market')+' Buy: '+exactPretty(summary.buy)+' ISK',
       'Split: '+exactPretty(summary.split)+' ISK',
-      'Jita Sell: '+exactPretty(summary.sell)+' ISK',
+      (appraisal.market&&appraisal.market.name||'Market')+' Sell: '+exactPretty(summary.sell)+' ISK',
       'Payout: '+exactPretty(payout)+' ISK',
       'Volume: '+exactPretty(summary.volume)+' m³',
       'Item Types: '+Number(summary.resolvedLines||0).toLocaleString()
