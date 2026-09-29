@@ -15,6 +15,7 @@ public static class JlrObserverWindow {
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+  [DllImport("user32.dll")] public static extern uint GetClipboardSequenceNumber();
 }
 '@
 
@@ -44,6 +45,10 @@ $script:ObserverCandidates = @{}
 $script:ObserverLastSent = @{}
 $script:ObserverFailureNoticeAt = [datetime]::MinValue
 $script:ObserverFramePath = Join-Path $AppRoot "observer-frame.png"
+$script:ClipboardEnabled = $true
+$script:ClipboardSequence = [uint32]0
+$script:ClipboardLastHash = ""
+$script:ClipboardFailureNoticeAt = [datetime]::MinValue
 
 function Show-JlrBalloon([string]$Title,[string]$Message,[int]$Timeout=5000) {
   if(-not $script:Tray){ return }
@@ -82,7 +87,12 @@ function Load-JlrConfig {
   if(Test-Path $ConfigPath) {
     try { return Get-Content -Raw -Path $ConfigPath | ConvertFrom-Json } catch {}
   }
-  return [pscustomobject]@{ server=$Server; tokenProtected=""; deviceName=$env:COMPUTERNAME; observerEnabled=$true }
+  return [pscustomobject]@{ server=$Server; tokenProtected=""; deviceName=$env:COMPUTERNAME; observerEnabled=$true; clipboardEnabled=$true }
+}
+
+function Update-JlrClipboardUi {
+  if(-not $script:ClipboardItem){ return }
+  $script:ClipboardItem.Text = if($script:ClipboardEnabled){"EVE Clipboard Auto-Import: ON"}else{"EVE Clipboard Auto-Import: OFF"}
 }
 
 function Update-JlrObserverUi {
@@ -136,7 +146,7 @@ function Update-JlrObserverPermission($Reply) {
   }
 }
 
-function Get-JlrForegroundEveCapture {
+function Get-JlrForegroundEveIdentity {
   $handle = [JlrObserverWindow]::GetForegroundWindow()
   if($handle -eq [IntPtr]::Zero){ return $null }
   [uint32]$processId = 0
@@ -147,6 +157,14 @@ function Get-JlrForegroundEveCapture {
   if($process.ProcessName -ne "exefile" -or $title -notmatch "^EVE\s*-\s*(.+)$"){ return $null }
   $characterName = $Matches[1].Trim()
   if([string]::IsNullOrWhiteSpace($characterName)){ return $null }
+  return [pscustomobject]@{ handle=$handle; processId=$processId; characterName=$characterName }
+}
+
+function Get-JlrForegroundEveCapture {
+  $identity = Get-JlrForegroundEveIdentity
+  if(-not $identity){ return $null }
+  $handle = $identity.handle
+  $characterName = [string]$identity.characterName
 
   $rect = New-Object JlrObserverWindow+RECT
   if(-not [JlrObserverWindow]::GetWindowRect($handle,[ref]$rect)){ return $null }
@@ -284,6 +302,71 @@ function Invoke-JlrProbeObserver {
   if(Send-JlrObservedProbeScan ([string]$capture.characterName) $system $payload){
     $script:ObserverLastSent[$key] = $hash
     $script:ObserverCandidates.Remove($key)
+  }
+}
+
+function Send-JlrClipboardImport([string]$CharacterName,[string]$System,[string]$Text) {
+  if([string]::IsNullOrWhiteSpace($script:AuthToken)){ return $false }
+  $body = @{
+    characterName = $CharacterName
+    system = $System
+    copiedAt = (Get-Date).ToUniversalTime().ToString("o")
+    text = $Text
+  } | ConvertTo-Json
+  try {
+    $reply = Invoke-RestMethod -Uri ($script:Config.server.TrimEnd("/") + "/api/companion/clipboard") -Method Post -Headers @{Authorization="Bearer $script:AuthToken"} -ContentType "application/json" -Body $body -TimeoutSec 30
+    if($reply.accepted){
+      $label = [string]$reply.message
+      if([string]::IsNullOrWhiteSpace($label)){ $label = "EVE clipboard imported" }
+      $script:StatusItem.Text = "Status: " + $label
+    }
+    return [bool]$reply.accepted
+  } catch {
+    $statusCode = 0
+    try { $statusCode = [int]$_.Exception.Response.StatusCode } catch {}
+    if($statusCode -eq 401){ Handle-JlrSendFailure $_; return $false }
+    if(((Get-Date) - $script:ClipboardFailureNoticeAt).TotalMinutes -ge 10){
+      $script:ClipboardFailureNoticeAt = Get-Date
+      Show-JlrBalloon "JLR Clipboard Auto-Import" "An EVE clipboard import failed. JLR will keep watching for the next copy."
+    }
+    return $false
+  }
+}
+
+function Invoke-JlrClipboardWatcher {
+  $sequence = [JlrObserverWindow]::GetClipboardSequenceNumber()
+  if($sequence -eq 0 -or $sequence -eq $script:ClipboardSequence){ return }
+
+  # Ignore non-EVE clipboard changes permanently. This is the privacy boundary:
+  # text copied from browsers, Discord, password managers, school work, etc.
+  # is never read or sent to JLR.
+  $identity = Get-JlrForegroundEveIdentity
+  if(-not $identity){
+    $script:ClipboardSequence = $sequence
+    return
+  }
+
+  $text = ""
+  try {
+    if(-not [System.Windows.Forms.Clipboard]::ContainsText()){ $script:ClipboardSequence = $sequence; return }
+    $text = [System.Windows.Forms.Clipboard]::GetText()
+  } catch {
+    # Clipboard can be briefly locked by another process. Retry this sequence
+    # on the next tick while EVE is still foreground.
+    return
+  }
+  $script:ClipboardSequence = $sequence
+  if([string]::IsNullOrWhiteSpace($text)){ return }
+  if($text.Length -gt 250000){ return }
+
+  $hash = Get-JlrObserverHash $text
+  if($hash -eq $script:ClipboardLastHash){ return }
+
+  $characterName = [string]$identity.characterName
+  $snapshot = $script:LatestSnapshots[$characterName]
+  $system = if($snapshot){ [string]$snapshot.system }else{ "" }
+  if(Send-JlrClipboardImport $characterName $system $text){
+    $script:ClipboardLastHash = $hash
   }
 }
 
@@ -536,7 +619,12 @@ if([string]::IsNullOrWhiteSpace([string]$script:Config.server)){ $script:Config.
 if(-not $script:Config.PSObject.Properties["observerEnabled"]){
   $script:Config | Add-Member -NotePropertyName observerEnabled -NotePropertyValue $true
 }
+if(-not $script:Config.PSObject.Properties["clipboardEnabled"]){
+  $script:Config | Add-Member -NotePropertyName clipboardEnabled -NotePropertyValue $true
+}
 $script:ObserverEnabled = [bool]$script:Config.observerEnabled
+$script:ClipboardEnabled = [bool]$script:Config.clipboardEnabled
+$script:ClipboardSequence = [JlrObserverWindow]::GetClipboardSequenceNumber()
 $script:AuthToken = Unprotect-JlrToken ([string]$script:Config.tokenProtected)
 
 $script:Tray = New-Object System.Windows.Forms.NotifyIcon
@@ -551,6 +639,7 @@ $script:StatusItem.Enabled = $false
 $menu.Items.Add($script:StatusItem) | Out-Null
 $openItem = $menu.Items.Add("Open JLR Miner Tracker")
 $pairItem = $menu.Items.Add("Pair / Re-pair")
+$script:ClipboardItem = $menu.Items.Add("EVE Clipboard Auto-Import: checking")
 $script:ObserverItem = $menu.Items.Add("Probe Observer: checking")
 $folderItem = $menu.Items.Add("Open Companion Folder")
 $exitItem = $menu.Items.Add("Exit Companion")
@@ -558,6 +647,12 @@ $script:Tray.ContextMenuStrip = $menu
 
 $openItem.add_Click({ Start-Process $script:Config.server })
 $pairItem.add_Click({ Pair-JlrCompanion | Out-Null })
+$script:ClipboardItem.add_Click({
+  $script:ClipboardEnabled = -not $script:ClipboardEnabled
+  $script:Config.clipboardEnabled = $script:ClipboardEnabled
+  Save-JlrConfig
+  Update-JlrClipboardUi
+})
 $script:ObserverItem.add_Click({
   if(-not $script:ObserverAllowed){ return }
   $script:ObserverEnabled = -not $script:ObserverEnabled
@@ -568,13 +663,14 @@ $script:ObserverItem.add_Click({
 $folderItem.add_Click({ Start-Process explorer.exe $AppRoot })
 $exitItem.add_Click({ $script:ExitRequested = $true })
 $script:Tray.add_DoubleClick({ Start-Process $script:Config.server })
+Update-JlrClipboardUi
 Update-JlrObserverUi
 
 if([string]::IsNullOrWhiteSpace($script:AuthToken)){
   Pair-JlrCompanion | Out-Null
 }
 
-Show-JlrBalloon "JLR Tracker Companion" "Running in the Windows tray. Watching EVE Local logs for linked toon movement."
+Show-JlrBalloon "JLR Tracker Companion" "Running in the Windows tray. Watching EVE movement and EVE-only clipboard copies for Adam."
 
 try {
   while(-not $script:ExitRequested){
@@ -601,6 +697,12 @@ try {
     }
     for($i=0;$i -lt 20 -and -not $script:ExitRequested;$i++){
       [System.Windows.Forms.Application]::DoEvents()
+      if($script:ClipboardEnabled){
+        try { Invoke-JlrClipboardWatcher } catch {}
+      } else {
+        # Keep sequence current while disabled so enabling does not import an old copy.
+        $script:ClipboardSequence = [JlrObserverWindow]::GetClipboardSequenceNumber()
+      }
       Start-Sleep -Milliseconds 100
     }
   }
