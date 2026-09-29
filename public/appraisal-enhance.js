@@ -125,7 +125,7 @@
         bar.id='jlrAppraisalPayoutBar';
         bar.className='jlr-appraisal-payout-bar';
         bar.innerHTML=
-          '<div class="jlr-payout-copy"><span>PAYOUT %</span><strong>JANICE-STYLE VALUE MODIFIER</strong><small>Applies to the selected Buy / Split / Sell value. Raw market prices stay unchanged.</small></div>'+
+          '<div class="jlr-payout-copy"><span>PAYOUT %</span><strong>JLR NATIVE VALUE MODIFIER</strong><small>Applies to the selected Buy / Split / Sell value. Raw market prices stay unchanged.</small></div>'+
           '<div class="jlr-payout-presets" aria-label="Payout percentage presets">'+
             '<button type="button" data-jlr-payout="100">100%</button>'+
             '<button type="button" data-jlr-payout="95">95%</button>'+
