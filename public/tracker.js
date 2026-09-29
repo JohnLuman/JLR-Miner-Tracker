@@ -1,7 +1,7 @@
 'use strict';
 (function(){
   const ALARM_VERSION='2.9.146';
-  const CORE_URL='/tracker-core.js?v=2.9.146-alert60';
+  const CORE_URL='/tracker-core.js?v=2.9.147-alarmonly';
 
   let alarmContext=null;
   let alarmNodes=[];
@@ -175,7 +175,6 @@
 
   function alarmRuntimeStatus(){
     return{
-      spokenVoice:false,
       alarmVersion:ALARM_VERSION,
       audioContext:alarmContext?.state||'none',
       alarmActive:Boolean(alarmTimer||alarmNodes.length),
