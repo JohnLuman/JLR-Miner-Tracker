@@ -12,7 +12,7 @@
   let alarmLeaseKey='';
 
   function claimAlarmLease(){
-    const account=String(window.jlrVoiceAccountId||'global').trim()||'global';
+    const account=String(window.jlrAccountId||'global').trim()||'global';
     const key='jlrHeavyFighterAlarmOwner:'+account;
     const now=Date.now();
     try{
@@ -85,7 +85,7 @@
       const system=String(loss?.systemName||'').trim();
       const value=Math.max(0,Number(loss?.totalValue)||0);
       detail.textContent=loss?.test
-        ?'Dedicated local two-tone alarm • no spoken voice'
+        ?'Dedicated local two-tone alarm'
         :(system||'Unknown system')+(value?' • '+Math.round(value).toLocaleString()+' ISK':'');
     }
     el.classList.remove('hidden');
@@ -205,23 +205,11 @@
     relabel();
   }
 
-  // Alarm-only compatibility surface. Spoken voice output is intentionally
-  // unavailable and cannot fall back to browser speech or a remote TTS worker.
-  window.jlrVoiceMode='disabled';
-  window.jlrVoiceProfile='disabled';
-  window.jlrVoiceTransport='none';
-  window.jlrVoiceLastError='';
+  // Heavy Fighter alert surface: local alarm only.
   window.jlrPlayFighterAlarm=playFighterAlarm;
   window.jlrStopFighterAlarm=stopFighterAlarm;
-  window.jlrStopVoice=stopFighterAlarm;
   window.jlrUnlockFighterAlarm=unlockAlarm;
-  window.jlrSpeakEvent=async function(){return false};
-  window.jlrVoiceIsActive=function(){return false};
-  window.jlrAutoVoiceAllowed=function(){return false};
-  window.jlrReleaseAutoVoice=releaseAlarmLease;
-  window.jlrWarmVoice=unlockAlarm;
-  window.jlrRecoverVoice=async function(){return true};
-  window.jlrVoiceRuntimeStatus=alarmRuntimeStatus;
+  window.jlrFighterAlarmRuntimeStatus=alarmRuntimeStatus;
 
   watchTrackerUi();
 
