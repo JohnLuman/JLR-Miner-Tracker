@@ -928,6 +928,14 @@ function effectiveJbvPerM3(oreName) {
   if(Number.isFinite(live)&&live>0)return live;
   return Number(ORES.find(o=>o.name===oreName)?.jbvPerM3||0);
 }
+function oreSurveyFallbackPricePerM3(oreName) {
+  const normalized=String(oreName||'').trim().toLowerCase();
+  if(!normalized)return null;
+  const marketName=MARKET_ORE_NAMES.find(name=>String(name).toLowerCase()===normalized);
+  if(!marketName)return null;
+  const value=Number(effectiveJbvPerM3(marketName));
+  return Number.isFinite(value)&&value>0?value:null;
+}
 function effectiveOres() {
   return ORES.map(o=>{
     const market=state.market?.prices?.[o.name]||null;
@@ -8915,7 +8923,9 @@ async function routeApi(req,res,url) {
     let body;
     try{body=await readBody(req,128_000)}
     catch(err){return json(res,400,{error:'BAD_ORE_SURVEY',message:String(err.message||err)})}
-    const survey=parseOreSurvey(String(body?.text||'').slice(0,100_000));
+    const survey=parseOreSurvey(String(body?.text||'').slice(0,100_000),{
+      pricePerM3ForName:oreSurveyFallbackPricePerM3,
+    });
     if(!survey.valid)return json(res,400,{error:'ORE_SURVEY_NOT_RECOGNIZED',message:'Adam could not recognize ore survey rows in that paste.'});
     return json(res,200,{...survey,text:oreSurveySummaryText(survey)});
   }
