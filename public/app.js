@@ -381,6 +381,7 @@
     const text=String(question||'').trim();
     if(!text||adamAskBusy)return;
     const isProbeScan=/(?:^|\n)\s*[A-Z]{3}-\d{3}\s+Cosmic\s+(?:Anomaly|Signature)\b/i.test(text);
+    const isOreSurvey=/(?:^|\n)[^\t\r\n]+\t[\d,]+\t[\d,.]+\s*m(?:3|³)\t(?:-|[\d,.]+\s*ISK)\t[\d,.]+\s*(?:km|m)\s*$/im.test(text);
     const inputs=[$('adamQuestion'),$('adamQuickQuestion')].filter(Boolean);
     const buttons=[$('adamAsk'),$('adamQuickAsk')].filter(Boolean);
     const replies=[$('adamReply'),$('adamQuickReply')].filter(Boolean);
@@ -399,6 +400,19 @@
       reply.textContent='Checking JLR context…';
     }
     try{
+      if(isOreSurvey){
+        const survey=await api('/api/tracker/brain/ore-survey',{
+          method:'POST',
+          body:JSON.stringify({text}),
+        });
+        const answer=String(survey?.text||'Adam read the ore survey.');
+        for(const reply of replies){reply.classList.remove('loading');reply.textContent=answer}
+        for(const input of inputs)input.value='';
+        adamRecordAction('ore-survey',{
+          detail:String(survey?.rowCount||0)+' rocks • '+fmt(survey?.totalVolumeM3||0,'m3')+' m³',
+        });
+        return;
+      }
       if(isProbeScan){
         await analyzeProbeScan(text,{fromAdam:true});
         const scanStatus=$('scanStatus');

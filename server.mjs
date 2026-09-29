@@ -7,6 +7,7 @@ import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { DOCTRINE_SEED_B64 } from './lib/doctrine-seed.mjs';
 import { parseProbeScan, parseA0Scan, parseIceScan, parseWormholeGasScan } from './lib/probe-scan.mjs';
+import { parseOreSurvey, oreSurveySummaryText } from './lib/ore-survey.mjs';
 import { nearestTrackedSystems, needsScanUpdate, actionableLedgerScanWarning, recentlyScannedSystem } from './lib/brain-location.mjs';
 import { addVerifiedSiteMining, autoClearFieldAtCap, FIELD_AUTO_CLEAR_REASON } from './lib/field-auto-clear.mjs';
 import { positiveLedgerDeltas, dueRouteStops, fountainRouteDestination, brainLiveIntent } from './lib/brain-intel.mjs';
@@ -8834,6 +8835,15 @@ async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname==='/api/tracker/brain/briefing'){
     const force=url.searchParams.get('force')==='1';
     return json(res,200,trackerBrainBriefing(user,{force}));
+  }
+  if(req.method==='POST'&&url.pathname==='/api/tracker/brain/ore-survey'){
+    if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
+    let body;
+    try{body=await readBody(req,128_000)}
+    catch(err){return json(res,400,{error:'BAD_ORE_SURVEY',message:String(err.message||err)})}
+    const survey=parseOreSurvey(String(body?.text||'').slice(0,100_000));
+    if(!survey.valid)return json(res,400,{error:'ORE_SURVEY_NOT_RECOGNIZED',message:'Adam could not recognize ore survey rows in that paste.'});
+    return json(res,200,{...survey,text:oreSurveySummaryText(survey)});
   }
   if(req.method==='POST'&&url.pathname==='/api/tracker/brain/ask'){
     if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
