@@ -319,3 +319,74 @@ export function trackerSupportAnswerContext(answer){
     }:null,
   };
 }
+
+
+export function appraisalCompressionCandidateName(value){
+  const name=clean(value,180);
+  if(!name)return null;
+  const compressed=name.match(/^compressed\s+(.+)$/i);
+  if(compressed){
+    const target=clean(compressed[1],180);
+    return target?{sourceName:name,targetName:target,direction:'decompress'}:null;
+  }
+  return{sourceName:name,targetName:'Compressed '+name,direction:'compress'};
+}
+
+export function appraisalSelectedValue(row,mode='split'){
+  const key=String(mode||'split').toLowerCase();
+  const field=key==='buy'?'buyTotal':key==='sell'?'sellTotal':'splitTotal';
+  const value=finite(row?.[field]);
+  return value!==null&&value>0?value:0;
+}
+
+export function appraisalIntelTargets(items,{pricing='split',limit=12}={}){
+  const max=Math.max(1,Math.min(50,Number(limit)||12));
+  return(Array.isArray(items)?items:[])
+    .filter(row=>row&&row.resolved!==false&&Number(row.typeId)>0&&clean(row.name,180))
+    .map(row=>({...row,_selected:appraisalSelectedValue(row,pricing)}))
+    .sort((a,b)=>b._selected-a._selected)
+    .slice(0,max)
+    .map(({_selected,...row})=>row);
+}
+
+function weightedHistoryAverage(rows){
+  let weighted=0,volume=0,simple=0,count=0;
+  for(const row of Array.isArray(rows)?rows:[]){
+    const average=finite(row?.average);
+    if(average===null||average<=0)continue;
+    const dayVolume=Math.max(0,finite(row?.volume)||0);
+    if(dayVolume>0){weighted+=average*dayVolume;volume+=dayVolume}
+    simple+=average;count++;
+  }
+  if(volume>0)return weighted/volume;
+  return count?simple/count:0;
+}
+
+export function summarizeAppraisalMarketHistory(rows){
+  const ordered=(Array.isArray(rows)?rows:[])
+    .filter(row=>row&&clean(row.date,20)&&finite(row.average)!==null)
+    .sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  const recent30=ordered.slice(-30);
+  const recent14=ordered.slice(-14);
+  const recent7=ordered.slice(-7);
+  const previous7=recent14.slice(0,Math.max(0,recent14.length-7));
+  const avg7=weightedHistoryAverage(recent7);
+  const avg30=weightedHistoryAverage(recent30);
+  const prev7=weightedHistoryAverage(previous7);
+  const sum=(list,key)=>list.reduce((total,row)=>total+Math.max(0,finite(row?.[key])||0),0);
+  const latest=ordered[ordered.length-1]||null;
+  return{
+    days:recent30.length,
+    latestDate:latest?clean(latest.date,20):'',
+    latestAverage:latest?Math.max(0,finite(latest.average)||0):0,
+    latestHighest:latest?Math.max(0,finite(latest.highest)||0):0,
+    latestLowest:latest?Math.max(0,finite(latest.lowest)||0):0,
+    avg7,
+    avg30,
+    volume7:sum(recent7,'volume'),
+    volume30:sum(recent30,'volume'),
+    orderCount7:sum(recent7,'order_count'),
+    avgDailyVolume7:recent7.length?sum(recent7,'volume')/recent7.length:0,
+    trend7Pct:prev7>0&&avg7>0?((avg7/prev7)-1)*100:null,
+  };
+}
