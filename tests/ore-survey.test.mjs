@@ -28,6 +28,19 @@ assert.match(text,/Ore survey read: 6 rocks/);
 assert.match(text,/2 rocks have no ISK value/);
 assert.match(text,/Ueganite II-Grade 1\.59 km/);
 
+const fallbackSample='Kylixium\t100\t1,000 m3\t-\t1 km';
+const fallback=parseOreSurvey(fallbackSample,{
+  pricePerM3ForName:name=>name==='Kylixium'?250:null,
+});
+assert.equal(fallback.valid,true);
+assert.equal(fallback.rowCount,1);
+assert.equal(fallback.unpricedRowCount,0);
+assert.equal(fallback.estimatedRowCount,1);
+assert.equal(fallback.estimatedValueISK,250000);
+assert.equal(fallback.pricedValueISK,250000);
+assert.equal(fallback.groups[0].estimatedRows,1);
+assert.match(oreSurveySummaryText(fallback),/estimated from JLR pricing/);
+
 assert.equal(parseOreSurvey('Ueganite II-Grade').valid,false);
 assert.equal(parseOreSurvey('random clipboard text').valid,false);
 
