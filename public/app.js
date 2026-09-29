@@ -550,6 +550,18 @@
   function appraisalVariantLabel(value){
     return String(value||'immediate')==='top5percent'?'TOP 5% AVG':'IMMEDIATE';
   }
+  async function copyAppraisalIsk(value,label='Appraisal price'){
+    const amount=Math.max(0,Number(value)||0);
+    const text=amount.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+' ISK';
+    try{
+      await navigator.clipboard.writeText(text);
+      toast(label+' copied: '+text);
+      return true;
+    }catch(error){
+      toast('Clipboard unavailable.');
+      return false;
+    }
+  }
   function appraisalRefineRatePct(){
     const refine=appraisalData?.refine||{};
     const fallback=Math.max(0,Math.min(1,Number(refine.selectedRate??refine.defaultRate??0)||0))*100;
@@ -585,7 +597,7 @@
     const deltaLabel=(delta>=0?'+':'−')+appraisalIsk(Math.abs(delta))+' ISK';
     const deltaClass=delta>=0?'positive':'negative';
     summary.innerHTML=`
-      <article class="appraisal-refine-primary"><span>REFINED BUY @ ${ratePct.toFixed(2)}%</span><strong>${appraisalIsk(refinedValue)} ISK</strong><small>Jita mineral buy estimate</small></article>
+      <article class="appraisal-refine-primary appraisal-copy-value" role="button" tabindex="0" data-copy-isk="${refinedValue}" data-copy-label="Refined value" title="Click to copy the full refined ISK value"><span>REFINED BUY @ ${ratePct.toFixed(2)}%</span><strong>${appraisalIsk(refinedValue)} ISK</strong><small>Jita mineral buy estimate • click to copy</small></article>
       <article><span>RAW ORE BUY</span><strong>${appraisalIsk(rawBuy)} ISK</strong><small>recognized ore lines only</small></article>
       <article class="${deltaClass}"><span>REFINE DIFFERENCE</span><strong>${deltaLabel}</strong><small>refined − raw buy</small></article>
       <article><span>REFINABLE</span><strong>${lines.toLocaleString()} LINE${lines===1?'':'S'}</strong><small>${Math.max(0,Number(refine.recognizedUnits)||0).toLocaleString()} units</small></article>`;
@@ -632,7 +644,7 @@
     const s=appraisalData.summary||{};
     const selected=appraisalModeLabel(appraisalData.pricing);
     if(summary)summary.innerHTML=`
-      <article class="appraisal-primary"><span>${esc(selected)} APPRAISAL</span><strong>${appraisalIsk(s.value)} ISK</strong></article>
+      <article class="appraisal-primary appraisal-copy-value" role="button" tabindex="0" data-copy-isk="${Number(s.value)||0}" data-copy-label="${esc(selected)} appraisal" title="Click to copy the full appraisal ISK value"><span>${esc(selected)} APPRAISAL</span><strong>${appraisalIsk(s.value)} ISK</strong><small>CLICK TO COPY PRICE</small></article>
       <article><span>JITA BUY</span><strong>${appraisalIsk(s.buy)} ISK</strong></article>
       <article><span>SPLIT</span><strong>${appraisalIsk(s.split)} ISK</strong></article>
       <article><span>JITA SELL</span><strong>${appraisalIsk(s.sell)} ISK</strong></article>
@@ -1762,6 +1774,24 @@
       void calculateAppraisal();
     });
     $('appraisalShare')?.addEventListener('click',()=>void shareAppraisal());
+    for(const id of ['appraisalSummary','appraisalRefineSummary']){
+      $(id)?.addEventListener('click',event=>{
+        const card=event.target?.closest?.('.appraisal-copy-value');
+        if(!card)return;
+        void copyAppraisalIsk(card.dataset.copyIsk,card.dataset.copyLabel||'Appraisal price').then(ok=>{
+          if(!ok)return;
+          card.classList.add('copied');
+          setTimeout(()=>card.classList.remove('copied'),900);
+        });
+      });
+      $(id)?.addEventListener('keydown',event=>{
+        if(!['Enter',' '].includes(event.key))return;
+        const card=event.target?.closest?.('.appraisal-copy-value');
+        if(!card)return;
+        event.preventDefault();
+        card.click();
+      });
+    }
     $('appraisalRefineRate')?.addEventListener('input',()=>{
       appraisalRefineRateTouched=true;
       renderAppraisalRefine();
