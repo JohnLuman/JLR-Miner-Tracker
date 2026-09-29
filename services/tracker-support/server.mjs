@@ -990,6 +990,13 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==='POST'&&url.pathname==='/v1/sde/status'){
     return json(res,200,sdeRuntimeStatus());
   }
+  if(req.method==='POST'&&url.pathname==='/v1/sde/match'){
+    let body;
+    try{body=await readBody(req,20_000)}
+    catch(error){return json(res,400,{error:String(error?.message||'BAD_REQUEST')})}
+    try{return json(res,200,sdeCatalog.matchQuestion(body?.question,{limit:body?.limit}))}
+    catch(error){return sdeRouteError(res,error)}
+  }
   if(req.method==='POST'&&url.pathname==='/v1/sde/resolve'){
     let body;
     try{body=await readBody(req,80_000)}
