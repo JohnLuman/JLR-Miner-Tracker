@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { parseForgePaste, aggregateForgeMaterials, forgeSummary, sanitizeForgeShare } from '../lib/forge/forge.mjs';
 
@@ -54,3 +55,14 @@ assert.equal(share.plan.items.length,3);
 assert.equal(share.plan.summary.materialTypes,2);
 
 console.log('JLR Forge tests passed.');
+
+const server=fs.readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
+const app=fs.readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
+const index=fs.readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
+assert.match(server,/\/api\/forge\/plan/);
+assert.match(server,/\/api\/forge\/share/);
+assert.match(server,/api\.everef\.net\/v1\/industry\/cost/);
+assert.match(server,/jlr-95-refined/);
+assert.match(app,/BUILD PLANNER/);
+assert.match(app,/BUILD BOARD/);
+assert.match(index,/data-tab="forge"/);
