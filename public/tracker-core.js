@@ -1,6 +1,7 @@
 'use strict';
 (function(){
   const GROUP_ID=1653;
+  const INIT_ALLIANCE_ID=1900696668;
   const DEFAULT_POLL_SECONDS=30;
   const ALERT_PREF='jlrHeavyFighterAlerts';
   const ALERT_MAX_AGE_MS=60*1000;
@@ -69,6 +70,21 @@
     return new Date(ms).toLocaleString([],{
       month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit'
     });
+  }
+  function isReportableLoss(row){
+    return Number(row?.victim?.allianceId)!==INIT_ALLIANCE_ID;
+  }
+  function closestText(row,withLabel=true){
+    const closest=row?.closest||null;
+    const name=String(closest?.name||'').trim();
+    if(!name)return '';
+    const au=Number(closest?.distanceAu);
+    let distance='';
+    if(Number.isFinite(au)&&au>=0){
+      const digits=au>=10?1:au>=1?2:au>=0.1?2:3;
+      distance=' ('+au.toFixed(digits)+' AU)';
+    }
+    return (withLabel?'Closest: ':'')+name+distance;
   }
   function isActive(){
     return Boolean(trackerPanel&&trackerPanel.classList.contains('active'));
@@ -245,6 +261,7 @@
   function mergeClientLosses(rows){
     const merged=new Map();
     (Array.isArray(rows)?rows:[]).forEach(function(row){
+      if(!isReportableLoss(row))return;
       const id=String(row&&row.killmailId||'');
       if(id&&!merged.has(id))merged.set(id,row);
     });
@@ -277,6 +294,7 @@
     render();
   }
   function handleLiveLoss(row){
+    if(!isReportableLoss(row))return;
     const id=String(row&&row.killmailId||'');
     if(!id||trackerSeenIds.has(id))return;
     trackerSeenIds.add(id);
@@ -390,12 +408,13 @@
     const count=eligible.length;
     const fighter=newest.shipTypeName||'Heavy Fighter';
     const system=newest.systemName||'unknown system';
-    toast(count===1?fighter+' DOWN in '+system:count+' Heavy Fighters DOWN — newest in '+system);
+    const closest=closestText(newest);
+    toast(count===1?fighter+' DOWN in '+system+(closest?' • '+closest:''):count+' Heavy Fighters DOWN — newest in '+system+(closest?' • '+closest:''));
     try{
       if('Notification' in window&&Notification.permission==='granted'){
         const body=count===1
-          ?fighter+' • '+system+' • '+fmt(newest.totalValue||0)+' ISK'
-          :count+' new Heavy Fighter losses • newest in '+system;
+          ?fighter+' • '+system+(closest?' • '+closest:'')+' • '+fmt(newest.totalValue||0)+' ISK'
+          :count+' new Heavy Fighter losses • newest in '+system+(closest?' • '+closest:'');
         new Notification(count===1?'JLR Tracker — Heavy Fighter Down':'JLR Tracker — '+count+' Heavy Fighters Down',{
           body:body,
           tag:'jlr-heavy-fighter-tracker'
@@ -498,8 +517,9 @@
   function compactLossRow(row){
     if(!row)return'';
     const fresh=trackerFreshIds.has(String(row.killmailId));
+    const closest=closestText(row);
     return '<a class="tracker-compact-loss'+(fresh?' fresh':'')+'" href="'+esc(row.href||(trackerData&&trackerData.sourceUrl)||'#')+'" target="_blank" rel="noopener noreferrer">'+
-      '<div><span>'+(fresh?'NEW LOSS':'LOSS')+'</span><strong>'+esc(row.shipTypeName||'Heavy Fighter')+'</strong><small>'+esc(row.systemName||'Unknown system')+' • '+esc(ago(row.killmailTime))+'</small></div>'+
+      '<div><span>'+(fresh?'NEW LOSS':'LOSS')+'</span><strong>'+esc(row.shipTypeName||'Heavy Fighter')+'</strong><small>'+esc(row.systemName||'Unknown system')+' • '+esc(ago(row.killmailTime))+(closest?' • '+esc(closest):'')+'</small></div>'+
       '<b>'+fmt(row.totalValue||0)+' ISK</b>'+
     '</a>';
   }
@@ -607,6 +627,7 @@
     const finalName=finalBlow&&(finalBlow.characterName||finalBlow.corporationName)||'Unknown';
     const finalShip=finalBlow&&finalBlow.shipTypeName?' • '+finalBlow.shipTypeName:'';
     const fresh=trackerFreshIds.has(String(row.killmailId));
+    const closest=closestText(row);
     return '<article class="tracker-loss-card'+(fresh?' fresh':'')+'">'+
       '<div class="tracker-fighter-image">'+
         '<img src="https://images.evetech.net/types/'+encodeURIComponent(row.shipTypeId)+'/render?size=128" alt="'+esc(row.shipTypeName||'Heavy Fighter')+'">'+
@@ -618,6 +639,7 @@
           '<b>'+fmt(row.totalValue||0)+' ISK</b>'+
         '</div>'+
         '<div class="tracker-location"><strong>'+esc(row.systemName||'Unknown system')+'</strong><span>'+esc(dateTime(row.killmailTime))+' • '+esc(ago(row.killmailTime))+'</span></div>'+
+        (closest?'<div class="tracker-closest"><span>CLOSEST</span><strong>'+esc(closest.replace(/^Closest:\s*/i,''))+'</strong></div>':'')+
         '<div class="tracker-details">'+
           '<div><span>OWNER / VICTIM</span><strong>'+esc(owner)+'</strong><small>'+esc(org)+'</small></div>'+
           '<div><span>FINAL BLOW</span><strong>'+esc(finalName)+'</strong><small>'+esc(((finalBlow&&finalBlow.corporationName)||'Unknown corporation')+finalShip)+'</small></div>'+
@@ -679,7 +701,7 @@
         '</section>'+
         '<section class="tracker-kpis">'+
           '<article class="glass '+(trackerArmed?'armed':'')+'"><span>ALERT STATUS</span><strong>'+(trackerArmed?'ARMED':'OFF')+'</strong><small>'+(trackerArmed?'background checks while JLR is open':'open Tracker to check manually')+'</small></article>'+
-          '<article class="glass"><span>24H FEED</span><strong>'+fmt(losses.length)+'</strong><small>latest Heavy Fighter losses returned</small></article>'+
+          '<article class="glass"><span>24H FEED</span><strong>'+fmt(losses.length)+'</strong><small>hostile Heavy Fighter losses • INIT victims hidden</small></article>'+
           '<article class="glass"><span>LATEST LOSS</span><strong>'+(latest?esc(ago(latest.killmailTime).toUpperCase()):'—')+'</strong><small>'+(latest?esc(latest.systemName||'Unknown system'):'waiting for a loss')+'</small></article>'+
           '<article class="glass"><span>LIVE INGEST</span><strong>'+esc(liveLabel)+'</strong><small>'+esc(liveDetail)+'</small></article>'+
         '</section>'+
@@ -691,7 +713,7 @@
         '<section class="tracker-feed">'+body+'</section>'+
         '<section class="tracker-source-note">'+
           '<strong>HOW ALERTS WORK</strong>'+
-          '<span>JLR follows zKillboard\'s R2Z2 live sequence for Heavy Fighter group 1653. New losses trigger JLR\'s dedicated local two-tone loss alarm immediately. No microphone or AI voice is involved. Use STOP ALARM to silence it.</span>'+
+          '<span>JLR follows zKillboard\'s R2Z2 live sequence for Heavy Fighter group 1653. INIT-owned fighter losses are filtered out. Each reported loss keeps the existing owner, final blow, attacker, value, route, system and time data, plus a per-kill closest celestial calculated from that killmail\'s coordinates. New losses trigger JLR\'s dedicated local two-tone loss alarm immediately. No microphone or AI voice is involved. Use STOP ALARM to silence it.</span>'+
         '</section>'+
       '</div>';
 
