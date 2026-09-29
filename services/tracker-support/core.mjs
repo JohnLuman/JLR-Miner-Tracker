@@ -3,6 +3,24 @@ const SYSTEM_CODE_RE=/\b[A-Z0-9]{1,10}(?:-[A-Z0-9]{1,10})+\b/g;
 function clean(value,max=1200){
   return String(value??'').replace(/\s+/g,' ').trim().slice(0,max);
 }
+function supportIntentText(value){
+  const fixes=new Map(Object.entries({
+    wat:'what',wats:'what',wht:'what',
+    beter:'better',bettr:'better',
+    compres:'compress',compresed:'compressed',comprssed:'compressed',compressd:'compressed',
+    refin:'refine',refind:'refined',refien:'refine',
+    reproces:'reprocess',
+    prce:'price',prise:'price',val:'value',valu:'value',wurth:'worth',woth:'worth',
+    volum:'volume',volumne:'volume',
+    histroy:'history',histry:'history',
+    liqid:'liquidity',liqudity:'liquidity',
+    sprad:'spread',spred:'spread',tren:'trend',
+    fres:'fresh',stal:'stale',sorce:'source',
+    comapre:'compare',compair:'compare',
+  }));
+  return String(value||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim()
+    .split(' ').map(token=>fixes.get(token)||token).join(' ');
+}
 function explicitSystem(text){
   const matches=String(text||'').toUpperCase().match(SYSTEM_CODE_RE);
   return matches?.[0]||'';
@@ -145,7 +163,7 @@ export class TrackerSessionStore{
     const ctx=mergeContext(row.lastContext,incoming);
     if(tab)ctx.currentTab=tab;
     const effectiveTab=tab||ctx.currentTab||row.lastTab||'';
-    const lower=q.toLowerCase();
+    const lower=supportIntentText(q);
     const focus=row.focus;
     const focusFresh=Boolean(focus?.system)&&this.now()-Number(focus?.at||0)<=this.focusTtlMs;
     const itemFresh=Boolean(row.lastItem?.item)&&this.now()-Number(row.lastItem?.at||0)<=this.focusTtlMs;
@@ -212,7 +230,7 @@ export class TrackerSessionStore{
     }
 
     const item=itemFresh?row.lastItem.item:incoming.selectedDoctrineItem;
-    const itemFollowup=/\b(?:stock|price|profit|roi|margin|buy|sell|cost|worth|value|refine|refined|reprocess|material|compress|compressed|compression|decompress|volume|m3|cubic|type id|category|group|market group|portion|history|liquidity|spread|trend|fresh|stale|cache|source|better|compare)\b/i.test(q);
+    const itemFollowup=/\b(?:stock|price|profit|roi|margin|buy|sell|cost|worth|value|refine|refined|reprocess|material|compress|compressed|compression|decompress|volume|m3|cubic|type id|category|group|market group|portion|history|liquidity|spread|trend|fresh|stale|cache|source|better|compare)\b/i.test(lower);
     if(item&&(effectiveTab==='doctrine'||effectiveTab==='forge'||effectiveTab==='appraisal'||itemFollowup)){
       resolvedQuestion=resolvedQuestion.replace(/\b(?:that item|this item|that one)\b/ig,item)
         .replace(/\b(?:its|it)\b/ig,word=>word.toLowerCase()==='its'?item+'’s':item);

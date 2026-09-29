@@ -85,9 +85,79 @@ function normalizeType(row){
   };
 }
 
+
+const QUESTION_ITEM_ALIASES=[
+  ['compressed ark','Compressed Arkonor'],
+  ['comp ark','Compressed Arkonor'],
+  ['ark','Arkonor'],
+  ['bist','Bistot'],
+  ['crok','Crokite'],
+  ['merc','Mercoxit'],
+  ['spod','Spodumain'],
+];
+const FUZZY_STOPWORDS=new Set([
+  'what','whats','which','where','when','why','how','does','do','is','are','the','a','an','it','its','this','that',
+  'item','price','worth','value','buy','sell','split','market','refine','refined','reprocess','compress','compressed',
+  'compression','better','best','compare','versus','raw','volume','history','trend','liquidity','spread','jita','amarr',
+  'dodixie','rents','rens','hek','please','show','tell','give','me','for','in','at','of','to','into','more','less'
+]);
+function questionKey(value){
+  return String(value||'').toLocaleLowerCase('en-US').replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
+}
+function boundaryContains(text,needle){
+  const idx=text.indexOf(needle);
+  if(idx<0)return false;
+  const before=idx>0?text[idx-1]:' ';
+  const after=idx+needle.length<text.length?text[idx+needle.length]:' ';
+  return !/[a-z0-9]/i.test(before)&&!/[a-z0-9]/i.test(after);
+}
+function fuzzyEditDistance(a,b,maxDistance=4){
+  const left=String(a||''),right=String(b||'');
+  if(left===right)return 0;
+  if(Math.abs(left.length-right.length)>maxDistance)return maxDistance+1;
+  let prev=Array.from({length:right.length+1},(_,i)=>i);
+  for(let i=1;i<=left.length;i++){
+    const next=[i];
+    let rowMin=next[0];
+    for(let j=1;j<=right.length;j++){
+      const cost=left[i-1]===right[j-1]?0:1;
+      const value=Math.min(prev[j]+1,next[j-1]+1,prev[j-1]+cost);
+      next[j]=value;
+      if(value<rowMin)rowMin=value;
+    }
+    if(rowMin>maxDistance)return maxDistance+1;
+    prev=next;
+  }
+  return prev[right.length];
+}
+function fuzzyDistanceLimit(value,wordCount=1){
+  const len=String(value||'').length;
+  if(len<=4)return 0;
+  if(len<=5)return 1;
+  if(len<=7)return 2;
+  if(len<=12)return 2;
+  return wordCount>1?3:Math.min(3,Math.floor(len/6));
+}
+function questionWindows(text,maxWords=5){
+  const words=questionKey(text).split(' ').filter(Boolean);
+  const out=[];
+  for(let size=1;size<=Math.min(maxWords,words.length);size++){
+    for(let start=0;start+size<=words.length;start++){
+      const slice=words.slice(start,start+size);
+      if(slice.every(word=>FUZZY_STOPWORDS.has(word)))continue;
+      const value=slice.join(' ');
+      if(value.length<4)continue;
+      out.push({value,words:size});
+    }
+  }
+  return out;
+}
+
 export class JlrSdeCatalog{
   constructor({dbFile}={}){
     this.dbFile=String(dbFile||'').trim();
+    this._fuzzyIndex=null;
+    this._fuzzyStamp='';
   }
   exists(){
     try{return Boolean(this.dbFile&&fs.statSync(this.dbFile).size>=4096)}
@@ -131,23 +201,116 @@ export class JlrSdeCatalog{
       ...extra,
     };
   }
+  fuzzyIndex(){
+    if(!this.exists())return new Map();
+    let stamp='';
+    try{
+      const stat=fs.statSync(this.dbFile);
+      stamp=String(stat.size)+':'+String(Math.floor(stat.mtimeMs));
+    }catch{}
+    if(this._fuzzyIndex&&this._fuzzyStamp===stamp)return this._fuzzyIndex;
+    const rows=this.withDb(db=>db.prepare(
+      'SELECT type_id AS typeId,name,name_key AS nameKey,published FROM types WHERE length(name_key)>=4'
+    ).all());
+    const index=new Map();
+    for(const row of rows){
+      const key=questionKey(row.nameKey||row.name);
+      if(!key)continue;
+      const words=key.split(' ').length;
+      const bucket=words+':'+key[0];
+      if(!index.has(bucket))index.set(bucket,[]);
+      index.get(bucket).push({
+        typeId:positiveInt(row.typeId),
+        name:String(row.name||''),
+        key,
+        published:Boolean(row.published),
+      });
+    }
+    this._fuzzyIndex=index;
+    this._fuzzyStamp=stamp;
+    return index;
+  }
   matchQuestion(value,{limit=8}={}){
-    const text=String(value||'').trim().toLocaleLowerCase('en-US');
-    if(text.length<2||!this.exists())return{meta:this.meta(),items:[]};
+    const text=questionKey(value);
+    if(text.length<2||!this.exists())return{meta:this.meta(),items:[],ambiguous:false};
     const max=Math.max(1,Math.min(20,Number(limit)||8));
-    return this.withDb(db=>{
-      const rows=db.prepare(typeSelect("length(t.name_key)>=3 AND instr(?,t.name_key)>0")+" ORDER BY length(t.name_key) DESC LIMIT ?")
-        .all(text,max*4).map(normalizeType);
-      const boundaryOk=row=>{
-        const needle=String(row?.name||'').toLocaleLowerCase('en-US');
-        const idx=text.indexOf(needle);
-        if(idx<0)return false;
-        const before=idx>0?text[idx-1]:' ';
-        const after=idx+needle.length<text.length?text[idx+needle.length]:' ';
-        return !/[a-z0-9]/i.test(before)&&!/[a-z0-9]/i.test(after);
-      };
-      return{meta:this.meta(),items:rows.filter(boundaryOk).slice(0,max)};
+
+    const exact=this.withDb(db=>{
+      const rows=db.prepare(typeSelect("length(t.name_key)>=3 AND instr(?,t.name_key)>0")
+        +" ORDER BY t.published DESC,length(t.name_key) DESC LIMIT ?")
+        .all(text,max*8).map(normalizeType)
+        .filter(row=>boundaryContains(text,String(row?.name||'').toLocaleLowerCase('en-US')));
+      return rows;
     });
+    if(exact.length){
+      return{
+        meta:this.meta(),
+        ambiguous:false,
+        items:exact.slice(0,max).map(row=>({
+          ...row,matchSource:'exact',confidence:1,matchedText:String(row.name||'').toLocaleLowerCase('en-US'),
+        })),
+      };
+    }
+
+    for(const [alias,target] of QUESTION_ITEM_ALIASES.sort((a,b)=>b[0].length-a[0].length)){
+      if(!boundaryContains(text,alias))continue;
+      const resolved=this.resolveNames([target]);
+      if(resolved.items.length){
+        return{
+          meta:resolved.meta,
+          ambiguous:false,
+          items:resolved.items.slice(0,max).map(row=>({
+            ...row,matchSource:'alias',confidence:.99,matchedText:alias,
+          })),
+        };
+      }
+    }
+
+    const index=this.fuzzyIndex();
+    const bestByType=new Map();
+    for(const window of questionWindows(text)){
+      const bucket=index.get(window.words+':'+window.value[0])||[];
+      const limitDistance=fuzzyDistanceLimit(window.value,window.words);
+      if(limitDistance<=0)continue;
+      for(const candidate of bucket){
+        if(Math.abs(candidate.key.length-window.value.length)>limitDistance)continue;
+        if(window.value[0]!==candidate.key[0])continue;
+        if(window.value.length<=7&&limitDistance>=2
+          &&window.value[window.value.length-1]!==candidate.key[candidate.key.length-1])continue;
+        const distance=fuzzyEditDistance(window.value,candidate.key,limitDistance);
+        if(distance>limitDistance)continue;
+        const baseScore=1-distance/Math.max(window.value.length,candidate.key.length);
+        const threshold=window.value.length<=7?.70:.78;
+        if(baseScore<threshold)continue;
+        const score=Math.min(1,baseScore+(candidate.published?.012:0));
+        const prev=bestByType.get(candidate.typeId);
+        if(!prev||score>prev.score){
+          bestByType.set(candidate.typeId,{
+            ...candidate,score,distance,matchedText:window.value,
+          });
+        }
+      }
+    }
+
+    const ranked=[...bestByType.values()]
+      .sort((a,b)=>b.score-a.score||Number(b.published)-Number(a.published)||b.name.length-a.name.length)
+      .slice(0,Math.max(max,4));
+    if(!ranked.length)return{meta:this.meta(),items:[],ambiguous:false};
+
+    const top=ranked[0];
+    const second=ranked[1]||null;
+    const ambiguous=Boolean(second&&top.score-second.score<.045&&top.name!==second.name);
+    const hydrateIds=ranked.slice(0,max).map(row=>row.typeId);
+    const hydrated=this.types(hydrateIds);
+    const fullById=new Map(hydrated.items.map(row=>[Number(row.typeId),row]));
+    const items=ranked.slice(0,max).map(row=>({
+      ...(fullById.get(Number(row.typeId))||{typeId:row.typeId,name:row.name}),
+      matchSource:'fuzzy',
+      confidence:Number(row.score.toFixed(3)),
+      matchedText:row.matchedText,
+      editDistance:row.distance,
+    }));
+    return{meta:hydrated.meta||this.meta(),items,ambiguous};
   }
 
   resolveNames(values){

@@ -83,6 +83,8 @@ const compressionFollowup=firstTurn.resolve(appraisalKey,{question:'Is it worth 
 assert.match(compressionFollowup.question,/Arkonor/,'Appraisal follow-up carries the prior item into compression/value questions');
 const typeFollowup=firstTurn.resolve(appraisalKey,{question:'What is its type id?',currentTab:'forge'});
 assert.match(typeFollowup.question,/Arkonor/,'Appraisal follow-up carries the prior item into static-data questions');
+const typoFollowup=firstTurn.resolve(appraisalKey,{question:'is it beter compresed?',currentTab:'fields'});
+assert.match(typoFollowup.question,/Arkonor/,'misspelled Appraisal follow-up retains the prior item even off the Appraisal tab');
 
 const snapshot=store.exportState();
 const restored=new TrackerSessionStore({nowFn:()=>now});

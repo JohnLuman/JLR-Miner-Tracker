@@ -55,6 +55,22 @@ assert.equal(matched.items[0].name,'Arkonor');
 const compressedMatch=catalog.matchQuestion('Is Compressed Arkonor worth more than Arkonor?');
 assert.equal(compressedMatch.items[0].name,'Compressed Arkonor','longest embedded item name wins');
 
+const typoMatch=catalog.matchQuestion('wats arconer worth');
+assert.equal(typoMatch.items[0].name,'Arkonor','fuzzy SDE matching tolerates a two-edit item typo');
+assert.equal(typoMatch.items[0].matchSource,'fuzzy');
+assert.ok(typoMatch.items[0].confidence>=0.70);
+
+const compressedTypo=catalog.matchQuestion('is compresed arconer worth more');
+assert.equal(compressedTypo.items[0].name,'Compressed Arkonor','multi-word fuzzy match resolves compressed ore typos');
+
+const shorthandMatch=catalog.matchQuestion('wat is ark worth');
+assert.equal(shorthandMatch.items[0].name,'Arkonor','common mining shorthand resolves through a curated alias');
+assert.equal(shorthandMatch.items[0].matchSource,'alias');
+assert.equal(shorthandMatch.items[0].matchedText,'ark');
+
+const unrelated=catalog.matchQuestion('what is the price and value');
+assert.equal(unrelated.items.length,0,'intent words alone must not fuzzy-match an EVE item');
+
 const raw=resolved.items.find(row=>row.name==='Arkonor');
 const compressed=resolved.items.find(row=>row.name==='Compressed Arkonor');
 assert.equal(raw.compressedTypeId,28367);
