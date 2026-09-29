@@ -212,10 +212,11 @@ export class TrackerSessionStore{
     }
 
     const item=itemFresh?row.lastItem.item:incoming.selectedDoctrineItem;
-    if(item&&(effectiveTab==='doctrine'||/\b(?:stock|price|profit|roi|margin|buy|sell|cost)\b/i.test(q))){
+    const itemFollowup=/\b(?:stock|price|profit|roi|margin|buy|sell|cost|worth|value|refine|refined|reprocess|material|compress|compressed|compression|decompress|volume|m3|cubic|type id|category|group|market group|portion|history|liquidity|spread|trend|fresh|stale|cache|source|better|compare)\b/i.test(q);
+    if(item&&(effectiveTab==='doctrine'||effectiveTab==='forge'||effectiveTab==='appraisal'||itemFollowup)){
       resolvedQuestion=resolvedQuestion.replace(/\b(?:that item|this item|that one)\b/ig,item)
         .replace(/\b(?:its|it)\b/ig,word=>word.toLowerCase()==='its'?item+'’s':item);
-      if(/^(?:how many should i buy|how much should i buy|what(?:'s| is) (?:the )?(?:stock|price|profit|margin|cost))\??$/i.test(resolvedQuestion)){
+      if(/^(?:how many should i buy|how much should i buy|what(?:'s| is) (?:the )?(?:stock|price|profit|margin|cost|value|volume|type id))\??$/i.test(resolvedQuestion)){
         resolvedQuestion+=' for '+item;
       }
     }
