@@ -3543,7 +3543,6 @@ function trackerBrainWhySystem(system){
   const pct=Number(ledger?.depletionPct);
   const scanMs=Date.parse(scan?.lastScanAt||'');
   const stale=!Number.isFinite(scanMs)||Date.now()-scanMs>=A0_REPORT_TTL;
-  const spoken=trackerSystemLabel(system);
   const facts=[];
   let priority='info';
 
@@ -3593,14 +3592,13 @@ function trackerBrainWhySystem(system){
   }
 
   const first=facts[0]||'No active field warning is recorded.';
-  const voice=`For system ${spoken}. ${facts.join(' ')}`;
   return{
     system,
     ore:definition.ore,
     priority,
     summary:first,
     facts,
-    voice,
+    
     fieldStatus:field?.status||null,
     rawTodayM3:rawToday,
     minedM3SinceSite:mined,
@@ -3626,7 +3624,7 @@ function trackerBrainSnapshot(scans=scanActivityPublic(),debug=miningLedgerDebug
       priority:'high',
       title:'Eve synchronization warning',
       reason:String(state.esi.lastError),
-      voice:'Eve synchronization has a warning. Check the connected character status.',
+
       signature:'esi-sync-error|'+String(state.esi.lastError),
     });
   }else if(!debug.cacheHealthy){
@@ -3637,7 +3635,7 @@ function trackerBrainSnapshot(scans=scanActivityPublic(),debug=miningLedgerDebug
       priority:'info',
       title:'Mining ledger coverage below 80%',
       reason:label,
-      voice:`Mining ledger synchronization coverage is below the healthy threshold. ${label}.`,
+
       signature:`esi-ledger-partial|${debug.cachedCharacters}|${debug.linkedCharacters}`,
     });
   }
@@ -3650,7 +3648,7 @@ function trackerBrainSnapshot(scans=scanActivityPublic(),debug=miningLedgerDebug
       priority:'attention',
       title:'Market data needs an update',
       reason:Number.isFinite(marketMs)?`Last market refresh was ${Math.floor((Date.now()-marketMs)/3600000)} hours ago.`:'No successful market refresh is recorded.',
-      voice:'Market data needs an update.',
+
       signature:'market-stale|'+String(state.market?.lastUpdatedAt||'never'),
     });
   }
@@ -3662,7 +3660,7 @@ function trackerBrainSnapshot(scans=scanActivityPublic(),debug=miningLedgerDebug
       priority:'info',
       title:'Heavy Fighter feed is connecting',
       reason:'The live Heavy Fighter feed has not caught up yet.',
-      voice:'Heavy Fighter tracking is still connecting.',
+
       signature:'fighter-feed|'+String(live.lastSuccessAt||live.startedAt||'pending'),
     });
   }
@@ -3677,7 +3675,6 @@ function trackerBrainSnapshot(scans=scanActivityPublic(),debug=miningLedgerDebug
     const pct=Number(ledger?.depletionPct);
     const scanMs=Date.parse(scan?.lastScanAt||'');
     const stale=!Number.isFinite(scanMs)||Date.now()-scanMs>=A0_REPORT_TTL;
-    const spoken=trackerSystemLabel(system);
 
     if(field?.status==='ready'&&rawToday>0&&mined<=0&&stale){
       add({
@@ -3687,7 +3684,7 @@ function trackerBrainSnapshot(scans=scanActivityPublic(),debug=miningLedgerDebug
         priority:'attention',
         title:`${system}: mining recorded, site attribution pending`,
         reason:`ESI reports ${Math.round(rawToday).toLocaleString()} m³ mined today, but Tracker cannot safely assign it to the current site cycle yet.`,
-        voice:`System ${spoken} has mining recorded today, but Tracker has not safely assigned it to the current site cycle.`,
+
         signature:`field-attribution|${system}|${Math.round(rawToday)}|${field?.updatedAt||''}`,
       });
       continue;
@@ -3701,7 +3698,7 @@ function trackerBrainSnapshot(scans=scanActivityPublic(),debug=miningLedgerDebug
         priority:'high',
         title:`${system}: scan needed now`,
         reason:`Estimated depletion is ${Math.round(pct)}% with ${Math.round(mined).toLocaleString()} m³ attributed to this site cycle.`,
-        voice:`System ${spoken} is estimated to be ${Math.round(pct)} percent mined. A new scan is needed.`,
+
         signature:`field-depletion|${system}|${Math.round(pct)}|${ledger?.lastActivityAt||''}`,
       });
       continue;
@@ -3715,7 +3712,7 @@ function trackerBrainSnapshot(scans=scanActivityPublic(),debug=miningLedgerDebug
         priority:'attention',
         title:`${system}: scan recommended`,
         reason:Number.isFinite(pct)?`Estimated depletion is ${Math.round(pct)}%.`:'Linked mining activity indicates the field should be checked.',
-        voice:`System ${spoken} needs a scan update.`,
+
         signature:`field-scan|${system}|${Math.round(Number.isFinite(pct)?pct:0)}|${ledger?.lastActivityAt||''}`,
       });
       continue;
@@ -3729,7 +3726,7 @@ function trackerBrainSnapshot(scans=scanActivityPublic(),debug=miningLedgerDebug
         priority:'attention',
         title:`${system}: scan update needed`,
         reason:trackerBrainScanAgeText(scan?.lastScanAt),
-        voice:`System ${spoken} needs an updated scan.`,
+
         signature:`scan-stale|${system}|${scan?.lastScanAt||'never'}`,
       });
       continue;
@@ -3746,7 +3743,7 @@ function trackerBrainSnapshot(scans=scanActivityPublic(),debug=miningLedgerDebug
           priority:'info',
           title:`${system}: respawn approaching`,
           reason:`About ${minutes} minutes remain on the respawn timer.`,
-          voice:`System ${spoken} is expected to respawn in about ${minutes} minutes.`,
+
           signature:`respawn-soon|${system}|${field.timerEndsAt}`,
         });
       }
@@ -3784,10 +3781,10 @@ function trackerBrainBriefing(user,{force=false}={}){
     else parts.push(source.length+' status update'+(source.length===1?'':'s')+'.');
     const stale=source.filter(issue=>issue.type==='scan-stale');
     const specific=source.filter(issue=>issue.type!=='scan-stale').slice(0,2);
-    const spoken=[...specific];
-    if(spoken.length<2&&stale.length)spoken.push(stale[0]);
-    for(const issue of spoken)parts.push(issue.voice);
-    const ids=new Set(spoken.map(issue=>issue.id));
+    const selected=[...specific];
+    if(selected.length<2&&stale.length)selected.push(stale[0]);
+    for(const issue of selected)parts.push(issue.title+': '+issue.reason);
+    const ids=new Set(selected.map(issue=>issue.id));
     const remaining=source.filter(issue=>!ids.has(issue.id));
     const remainingStale=remaining.filter(issue=>issue.type==='scan-stale').length;
     if(remainingStale)parts.push(remainingStale+' additional system'+(remainingStale===1?'':'s')+' require scans.');
@@ -3818,7 +3815,7 @@ function trackerBrainMentionedCharacter(user,question){
     .sort((a,b)=>b.key.length-a.key.length)[0];
   if(exact)return exact.ch;
 
-  // Speech recognition can miss a short word in a multi-word EVE name.
+  // A partial typed name can miss a short word in a multi-word EVE name.
   const qTokens=new Set(q.split(' ').filter(Boolean));
   let best=null,bestScore=0;
   for(const ch of linked){
@@ -3925,10 +3922,10 @@ function trackerBrainHourlyEarnings(user,payoutPct,period='current'){
   }),{jbv:0,m3:0,unpricedM3:0});
   const pct=payoutPct!==null&&payoutPct!==undefined&&Number.isFinite(Number(payoutPct))?Math.max(0,Math.min(100,Number(payoutPct))):95;
   const tracked=ids.filter(id=>ledgerRowsByCharacter.has(id)&&ledgerSnapshotAtByCharacter.has(id)).length;
-  if(!ids.length)return{handled:true,topic:'hourly-earnings',text:'Link an EVE mining toon before I can estimate your earnings.',voiceText:'Link a mining toon first.',generatedAt:now()};
+  if(!ids.length)return{handled:true,topic:'hourly-earnings',text:'Link an EVE mining toon before I can estimate your earnings.',generatedAt:now()};
   if(!observations.length){
     const text='I do not have a reliable estimate for the '+label+' yet. E S I reports mining by day, and Tracker needs two ledger syncs within that period to observe a change. '+tracked+' of '+ids.length+' linked toons have a live ledger baseline.';
-    return{handled:true,topic:'hourly-earnings',text,voiceText:'I need two mining ledger syncs within the '+label+' before I can estimate your earnings.',generatedAt:now(),coverage:{tracked,linked:ids.length}};
+    return{handled:true,topic:'hourly-earnings',text,generatedAt:now(),coverage:{tracked,linked:ids.length}};
   }
   const payout=totals.jbv*pct/100;
   const value=totals.jbv.toLocaleString('en-US',{maximumFractionDigits:0});
@@ -3936,7 +3933,7 @@ function trackerBrainHourlyEarnings(user,payoutPct,period='current'){
   const text='Observed in the '+label+': '+(totals.jbv>0?'about '+paid+' ISK'+(totals.unpricedM3?' partial':'')+' payout at '+pct+'% ('+value+' ISK refined Jita buy value; ':'payout cannot be estimated without mineral prices (')+Math.round(totals.m3).toLocaleString('en-US')+' m³ tracked T3 ore). '+observations.length+' ledger change'+(observations.length===1?'':'s')+' observed; '+tracked+'/'+ids.length+' linked toons currently have a live baseline.'
     +(totals.unpricedM3?' '+Math.round(totals.unpricedM3).toLocaleString('en-US')+' m³ could not be priced.':'')
     +' E S I has daily totals, so ore mined between syncs may appear later; this is an observed estimate, not an exact clock-hour total.';
-  return{handled:true,topic:'hourly-earnings',text,voiceText:totals.jbv>0?'I have observed about '+paid+' I S K'+(totals.unpricedM3?' partial':'')+' payout in the '+label+' at '+pct+' percent. E S I updates may arrive later.':'I observed '+Math.round(totals.m3).toLocaleString('en-US')+' cubic meters in the '+label+', but need mineral prices to estimate payout.',generatedAt:now(),estimate:{payout:totals.jbv>0?payout:null,jbv:totals.jbv,m3:totals.m3,unpricedM3:totals.unpricedM3,payoutPct:pct,linked:ids.length,baselined:tracked,observations:observations.length,hourStart:hourStart.toISOString(),hourEnd:hourEnd.toISOString()}};
+  return{handled:true,topic:'hourly-earnings',text,generatedAt:now(),estimate:{payout:totals.jbv>0?payout:null,jbv:totals.jbv,m3:totals.m3,unpricedM3:totals.unpricedM3,payoutPct:pct,linked:ids.length,baselined:tracked,observations:observations.length,hourStart:hourStart.toISOString(),hourEnd:hourEnd.toISOString()}};
 }
 
 async function fountainRouteSystemIds(){
@@ -3960,12 +3957,12 @@ async function fountainRouteSystemIds(){
 
 async function trackerBrainRouteAnswer(user,raw,options){
   const destination=fountainRouteDestination(raw,CN_SYSTEM_NAME);
-  if(!destination)return{handled:true,topic:'route-destination-needed',text:'Tell me which Fountain system you are heading to, and I can check tracked scan stops on the E S I gate route.',voiceText:'Which Fountain system are you heading to?',generatedAt:now()};
+  if(!destination)return{handled:true,topic:'route-destination-needed',text:'Tell me which Fountain system you are heading to, and I can check tracked scan stops on the E S I gate route.',generatedAt:now()};
   const ch=trackerBrainMentionedCharacter(user,raw)
     ||(user?.characterIds||[]).map(id=>state.characters[String(id)]).find(row=>String(row?.characterId)===String(options?.characterId))
     ||(user?.characterIds||[]).map(id=>state.characters[String(id)]).find(row=>String(row?.characterId)===String(user?.primaryCharacterId))
     ||(user?.characterIds||[]).map(id=>state.characters[String(id)]).find(Boolean);
-  if(!ch)return{handled:true,topic:'route-location-error',text:'Link an EVE toon so I can check its current starting system.',voiceText:'Link a toon first.',generatedAt:now()};
+  if(!ch)return{handled:true,topic:'route-location-error',text:'Link an EVE toon so I can check its current starting system.',generatedAt:now()};
   let origin;
   try{origin=await trackerBrainCharacterLocation(ch,user)}
   catch(error){
@@ -3976,15 +3973,15 @@ async function trackerBrainRouteAnswer(user,raw,options){
         :waiting
           ?'The desktop companion is online, but it has not reported a fresh location for '+ch.name+' yet.'
           :'I could not get '+ch.name+' current EVE location: '+String(error?.message||error),
-      voiceText:waiting?'The desktop companion is online, but I am still waiting for that toon location.':'I could not check your current system in E S I.',
+
       generatedAt:now()};
   }
   try{
     const names=await resolveUniverseIds([destination]);
     const targetId=names.get(destination)||[...names.entries()].find(([name])=>name.toLowerCase()===destination.toLowerCase())?.[1];
-    if(!targetId)return{handled:true,topic:'route-unknown',text:'I could not find '+destination+' as an EVE system. Say the full Fountain system name.',voiceText:'I could not find that system. Please say the full name.',generatedAt:now()};
+    if(!targetId)return{handled:true,topic:'route-unknown',text:'I could not find '+destination+' as an EVE system. Say the full Fountain system name.',generatedAt:now()};
     const fountain=await fountainRouteSystemIds();
-    if(!fountain.has(String(targetId)))return{handled:true,topic:'route-outside-fountain',text:destination+' is outside Fountain. Give me a destination in Fountain.',voiceText:'That destination is outside Fountain.',generatedAt:now()};
+    if(!fountain.has(String(targetId)))return{handled:true,topic:'route-outside-fountain',text:destination+' is outside Fountain. Give me a destination in Fountain.',generatedAt:now()};
     const {data:route}=await esiGet(`https://esi.evetech.net/latest/route/${origin.systemId}/${targetId}/?datasource=tranquility&flag=shortest`);
     if(!Array.isArray(route)||!route.length)throw new Error('ESI did not return a gate route');
     const trackedNames=[...new Set([...SYSTEM_DEFS.map(row=>row.system),...(state.market?.iceFields||[]).map(row=>row.system),...(state.market?.a0Fields||[]).map(row=>row.system),...Object.keys(state.market?.a0Reports||{})])].filter(Boolean);
@@ -4001,19 +3998,18 @@ async function trackerBrainRouteAnswer(user,raw,options){
     const stops=dueRouteStops(route,byId,{limit:3});
     const prefix='E S I gate route for '+ch.name+': '+origin.system+' to '+destination+' ('+(route.length-1)+' jumps). ';
     const caveat=origin.stale?' Your starting location is from the last successful E S I check, within 15 minutes.':'';
-    if(!stops.length){const text=prefix+'No tracked Fountain mining systems on that route currently need a scan update.'+caveat;return{handled:true,topic:'route-scans',text,voiceText:text,generatedAt:now(),route:{origin:origin.system,destination,jumps:route.length-1,stops:[]}}}
+    if(!stops.length){const text=prefix+'No tracked Fountain mining systems on that route currently need a scan update.'+caveat;return{handled:true,topic:'route-scans',text,generatedAt:now(),route:{origin:origin.system,destination,jumps:route.length-1,stops:[]}}}
     const detail=stops.map(row=>row.system+' ('+(row.atDestination?'destination':row.jumpsFromOrigin+' jumps in')+'; '+row.kinds.join('/')+')').join(', ');
     const text=prefix+'Scan stops: '+detail+'. Copy the full Probe Scanner list while you are in each system, then choose that toon and paste it in Fields.'+caveat;
-    const voiceText='On the way to '+trackerSystemLabel(destination)+', '+stops.map(row=>trackerSystemLabel(row.system)).join(', ')+' need new scans. Please send a Probe Scanner copy when you arrive.';
-    return{handled:true,topic:'route-scans',text,voiceText,generatedAt:now(),route:{origin:origin.system,destination,jumps:route.length-1,stops}};
-  }catch(error){console.warn('Tracker Fountain route lookup failed',String(error?.message||error));return{handled:true,topic:'route-error',text:'I could not verify a Fountain gate route from E S I right now. '+String(error?.message||error),voiceText:'I could not verify the Fountain route right now.',generatedAt:now()}}
+    return{handled:true,topic:'route-scans',text,generatedAt:now(),route:{origin:origin.system,destination,jumps:route.length-1,stops}};
+  }catch(error){console.warn('Tracker Fountain route lookup failed',String(error?.message||error));return{handled:true,topic:'route-error',text:'I could not verify a Fountain gate route from E S I right now. '+String(error?.message||error),generatedAt:now()}}
 }
 
 async function trackerBrainDataAnswer(user,question,options={}){
   const q=trackerBrainNormalize(question);
   const tab=String(options.currentTab||options.context?.currentTab||'');
   const context=trackerBrainContext(options.context);
-  const response=(topic,text,extra={})=>({handled:true,topic,text,voiceText:text,generatedAt:now(),...extra});
+  const response=(topic,text,extra={})=>({handled:true,topic,text,generatedAt:now(),...extra});
 
   if(isDoctrineDataQuestion(question,tab)){
     // The workbook and the market snapshot are protected even through Adam.
@@ -4116,7 +4112,7 @@ async function trackerBrainLiveAnswer(user,question,options={}){
     const text=names.length
       ?'I could not match that name to one of your linked toons. Linked toons include '+names.join(', ')+'.'
       :'I could not find a linked EVE character on this account.';
-    return{handled:true,topic:'toon-location',text,voiceText:'I could not match that name to one of your linked toons.',generatedAt:now()};
+    return{handled:true,topic:'toon-location',text,generatedAt:now()};
   }
 
   let location;
@@ -4130,11 +4126,7 @@ async function trackerBrainLiveAnswer(user,question,options={}){
       :waiting
         ?'The desktop companion is online, but it has not reported a fresh location for '+ch.name+' yet.'
         :'I could not pull '+ch.name+' location from EVE right now. '+detail;
-    return{handled:true,topic:'toon-location-error',text,voiceText:error?.code==='LOCATION_SCOPE_REQUIRED'
-      ?ch.name+' needs EVE location permission first.'
-      :waiting
-        ?'The desktop companion is online, but I am still waiting for that toon location.'
-        :'I could not get '+ch.name+' location from E S I right now.',generatedAt:now(),errorCode:error?.code||'ESI_LOCATION_FAILED'};
+    return{handled:true,topic:'toon-location-error',text,generatedAt:now(),errorCode:error?.code||'ESI_LOCATION_FAILED'};
   }
 
   const wantsNearest=intent.kind==='nearest';
@@ -4142,8 +4134,7 @@ async function trackerBrainLiveAnswer(user,question,options={}){
     const text=location.stale
       ?ch.name+' was last seen in '+location.system+' within fifteen minutes. E S I did not return a live location.'
       :ch.name+' is currently in '+location.system+'.';
-    const voiceText=ch.name+(location.stale?' was last seen in ':' is in ')+trackerSystemLabel(location.system)+(location.stale?'. Live E S I is unavailable.':'.');
-    return{handled:true,topic:'toon-location',text,voiceText,generatedAt:now(),location};
+    return{handled:true,topic:'toon-location',text,generatedAt:now(),location};
   }
 
   const updatesOnly=Boolean(intent.updatesOnly);
@@ -4158,11 +4149,11 @@ async function trackerBrainLiveAnswer(user,question,options={}){
   }
   if(updatesOnly&&!nearest.candidates){
     const text='No tracked systems currently need a scan update.';
-    return{handled:true,topic:'nearest-system-current',text,voiceText:text,generatedAt:now(),location};
+    return{handled:true,topic:'nearest-system-current',text,generatedAt:now(),location};
   }
   if(!nearest.rows.length){
     const text='I found '+ch.name+' in '+location.system+', but E S I could not calculate routes to the tracked systems.';
-    return{handled:true,topic:'nearest-system-error',text,voiceText:'I found '+ch.name+', but route lookup failed.',generatedAt:now(),location};
+    return{handled:true,topic:'nearest-system-error',text,generatedAt:now(),location};
   }
 
   const first=nearest.rows[0];
@@ -4172,9 +4163,7 @@ async function trackerBrainLiveAnswer(user,question,options={}){
   const text='Closest'+qualifier+': '+first.system+'. '+first.jumps+' jump'+(first.jumps===1?'':'s')+' from '+ch.name+' in '+location.system+'.'
     +reason
     +(location.stale?' Location is from the last successful E S I check, not a live response.':'');
-  const voiceText=trackerSystemLabel(first.system)+' is closest. '+first.jumps+' jump'+(first.jumps===1?'':'s')+'.'
-    +(location.stale?' This uses the last E S I location.':'');
-  return{handled:true,topic:'nearest-system',text,voiceText,generatedAt:now(),location,nearest:nearest.rows,closest:first,updatesOnly};
+  return{handled:true,topic:'nearest-system',text,generatedAt:now(),location,nearest:nearest.rows,closest:first,updatesOnly};
 }
 
 
@@ -4271,8 +4260,7 @@ const TRACKER_METRIC_KNOWLEDGE = [
     tab:'performance',
     aliases:['live activity rate','activity rate','live mining rate','mining rate chart'],
     description:'Recent Activity Rate estimates the fleets observed mining rate from ESI mining-ledger changes. On each successful ledger sample, JLR compares each toons current cumulative mined m3 with its previous sample. If the total increased, JLR divides that positive m3 delta by the elapsed sample time to get that toons interval m3 per hour, then adds the rates for all active toons. Active toons are the sampled characters with a positive mining delta; sampled toons are the characters whose ledger data was successfully included. Normal ESI sampling is about every fifteen minutes, stale gaps are capped at thirty minutes so downtime is not counted as continuous mining, and the chart retains seven days of samples. This is an interval estimate from ESI, not instant laser telemetry.',
-    voice:'Recent Activity Rate is the combined observed mining rate from positive E S I ledger changes between samples. JLR converts each active toons mined volume change into cubic meters per hour and adds them together. It is an interval estimate, not instant laser telemetry.'
-  },
+},
   {
     id:'today-mined',
     tab:'performance',
@@ -4340,7 +4328,7 @@ function trackerBrainKnowledgeAnswer(question,currentTab=''){
       topic:'app-metric-'+match.id,
       tab:match.tab,
       text:match.description,
-      voiceText:match.voice||match.description,
+
       generatedAt:now(),
     };
   }
@@ -4351,7 +4339,7 @@ function trackerBrainKnowledgeAnswer(question,currentTab=''){
     topic:'app-tab-'+match.key,
     tab:match.key,
     text,
-    voiceText:match.description,
+
     generatedAt:now(),
   };
 }
@@ -4502,7 +4490,7 @@ function trackerBrainOreSurveyAnswer(question,rawContext){
     handled:true,
     topic:'ore-survey-context',
     text:trackerTextSafe(text,1200),
-    voiceText:trackerTextSafe(text,600),
+
     generatedAt:now(),
     focusSystem:system||undefined,
     oreSurvey:{system:system||null,rowCount,totalVolumeM3:totalVolume,pricedValueISK:pricedValue,unpricedRowCount:unpriced,pricingBasis:survey.pricingBasis||null,sourceFormat:survey.sourceFormat||null},
@@ -4518,37 +4506,13 @@ function trackerBrainAnswer(user,question,options={}){
   const primaryName=trackerBrainPrimaryName(user);
   const appVersion='2.10.0';
 
-  const voiceSummary=(text,max=120)=>{
-    const clean=trackerTextSafe(text,1200).replace(/\s+/g,' ').trim();
-    if(clean.length<=max)return clean;
-    const sentences=clean.split(/(?<=[.!?])\s+/);
-    let out='';
-    for(const sentenceRaw of sentences){
-      const sentence=String(sentenceRaw||'').trim();
-      if(!sentence)continue;
-      // Complete the first thought instead of cutting a spoken sentence off.
-      if(!out&&sentence.length>max)return sentence;
-      if((out?out+' ':'')+sentence.length>max)break;
-      out+=(out?' ':'')+sentence;
-    }
-    return out||clean;
-  };
-  const answer=(topic,text,extra={})=>{
-    const safeText=trackerTextSafe(text,1200);
-    const requestedVoice=extra&&typeof extra.voiceText==='string'?extra.voiceText:'';
-    const voiceText=trackerTextSafe(requestedVoice||voiceSummary(safeText),600)
-      .replace(/[,;:]+/g,' ')
-      .replace(/\s+/g,' ')
-      .trim();
-    return{
-      handled:true,
-      topic,
-      text:safeText,
-      generatedAt:now(),
-      ...extra,
-      voiceText,
-    };
-  };
+  const answer=(topic,text,extra={})=>({
+    handled:true,
+    topic,
+    text:trackerTextSafe(text,1200),
+    generatedAt:now(),
+    ...extra,
+  });
 
   if(!q)return answer('help','Ask me a question about JLR Miner Tracker.');
 
@@ -4562,7 +4526,7 @@ function trackerBrainAnswer(user,question,options={}){
     if(!p.sampleAt||!(latest>=0)||!(target>0)){
       return answer('performance-variance',
         'JLR does not have enough recent rate and fitted-target context to explain that comparison yet. Open Fleet Performance after the ledger samples load, then ask again.',
-        {voiceText:'I need a recent fleet sample and fitted target before I can explain the variance.'}
+        {}
       );
     }
     const pct=target>0?latest/target*100:null;
@@ -4587,22 +4551,21 @@ function trackerBrainAnswer(user,question,options={}){
     }
     return answer('performance-variance',parts.join(' '),{
       performance:{latestRate:latest,previousRate:Number.isFinite(previous)?previous:null,targetRate:target,activeToons:active,sampledToons:sampled},
-      voiceText:(pct!=null?'Latest fleet rate is '+pct.toFixed(0)+' percent of target. ':'')+(sampled>0?active+' of '+sampled+' miners contributed. ':'')+'E S I shows the variance, but not the exact cause.'
-    });
+});
   }
 
   const knowledge=trackerBrainKnowledgeAnswer(raw,options.currentTab);
   if(knowledge){
     return answer(knowledge.topic,knowledge.text,{
       tab:knowledge.tab,
-      voiceText:knowledge.voiceText,
+
     });
   }
 
   if(explicitAdamHelpQuestion(raw)){
     return answer('capabilities',
       'I can use your current JLR context to answer short follow-ups, find the next scan update while you are working Fields or Adam, explain Fleet Performance variance, check toon location, find scan stops on a Fountain route, estimate observed mining payout, and explain JLR tabs, data and workflows. You do not need to repeat the selected system or toon when Adam already has that context.',
-      {voiceText:'I can check observed mining payout this hour, Fountain route scan stops, and linked toon locations, and I can ask for new scans when needed.'}
+      {}
     );
   }
 
@@ -4612,10 +4575,6 @@ function trackerBrainAnswer(user,question,options={}){
 
   if(/\b(version|build|release)\b/.test(q)){
     return answer('version','JLR Miner Tracker is running version '+appVersion+'.');
-  }
-
-  if(/\b(?:voice|sound|speak|speaking)\b/.test(q)&&/\b(?:scan|scanner|paste)\b/.test(q)){
-    return answer('scan-voice','With Sound On, an accepted Probe Scanner paste gets a spoken confirmation. Sound Off in the top bar mutes Tracker speech.');
   }
 
   if(/\b(?:how|where)\b/.test(q)&&/\b(?:paste|submit|import)\b/.test(q)&&/\b(?:scan|scanner)\b/.test(q)){
@@ -4715,12 +4674,6 @@ function trackerBrainAnswer(user,question,options={}){
     if(/\b(toon|toons|character|characters|esi|eve sso|sso|link character|add character)\b/.test(q)){
       return answer('toons',
         'The Toons tab manages EVE characters linked through EVE SSO. JLR uses the granted ESI scopes for features such as fits, assets, mining ledger and location where required. Your account currently has '+linked.length+' linked character'+(linked.length===1?'':'s')+'.'
-      );
-    }
-
-    if(/\b(mic|microphone|voice|speech|wake word|say adam|say tracker|talk to tracker|not hearing|error code)\b/.test(q)){
-      return answer('voice',
-        'Adam currently uses typed questions rather than the retired live microphone pipeline. He carries JLR context between questions, including the current tab, selected system or toon, recent scan workflow and Fleet Performance state. Adam location tracking continues to work without a microphone.'
       );
     }
 
@@ -9102,14 +9055,11 @@ async function routeApi(req,res,url) {
       const focusSystem=trackerTextSafe(supportOverride.focusSystem,80);
       const originSystem=trackerTextSafe(supportOverride.originSystem,80);
       const jumps=Number.isFinite(Number(supportOverride.jumps))?Number(supportOverride.jumps):null;
-      let voiceText=trackerTextSafe(supportOverride.voiceText||supportOverride.text,1200);
-      if(focusSystem&&voiceText)voiceText=voiceText.split(focusSystem).join(trackerSystemLabel(focusSystem));
-      if(originSystem&&voiceText)voiceText=voiceText.split(originSystem).join(trackerSystemLabel(originSystem));
       answer={
         handled:true,
         topic:trackerTextSafe(supportOverride.topic,80)||'support-context',
         text:trackerTextSafe(supportOverride.text,1600),
-        voiceText,
+        
         generatedAt:now(),
         focusSystem:focusSystem||undefined,
         jumps,
@@ -9165,7 +9115,7 @@ async function routeApi(req,res,url) {
     try{body=await readBody(req,16_000)}
     catch(err){return json(res,400,{error:'BAD_FEEDBACK',message:String(err.message||err)})}
     const rawType=String(body?.type||'');
-    const type=['bug','suggestion','speech','data','ui','other'].includes(rawType)?rawType:'suggestion';
+    const type=['bug','suggestion','data','ui','other'].includes(rawType)?rawType:'suggestion';
     const title=trackerTextSafe(body?.title,120);
     const message=trackerTextSafe(body?.message,2000);
     const area=trackerTextSafe(body?.area,80)||'general';
