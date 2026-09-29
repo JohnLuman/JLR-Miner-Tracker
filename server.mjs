@@ -5911,11 +5911,15 @@ async function buildAppraisal(text,options={}){
 }
 function appraisalSharePublic(row){
   if(!row)return null;
+  let appraisal=row.appraisal&&typeof row.appraisal==='object'?row.appraisal:null;
+  // Older share links can predate saved refine metadata. Rebuild the refine
+  // preview from the saved item rows so those links gain the current refine UI.
+  if(appraisal&&!appraisal.refine)appraisal={...appraisal,refine:appraisalRefinePreview(appraisal.items)};
   return{
     id:String(row.id||''),token:String(row.token||''),title:String(row.title||'JLR Appraisal'),
     owner:{name:String(row.owner?.name||'JLR Pilot')},
     createdAt:row.createdAt||null,
-    appraisal:row.appraisal||null,
+    appraisal,
   };
 }
 
