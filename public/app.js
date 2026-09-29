@@ -2851,6 +2851,30 @@
         </aside>
       </section>`;
 
+    // Forge controls are created dynamically inside initTabs, so bind only
+    // after the Forge DOM exists.
+    $('forgeCalculate')?.addEventListener('click',()=>void calculateForge());
+    $('forgeShare')?.addEventListener('click',()=>void shareForge());
+    $('forgeRefresh')?.addEventListener('click',()=>void loadForgeBoard(true));
+    $('forgePasteClipboard')?.addEventListener('click',async()=>{
+      try{
+        const text=await navigator.clipboard.readText();
+        if(!text.trim())throw new Error('Clipboard is empty');
+        $('forgePaste').value=text;
+        toast('Clipboard pasted into JLR Forge.');
+      }catch(error){toast(String(error.message||'Clipboard unavailable'))}
+    });
+    $('forgeBoard')?.addEventListener('change',event=>{
+      const select=event.target instanceof Element?event.target.closest('select[data-forge-status]'):null;
+      if(select)void setForgeStatus(String(select.dataset.forgeStatus||''),String(select.value||'planning'));
+    });
+    $('forgeBoard')?.addEventListener('click',async event=>{
+      const button=event.target instanceof Element?event.target.closest('[data-forge-copy]'):null;
+      if(!button)return;
+      try{await navigator.clipboard.writeText(String(button.dataset.forgeCopy||''));toast('Build share link copied.')}
+      catch{toast('Could not copy the build link.')}
+    });
+
     const quick=document.querySelector('.quick-update');
     let assistant=document.querySelector('.tracker-assistant-panel');
     if(!assistant)assistant=document.createElement('section');
@@ -7054,27 +7078,6 @@
     }
   });
 
-  $('forgeCalculate')?.addEventListener('click',()=>void calculateForge());
-  $('forgeShare')?.addEventListener('click',()=>void shareForge());
-  $('forgeRefresh')?.addEventListener('click',()=>void loadForgeBoard(true));
-  $('forgePasteClipboard')?.addEventListener('click',async()=>{
-    try{
-      const text=await navigator.clipboard.readText();
-      if(!text.trim())throw new Error('Clipboard is empty');
-      $('forgePaste').value=text;
-      toast('Clipboard pasted into JLR Forge.');
-    }catch(error){toast(String(error.message||'Clipboard unavailable'))}
-  });
-  $('forgeBoard')?.addEventListener('change',event=>{
-    const select=event.target instanceof Element?event.target.closest('select[data-forge-status]'):null;
-    if(select)void setForgeStatus(String(select.dataset.forgeStatus||''),String(select.value||'planning'));
-  });
-  $('forgeBoard')?.addEventListener('click',async event=>{
-    const button=event.target instanceof Element?event.target.closest('[data-forge-copy]'):null;
-    if(!button)return;
-    try{await navigator.clipboard.writeText(String(button.dataset.forgeCopy||''));toast('Build share link copied.')}
-    catch{toast('Could not copy the build link.')}
-  });
 
   $('scanAllFits')?.addEventListener('click',async()=>{
     const button=$('scanAllFits');
