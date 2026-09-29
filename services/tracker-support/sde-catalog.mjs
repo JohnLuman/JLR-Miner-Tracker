@@ -131,6 +131,25 @@ export class JlrSdeCatalog{
       ...extra,
     };
   }
+  matchQuestion(value,{limit=8}={}){
+    const text=String(value||'').trim().toLocaleLowerCase('en-US');
+    if(text.length<2||!this.exists())return{meta:this.meta(),items:[]};
+    const max=Math.max(1,Math.min(20,Number(limit)||8));
+    return this.withDb(db=>{
+      const rows=db.prepare(typeSelect("length(t.name_key)>=3 AND instr(?,t.name_key)>0")+" ORDER BY length(t.name_key) DESC LIMIT ?")
+        .all(text,max*4).map(normalizeType);
+      const boundaryOk=row=>{
+        const needle=String(row?.name||'').toLocaleLowerCase('en-US');
+        const idx=text.indexOf(needle);
+        if(idx<0)return false;
+        const before=idx>0?text[idx-1]:' ';
+        const after=idx+needle.length<text.length?text[idx+needle.length]:' ';
+        return !/[a-z0-9]/i.test(before)&&!/[a-z0-9]/i.test(after);
+      };
+      return{meta:this.meta(),items:rows.filter(boundaryOk).slice(0,max)};
+    });
+  }
+
   resolveNames(values){
     const names=cleanNames(values);
     if(!names.length)return{meta:this.meta(),items:[],missing:[]};

@@ -21,6 +21,7 @@ assert.match(docker,/sde-catalog\.mjs/);
 assert.match(docker,/sde_import\.py/);
 
 assert.match(support,/JlrSdeCatalog/);
+assert.match(support,/\/v1\/sde\/match/,'Support exposes SDE question matching for Adam');
 assert.match(support,/\/v1\/sde\/resolve/);
 assert.match(support,/\/v1\/sde\/types/);
 assert.match(support,/\/v1\/sde\/materials/);
@@ -28,10 +29,13 @@ assert.match(support,/refreshSdeCatalog/);
 assert.match(support,/sdeCompressionCandidate/,'Support uses exact SDE compression relationships');
 assert.match(support,/version:'2\.3\.0'/);
 
+assert.match(client,/async sdeMatch/,'main service can ask Support to match item names in Adam questions');
 assert.match(client,/async sdeResolve/);
 assert.match(client,/async sdeTypes/);
 assert.match(client,/async sdeMaterials/);
 
+assert.match(server,/trackerSupport\.sdeMatch/,'Adam matches EVE item names through local SDE');
+assert.match(server,/trackerBrainAppraisalAnswer/,'Adam has a dedicated grounded Appraisal answer path');
 assert.match(server,/trackerSupport\.sdeResolve/,'Appraisal resolves names from local SDE first');
 assert.match(server,/trackerSupport\.sdeMaterials/,'Appraisal uses SDE reprocessing materials');
 assert.match(server,/staticSource:'sde'/);

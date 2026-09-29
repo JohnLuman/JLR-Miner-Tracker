@@ -72,6 +72,18 @@ assert.equal(whyItem.answerOverride,null,'prior system answer must not override 
 assert.match(whyItem.question,/High ROI Module/);
 assert.equal(trackerSupportAnswerContext({topic:'doctrine-item',focusItem:'High ROI Module'}).focusItem,'High ROI Module');
 
+const appraisalKey='9'.repeat(48);
+firstTurn.remember(appraisalKey,{
+  question:'What is Arkonor?',currentTab:'forge',
+  answer:{topic:'appraisal-static-item',text:'Arkonor static info.',focusItem:'Arkonor'},
+});
+const refineFollowup=firstTurn.resolve(appraisalKey,{question:'What does it refine into?',currentTab:'forge'});
+assert.match(refineFollowup.question,/Arkonor/,'Appraisal follow-up carries the prior item into refine questions');
+const compressionFollowup=firstTurn.resolve(appraisalKey,{question:'Is it worth more compressed?',currentTab:'forge'});
+assert.match(compressionFollowup.question,/Arkonor/,'Appraisal follow-up carries the prior item into compression/value questions');
+const typeFollowup=firstTurn.resolve(appraisalKey,{question:'What is its type id?',currentTab:'forge'});
+assert.match(typeFollowup.question,/Arkonor/,'Appraisal follow-up carries the prior item into static-data questions');
+
 const snapshot=store.exportState();
 const restored=new TrackerSessionStore({nowFn:()=>now});
 restored.importState(snapshot);

@@ -11,7 +11,7 @@ import { parseOreSurvey, oreSurveySummaryText } from './lib/ore-survey.mjs';
 import { nearestTrackedSystems, needsScanUpdate, actionableLedgerScanWarning, recentlyScannedSystem } from './lib/brain-location.mjs';
 import { addVerifiedSiteMining, autoClearFieldAtCap, FIELD_AUTO_CLEAR_REASON } from './lib/field-auto-clear.mjs';
 import { positiveLedgerDeltas, dueRouteStops, fountainRouteDestination, brainLiveIntent } from './lib/brain-intel.mjs';
-import { isDoctrineDataQuestion, answerDoctrineQuestion, answerMiningMarketQuestion } from './lib/adam-data.mjs';
+import { isDoctrineDataQuestion, answerDoctrineQuestion, answerMiningMarketQuestion, isAppraisalDataQuestion, appraisalQuestionNeedsMarket, appraisalMarketIdFromQuestion, appraisalQuantityFromQuestion, answerAppraisalStaticQuestion, answerAppraisalMarketQuestion } from './lib/adam-data.mjs';
 import { explicitAdamHelpQuestion, adamOverviewQuestion, adamUnknownText } from './lib/adam-prompts.mjs';
 import { createTrackerSupportClient } from './lib/tracker-support-client.mjs';
 import { chooseRapidResponseRoutes, wandererRiskPenalty, wandererWarnings } from './lib/rapid-response-route.mjs';
@@ -4099,6 +4099,74 @@ async function trackerBrainRouteAnswer(user,raw,options){
   }catch(error){console.warn('Tracker Fountain route lookup failed',String(error?.message||error));return{handled:true,topic:'route-error',text:'I could not verify a Fountain gate route from E S I right now. '+String(error?.message||error),voiceText:'I could not verify the Fountain route right now.',generatedAt:now()}}
 }
 
+async function trackerBrainAppraisalAnswer(question,currentTab=''){
+  if(!isAppraisalDataQuestion(question,currentTab))return null;
+  const matched=await trackerSupport.sdeMatch({question,limit:5});
+  const candidates=Array.isArray(matched?.items)?matched.items:[];
+  const item=candidates[0]||null;
+  if(!item){
+    if(currentTab==='forge'||currentTab==='appraisal'){
+      return{
+        handled:true,
+        topic:'appraisal-item-needed',
+        text:'Name the EVE item you want me to check. I can answer static-data, compression, refine, price, liquidity and raw-versus-compressed-versus-refine questions from JLR data.',
+        voiceText:'Name the EVE item you want me to check.',
+        generatedAt:now(),
+      };
+    }
+    return null;
+  }
+
+  const quantity=appraisalQuantityFromQuestion(question,item.name);
+  if(!appraisalQuestionNeedsMarket(question)){
+    let materialRow=null;
+    if(/\b(?:refine|refines|reprocess|reprocessing|material|materials)\b/i.test(question)){
+      const materials=await trackerSupport.sdeMaterials({typeIds:[item.typeId]});
+      materialRow=(Array.isArray(materials?.items)?materials.items:[])
+        .find(row=>Number(row?.typeId)===Number(item.typeId))||null;
+    }
+    const result=answerAppraisalStaticQuestion({
+      question,item,materials:materialRow,sdeMeta:matched?.meta,
+    });
+    return result?{
+      handled:true,
+      ...result,
+      voiceText:result.text,
+      generatedAt:now(),
+      staticData:{buildNumber:Number(matched?.meta?.buildNumber)||null,source:'ccp-sde'},
+    }:null;
+  }
+
+  const market=appraisalMarketIdFromQuestion(question);
+  const pricing=/\bbuy\b/i.test(question)&&!/\bsell\b/i.test(question)?'buy':
+    /\bsell\b/i.test(question)&&!/\bbuy\b/i.test(question)?'sell':'split';
+  const pricingVariant=/\b(?:top\s*5|5\s*percent|5%)\b/i.test(question)?'top5percent':'immediate';
+  let appraisal;
+  try{
+    appraisal=await buildAppraisal(item.name+'\t'+quantity,{market,pricing,pricingVariant});
+  }catch(error){
+    return{
+      handled:true,
+      topic:'appraisal-market-error',
+      text:'I found '+item.name+' in JLR’s CCP SDE catalog, but I could not complete the live market appraisal right now. '+String(error?.message||error),
+      voiceText:'I found the item, but I could not complete the live market appraisal right now.',
+      generatedAt:now(),
+      focusItem:item.name,
+    };
+  }
+  const intel=await trackerSupport.appraisalIntel({appraisal});
+  const result=answerAppraisalMarketQuestion({question,item,quantity,appraisal,intel});
+  if(!result)return null;
+  return{
+    handled:true,
+    ...result,
+    voiceText:result.text,
+    generatedAt:now(),
+    staticData:appraisal.staticData||null,
+    marketData:appraisal.marketData||null,
+  };
+}
+
 async function trackerBrainDataAnswer(user,question,options={}){
   const q=trackerBrainNormalize(question);
   const tab=String(options.currentTab||options.context?.currentTab||'');
@@ -4119,6 +4187,9 @@ async function trackerBrainDataAnswer(user,question,options={}){
     const result=answerDoctrineQuestion({question,snapshot:await doctrineMarketSnapshot(),focusItem:context.selectedDoctrineItem});
     return response(result.topic,result.text,{focusItem:result.focusItem||undefined,metrics:result.metrics||undefined});
   }
+
+  const appraisalAnswer=await trackerBrainAppraisalAnswer(question,tab);
+  if(appraisalAnswer)return appraisalAnswer;
 
   const market=answerMiningMarketQuestion({
     question,currentTab:tab,focusOre:context.targetOre,ores:effectiveOres(),
