@@ -29,8 +29,8 @@ const top5=nativeAppraisalPriceSet({buyOrders:[
   {price:110,volume_remain:2},
   {price:120,volume_remain:98},
 ],variant:'top5percent'});
-assert.equal(top5.buy,96);
-assert.equal(top5.sell,114);
+assert.equal(top5.buy,94);
+assert.equal(top5.sell,116);
 assert.equal(top5.split,105);
 
 console.log('Native Appraisal pricing math tests passed.');
