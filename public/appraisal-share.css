@@ -89,6 +89,10 @@ a{color:inherit}
 }
 .hero-value strong small{font-size:.42em;color:#aa93b8;letter-spacing:.07em}
 .hero-value em{color:#d58cff}
+.copy-price{cursor:pointer;user-select:none;transition:transform .12s ease,border-color .12s ease,filter .12s ease}
+.copy-price:hover{transform:translateY(-1px);filter:brightness(1.08);border-color:#b86fe2!important}
+.copy-price:focus-visible{outline:2px solid #d58cff;outline-offset:2px}
+.copy-price.copied{border-color:#56dda0!important;box-shadow:0 0 0 1px #56dda055 inset,0 0 22px #56dda022}
 .kpis{
   display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;
   padding:12px 14px;background:#090c13;border-bottom:1px solid #242b39;
