@@ -3584,7 +3584,7 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .forge-head p,.forge-board-copy{margin:4px 0 12px;color:var(--muted);font-size:10px;line-height:1.45;max-width:780px}
 .forge-controls{display:grid;grid-template-columns:minmax(220px,1fr) 80px 80px;gap:8px;margin-bottom:8px}
 .forge-field{display:grid;gap:4px}.forge-field span{font-size:8px;font-weight:900;letter-spacing:.12em;color:var(--muted)}
-.forge-field input,.forge-board-actions select{width:100%;min-height:34px;border:1px solid var(--line);border-radius:8px;background:var(--theme-panel-lo,var(--panel));color:var(--text);padding:6px 8px}
+.forge-field input,.forge-field select,.forge-board-actions select{width:100%;min-height:34px;border:1px solid var(--line);border-radius:8px;background:var(--theme-panel-lo,var(--panel));color:var(--text);padding:6px 8px}
 .forge-paste{width:100%;resize:vertical;min-height:145px;border:1px solid var(--line);border-radius:10px;background:color-mix(in srgb,var(--theme-panel-lo,var(--panel)) 88%,black 12%);color:var(--text);padding:10px;font:11px "Share Tech Mono",Consolas,monospace;line-height:1.45}
 .forge-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}.forge-actions .orb:disabled{opacity:.45;cursor:not-allowed;transform:none}
 .forge-status{margin:9px 0;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:color-mix(in srgb,var(--theme-panel-hi,var(--card)) 75%,transparent);font-size:10px;color:var(--muted)}
@@ -3602,3 +3602,25 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .forge-board-card p{font-size:8px;color:var(--muted);line-height:1.4}.forge-board-actions{display:grid;grid-template-columns:1fr auto auto auto;gap:5px;align-items:center}.forge-board-actions .board-tool{text-decoration:none;display:inline-flex;align-items:center;justify-content:center}.forge-delete{color:#ff8e8e;border-color:color-mix(in srgb,#ff5d5d 45%,var(--line));}
 @media(max-width:1050px){.forge-shell{grid-template-columns:1fr}.forge-board{max-height:none}}
 @media(max-width:720px){.forge-controls{grid-template-columns:1fr 72px 72px}.forge-summary{grid-template-columns:1fr 1fr}.forge-results-grid{grid-template-columns:1fr}.forge-board-actions{grid-template-columns:1fr 1fr}.forge-board-actions select{grid-column:1/-1}}
+
+
+/* JLR Appraisal */
+.appraisal-shell{grid-template-columns:1fr}
+.appraisal-panel{padding:14px}
+.appraisal-controls{grid-template-columns:minmax(240px,1.35fr) minmax(150px,.8fr) 130px 170px}
+.appraisal-summary{grid-template-columns:repeat(6,minmax(0,1fr))}
+.appraisal-summary .appraisal-primary{border-color:color-mix(in srgb,var(--theme-accent,#9d34ed) 65%,var(--line));background:color-mix(in srgb,var(--theme-accent,#9d34ed) 12%,var(--theme-panel-lo,var(--panel)))}
+.appraisal-results{min-width:0;border:1px solid var(--line);border-radius:10px;padding:9px;background:color-mix(in srgb,var(--theme-panel-lo,var(--panel)) 86%,transparent)}
+.appraisal-list{display:block;max-height:none;overflow:visible;padding:0}
+.appraisal-table-wrap{max-height:620px;overflow:auto;border:1px solid color-mix(in srgb,var(--line) 78%,transparent);border-radius:8px;background:var(--theme-panel-lo,var(--panel));scrollbar-gutter:stable}
+.appraisal-table{width:100%;min-width:980px;border-collapse:separate;border-spacing:0;font-size:8px;font-variant-numeric:tabular-nums}
+.appraisal-table th{position:sticky;top:0;z-index:2;padding:7px 6px;background:var(--theme-panel-hi,var(--card));color:var(--muted);font-size:6px;letter-spacing:.08em;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+.appraisal-table td{padding:7px 6px;text-align:right;border-bottom:1px solid color-mix(in srgb,var(--line) 58%,transparent);white-space:nowrap}
+.appraisal-table th:first-child,.appraisal-table td:first-child{text-align:left;min-width:250px}
+.appraisal-table td:first-child strong,.appraisal-table td:first-child small{display:block}
+.appraisal-table td:first-child strong{font-size:9px;color:var(--text)}
+.appraisal-table td:first-child small{margin-top:2px;font-size:6px;color:var(--muted)}
+.appraisal-table tbody tr:hover{background:color-mix(in srgb,var(--theme-accent,#9d34ed) 8%,transparent)}
+.appraisal-table .appraisal-unresolved td:first-child strong,.appraisal-table .appraisal-unresolved td:first-child small{color:#ff9696}
+@media(max-width:980px){.appraisal-controls{grid-template-columns:1fr 1fr}.appraisal-summary{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:620px){.appraisal-controls{grid-template-columns:1fr}.appraisal-summary{grid-template-columns:1fr 1fr}.appraisal-paste{min-height:190px}}
