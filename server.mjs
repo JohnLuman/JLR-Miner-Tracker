@@ -6298,6 +6298,7 @@ function appraisalOreRecipe(name){
 function appraisalRefinePreview(items){
   const prices=effectiveJitaMineralPrices();
   const mineralTotals=new Map();
+  const refineItems=[];
   let recognizedLines=0,recognizedUnits=0,buyAt100=0,eligibleBuy=0,eligibleSplit=0,eligibleSell=0;
   for(const row of Array.isArray(items)?items:[]){
     if(row?.resolved===false)continue;
@@ -6324,6 +6325,15 @@ function appraisalRefinePreview(items){
     eligibleBuy+=Math.max(0,Number(row?.buyTotal)||0);
     eligibleSplit+=Math.max(0,Number(row?.splitTotal)||0);
     eligibleSell+=Math.max(0,Number(row?.sellTotal)||0);
+    refineItems.push({
+      typeId:Number(row?.typeId)||null,
+      name:String(row?.name||'').trim(),
+      amount,
+      buyTotal:Math.max(0,Number(row?.buyTotal)||0),
+      splitTotal:Math.max(0,Number(row?.splitTotal)||0),
+      sellTotal:Math.max(0,Number(row?.sellTotal)||0),
+      valueAt100:lineValue,
+    });
     for(const mineral of lineMinerals){
       const current=mineralTotals.get(mineral.mineral)||{mineral:mineral.mineral,quantityAt100:0,unitBuy:mineral.unitBuy,valueAt100:0};
       current.quantityAt100+=mineral.quantityAt100;
@@ -6342,6 +6352,7 @@ function appraisalRefinePreview(items){
     eligibleBuy,
     eligibleSplit,
     eligibleSell,
+    items:refineItems,
     minerals:[...mineralTotals.values()].sort((a,b)=>b.valueAt100-a.valueAt100||a.mineral.localeCompare(b.mineral)),
     pricingBasis:'Jita mineral buy',
   };
