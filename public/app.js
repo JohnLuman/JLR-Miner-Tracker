@@ -313,6 +313,7 @@
       totalVolumeM3:Math.max(0,Number(survey?.totalVolumeM3)||0),
       pricedValueISK:Math.max(0,Number(survey?.pricedValueISK)||0),
       unpricedRowCount:Math.max(0,Number(survey?.unpricedRowCount)||0),
+      pricingBasis:String(survey?.pricingBasis||'').slice(0,40),
       groups,
     };
     localStorage.setItem('jlrAdamOreSurveyContext',JSON.stringify(adamOreSurveyContext));
@@ -354,10 +355,11 @@
   function adamOreSurveyLinkedText(system){
     const survey=adamOreSurveyContext||{};
     const unpriced=Math.max(0,Number(survey.unpricedRowCount)||0);
+    const refined=survey.pricingBasis==='jlr-refined';
     return 'Got it — I linked the last ore survey to '+system+'. '
       +Math.max(0,Number(survey.rowCount)||0)+' rocks • '
       +fmt(survey.totalVolumeM3||0,'m3')+' m³ • '
-      +fmt(survey.pricedValueISK||0)+' ISK from priced rocks'
+      +fmt(survey.pricedValueISK||0)+' ISK '+(refined?'refined value':'from priced rocks')
       +(unpriced?' • '+unpriced+' rock'+(unpriced===1?'':'s')+' still unpriced':'')+'.';
   }
 

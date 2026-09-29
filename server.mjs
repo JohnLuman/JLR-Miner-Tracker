@@ -18,6 +18,7 @@ import { chooseRapidResponseRoutes, wandererRiskPenalty, wandererWarnings } from
 import { parseThreatPaste, compactThreatStats, threatActivityLabels, fountainThreatTags, jlrThreatScore, threatIgnoreReason } from './lib/threat-scan.mjs';
 import {
   BASE_T3_ORE_REPROCESSING,
+  T3_ORE_VARIANTS_BY_TYPE_ID,
   aggregateTrackedT3Ledger,
   janiceImmediateBuyPrices,
   t3OreVariant,
@@ -175,6 +176,26 @@ const LEDGER_VALUATION_VERSION = 3;
 const ORE_REPROCESSING = BASE_T3_ORE_REPROCESSING;
 const ORE_TYPE_NAME={Mordinium:'Mordunium'};
 const REFINING_MINERALS=[...new Set(Object.values(ORE_REPROCESSING).flatMap(x=>Object.keys(x.minerals)))];
+
+// Ore-survey valuation must compare the value of the minerals we actually get
+// after reprocessing, not the market value of the raw/compressed asteroid.
+// These non-SovHub ores occur in the same mining sites as the tracked T3 ores.
+const ORE_SURVEY_EXTRA_REPROCESSING = Object.freeze({
+  arkonor:{name:'Arkonor',volume:16,portionSize:100,minerals:{Pyerite:3200,Mexallon:1200,Megacyte:120}},
+  'arkonor ii-grade':{name:'Arkonor II-Grade',volume:16,portionSize:100,minerals:{Pyerite:3360,Mexallon:1260,Megacyte:126}},
+  'arkonor iii-grade':{name:'Arkonor III-Grade',volume:16,portionSize:100,minerals:{Pyerite:3520,Mexallon:1320,Megacyte:132}},
+  'arkonor iv-grade':{name:'Arkonor IV-Grade',volume:16,portionSize:100,minerals:{Pyerite:3680,Mexallon:1380,Megacyte:138}},
+  ducinium:{name:'Ducinium',volume:16,portionSize:100,minerals:{Megacyte:170}},
+  'ducinium ii-grade':{name:'Ducinium II-Grade',volume:16,portionSize:100,minerals:{Megacyte:179}},
+  'ducinium iii-grade':{name:'Ducinium III-Grade',volume:16,portionSize:100,minerals:{Megacyte:187}},
+  'ducinium iv-grade':{name:'Ducinium IV-Grade',volume:16,portionSize:100,minerals:{Megacyte:196}},
+});
+const ORE_SURVEY_T3_REPROCESSING = Object.freeze(Object.fromEntries(
+  Object.values(T3_ORE_VARIANTS_BY_TYPE_ID).map(row=>[
+    String(row.name).trim().toLowerCase(),
+    row,
+  ]),
+));
 
 // Fountain/Gallente-quarter null-sec ice economics.
 // Quantities are the 100% theoretical reprocessing outputs per 1,000 m³ block.
@@ -928,13 +949,23 @@ function effectiveJbvPerM3(oreName) {
   if(Number.isFinite(live)&&live>0)return live;
   return Number(ORES.find(o=>o.name===oreName)?.jbvPerM3||0);
 }
-function oreSurveyFallbackPricePerM3(oreName) {
+function oreSurveyRefinedPricePerM3(oreName) {
   const normalized=String(oreName||'').trim().toLowerCase();
   if(!normalized)return null;
-  const marketName=MARKET_ORE_NAMES.find(name=>String(name).toLowerCase()===normalized);
-  if(!marketName)return null;
-  const value=Number(effectiveJbvPerM3(marketName));
-  return Number.isFinite(value)&&value>0?value:null;
+  const recipe=ORE_SURVEY_T3_REPROCESSING[normalized]||ORE_SURVEY_EXTRA_REPROCESSING[normalized]||null;
+  if(!recipe)return null;
+
+  const prices=effectiveJitaMineralPrices();
+  let refinedBatchValue=0;
+  for(const [mineral,grossQty] of Object.entries(recipe.minerals||{})){
+    const unitPrice=Number(prices[mineral]);
+    if(!(unitPrice>0))return null;
+    refinedBatchValue+=Number(grossQty)*MAX_REFINE_YIELD*unitPrice;
+  }
+  const batchM3=Number(recipe.portionSize)*Number(recipe.volume);
+  if(!(batchM3>0))return null;
+  const perM3=refinedBatchValue/batchM3;
+  return Number.isFinite(perM3)&&perM3>0?perM3:null;
 }
 function effectiveOres() {
   return ORES.map(o=>{
@@ -4385,6 +4416,7 @@ function trackerBrainContext(value){
       totalVolumeM3:finite(surveyInput.totalVolumeM3),
       pricedValueISK:finite(surveyInput.pricedValueISK),
       unpricedRowCount:finite(surveyInput.unpricedRowCount),
+      pricingBasis:trackerSpeechSafe(surveyInput.pricingBasis,40),
       groups:surveyGroups,
     }:null,
     recentActions:(Array.isArray(input.recentActions)?input.recentActions:[]).slice(-8).map(row=>({
@@ -4453,7 +4485,8 @@ function trackerBrainOreSurveyAnswer(question,rawContext){
   const system=trackerSpeechSafe(survey.system,80);
   const groups=Array.isArray(survey.groups)?survey.groups.filter(group=>group?.name):[];
   const volumeLabel=compactMetric(totalVolume)+' m³';
-  const valueLabel=compactMetric(pricedValue)+' ISK';
+  const refinedBasis=survey.pricingBasis==='jlr-refined';
+  const valueLabel=compactMetric(pricedValue)+' ISK'+(refinedBasis?' refined value':'');
   let text='';
 
   if(/\b(?:where|system)\b/.test(q)&&system){
@@ -4463,12 +4496,15 @@ function trackerBrainOreSurveyAnswer(question,rawContext){
       ?unpriced+' rock'+(unpriced===1?'':'s')+' in the survey do not have an ISK value, so the known value is partial.'
       :'Every parsed rock in that survey has an ISK value.';
   }else if(/\b(?:isk|worth|value|price|priced)\b/.test(q)){
-    text='The survey has '+valueLabel+' from priced rocks'+(unpriced?' with '+unpriced+' unpriced rock'+(unpriced===1?'':'s')+', so the true total is higher.':'.');
+    text=refinedBasis
+      ?'The survey has '+valueLabel+' at JLR max-refine yield and current Jita mineral buy prices'+(unpriced?' with '+unpriced+' rock'+(unpriced===1?'':'s')+' not yet covered by refined pricing.':'.')
+      :'The survey has '+valueLabel+' from priced rocks'+(unpriced?' with '+unpriced+' unpriced rock'+(unpriced===1?'':'s')+', so the true total is higher.':'.');
   }else if(/\b(?:largest|biggest|most|which ore|what ore|what s in it|what is in it)\b/.test(q)){
     const top=groups.slice(0,6).map(group=>group.name+' '+compactMetric(Math.max(0,Number(group.volumeM3)||0))+' m³').join('; ');
     text=top?'Largest ore groups by volume: '+top+'.':'I have the survey totals, but no ore-group breakdown for that paste.';
   }else{
-    text=(system?system+': ':'')+rowCount+' rocks • '+volumeLabel+' • '+valueLabel+' from priced rocks'
+    text=(system?system+': ':'')+rowCount+' rocks • '+volumeLabel+' • '+valueLabel
+      +(refinedBasis?' @ max refine / Jita mineral buy':' from priced rocks')
       +(unpriced?' • '+unpriced+' unpriced rock'+(unpriced===1?'':'s'):'')+'.';
   }
 
@@ -4479,7 +4515,7 @@ function trackerBrainOreSurveyAnswer(question,rawContext){
     voiceText:trackerSpeechSafe(text,600),
     generatedAt:now(),
     focusSystem:system||undefined,
-    oreSurvey:{system:system||null,rowCount,totalVolumeM3:totalVolume,pricedValueISK:pricedValue,unpricedRowCount:unpriced},
+    oreSurvey:{system:system||null,rowCount,totalVolumeM3:totalVolume,pricedValueISK:pricedValue,unpricedRowCount:unpriced,pricingBasis:survey.pricingBasis||null},
   };
 }
 
@@ -8924,7 +8960,8 @@ async function routeApi(req,res,url) {
     try{body=await readBody(req,128_000)}
     catch(err){return json(res,400,{error:'BAD_ORE_SURVEY',message:String(err.message||err)})}
     const survey=parseOreSurvey(String(body?.text||'').slice(0,100_000),{
-      pricePerM3ForName:oreSurveyFallbackPricePerM3,
+      pricePerM3ForName:oreSurveyRefinedPricePerM3,
+      replaceReportedValues:true,
     });
     if(!survey.valid)return json(res,400,{error:'ORE_SURVEY_NOT_RECOGNIZED',message:'Adam could not recognize ore survey rows in that paste.'});
     return json(res,200,{...survey,text:oreSurveySummaryText(survey)});

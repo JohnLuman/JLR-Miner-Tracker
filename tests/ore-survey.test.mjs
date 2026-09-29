@@ -25,7 +25,7 @@ assert.equal(parsed.nearest[0].distanceMeters,1594);
 
 const text=oreSurveySummaryText(parsed);
 assert.match(text,/Ore survey read: 6 rocks/);
-assert.match(text,/2 rocks have no ISK value/);
+assert.match(text,/2 rocks could not be valued/);
 assert.match(text,/Ueganite II-Grade 1\.59 km/);
 
 const fallbackSample='Kylixium\t100\t1,000 m3\t-\t1 km';
@@ -40,6 +40,26 @@ assert.equal(fallback.estimatedValueISK,250000);
 assert.equal(fallback.pricedValueISK,250000);
 assert.equal(fallback.groups[0].estimatedRows,1);
 assert.match(oreSurveySummaryText(fallback),/estimated from JLR pricing/);
+
+const refinedSample=[
+  'Kylixium\t100\t1,000 m3\t999,999,999.00 ISK\t1 km',
+  'Unknownium\t100\t500 m3\t123,000.00 ISK\t2 km',
+].join('\n');
+const refined=parseOreSurvey(refinedSample,{
+  pricePerM3ForName:name=>name==='Kylixium'?250:null,
+  replaceReportedValues:true,
+});
+assert.equal(refined.valid,true);
+assert.equal(refined.pricingBasis,'jlr-refined');
+assert.equal(refined.rowCount,2);
+assert.equal(refined.pricedRowCount,1);
+assert.equal(refined.unpricedRowCount,1);
+assert.equal(refined.pricedValueISK,250000);
+assert.equal(refined.estimatedRowCount,1);
+assert.equal(refined.nearest[0].reportedValueISK,999999999);
+assert.equal(refined.nearest[0].valueBasis,'jlr-refined');
+assert.match(oreSurveySummaryText(refined),/refined value/);
+assert.match(oreSurveySummaryText(refined),/Max-refine mineral value at current Jita buy prices/);
 
 assert.equal(parseOreSurvey('Ueganite II-Grade').valid,false);
 assert.equal(parseOreSurvey('random clipboard text').valid,false);
