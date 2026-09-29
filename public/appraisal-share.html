@@ -3,31 +3,96 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0a0711">
   <title>JLR Appraisal</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700&family=Rajdhani:wght@600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
   <style>
-    :root{color-scheme:dark;font-family:Oxanium,system-ui,sans-serif;background:#080b12;color:#edf2ff}
-    *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 15% 0,#271437 0,#0b0d15 42%,#070910 100%);padding:28px}
-    main{max-width:1240px;margin:auto}.eyebrow{font:11px "Share Tech Mono",monospace;letter-spacing:.16em;color:#c88cff}
-    .panel{margin-top:12px;background:rgba(13,15,25,.92);border:1px solid #3b2a4b;border-radius:18px;padding:20px;box-shadow:0 24px 80px rgba(0,0,0,.35)}
-    .head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}.head h1{margin:.35rem 0 0;font-size:clamp(26px,5vw,48px)}
-    .sub{color:#939bad;margin:.5rem 0 0;font-size:13px}.chip{white-space:nowrap;font:11px "Share Tech Mono";padding:7px 10px;border:1px solid #74449a;border-radius:999px;color:#d8a8ff}
-    .kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:9px;margin:18px 0}.kpi{padding:11px;background:#0b0e16;border:1px solid #29223a;border-radius:11px;min-width:0}
-    .kpi span{display:block;font:10px "Share Tech Mono";color:#858da0}.kpi strong{display:block;margin-top:4px;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .table-wrap{overflow:auto;border:1px solid #29223a;border-radius:12px}.table{width:100%;min-width:860px;border-collapse:separate;border-spacing:0;font-size:12px}
-    th,td{padding:9px 10px;border-bottom:1px solid #211c2d;text-align:right;white-space:nowrap}th{position:sticky;top:0;background:#11131d;color:#929bad;font:10px "Share Tech Mono";letter-spacing:.06em}
-    th:first-child,td:first-child{text-align:left}.item strong{display:block}.item small{display:block;color:#737c90;margin-top:2px}.bad{color:#ff9a9a}
-    .footer{margin-top:15px;color:#6e7585;font:11px "Share Tech Mono";line-height:1.45}
-    @media(max-width:900px){body{padding:14px}.head{display:block}.chip{display:inline-block;margin-top:10px}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    :root{
+      color-scheme:dark;
+      --bg:#070810;--panel:#0e101a;--panel2:#121521;--panel3:#171a28;
+      --line:#30283e;--line-hi:#58406d;--text:#f0f3ff;--muted:#9299ad;
+      --purple:#b35cff;--purple2:#7e3be6;--cyan:#58d8ff;--green:#61e6ac;--red:#ff777f;
+      font-family:Oxanium,system-ui,sans-serif;background:var(--bg);color:var(--text)
+    }
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;background:
+      radial-gradient(circle at 8% -10%,rgba(151,62,219,.28),transparent 33rem),
+      radial-gradient(circle at 92% 5%,rgba(56,128,255,.12),transparent 30rem),
+      linear-gradient(180deg,#090a12 0,#070810 55%,#06070c 100%);font-size:15px}
+    body:before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.18;background-image:
+      linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px);background-size:32px 32px}
+    a{color:inherit}
+    .sitebar{position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:12px max(18px,calc((100vw - 1540px)/2));background:rgba(7,8,16,.88);border-bottom:1px solid rgba(139,82,180,.3);backdrop-filter:blur(14px)}
+    .brand{display:flex;align-items:center;gap:12px;text-decoration:none}
+    .brand-mark{display:grid;place-items:center;width:46px;height:34px;border:1px solid #8248a9;border-radius:8px;background:linear-gradient(145deg,#24122f,#10121c);font:800 18px Rajdhani,sans-serif;letter-spacing:.08em;color:#e3baff;box-shadow:0 0 22px rgba(179,92,255,.12)}
+    .brand-copy{display:grid;line-height:1}.brand-copy strong{font:700 13px Rajdhani,sans-serif;letter-spacing:.16em}.brand-copy small{margin-top:4px;font:9px "Share Tech Mono",monospace;color:#8e799c;letter-spacing:.12em}
+    .public-chip{font:10px "Share Tech Mono",monospace;letter-spacing:.1em;color:#c592ec;border:1px solid #513367;border-radius:999px;padding:7px 10px}
+    main{width:min(1540px,calc(100% - 36px));margin:26px auto 54px}
+    .loading,.error-card{min-height:260px;display:grid;place-items:center;border:1px solid var(--line);border-radius:18px;background:rgba(14,16,26,.92);color:var(--muted)}
+    .share-shell{display:grid;gap:14px}
+    .hero{position:relative;overflow:hidden;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:24px;align-items:end;padding:24px 26px;border:1px solid #493258;border-radius:18px;background:linear-gradient(120deg,rgba(24,16,33,.96),rgba(13,16,27,.96) 60%,rgba(12,20,31,.95));box-shadow:0 24px 70px rgba(0,0,0,.28)}
+    .hero:after{content:"JLR";position:absolute;right:18px;top:-38px;font:800 150px/1 Rajdhani,sans-serif;letter-spacing:-.05em;color:rgba(199,139,255,.035);pointer-events:none}
+    .eyebrow{font:10px "Share Tech Mono",monospace;letter-spacing:.17em;color:#c98cff}
+    .hero h1{margin:7px 0 5px;font:700 clamp(30px,4vw,54px)/1.02 Rajdhani,sans-serif;letter-spacing:.01em}
+    .meta{display:flex;flex-wrap:wrap;gap:7px 14px;color:var(--muted);font:11px "Share Tech Mono",monospace}
+    .meta b{color:#c8cfe0;font-weight:500}
+    .hero-value{position:relative;z-index:2;min-width:330px;text-align:right}
+    .hero-value span{display:block;font:10px "Share Tech Mono",monospace;letter-spacing:.14em;color:#c38ce8}
+    .hero-value strong{display:block;margin-top:5px;font:700 clamp(30px,3.5vw,48px)/1 Rajdhani,sans-serif;color:#fff;text-shadow:0 0 22px rgba(179,92,255,.18)}
+    .hero-value small{display:block;margin-top:5px;color:#858da0;font:10px "Share Tech Mono",monospace}
+    .price-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+    .metric{min-width:0;padding:14px 15px;border:1px solid var(--line);border-radius:12px;background:linear-gradient(180deg,rgba(18,21,33,.96),rgba(12,14,23,.96))}
+    .metric.selected{border-color:#7844a0;background:linear-gradient(180deg,rgba(48,25,61,.86),rgba(15,15,27,.98));box-shadow:inset 0 1px 0 rgba(223,183,255,.08)}
+    .metric span{display:block;font:9px "Share Tech Mono",monospace;letter-spacing:.1em;color:var(--muted)}
+    .metric strong{display:block;margin-top:6px;font:700 clamp(18px,2vw,25px) Rajdhani,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .metric.selected strong{color:#e5bdff}.metric small{display:block;margin-top:4px;color:#697184;font:9px "Share Tech Mono",monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .section{border:1px solid var(--line);border-radius:15px;background:rgba(13,15,25,.94);overflow:hidden}
+    .section-head{display:flex;justify-content:space-between;gap:16px;align-items:center;padding:13px 16px;border-bottom:1px solid var(--line);background:rgba(17,20,31,.85)}
+    .section-head>div{display:grid;gap:2px}.section-head strong{font:700 14px Rajdhani,sans-serif;letter-spacing:.08em}.section-head small{color:var(--muted);font:9px "Share Tech Mono",monospace}
+    .section-count{padding:6px 9px;border:1px solid #443154;border-radius:999px;font:9px "Share Tech Mono",monospace;color:#c38ae8}
+    .table-wrap{overflow:auto;max-height:min(68vh,760px);scrollbar-gutter:stable}
+    table{width:100%;min-width:1050px;border-collapse:separate;border-spacing:0;font-size:13px;font-variant-numeric:tabular-nums}
+    th{position:sticky;top:0;z-index:5;padding:11px 12px;background:#151824;border-bottom:1px solid #373044;color:#8f98ab;font:10px "Share Tech Mono",monospace;letter-spacing:.075em;text-align:right;white-space:nowrap}
+    td{padding:11px 12px;border-bottom:1px solid #211d2b;text-align:right;white-space:nowrap;color:#d9deec}
+    tbody tr:nth-child(even){background:rgba(255,255,255,.012)}tbody tr:hover{background:rgba(174,87,235,.065)}
+    th:first-child,td:first-child{position:sticky;left:0;text-align:left;z-index:4;background:#0f111b;min-width:280px}
+    th:first-child{z-index:7;background:#151824}
+    tbody tr:nth-child(even) td:first-child{background:#10121d}tbody tr:hover td:first-child{background:#171222}
+    th.selected,td.selected{background-color:rgba(144,65,193,.08);color:#e4beff}th:first-child.selected,td:first-child.selected{background:#171222}
+    .item strong{display:block;color:#f2f4fb;font-size:13px}.item small{display:block;margin-top:3px;color:#6f788c;font:9px "Share Tech Mono",monospace}
+    .bad,.bad strong{color:#ff9398!important}
+    .refine{border-color:#473155;background:linear-gradient(135deg,rgba(32,19,42,.95),rgba(12,16,26,.96) 62%)}
+    .refine-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:center;padding:15px 17px;border-bottom:1px solid #3b2b47}
+    .refine-title{display:grid;gap:3px}.refine-title strong{font:700 16px Rajdhani,sans-serif;letter-spacing:.09em}.refine-title small{color:var(--muted);font:9px "Share Tech Mono",monospace}
+    .rate-badge{text-align:right}.rate-badge span{display:block;font:9px "Share Tech Mono",monospace;color:#9b8aa7;letter-spacing:.1em}.rate-badge strong{font:700 25px Rajdhani,sans-serif;color:#dbabff}
+    .refine-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;padding:13px}
+    .refine-card{padding:12px;border:1px solid #382c43;border-radius:10px;background:rgba(9,11,18,.62)}
+    .refine-card span{display:block;font:9px "Share Tech Mono",monospace;color:#8d8796}.refine-card strong{display:block;margin-top:5px;font:700 20px Rajdhani,sans-serif}.refine-card small{display:block;margin-top:3px;color:#6f7482;font:9px "Share Tech Mono",monospace}
+    .positive strong{color:var(--green)}.negative strong{color:var(--red)}
+    .minerals{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:7px;padding:0 13px 13px}
+    .mineral{display:grid;grid-template-columns:1fr auto;gap:3px 8px;padding:9px 10px;border:1px solid #2c2735;border-radius:8px;background:rgba(10,12,20,.72)}
+    .mineral span{font-size:11px;color:#9aa2b2}.mineral strong{font:700 12px "Share Tech Mono",monospace}.mineral small{grid-column:1/-1;text-align:right;color:#a878c8;font:9px "Share Tech Mono",monospace}
+    .refine-note{padding:0 14px 14px;color:#777f91;font:9px/1.5 "Share Tech Mono",monospace}
+    .footer{display:flex;justify-content:space-between;gap:20px;padding:3px 4px;color:#616979;font:9px/1.45 "Share Tech Mono",monospace}
+    .footer a{text-decoration:none;color:#9d72bd}.footer a:hover{color:#d3a2f7}
+    @media(max-width:1050px){.price-grid{grid-template-columns:repeat(3,1fr)}.hero{grid-template-columns:1fr}.hero-value{text-align:left;min-width:0}.refine-grid{grid-template-columns:1fr 1fr}}
+    @media(max-width:680px){.sitebar{padding:10px 12px}.public-chip{display:none}main{width:min(100% - 20px,1540px);margin-top:14px}.hero{padding:18px}.price-grid{grid-template-columns:1fr 1fr}.metric:first-child{grid-column:1/-1}.refine-head{grid-template-columns:1fr}.rate-badge{text-align:left}.refine-grid{grid-template-columns:1fr}.footer{display:block}.footer span{display:block;margin-top:6px}}
   </style>
 </head>
 <body>
+<header class="sitebar">
+  <a class="brand" href="/" aria-label="Open JLR Miner Tracker">
+    <span class="brand-mark">JLR</span>
+    <span class="brand-copy"><strong>MARKET NETWORK</strong><small>MINER TRACKER // FOUNTAIN</small></span>
+  </a>
+  <span class="public-chip">PUBLIC APPRAISAL LINK</span>
+</header>
 <main>
-  <span class="eyebrow">JLR MARKET NETWORK // SHARED APPRAISAL</span>
-  <div id="root" class="panel">Loading appraisal…</div>
+  <div id="root" class="loading">LOADING JLR APPRAISAL…</div>
 </main>
-<script src="/appraisal-share.js?v=1" defer></script>
+<script src="/appraisal-share.js?v=2" defer></script>
 </body>
 </html>
