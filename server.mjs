@@ -17,6 +17,7 @@ import { createTrackerSupportClient } from './lib/tracker-support-client.mjs';
 import { chooseRapidResponseRoutes, wandererRiskPenalty, wandererWarnings } from './lib/rapid-response-route.mjs';
 import { parseThreatPaste, compactThreatStats, threatActivityLabels, fountainThreatTags, jlrThreatScore, threatIgnoreReason } from './lib/threat-scan.mjs';
 import { parseForgePaste, aggregateForgeMaterials, forgeSummary, sanitizeForgeShare, FORGE_STATUSES } from './lib/forge/forge.mjs';
+import { appraisalSummary, normalizeJaniceAppraisal, sanitizeAppraisalShare, APPRAISAL_PRICING, APPRAISAL_VARIANTS } from './lib/appraisal/appraisal.mjs';
 import {
   BASE_T3_ORE_REPROCESSING,
   T3_ORE_VARIANTS_BY_TYPE_ID,
@@ -596,6 +597,7 @@ function freshState() {
     scans: {},
     pvpLifetimeDamage: {},
     forge: { shares: {} },
+    appraisals: { shares: {} },
     trackerIntel: {
       regionCatalog: [],
       regionCatalogUpdatedAt: null,
@@ -645,6 +647,8 @@ async function loadState() {
     parsed.pvpLifetimeDamage ||= {};
     parsed.forge = { ...base.forge, ...(parsed.forge || {}) };
     parsed.forge.shares ||= {};
+    parsed.appraisals = { ...base.appraisals, ...(parsed.appraisals || {}) };
+    parsed.appraisals.shares ||= {};
     parsed.trackerIntel = { ...base.trackerIntel, ...(parsed.trackerIntel || {}) };
     if(!Array.isArray(parsed.trackerIntel.regionCatalog))parsed.trackerIntel.regionCatalog=[];
     parsed.trackerIntel.regionCatalogUpdatedAt ||= null;
@@ -4327,10 +4331,10 @@ const TRACKER_APP_KNOWLEDGE = {
     panels:['gas types','site types','regional availability','site quantities','value information','wormhole gas tracker','shared J-space probe scans','Fullerite signatures']
   },
   forge:{
-    label:'JLR Forge',
-    aliases:['forge','jlr forge','build planner','build board','industry planner','manufacturing planner'],
-    description:'JLR Forge is the shared industry workspace. Paste items and quantities to resolve current EVE manufacturing recipes, combine the required materials into one shopping list, keep raw ore valuation on JLRs max-refine and 95 percent payout basis, and post the result to the shared Build Board. Build Board cards move through planning, needs materials, ready to build, building and done, and each card has a public share link that does not expose EVE tokens or private account data.',
-    panels:['build-list paste','ME and TE settings','manufacturing outputs','combined material shopping list','95 percent ore payout','shared Build Board','public build links']
+    label:'JLR Appraisal',
+    aliases:['appraisal','jlr appraisal','price check','market appraisal','item appraisal','forge'],
+    description:'JLR Appraisal is the market-value workspace. Paste EVE inventory, cargo, ore, modules, loot or a simple item-and-quantity list. It prices the list against the selected market, shows Buy, Split and Sell values together, supports Immediate or Top 5 percent average pricing when the configured provider supports it, totals volume, and can create a public JLR share link without exposing EVE tokens or private account data.',
+    panels:['item-list paste','market selector','buy split sell pricing','immediate or top 5 percent basis','volume and value totals','item price table','public appraisal link']
   },
   doctrine:{
     label:'Doctrine Market',
@@ -6013,6 +6017,129 @@ function forgeBoardRows(user=null){
     .map(row=>({...forgeSharePublic(row),canDelete:Boolean(userId&&String(row?.owner?.id||'')===userId)}))
     .sort((a,b)=>Date.parse(b.updatedAt||b.createdAt||0)-Date.parse(a.updatedAt||a.createdAt||0))
     .slice(0,100);
+}
+
+
+const appraisalMarketsCache={at:0,data:null};
+
+function appraisalMode(value){
+  const key=String(value||'split').toLowerCase();
+  return APPRAISAL_PRICING.includes(key)?key:'split';
+}
+function appraisalVariant(value){
+  const key=String(value||'immediate').toLowerCase();
+  return APPRAISAL_VARIANTS.includes(key)?key:'immediate';
+}
+async function appraisalMarkets(){
+  if(appraisalMarketsCache.data&&Date.now()-appraisalMarketsCache.at<60*60*1000)return appraisalMarketsCache.data;
+  if(JANICE_API_KEY){
+    try{
+      const response=await fetch(JANICE_API_URL+'/markets',{
+        headers:{'Accept':'application/json','X-ApiKey':JANICE_API_KEY,'User-Agent':ESI_USER_AGENT},
+        signal:AbortSignal.timeout(12_000),
+      });
+      if(response.ok){
+        const payload=await response.json();
+        const rows=(Array.isArray(payload)?payload:[])
+          .map(row=>({id:Number(row?.id),name:String(row?.name||'').trim()}))
+          .filter(row=>Number.isFinite(row.id)&&row.id>0&&row.name);
+        if(rows.length){
+          appraisalMarketsCache.at=Date.now();
+          appraisalMarketsCache.data=rows;
+          return rows;
+        }
+      }
+    }catch(error){
+      console.warn('Janice appraisal markets unavailable',String(error?.message||error));
+    }
+  }
+  const fallback=[{id:2,name:'Jita 4-4'}];
+  appraisalMarketsCache.at=Date.now();
+  appraisalMarketsCache.data=fallback;
+  return fallback;
+}
+async function janiceAppraisal(text,{market=2,pricing='split',pricingVariant='immediate'}={}){
+  if(!JANICE_API_KEY)return null;
+  const params=new URLSearchParams({
+    market:String(Math.max(1,Number(market)||2)),
+    designation:'appraisal',
+    pricing:appraisalMode(pricing),
+    pricingVariant:appraisalVariant(pricingVariant),
+    persist:'false',
+    compactize:'true',
+  });
+  const response=await fetch(JANICE_API_URL+'/appraisal?'+params.toString(),{
+    method:'POST',
+    headers:{'Accept':'application/json','Content-Type':'text/plain','X-ApiKey':JANICE_API_KEY,'User-Agent':ESI_USER_AGENT},
+    body:String(text||'').slice(0,100_000),
+    signal:AbortSignal.timeout(30_000),
+  });
+  if(!response.ok){
+    let detail='';
+    try{detail=String((await response.json())?.detail||'')}catch{}
+    throw new Error('Appraisal provider '+response.status+(detail?': '+detail:''));
+  }
+  return normalizeJaniceAppraisal(await response.json(),{marketId:market,pricing,pricingVariant});
+}
+async function fallbackJitaAppraisal(text,{pricing='split',pricingVariant='immediate'}={}){
+  if(appraisalVariant(pricingVariant)!=='immediate')throw new Error('Top 5% pricing requires the configured appraisal provider.');
+  const parsed=parseForgePaste(String(text||'').slice(0,100_000));
+  if(!parsed.valid)throw new Error('Paste one or more EVE items first.');
+  const items=await forgeMapLimit(parsed.rows.slice(0,100),4,async input=>{
+    try{
+      const resolved=await forgeResolveItem(input.name);
+      if(!resolved)return{resolved:false,typeId:null,name:input.name,amount:Number(input.quantity)||0,totalVolume:0,totalPackagedVolume:0,buy:0,split:0,sell:0,buyTotal:0,splitTotal:0,sellTotal:0};
+      await ensureType([resolved.typeId]);
+      const type=state.esi.typeCache[String(resolved.typeId)]||{};
+      const orders=await marketOrders(JITA_REGION_ID,resolved.typeId);
+      const price=await bestPricesReachableAt(orders,JITA_SYSTEM_ID,JITA_44_STATION_ID);
+      const buy=Math.max(0,Number(price.buy)||0),sell=Math.max(0,Number(price.sell)||0);
+      const split=buy>0&&sell>0?(buy+sell)/2:(buy||sell||0);
+      const amount=Math.max(1,Number(input.quantity)||1);
+      const volumePerUnit=Math.max(0,Number(type.volume)||0);
+      return{
+        resolved:true,typeId:resolved.typeId,name:resolved.name,amount,
+        volumePerUnit,packagedVolumePerUnit:volumePerUnit,
+        totalVolume:volumePerUnit*amount,totalPackagedVolume:volumePerUnit*amount,
+        buyOrderCount:orders.filter(row=>row?.is_buy_order).length,
+        buyVolume:orders.filter(row=>row?.is_buy_order).reduce((sum,row)=>sum+Math.max(0,Number(row?.volume_remain)||0),0),
+        sellOrderCount:orders.filter(row=>!row?.is_buy_order).length,
+        sellVolume:orders.filter(row=>!row?.is_buy_order).reduce((sum,row)=>sum+Math.max(0,Number(row?.volume_remain)||0),0),
+        buy,split,sell,buyTotal:buy*amount,splitTotal:split*amount,sellTotal:sell*amount,
+      };
+    }catch(error){
+      return{resolved:false,typeId:null,name:input.name,amount:Number(input.quantity)||0,totalVolume:0,totalPackagedVolume:0,buy:0,split:0,sell:0,buyTotal:0,splitTotal:0,sellTotal:0,error:String(error?.message||error).slice(0,160)};
+    }
+  });
+  const mode=appraisalMode(pricing);
+  return{
+    generatedAt:now(),datasetTime:null,source:'esi-jita-fallback',
+    market:{id:2,name:'Jita 4-4'},pricing:mode,pricingVariant:'immediate',
+    failures:parsed.rejected.join('\n'),items,summary:appraisalSummary(items,mode),
+  };
+}
+async function buildAppraisal(text,options={}){
+  const market=Math.max(1,Number(options.market)||2);
+  const pricing=appraisalMode(options.pricing);
+  const pricingVariant=appraisalVariant(options.pricingVariant);
+  if(JANICE_API_KEY){
+    try{return await janiceAppraisal(text,{market,pricing,pricingVariant})}
+    catch(error){
+      if(market!==2||pricingVariant!=='immediate')throw error;
+      console.warn('Janice appraisal failed; using Jita ESI fallback',String(error?.message||error));
+    }
+  }
+  if(market!==2)throw new Error('This market requires the configured appraisal provider.');
+  return fallbackJitaAppraisal(text,{pricing,pricingVariant});
+}
+function appraisalSharePublic(row){
+  if(!row)return null;
+  return{
+    id:String(row.id||''),token:String(row.token||''),title:String(row.title||'JLR Appraisal'),
+    owner:{name:String(row.owner?.name||'JLR Pilot')},
+    createdAt:row.createdAt||null,
+    appraisal:row.appraisal||null,
+  };
 }
 
 async function resolveUniverseNames(ids){
@@ -9123,6 +9250,12 @@ async function routeApi(req,res,url) {
     if(!row)return json(res,404,{error:'FORGE_SHARE_NOT_FOUND'});
     return json(res,200,{share:forgeSharePublic(row)});
   }
+  if(req.method==='GET'&&url.pathname.startsWith('/api/appraisal/share/')){
+    const token=String(url.pathname.split('/').pop()||'');
+    const row=Object.values(state.appraisals?.shares||{}).find(entry=>String(entry?.token||'')===token);
+    if(!row)return json(res,404,{error:'APPRAISAL_NOT_FOUND'});
+    return json(res,200,{share:appraisalSharePublic(row)});
+  }
 
   const user=requireUser(req,res);if(!user)return;
 
@@ -9187,6 +9320,47 @@ async function routeApi(req,res,url) {
     refreshDoctrineMarket().catch(console.error);
     return json(res,200,await doctrineMarketSnapshot());
   }
+  if(req.method==='GET'&&url.pathname==='/api/appraisal/markets'){
+    return json(res,200,{markets:await appraisalMarkets(),provider:JANICE_API_KEY?'janice-v2':'esi-fallback'});
+  }
+  if(req.method==='POST'&&url.pathname==='/api/appraisal'){
+    if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
+    let body;
+    try{body=await readBody(req,140_000)}
+    catch(err){return json(res,400,{error:'BAD_APPRAISAL',message:String(err.message||err)})}
+    const textInput=String(body?.text||'').trim();
+    if(!textInput)return json(res,400,{error:'EMPTY_APPRAISAL',message:'Paste one or more EVE items and quantities.'});
+    try{
+      return json(res,200,await buildAppraisal(textInput,{market:body?.market,pricing:body?.pricing,pricingVariant:body?.pricingVariant}));
+    }catch(err){
+      return json(res,502,{error:'APPRAISAL_FAILED',message:String(err.message||err)});
+    }
+  }
+  if(req.method==='POST'&&url.pathname==='/api/appraisal/share'){
+    if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
+    let body;
+    try{body=await readBody(req,160_000)}
+    catch(err){return json(res,400,{error:'BAD_APPRAISAL_SHARE',message:String(err.message||err)})}
+    const textInput=String(body?.text||'').trim();
+    if(!textInput)return json(res,400,{error:'EMPTY_APPRAISAL',message:'Paste one or more EVE items and quantities.'});
+    try{
+      const appraisal=await buildAppraisal(textInput,{market:body?.market,pricing:body?.pricing,pricingVariant:body?.pricingVariant});
+      const base=sanitizeAppraisalShare({title:body?.title,appraisal},user);
+      if(!base.appraisal.items.some(row=>row.resolved!==false))return json(res,400,{error:'EMPTY_APPRAISAL_SHARE',message:'No EVE items could be resolved.'});
+      state.appraisals ||= {shares:{}};
+      state.appraisals.shares ||= {};
+      const id='appraisal_'+randomId(10),token=randomId(18);
+      const row={id,token,...base,createdAt:now()};
+      state.appraisals.shares[id]=row;
+      const ordered=Object.values(state.appraisals.shares).sort((a,b)=>Date.parse(b.createdAt||0)-Date.parse(a.createdAt||0));
+      for(const stale of ordered.slice(500))delete state.appraisals.shares[stale.id];
+      await save();
+      return json(res,200,{share:appraisalSharePublic(row),shareUrl:requestBaseUrl(req)+'/appraisal/'+token});
+    }catch(err){
+      return json(res,502,{error:'APPRAISAL_SHARE_FAILED',message:String(err.message||err)});
+    }
+  }
+
   if(req.method==='GET'&&url.pathname==='/api/forge/board'){
     return json(res,200,{shares:forgeBoardRows(user),statuses:FORGE_STATUSES});
   }
@@ -9975,6 +10149,9 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(url.pathname.startsWith('/api/'))return await routeApi(req,res,url);
   if(req.method==='GET'&&/^\/forge\/[A-Za-z0-9_-]{8,}$/.test(url.pathname)){
     if(await serveStatic(req,res,'/forge-share.html'))return;
+  }
+  if(req.method==='GET'&&/^\/appraisal\/[A-Za-z0-9_-]{8,}$/.test(url.pathname)){
+    if(await serveStatic(req,res,'/appraisal-share.html'))return;
   }
   if(await serveVoskRuntime(req,res,url.pathname))return;
   if(await serveVoskModel(req,res,url.pathname))return;
