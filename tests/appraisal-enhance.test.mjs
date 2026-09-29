@@ -8,9 +8,10 @@ const shareHtml=fs.readFileSync(new URL('../public/appraisal-share.html',import.
 const share=fs.readFileSync(new URL('../public/appraisal-share-enhance.js',import.meta.url),'utf8');
 const shareCss=fs.readFileSync(new URL('../public/appraisal-share-enhance.css',import.meta.url),'utf8');
 
-assert.match(index,/appraisal-enhance\.js\?v=2/);
-assert.match(index,/appraisal-enhance\.css\?v=2/);
+assert.match(index,/appraisal-enhance\.js\?v=3/);
+assert.match(index,/appraisal-enhance\.css\?v=3/);
 assert.match(live,/PAYOUT %/);
+assert.match(live,/JLR NATIVE VALUE MODIFIER/);
 assert.match(live,/COPY SUMMARY/);
 assert.match(live,/COPY TABLE/);
 assert.match(live,/data-jlr-copy/);
