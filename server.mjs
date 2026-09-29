@@ -4331,10 +4331,10 @@ const TRACKER_APP_KNOWLEDGE = {
     panels:['gas types','site types','regional availability','site quantities','value information','wormhole gas tracker','shared J-space probe scans','Fullerite signatures']
   },
   forge:{
-    label:'JLR Forge',
-    aliases:['forge','jlr forge','build planner','build board','industry planner','manufacturing planner'],
-    description:'JLR Forge is the shared industry workspace. Paste items and quantities to resolve current EVE manufacturing recipes, combine the required materials into one shopping list, keep raw ore valuation on JLRs max-refine and 95 percent payout basis, and post the result to the shared Build Board. Build Board cards move through planning, needs materials, ready to build, building and done, and each card has a public share link that does not expose EVE tokens or private account data.',
-    panels:['build-list paste','ME and TE settings','manufacturing outputs','combined material shopping list','95 percent ore payout','shared Build Board','public build links']
+    label:'JLR Appraisal',
+    aliases:['appraisal','jlr appraisal','price check','market appraisal','item appraisal','forge'],
+    description:'JLR Appraisal is the market-value workspace. Paste EVE inventory, cargo, ore, modules, loot or a simple item-and-quantity list. It prices the list against the selected market, shows Buy, Split and Sell values together, supports Immediate or Top 5 percent average pricing when the configured provider supports it, totals volume, and can create a public JLR share link without exposing EVE tokens or private account data.',
+    panels:['item-list paste','market selector','buy split sell pricing','immediate or top 5 percent basis','volume and value totals','item price table','public appraisal link']
   },
   doctrine:{
     label:'Doctrine Market',
