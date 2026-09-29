@@ -4308,8 +4308,8 @@ const TRACKER_APP_KNOWLEDGE = {
   forge:{
     label:'JLR Appraisal',
     aliases:['appraisal','jlr appraisal','price check','market appraisal','item appraisal','forge'],
-    description:'JLR Appraisal is the market-value workspace. Paste EVE inventory, cargo, ore, modules, loot or a simple item-and-quantity list. It prices the list against the selected market, shows Buy, Split and Sell values together, supports Immediate or Top 5 percent average pricing when the configured provider supports it, totals volume, and can create a public JLR share link without exposing EVE tokens or private account data.',
-    panels:['item-list paste','market selector','buy split sell pricing','immediate or top 5 percent basis','volume and value totals','item price table','public appraisal link']
+    description:'JLR Appraisal is JLR’s native CCP ESI market-value workspace. Paste EVE inventory, cargo, ore, modules, loot or a simple item-and-quantity list. JLR resolves the item types through CCP ESI, prices them with its own cached market-order engine, shows Buy, Split and Sell values, supports Immediate and Top 5 percent volume-weighted pricing, compares raw/compressed/refined economics, adds cached market-history context through Support, totals volume, and can create a public JLR share link without exposing EVE tokens or private account data.',
+    panels:['item-list paste','JLR native market selector','buy split sell pricing','immediate or top 5 percent basis','compression comparison','refine economics','market history','volume and value totals','item price table','public appraisal link']
   },
   doctrine:{
     label:'Doctrine Market',
