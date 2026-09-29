@@ -596,14 +596,102 @@ function appraisalIntelItem(row){
     name:String(row?.name||'').trim().slice(0,180),
     amount:Math.max(0,Math.floor(Number(row?.amount)||0)),
     totalVolume:Math.max(0,Number(row?.totalVolume)||0),
+    buyOrderCount:Math.max(0,Math.floor(Number(row?.buyOrderCount)||0)),
+    buyVolume:Math.max(0,Number(row?.buyVolume)||0),
+    sellOrderCount:Math.max(0,Math.floor(Number(row?.sellOrderCount)||0)),
+    sellVolume:Math.max(0,Number(row?.sellVolume)||0),
     buy:Math.max(0,Number(row?.buy)||0),
     split:Math.max(0,Number(row?.split)||0),
     sell:Math.max(0,Number(row?.sell)||0),
     buyTotal:Math.max(0,Number(row?.buyTotal)||0),
     splitTotal:Math.max(0,Number(row?.splitTotal)||0),
     sellTotal:Math.max(0,Number(row?.sellTotal)||0),
+    marketDataAt:String(row?.marketDataAt||'').trim().slice(0,60),
+    marketDataAgeMs:Math.max(0,Number(row?.marketDataAgeMs)||0),
+    marketDataStale:Boolean(row?.marketDataStale),
+    marketDataSource:String(row?.marketDataSource||'').trim().slice(0,40),
   };
 }
+function appraisalDecisionRawValue(row,pricing){
+  if(pricing==='buy')return Math.max(0,Number(row?.buyTotal)||0);
+  if(pricing==='sell')return Math.max(0,Number(row?.sellTotal)||0);
+  return Math.max(0,Number(row?.splitTotal)||0);
+}
+function appraisalDecisionIntel(source,compression,pricing){
+  const refine=source?.refine&&typeof source.refine==='object'?source.refine:null;
+  const refineItems=(Array.isArray(refine?.items)?refine.items:[])
+    .filter(row=>row&&String(row.name||'').trim()&&Number(row.valueAt100)>0);
+  if(!refine||!refineItems.length)return null;
+  const rate=Math.max(0,Math.min(1,Number(refine.selectedRate??refine.defaultRate)||0));
+  const compressionByName=new Map((Array.isArray(compression)?compression:[])
+    .filter(row=>row?.sourceName)
+    .map(row=>[String(row.sourceName).trim().toLowerCase(),row]));
+  let rawValue=0,compressedValue=0,refinedValue=0,covered=0;
+  const rows=refineItems.map(row=>{
+    const name=String(row.name||'').trim();
+    const comp=compressionByName.get(name.toLowerCase())||null;
+    const currentRaw=appraisalDecisionRawValue(row,pricing);
+    let raw=currentRaw,compressed=null;
+    if(comp){
+      covered++;
+      if(String(comp.direction)==='decompress'){
+        compressed=Math.max(0,Number(comp.sourceValue)||0);
+        raw=Math.max(0,Number(comp.targetValue)||0);
+      }else{
+        raw=Math.max(0,Number(comp.sourceValue)||0);
+        compressed=Math.max(0,Number(comp.targetValue)||0);
+      }
+    }else if(/^compressed\s+/i.test(name)){
+      compressed=currentRaw;
+      raw=null;
+    }
+    const refineAt100=Math.max(0,Number(row.valueAt100)||0);
+    const refined=refineAt100*rate;
+    if(Number.isFinite(Number(raw)))rawValue+=Math.max(0,Number(raw)||0);
+    if(Number.isFinite(Number(compressed)))compressedValue+=Math.max(0,Number(compressed)||0);
+    refinedValue+=refined;
+    const options=[
+      Number.isFinite(Number(raw))?{key:'raw',label:'RAW',value:Math.max(0,Number(raw)||0)}:null,
+      Number.isFinite(Number(compressed))?{key:'compressed',label:'COMPRESSED',value:Math.max(0,Number(compressed)||0)}:null,
+      {key:'refine',label:'REFINE',value:refined},
+    ].filter(Boolean).sort((a,b)=>b.value-a.value);
+    return{
+      typeId:Number(row.typeId)||null,
+      name,
+      amount:Math.max(0,Number(row.amount)||0),
+      rawValue:Number.isFinite(Number(raw))?Math.max(0,Number(raw)||0):null,
+      compressedValue:Number.isFinite(Number(compressed))?Math.max(0,Number(compressed)||0):null,
+      refineValueAt100:refineAt100,
+      refinedValue:refined,
+      winner:options[0]?.key||null,
+      winnerLabel:options[0]?.label||null,
+      advantageValue:options.length>1?Math.max(0,options[0].value-options[1].value):0,
+    };
+  });
+  const fullCompressionCoverage=covered===refineItems.length&&covered>0;
+  const options=[
+    {key:'raw',label:'RAW',value:rawValue},
+    fullCompressionCoverage?{key:'compressed',label:'COMPRESSED',value:compressedValue}:null,
+    {key:'refine',label:'REFINE',value:refinedValue},
+  ].filter(Boolean).sort((a,b)=>b.value-a.value);
+  return{
+    pricing,
+    refineRate:rate,
+    pricingBasis:String(refine.pricingBasis||'Jita mineral buy').slice(0,80),
+    recognizedLines:refineItems.length,
+    compressionCoveredLines:covered,
+    fullCompressionCoverage,
+    rawValue,
+    compressedValue:fullCompressionCoverage?compressedValue:null,
+    refinedValue,
+    winner:options[0]?.key||null,
+    winnerLabel:options[0]?.label||null,
+    winnerValue:options[0]?.value||0,
+    advantageValue:options.length>1?Math.max(0,(options[0]?.value||0)-(options[1]?.value||0)):0,
+    rows,
+  };
+}
+
 async function buildSupportAppraisalIntel(body){
   const source=body?.appraisal&&typeof body.appraisal==='object'?body.appraisal:{};
   const pricing=['buy','split','sell'].includes(String(source.pricing||'').toLowerCase())?String(source.pricing).toLowerCase():'split';
@@ -678,10 +766,24 @@ async function buildSupportAppraisalIntel(body){
     const settled=await Promise.all(targets.map(async row=>{
       try{
         const summary=await esiMarketHistory(region.regionId,row.typeId);
+        const buy=Math.max(0,Number(row.buy)||0);
+        const sell=Math.max(0,Number(row.sell)||0);
+        const midpoint=buy>0&&sell>0?(buy+sell)/2:0;
+        const avgDaily=Math.max(0,Number(summary.avgDailyVolume7)||0);
         return{
           typeId:row.typeId,name:row.name,amount:row.amount,
           selectedValue:appraisalSelectedValue(row,pricing),
           regionId:region.regionId,regionName:region.regionName,
+          buyOrderCount:Math.max(0,Number(row.buyOrderCount)||0),
+          sellOrderCount:Math.max(0,Number(row.sellOrderCount)||0),
+          buyVolume:Math.max(0,Number(row.buyVolume)||0),
+          sellVolume:Math.max(0,Number(row.sellVolume)||0),
+          spreadPct:midpoint>0?((sell-buy)/midpoint)*100:null,
+          buyBookDays:avgDaily>0?Math.max(0,Number(row.buyVolume)||0)/avgDaily:null,
+          sellBookDays:avgDaily>0?Math.max(0,Number(row.sellVolume)||0)/avgDaily:null,
+          marketDataAt:row.marketDataAt||null,
+          marketDataStale:Boolean(row.marketDataStale),
+          marketDataSource:row.marketDataSource||null,
           ...summary,
         };
       }catch{return null}
@@ -692,12 +794,15 @@ async function buildSupportAppraisalIntel(body){
     warnings.push('Market history is currently mapped for Jita, Amarr, Dodixie, Rens, and Hek.');
   }
 
+  const decision=appraisalDecisionIntel(source,compression,pricing);
   const value={
     available:true,
     generatedAt:new Date().toISOString(),
     market,pricing,pricingVariant,
+    marketData:source.marketData&&typeof source.marketData==='object'?source.marketData:null,
     compression,
     history,
+    decision,
     warnings,
     cache:{
       hit:false,ageMs:0,ttlMs:APPRAISAL_INTEL_CACHE_TTL_MS,
