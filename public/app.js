@@ -2802,6 +2802,29 @@
       localStorage.setItem('jlrTab',activeTab);
     }
   }
+  const NAV_TAB_LABELS={fields:'FIELDS',fleet:'FLEET',performance:'PERFORMANCE',tracker:'TRACKER',ice:'ICE',gas:'GAS',forge:'APPRAISAL',doctrine:'DOCTRINE',pvp:'INIT PVP',threat:'THREAT',mer:'MER',brain:'ADAM',toons:'TOONS',feedback:'FEEDBACK'};
+  function closeNavDropdowns(except=null){
+    document.querySelectorAll('.nav-menu[open]').forEach(menu=>{if(menu!==except)menu.open=false});
+  }
+  function syncNavDropdowns(tab=activeTab){
+    document.querySelectorAll('.nav-menu').forEach(menu=>{
+      const button=menu.querySelector('.app-tab[data-tab="'+tab+'"]');
+      menu.classList.toggle('active',!!button);
+      const current=menu.querySelector('.nav-menu-current');
+      if(current)current.textContent=button?(NAV_TAB_LABELS[tab]||String(button.textContent||'').trim()):(current.dataset.default||'MENU');
+    });
+  }
+  function initNavDropdowns(){
+    const nav=document.querySelector('.nav-dropdown-bar');
+    if(!nav||nav.dataset.dropdownReady==='1')return;
+    nav.dataset.dropdownReady='1';
+    nav.querySelectorAll('.nav-menu').forEach(menu=>menu.addEventListener('toggle',()=>{if(menu.open)closeNavDropdowns(menu)}));
+    nav.querySelectorAll('.nav-menu .app-tab').forEach(button=>button.addEventListener('click',()=>closeNavDropdowns()));
+    document.addEventListener('pointerdown',event=>{if(!event.target.closest('.nav-menu'))closeNavDropdowns()});
+    document.addEventListener('keydown',event=>{if(event.key==='Escape')closeNavDropdowns()});
+    syncNavDropdowns(activeTab);
+  }
+
   function applyTab(tab){
     const valid=['fields','brain','fleet','performance','ice','gas','forge','pvp','threat','mer','toons','feedback'];
     if(doctrineAllowed())valid.splice(5,0,'doctrine');
@@ -2824,6 +2847,7 @@
     localStorage.setItem('jlrTab',activeTab);
     document.querySelectorAll('.app-tab').forEach(button=>button.classList.toggle('active',button.dataset.tab===activeTab));
     document.querySelectorAll('.tab-panel').forEach(panel=>panel.classList.toggle('active',panel.dataset.tab===activeTab));
+    syncNavDropdowns(activeTab);
     if(activeTab!=='pvp'&&pvpIntelPoll){clearTimeout(pvpIntelPoll);pvpIntelPoll=null}
     if(activeTab==='fields'&&state){
       renderBoards();renderTimers();renderSelect();renderSelected();
@@ -3185,6 +3209,7 @@
     document.querySelector('.compact-row')?.remove();
     $('expandedArea')?.remove();
 
+    initNavDropdowns();
     document.querySelectorAll('.app-tab').forEach(button=>button.addEventListener('click',()=>applyTab(button.dataset.tab)));
     applyTab(activeTab);
   }
