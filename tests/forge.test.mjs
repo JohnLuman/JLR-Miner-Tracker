@@ -72,4 +72,4 @@ assert.doesNotMatch(app,/BUILD BOARD/);
 assert.match(index,/data-tab="forge" type="button">APPRAISAL</);
 assert.match(app,/appraisalCalculate/);
 assert.match(app,/event\.ctrlKey\|\|event\.metaKey/,'Ctrl/Cmd+Enter runs appraisal while normal Enter remains a newline');
-assert.match(index,/app\.js\?v=2\.10\.0-appraisal1/,'Appraisal UI is cache-busted');
+assert.match(index,/app\.js\?v=2\.10\.1-opsfix1/,'Appraisal UI is cache-busted');
