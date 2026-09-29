@@ -8,8 +8,8 @@ const shareHtml=fs.readFileSync(new URL('../public/appraisal-share.html',import.
 const share=fs.readFileSync(new URL('../public/appraisal-share-enhance.js',import.meta.url),'utf8');
 const shareCss=fs.readFileSync(new URL('../public/appraisal-share-enhance.css',import.meta.url),'utf8');
 
-assert.match(index,/appraisal-enhance\.js\?v=3/);
-assert.match(index,/appraisal-enhance\.css\?v=3/);
+assert.match(index,/appraisal-enhance\.js\?v=4/);
+assert.match(index,/appraisal-enhance\.css\?v=4/);
 assert.match(live,/PAYOUT %/);
 assert.match(live,/JLR NATIVE VALUE MODIFIER/);
 assert.match(live,/COPY SUMMARY/);
@@ -24,8 +24,12 @@ assert.match(live,/COMPRESSION/,'Appraisal renders compression comparison');
 assert.match(live,/MARKET HISTORY/,'Appraisal renders market-history context');
 assert.match(live,/\/api\/appraisal\/intel/,'Appraisal loads Support intel from the main service');
 assert.match(liveCss,/jlr-appraisal-intel/,'Support intel has dedicated presentation');
+assert.match(live,/DECISION ENGINE/,'Appraisal compares raw compressed and refine options');
+assert.match(live,/LIQUIDITY \+ HISTORY/,'Appraisal exposes liquidity context');
+assert.match(live,/JLR SHARED CACHE/,'Appraisal identifies shared snapshot pricing');
+assert.match(liveCss,/jlr-appraisal-freshness/,'Appraisal styles freshness status');
 
-assert.match(shareHtml,/appraisal-share-enhance\.js\?v=1/);
+assert.match(shareHtml,/appraisal-share-enhance\.js\?v=2/);
 assert.match(shareHtml,/appraisal-share-enhance\.css\?v=1/);
 assert.match(share,/PAYOUT TOTAL/);
 assert.match(share,/COPY SUMMARY/);
