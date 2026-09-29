@@ -1162,7 +1162,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.146',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
+    app:{name:'JLR Miner Tracker',version:'2.9.147',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}])),wormholes:{reports:wormholeGasPublicReports(),reportHours:WORMHOLE_GAS_REPORT_TTL/3600000}},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans,
@@ -4339,6 +4339,16 @@ function trackerBrainContext(value){
     const n=Number(value);
     return Number.isFinite(n)?n:null;
   };
+  const surveyInput=input.lastOreSurvey&&typeof input.lastOreSurvey==='object'?input.lastOreSurvey:null;
+  const surveyGroups=(Array.isArray(surveyInput?.groups)?surveyInput.groups:[]).slice(0,12).map(group=>({
+    name:trackerSpeechSafe(group?.name,80),
+    rocks:finite(group?.rocks),
+    volumeM3:finite(group?.volumeM3),
+    pricedValueISK:finite(group?.pricedValueISK),
+    pricedRows:finite(group?.pricedRows),
+    unpricedRows:finite(group?.unpricedRows),
+    nearestMeters:finite(group?.nearestMeters),
+  })).filter(group=>group.name);
   return{
     currentTab:trackerSpeechSafe(input.currentTab,40),
     workflow:trackerSpeechSafe(input.workflow,60),
@@ -4360,6 +4370,15 @@ function trackerBrainContext(value){
       sampledToons:finite(perf.sampledToons),
       sampleAt:trackerSpeechSafe(perf.sampleAt,40),
     },
+    lastOreSurvey:surveyInput?{
+      at:finite(surveyInput.at),
+      system:trackerSpeechSafe(surveyInput.system,80),
+      rowCount:finite(surveyInput.rowCount),
+      totalVolumeM3:finite(surveyInput.totalVolumeM3),
+      pricedValueISK:finite(surveyInput.pricedValueISK),
+      unpricedRowCount:finite(surveyInput.unpricedRowCount),
+      groups:surveyGroups,
+    }:null,
     recentActions:(Array.isArray(input.recentActions)?input.recentActions:[]).slice(-8).map(row=>({
       kind:trackerSpeechSafe(row?.kind,60),
       at:finite(row?.at),
@@ -4401,6 +4420,53 @@ function explicitSystemFromQuestion(value){
   return Boolean(String(value||'').toUpperCase().match(/\b[A-Z0-9]{1,10}(?:-[A-Z0-9]{1,10})+\b/));
 }
 
+function trackerBrainOreSurveyAnswer(question,rawContext){
+  const context=trackerBrainContext(rawContext);
+  const survey=context.lastOreSurvey;
+  if(!survey||!(Number(survey.rowCount)>0))return null;
+  const raw=trackerSpeechSafe(question,900);
+  const q=raw.toLowerCase().replace(/[^a-z0-9%+\-/. ]+/g,' ').replace(/\s+/g,' ').trim();
+  const explicit=/\b(?:ore survey|survey|rocks?|m3|volume|isk|worth|unpriced|priced|price|value)\b/.test(q);
+  const followup=context.workflow==='ore-survey'&&/^(?:how much(?: is there| is in it)?|what(?: s| is) (?:there|in it)|which ore(?: is biggest| has the most)?|what ore(?: is there)?|largest|biggest|closest|where is this|what system(?: is this)?|summary|break it down)[\s?.!]*$/.test(q);
+  if(!explicit&&!followup)return null;
+
+  const rowCount=Math.max(0,Number(survey.rowCount)||0);
+  const totalVolume=Math.max(0,Number(survey.totalVolumeM3)||0);
+  const pricedValue=Math.max(0,Number(survey.pricedValueISK)||0);
+  const unpriced=Math.max(0,Number(survey.unpricedRowCount)||0);
+  const system=trackerSpeechSafe(survey.system,80);
+  const groups=Array.isArray(survey.groups)?survey.groups.filter(group=>group?.name):[];
+  const volumeLabel=compactNumber(totalVolume)+' m³';
+  const valueLabel=compactIsk(pricedValue)+' ISK';
+  let text='';
+
+  if(/\b(?:where|system)\b/.test(q)&&system){
+    text='That ore survey is linked to '+system+'.';
+  }else if(/\b(?:unpriced|missing price|no price|without price)\b/.test(q)){
+    text=unpriced
+      ?unpriced+' rock'+(unpriced===1?'':'s')+' in the survey do not have an ISK value, so the known value is partial.'
+      :'Every parsed rock in that survey has an ISK value.';
+  }else if(/\b(?:isk|worth|value|price|priced)\b/.test(q)){
+    text='The survey has '+valueLabel+' from priced rocks'+(unpriced?' with '+unpriced+' unpriced rock'+(unpriced===1?'':'s')+', so the true total is higher.':'.');
+  }else if(/\b(?:largest|biggest|most|which ore|what ore|what s in it|what is in it)\b/.test(q)){
+    const top=groups.slice(0,6).map(group=>group.name+' '+compactNumber(Math.max(0,Number(group.volumeM3)||0))+' m³').join('; ');
+    text=top?'Largest ore groups by volume: '+top+'.':'I have the survey totals, but no ore-group breakdown for that paste.';
+  }else{
+    text=(system?system+': ':'')+rowCount+' rocks • '+volumeLabel+' • '+valueLabel+' from priced rocks'
+      +(unpriced?' • '+unpriced+' unpriced rock'+(unpriced===1?'':'s'):'')+'.';
+  }
+
+  return{
+    handled:true,
+    topic:'ore-survey-context',
+    text:trackerSpeechSafe(text,1200),
+    voiceText:trackerSpeechSafe(text,600),
+    generatedAt:now(),
+    focusSystem:system||undefined,
+    oreSurvey:{system:system||null,rowCount,totalVolumeM3:totalVolume,pricedValueISK:pricedValue,unpricedRowCount:unpriced},
+  };
+}
+
 function trackerBrainAnswer(user,question,options={}){
   const raw=trackerSpeechSafe(question,900);
   const q=raw.toLowerCase().replace(/[^a-z0-9%+\-/. ]+/g,' ').replace(/\s+/g,' ').trim();
@@ -4408,7 +4474,7 @@ function trackerBrainAnswer(user,question,options={}){
   const snapshot=trackerBrainSnapshot();
   const linked=(user?.characterIds||[]).map(String).filter(Boolean);
   const primaryName=trackerBrainPrimaryName(user);
-  const appVersion='2.9.146';
+  const appVersion='2.9.147';
 
   const voiceSummary=(text,max=120)=>{
     const clean=trackerSpeechSafe(text,1200).replace(/\s+/g,' ').trim();
@@ -4443,6 +4509,9 @@ function trackerBrainAnswer(user,question,options={}){
   };
 
   if(!q)return answer('help','Ask me a question about JLR Miner Tracker.');
+
+  const oreSurveyAnswer=trackerBrainOreSurveyAnswer(raw,context);
+  if(oreSurveyAnswer)return oreSurveyAnswer;
 
   if(/\b(?:explain recent fleet performance variance|why is this low|why is it low|why did this drop|what changed in fleet performance)\b/.test(q)){
     const p=context.performance||{};
@@ -8488,7 +8557,7 @@ async function routeApi(req,res,url) {
     });
     return res.end(ref.audio);
   }
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.146',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.147',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -8738,7 +8807,7 @@ async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname==='/api/tracker/speech/diagnostics'){
     const voiceWorker=await trackerVoiceHealth().catch(err=>({configured:Boolean(TRACKER_TTS_WORKER_URL),reachable:false,message:String(err?.message||err)}));
     return json(res,200,{
-      version:'2.9.146',
+      version:'2.9.147',
       modelCached:Boolean(voskModelArchive),
       modelBytes:voskModelArchive?.length||0,
       modelSource:voskModelSource||null,
@@ -8855,6 +8924,8 @@ async function routeApi(req,res,url) {
     const currentTab=trackerSpeechSafe(body?.currentTab,40);
     const context=trackerBrainContext(body?.context);
     context.currentTab=currentTab||context.currentTab;
+    const oreContextAnswer=trackerBrainOreSurveyAnswer(question,context);
+    if(oreContextAnswer)return json(res,200,oreContextAnswer);
     const supportResolution=await trackerSupport.resolveQuestion({
       userId:user.id,
       question,
@@ -9449,7 +9520,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.146 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.147 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>{
   Promise.all([
     loadVoskRuntimeAsset(VOSK_RUNTIME_FILES['/vendor/vosk/vosk-0.0.8.js']),
