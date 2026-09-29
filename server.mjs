@@ -4294,6 +4294,12 @@ const TRACKER_APP_KNOWLEDGE = {
     description:'Gas is the dedicated gas-mining view. It separates gas opportunities from ore and ice, compares gas types, fleet output, known site quantities and market values, and includes a shared Wormhole Gas Tracker. In J-space, a complete Probe Scanner paste records the current known Fullerite gas signatures for that J-system, keeps the report current for 12 hours, and replaces that system’s previous signature list on the next complete scan.',
     panels:['gas types','site types','regional availability','site quantities','value information','wormhole gas tracker','shared J-space probe scans','Fullerite signatures']
   },
+  forge:{
+    label:'JLR Forge',
+    aliases:['forge','jlr forge','build planner','build board','industry planner','manufacturing planner'],
+    description:'JLR Forge is the shared industry workspace. Paste items and quantities to resolve current EVE manufacturing recipes, combine the required materials into one shopping list, keep raw ore valuation on JLRs max-refine and 95 percent payout basis, and post the result to the shared Build Board. Build Board cards move through planning, needs materials, ready to build, building and done, and each card has a public share link that does not expose EVE tokens or private account data.',
+    panels:['build-list paste','ME and TE settings','manufacturing outputs','combined material shopping list','95 percent ore payout','shared Build Board','public build links']
+  },
   doctrine:{
     label:'Doctrine Market',
     aliases:['doctrine','doctrine market','doctrine stock','market doctrine'],
