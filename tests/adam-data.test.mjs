@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {answerDoctrineQuestion,answerMiningMarketQuestion,isDoctrineDataQuestion,isAppraisalDataQuestion,appraisalQuestionNeedsMarket,appraisalMarketIdFromQuestion,appraisalQuantityFromQuestion,answerAppraisalStaticQuestion,answerAppraisalMarketQuestion} from '../lib/adam-data.mjs';
+import {answerDoctrineQuestion,answerMiningMarketQuestion,isDoctrineDataQuestion,normalizeAdamQuestion,isAppraisalDataQuestion,appraisalQuestionNeedsMarket,appraisalMarketIdFromQuestion,appraisalQuantityFromQuestion,answerAppraisalStaticQuestion,answerAppraisalMarketQuestion} from '../lib/adam-data.mjs';
 
 const snapshot={
   snapshotDate:'2026-09-20',
@@ -64,6 +64,13 @@ assert.equal(appraisalMarketIdFromQuestion('What is Arkonor worth in Amarr?'),3)
 assert.equal(appraisalMarketIdFromQuestion('What is Arkonor worth?'),2);
 assert.equal(appraisalQuantityFromQuestion('What is 1,250 Arkonor worth?','Arkonor'),1250);
 assert.equal(appraisalQuantityFromQuestion('Arkonor x 500 price','Arkonor'),500);
+assert.equal(normalizeAdamQuestion('wats arkonor prce in ammar'),'what arkonor price in amarr');
+assert.equal(isAppraisalDataQuestion('wats arconer val jitta','fields'),true,'misspelled market wording still routes to Appraisal');
+assert.equal(isAppraisalDataQuestion('how mutch dose arkonor refin 2','fields'),true,'misspelled refine wording still routes to Appraisal');
+assert.equal(appraisalQuestionNeedsMarket('is ark beter compresed'),true);
+assert.equal(appraisalMarketIdFromQuestion('wats ark wurth in ammar'),3);
+assert.equal(appraisalQuantityFromQuestion('wat is 50k ark val jita','Arkonor','ark'),50000);
+assert.equal(appraisalQuantityFromQuestion('2.5m ark worth','Arkonor','ark'),2500000);
 
 const staticRefine=answerAppraisalStaticQuestion({
   question:'What does Arkonor refine into?',item:arkonorItem,materials:arkonorMaterials,sdeMeta:{buildNumber:3552227},
@@ -112,6 +119,17 @@ assert.match(compressionAnswer.text,/\+15,000 ISK/);
 const decisionAnswer=answerAppraisalMarketQuestion({question:'Raw vs compressed vs refine, what is better?',item:arkonorItem,quantity:100,appraisal,intel});
 assert.match(decisionAnswer.text,/highest-value option is REFINE/);
 assert.match(decisionAnswer.text,/Advantage over the next option: 5,000 ISK/);
+
+const typoDecision=answerAppraisalMarketQuestion({question:'raw compresed refin wats beter',item:arkonorItem,quantity:100,appraisal,intel});
+assert.match(typoDecision.text,/highest-value option is REFINE/,'broken three-way wording still reaches the full decision engine');
+
+const typoCompression=answerAppraisalMarketQuestion({question:'is arkonor wurth more compresed',item:arkonorItem,quantity:100,appraisal,intel});
+assert.match(typoCompression.text,/Compressed Arkonor/,'misspelled compression/value intent still reaches compression comparison');
+
+const typoStatic=answerAppraisalStaticQuestion({
+  question:'wat dose arkonor refin into',item:arkonorItem,materials:arkonorMaterials,sdeMeta:{buildNumber:3552227},
+});
+assert.match(typoStatic.text,/22,000 Tritanium/,'misspelled static refine question is normalized');
 
 const historyAnswer=answerAppraisalMarketQuestion({question:'Show Arkonor liquidity and history',item:arkonorItem,quantity:100,appraisal,intel});
 assert.match(historyAnswer.text,/7-day average 1,100 ISK/);
