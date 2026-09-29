@@ -172,6 +172,7 @@ const FOUNTAIN_THREAT_CACHE_MS = 60 * 60 * 1000;
 const FOUNTAIN_THREAT_MAX_PAGES = 15;
 // Perfect null-sec refine: T2 rigged Tatara + max skills + RX-804 implant.
 const MAX_REFINE_YIELD = 0.90628105568;
+const ORE_SURVEY_PAYOUT_PCT = 0.95;
 const LEDGER_VALUATION_VERSION = 3;
 const ORE_REPROCESSING = BASE_T3_ORE_REPROCESSING;
 const ORE_TYPE_NAME={Mordinium:'Mordunium'};
@@ -964,7 +965,7 @@ function oreSurveyRefinedPricePerM3(oreName) {
   }
   const batchM3=Number(recipe.portionSize)*Number(recipe.volume);
   if(!(batchM3>0))return null;
-  const perM3=refinedBatchValue/batchM3;
+  const perM3=(refinedBatchValue/batchM3)*ORE_SURVEY_PAYOUT_PCT;
   return Number.isFinite(perM3)&&perM3>0?perM3:null;
 }
 function effectiveOres() {
@@ -4485,8 +4486,9 @@ function trackerBrainOreSurveyAnswer(question,rawContext){
   const system=trackerSpeechSafe(survey.system,80);
   const groups=Array.isArray(survey.groups)?survey.groups.filter(group=>group?.name):[];
   const volumeLabel=compactMetric(totalVolume)+' m³';
-  const refinedBasis=survey.pricingBasis==='jlr-refined';
-  const valueLabel=compactMetric(pricedValue)+' ISK'+(refinedBasis?' refined value':'');
+  const payoutBasis=survey.pricingBasis==='jlr-95-refined';
+  const refinedBasis=payoutBasis||survey.pricingBasis==='jlr-refined';
+  const valueLabel=compactMetric(pricedValue)+' ISK'+(payoutBasis?' 95% JBV payout value':(refinedBasis?' refined value':''));
   let text='';
 
   if(/\b(?:where|system)\b/.test(q)&&system){
@@ -4497,14 +4499,14 @@ function trackerBrainOreSurveyAnswer(question,rawContext){
       :'Every parsed rock in that survey has an ISK value.';
   }else if(/\b(?:isk|worth|value|price|priced)\b/.test(q)){
     text=refinedBasis
-      ?'The survey has '+valueLabel+' at JLR max-refine yield and current Jita mineral buy prices'+(unpriced?' with '+unpriced+' rock'+(unpriced===1?'':'s')+' not yet covered by refined pricing.':'.')
+      ?'The survey has '+valueLabel+(payoutBasis?' at 95% of JLR max-refine mineral value using current Jita mineral buy prices':' at JLR max-refine yield and current Jita mineral buy prices')+(unpriced?' with '+unpriced+' rock'+(unpriced===1?'':'s')+' not yet covered by refined pricing.':'.')
       :'The survey has '+valueLabel+' from priced rocks'+(unpriced?' with '+unpriced+' unpriced rock'+(unpriced===1?'':'s')+', so the true total is higher.':'.');
   }else if(/\b(?:largest|biggest|most|which ore|what ore|what s in it|what is in it)\b/.test(q)){
     const top=groups.slice(0,6).map(group=>group.name+' '+compactMetric(Math.max(0,Number(group.volumeM3)||0))+' m³').join('; ');
     text=top?'Largest ore groups by volume: '+top+'.':'I have the survey totals, but no ore-group breakdown for that paste.';
   }else{
     text=(system?system+': ':'')+rowCount+' rocks • '+volumeLabel+' • '+valueLabel
-      +(refinedBasis?' @ max refine / Jita mineral buy':' from priced rocks')
+      +(payoutBasis?' @ 95% JBV payout':(refinedBasis?' @ max refine / Jita mineral buy':' from priced rocks'))
       +(unpriced?' • '+unpriced+' unpriced rock'+(unpriced===1?'':'s'):'')+'.';
   }
 
@@ -8962,6 +8964,7 @@ async function routeApi(req,res,url) {
     const survey=parseOreSurvey(String(body?.text||'').slice(0,100_000),{
       pricePerM3ForName:oreSurveyRefinedPricePerM3,
       replaceReportedValues:true,
+      pricingBasis:'jlr-95-refined',
     });
     if(!survey.valid)return json(res,400,{error:'ORE_SURVEY_NOT_RECOGNIZED',message:'Adam could not recognize ore survey rows in that paste.'});
     return json(res,200,{...survey,text:oreSurveySummaryText(survey)});

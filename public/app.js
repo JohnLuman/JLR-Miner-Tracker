@@ -355,11 +355,12 @@
   function adamOreSurveyLinkedText(system){
     const survey=adamOreSurveyContext||{};
     const unpriced=Math.max(0,Number(survey.unpricedRowCount)||0);
-    const refined=survey.pricingBasis==='jlr-refined';
+    const payout=survey.pricingBasis==='jlr-95-refined';
+    const refined=payout||survey.pricingBasis==='jlr-refined';
     return 'Got it — I linked the last ore survey to '+system+'. '
       +Math.max(0,Number(survey.rowCount)||0)+' rocks • '
       +fmt(survey.totalVolumeM3||0,'m3')+' m³ • '
-      +fmt(survey.pricedValueISK||0)+' ISK '+(refined?'refined value':'from priced rocks')
+      +fmt(survey.pricedValueISK||0)+' ISK '+(payout?'95% JBV payout value':(refined?'refined value':'from priced rocks'))
       +(unpriced?' • '+unpriced+' rock'+(unpriced===1?'':'s')+' still unpriced':'')+'.';
   }
 

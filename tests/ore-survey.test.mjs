@@ -61,6 +61,17 @@ assert.equal(refined.nearest[0].valueBasis,'jlr-refined');
 assert.match(oreSurveySummaryText(refined),/refined value/);
 assert.match(oreSurveySummaryText(refined),/Max-refine mineral value at current Jita buy prices/);
 
+const payout=parseOreSurvey('Kylixium\t100\t1,000 m3\t999,999,999.00 ISK\t1 km',{
+  pricePerM3ForName:name=>name==='Kylixium'?237.5:null,
+  replaceReportedValues:true,
+  pricingBasis:'jlr-95-refined',
+});
+assert.equal(payout.pricingBasis,'jlr-95-refined');
+assert.equal(payout.pricedValueISK,237500);
+assert.equal(payout.nearest[0].valueBasis,'jlr-95-refined');
+assert.match(oreSurveySummaryText(payout),/95% JBV payout value/);
+assert.match(oreSurveySummaryText(payout),/95% of max-refine mineral value/);
+
 assert.equal(parseOreSurvey('Ueganite II-Grade').valid,false);
 assert.equal(parseOreSurvey('random clipboard text').valid,false);
 
