@@ -6038,20 +6038,6 @@ async function resolveAppraisalHub(value){
   appraisalHubCache.set(base.id,resolved);
   return resolved;
 }
-async function appraisalResolveItem(name){
-  const query=String(name||'').trim();
-  if(query.length<2)return null;
-  const key=query.toLowerCase();
-  const cached=appraisalItemResolveCache.get(key);
-  if(cached&&Date.now()-cached.at<24*60*60*1000)return cached.value;
-  const {data}=await esiPost('https://esi.evetech.net/latest/universe/ids/?datasource=tranquility',[query]);
-  const rows=Array.isArray(data?.inventory_types)?data.inventory_types:[];
-  const exact=rows.find(row=>String(row?.name||'').trim().toLowerCase()===key);
-  const best=exact||rows[0]||null;
-  const value=best&&Number(best.id)>0?{typeId:Number(best.id),name:String(best.name||query)}:null;
-  appraisalItemResolveCache.set(key,{at:Date.now(),value});
-  return value;
-}
 async function appraisalResolveItems(rows){
   const inputs=Array.isArray(rows)?rows:[];
   const names=[...new Set(inputs.map(row=>String(row?.name||'').trim()).filter(name=>name.length>=2))];
