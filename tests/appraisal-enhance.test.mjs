@@ -21,7 +21,7 @@ assert.match(live,/navigator\.clipboard\.writeText/);
 assert.match(liveCss,/jlr-appraisal-payout-bar/);
 assert.match(live,/SUPPORT MARKET INTEL/,'Appraisal renders Support intel');
 assert.match(live,/COMPRESSION/,'Appraisal renders compression comparison');
-assert.match(live,/MARKET HISTORY/,'Appraisal renders market-history context');
+assert.match(live,/LIQUIDITY \\+ HISTORY/,'Appraisal renders market-history and liquidity context');
 assert.match(live,/\/api\/appraisal\/intel/,'Appraisal loads Support intel from the main service');
 assert.match(liveCss,/jlr-appraisal-intel/,'Support intel has dedicated presentation');
 assert.match(live,/DECISION ENGINE/,'Appraisal compares raw compressed and refine options');
