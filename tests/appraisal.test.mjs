@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { appraisalSummary, normalizeJaniceAppraisal, sanitizeAppraisalShare } from '../lib/appraisal/appraisal.mjs';
 
@@ -36,3 +37,18 @@ assert.equal(share.appraisal.summary.split,22);
 assert.equal(share.appraisal.pricing,'split');
 
 console.log('JLR Appraisal tests passed.');
+
+const server=fs.readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
+const app=fs.readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
+const index=fs.readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
+const share=fs.readFileSync(new URL('../public/appraisal-share.js',import.meta.url),'utf8');
+
+assert.match(server,/\/api\/appraisal\/markets/);
+assert.match(server,/\/api\/appraisal\/share/);
+assert.match(server,/\/appraisal\\\//);
+assert.match(server,/JANICE_API_URL\+'\/appraisal\?'/);
+assert.match(server,/fallbackJitaAppraisal/);
+assert.match(app,/CREATE SHARE LINK/);
+assert.match(app,/TOP 5% AVERAGE/);
+assert.match(index,/APPRAISAL<\/button>/);
+assert.match(share,/\/api\/appraisal\/share\//);
