@@ -60,6 +60,8 @@ const index=fs.readFileSync(new URL('../public/index.html',import.meta.url),'utf
 const shareClient=fs.readFileSync(new URL('../public/appraisal-share.js',import.meta.url),'utf8');
 
 assert.match(server,/\/api\/appraisal\/markets/);
+assert.match(server,/\/api\/appraisal\/intel/,'main app exposes Support appraisal intel');
+assert.match(server,/\/api\/internal\/support\/appraisal/,'Support can request cached alternate appraisal pricing');
 assert.match(server,/\/api\/appraisal\/share/);
 assert.match(server,/\/appraisal\\\//);
 assert.match(server,/JANICE_API_URL\+'\/appraisal\?'/);
