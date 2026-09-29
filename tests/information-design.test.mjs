@@ -61,9 +61,9 @@ assert.match(app,/fleetUptimeMeter/,'fleet target exposes the uptime assumption 
 
 assert.equal(pkg.version,'2.10.0');
 assert.ok(index.includes('/styles.css?v=2.10.3-navdropdown2'),'main information-design CSS is cache-busted');
-assert.ok(index.includes('/tracker.css?v=2.9.145-cn-routes1'),'Tracker information-design CSS is cache-busted');
+assert.ok(index.includes('/tracker.css?v=2.9.147-closest-init1'),'Tracker information-design CSS is cache-busted');
 assert.ok(index.includes('/app.js?v=2.10.2-navdropdown1'),'dashboard JS is cache-busted');
-assert.ok(index.includes('/tracker.js?v=2.9.146-alert60'),'Tracker loader is cache-busted');
+assert.ok(index.includes('/tracker.js?v=2.9.147-closest-init1'),'Tracker loader is cache-busted');
 assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.146-alert60/,'Tracker core is cache-busted');
 
 assert.match(styles,/\.app\.compact\{width:min\(1120px,calc\(100vw - 12px\)\);max-width:1120px\}/,'Compact app keeps a bounded design width');
