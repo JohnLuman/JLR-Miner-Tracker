@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700&family=Rajdhani:wght@600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=2.10.1-enterdelete1">
+  <link rel="stylesheet" href="/styles.css?v=2.10.2-navdropdown1">
   <link rel="stylesheet" href="/tracker.css?v=2.9.145-cn-routes1">
 </head>
 <body>
@@ -31,7 +31,7 @@
     <header class="topbar">
       <div class="brand">
         <div class="brand-kicker">JLR INDUSTRIAL NETWORK // FOUNTAIN</div>
-        <div class="brand-line"><span class="brand-mark">JLR</span><h1>MINER TRACKER</h1><span class="brand-status-stack"><small id="appVersion" class="app-version">v2.10.0</small><span id="liveBadge" class="status-pill" title="Latest EVE data sync status">● DATA LOADING</span></span></div>
+        <div class="brand-line"><span class="brand-mark">JLR</span><h1>MINER TRACKER</h1><span class="brand-status-stack"><small id="appVersion" class="app-version">v2.10.2</small><span id="liveBadge" class="status-pill" title="Latest EVE data sync status">● DATA LOADING</span></span></div>
       </div>
       <div class="top-actions">
         <button id="compactMode" class="orb purple active" type="button" title="Condensed operations view with smaller cards and fewer detail panels">COMPACT</button>
@@ -83,25 +83,60 @@
       </article>
     </section>
 
-    <nav class="app-tabs information-tabs" aria-label="Dashboard sections">
-      <span class="app-tab-group-label" aria-hidden="true">OPS</span>
-      <button class="app-tab active" data-tab="fields" type="button">FIELDS</button>
-      <button class="app-tab" data-tab="fleet" type="button">FLEET</button>
-      <button class="app-tab" data-tab="performance" type="button">PERFORMANCE</button>
-      <button class="app-tab tracker-tab-button hidden" data-tab="tracker" type="button" aria-hidden="true">TRACKER</button>
-      <span class="app-tab-group-label" aria-hidden="true">RESOURCES</span>
-      <button class="app-tab" data-tab="ice" type="button">ICE</button>
-      <button class="app-tab" data-tab="gas" type="button">GAS</button>
-      <button class="app-tab" data-tab="forge" type="button">APPRAISAL</button>
-      <button class="app-tab" data-tab="doctrine" type="button">DOCTRINE</button>
-      <span class="app-tab-group-label" aria-hidden="true">INTEL</span>
-      <button class="app-tab" data-tab="pvp" type="button">INIT PVP</button>
-      <button class="app-tab" data-tab="threat" type="button">THREAT</button>
-      <button class="app-tab" data-tab="mer" type="button">MER</button>
-      <span class="app-tab-group-label" aria-hidden="true">SYSTEM</span>
-      <button class="app-tab" data-tab="brain" type="button">ADAM</button>
-      <button class="app-tab" data-tab="toons" type="button">TOONS</button>
-      <button class="app-tab" data-tab="feedback" type="button">FEEDBACK</button>
+    <nav class="app-tabs information-tabs nav-dropdown-bar" aria-label="Dashboard sections">
+      <details class="nav-menu active" data-nav-group="ops">
+        <summary class="nav-menu-trigger">
+          <span class="nav-menu-copy"><strong>OPS</strong><small class="nav-menu-current" data-default="4 TOOLS">FIELDS</small></span>
+          <span class="nav-menu-chevron" aria-hidden="true">⌄</span>
+        </summary>
+        <div class="nav-menu-panel">
+          <div class="nav-menu-heading"><span>OPERATIONS</span><small>RUN THE FLEET</small></div>
+          <button class="app-tab active" data-tab="fields" data-nav-desc="T3, ice and A0 field control" type="button">FIELDS</button>
+          <button class="app-tab" data-tab="fleet" data-nav-desc="Miner fits, boosts and fleet output" type="button">FLEET</button>
+          <button class="app-tab" data-tab="performance" data-nav-desc="Ledger rate and mining performance" type="button">PERFORMANCE</button>
+          <button class="app-tab tracker-tab-button hidden" data-tab="tracker" data-nav-desc="Heavy-fighter loss tracking" type="button" aria-hidden="true">TRACKER</button>
+        </div>
+      </details>
+
+      <details class="nav-menu" data-nav-group="resources">
+        <summary class="nav-menu-trigger">
+          <span class="nav-menu-copy"><strong>RESOURCES</strong><small class="nav-menu-current" data-default="4 TOOLS">4 TOOLS</small></span>
+          <span class="nav-menu-chevron" aria-hidden="true">⌄</span>
+        </summary>
+        <div class="nav-menu-panel">
+          <div class="nav-menu-heading"><span>RESOURCES</span><small>MINE • VALUE • STOCK</small></div>
+          <button class="app-tab" data-tab="ice" data-nav-desc="Ice fields, fleet output and value" type="button">ICE</button>
+          <button class="app-tab" data-tab="gas" data-nav-desc="Gas sites and huffing value" type="button">GAS</button>
+          <button class="app-tab" data-tab="forge" data-nav-desc="Paste items, price them and refine" type="button">APPRAISAL</button>
+          <button class="app-tab" data-tab="doctrine" data-nav-desc="Doctrine stock and market restock" type="button">DOCTRINE</button>
+        </div>
+      </details>
+
+      <details class="nav-menu" data-nav-group="intel">
+        <summary class="nav-menu-trigger">
+          <span class="nav-menu-copy"><strong>INTEL</strong><small class="nav-menu-current" data-default="3 TOOLS">3 TOOLS</small></span>
+          <span class="nav-menu-chevron" aria-hidden="true">⌄</span>
+        </summary>
+        <div class="nav-menu-panel">
+          <div class="nav-menu-heading"><span>INTELLIGENCE</span><small>WATCH • CHECK • REVIEW</small></div>
+          <button class="app-tab" data-tab="pvp" data-nav-desc="INIT and corp combat performance" type="button">INIT PVP</button>
+          <button class="app-tab" data-tab="threat" data-nav-desc="Local and D-scan threat checks" type="button">THREAT</button>
+          <button class="app-tab" data-tab="mer" data-nav-desc="Regional economy and MER intel" type="button">MER</button>
+        </div>
+      </details>
+
+      <details class="nav-menu" data-nav-group="system">
+        <summary class="nav-menu-trigger">
+          <span class="nav-menu-copy"><strong>SYSTEM</strong><small class="nav-menu-current" data-default="3 TOOLS">3 TOOLS</small></span>
+          <span class="nav-menu-chevron" aria-hidden="true">⌄</span>
+        </summary>
+        <div class="nav-menu-panel">
+          <div class="nav-menu-heading"><span>JLR SYSTEM</span><small>ASSIST • LINK • REPORT</small></div>
+          <button class="app-tab" data-tab="brain" data-nav-desc="JLR assistant, routing and scan help" type="button">ADAM</button>
+          <button class="app-tab" data-tab="toons" data-nav-desc="Linked characters, ESI and fit data" type="button">TOONS</button>
+          <button class="app-tab" data-tab="feedback" data-nav-desc="Report bugs, ideas and feedback" type="button">FEEDBACK</button>
+        </div>
+      </details>
     </nav>
     <section id="adamQuickPanel" class="adam-quick-panel hidden" aria-label="Talk to Adam">
       <div class="adam-quick-head">
@@ -503,7 +538,7 @@
   </main>
   <script src="/yield-math.js?v=2.9.37" defer></script>
   <script src="/vendor/vosk/vosk-0.0.8.js?v=1" defer></script>
-  <script src="/app.js?v=2.10.1-enterdelete1" defer></script>
+  <script src="/app.js?v=2.10.2-navdropdown1" defer></script>
   <script src="/tracker.js?v=2.9.146-alert60" defer></script>
 </body>
 </html>
