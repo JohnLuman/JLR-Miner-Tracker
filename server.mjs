@@ -6055,14 +6055,17 @@ async function appraisalResolveItem(name){
 async function appraisalMarketOrders(regionId,typeId){
   const key=String(regionId)+':'+String(typeId);
   const cached=appraisalOrderCache.get(key);
-  if(cached&&Date.now()-cached.at<APPRAISAL_ORDER_CACHE_MS)return cached.rows;
+  if(cached&&Date.now()-cached.at<APPRAISAL_ORDER_CACHE_MS){
+    return{rows:cached.rows,fetchedAt:new Date(cached.at).toISOString(),ageMs:Math.max(0,Date.now()-cached.at),cacheHit:true};
+  }
   const rows=await marketOrders(regionId,typeId);
-  appraisalOrderCache.set(key,{at:Date.now(),rows});
+  const at=Date.now();
+  appraisalOrderCache.set(key,{at,rows});
   if(appraisalOrderCache.size>2500){
     const oldest=[...appraisalOrderCache.entries()].sort((a,b)=>a[1].at-b[1].at).slice(0,500);
     for(const [cacheKey] of oldest)appraisalOrderCache.delete(cacheKey);
   }
-  return rows;
+  return{rows,fetchedAt:new Date(at).toISOString(),ageMs:0,cacheHit:false};
 }
 async function appraisalOrdersAtHub(orders,hub){
   const source=Array.isArray(orders)?orders:[];
@@ -6116,6 +6119,58 @@ async function appraisalOrdersAtHub(orders,hub){
   }
   return{buyOrders,sellOrders};
 }
+function appraisalSnapshotItem(base,snapshot,{marketDataSource='support-cache',marketDataStale=false,marketDataAgeMs=null}={}){
+  const amount=Math.max(1,Number(base?.amount)||1);
+  const buy=Math.max(0,Number(snapshot?.buy)||0);
+  const split=Math.max(0,Number(snapshot?.split)||0);
+  const sell=Math.max(0,Number(snapshot?.sell)||0);
+  const fetchedAt=String(snapshot?.fetchedAt||now());
+  const parsedAge=Number.isFinite(Number(marketDataAgeMs))
+    ?Math.max(0,Number(marketDataAgeMs))
+    :Math.max(0,Date.now()-Date.parse(fetchedAt||now()));
+  return{
+    resolved:true,
+    typeId:Number(base?.typeId)||null,
+    name:String(base?.name||snapshot?.typeName||'Unknown item'),
+    amount,
+    volumePerUnit:Math.max(0,Number(base?.volumePerUnit)||0),
+    packagedVolumePerUnit:Math.max(0,Number(base?.packagedVolumePerUnit)||0),
+    totalVolume:Math.max(0,Number(base?.volumePerUnit)||0)*amount,
+    totalPackagedVolume:Math.max(0,Number(base?.packagedVolumePerUnit)||0)*amount,
+    buyOrderCount:Math.max(0,Number(snapshot?.buyOrderCount)||0),
+    buyVolume:Math.max(0,Number(snapshot?.buyVolume)||0),
+    sellOrderCount:Math.max(0,Number(snapshot?.sellOrderCount)||0),
+    sellVolume:Math.max(0,Number(snapshot?.sellVolume)||0),
+    buy,split,sell,
+    buyTotal:buy*amount,splitTotal:split*amount,sellTotal:sell*amount,
+    marketDataAt:fetchedAt,
+    marketDataAgeMs:Number.isFinite(parsedAge)?parsedAge:0,
+    marketDataStale:Boolean(marketDataStale),
+    marketDataSource:String(marketDataSource||'jlr-native-esi'),
+  };
+}
+function appraisalMarketDataSummary(items,freshMs=APPRAISAL_ORDER_CACHE_MS){
+  const rows=(Array.isArray(items)?items:[]).filter(row=>row?.resolved!==false&&row?.marketDataAt);
+  const timestamps=rows.map(row=>Date.parse(row.marketDataAt)).filter(Number.isFinite);
+  const sourceCounts={};
+  for(const row of rows){
+    const source=String(row.marketDataSource||'unknown');
+    sourceCounts[source]=(sourceCounts[source]||0)+1;
+  }
+  const oldest=timestamps.length?Math.min(...timestamps):null;
+  const newest=timestamps.length?Math.max(...timestamps):null;
+  return{
+    generatedAt:now(),
+    freshMs:Math.max(60_000,Number(freshMs)||APPRAISAL_ORDER_CACHE_MS),
+    rows:rows.length,
+    staleCount:rows.filter(row=>row.marketDataStale).length,
+    freshCount:rows.filter(row=>!row.marketDataStale).length,
+    oldestAt:oldest?new Date(oldest).toISOString():null,
+    newestAt:newest?new Date(newest).toISOString():null,
+    maxAgeMs:oldest?Math.max(0,Date.now()-oldest):0,
+    sourceCounts,
+  };
+}
 async function nativeEsiAppraisal(text,{market=2,pricing='split',pricingVariant='immediate'}={}){
   const parsed=parseForgePaste(String(text||'').slice(0,100_000));
   if(!parsed.valid)throw new Error('Paste one or more EVE items first.');
@@ -6123,31 +6178,98 @@ async function nativeEsiAppraisal(text,{market=2,pricing='split',pricingVariant=
   const mode=appraisalMode(pricing);
   const variant=appraisalVariant(pricingVariant);
   const selectedRows=parsed.rows.slice(0,APPRAISAL_MAX_ITEM_TYPES);
-  const items=await forgeMapLimit(selectedRows,4,async input=>{
+
+  const bases=await forgeMapLimit(selectedRows,6,async input=>{
     try{
       const resolved=await appraisalResolveItem(input.name);
-      if(!resolved)return{resolved:false,typeId:null,name:input.name,amount:Number(input.quantity)||0,totalVolume:0,totalPackagedVolume:0,buy:0,split:0,sell:0,buyTotal:0,splitTotal:0,sellTotal:0,error:'ITEM_NOT_FOUND'};
+      if(!resolved)return{resolved:false,typeId:null,name:input.name,amount:Number(input.quantity)||0,error:'ITEM_NOT_FOUND'};
       await ensureType([resolved.typeId]);
       const type=state.esi.typeCache[String(resolved.typeId)]||{};
-      const orders=await appraisalMarketOrders(hub.regionId,resolved.typeId);
-      const eligible=await appraisalOrdersAtHub(orders,hub);
-      const prices=nativeAppraisalPriceSet({...eligible,variant});
-      const amount=Math.max(1,Number(input.quantity)||1);
-      const volumePerUnit=Math.max(0,Number(type.volume)||0);
-      const packagedVolumePerUnit=Math.max(0,Number(type.packaged_volume??type.packagedVolume??type.volume)||0);
       return{
-        resolved:true,typeId:resolved.typeId,name:resolved.name,amount,
-        volumePerUnit,packagedVolumePerUnit,
-        totalVolume:volumePerUnit*amount,totalPackagedVolume:packagedVolumePerUnit*amount,
-        buyOrderCount:prices.buyOrderCount,buyVolume:prices.buyVolume,
-        sellOrderCount:prices.sellOrderCount,sellVolume:prices.sellVolume,
-        buy:prices.buy,split:prices.split,sell:prices.sell,
-        buyTotal:prices.buy*amount,splitTotal:prices.split*amount,sellTotal:prices.sell*amount,
+        resolved:true,
+        typeId:resolved.typeId,
+        name:resolved.name,
+        amount:Math.max(1,Number(input.quantity)||1),
+        volumePerUnit:Math.max(0,Number(type.volume)||0),
+        packagedVolumePerUnit:Math.max(0,Number(type.packagedVolume??type.packaged_volume??type.volume)||0),
       };
     }catch(error){
-      return{resolved:false,typeId:null,name:input.name,amount:Number(input.quantity)||0,totalVolume:0,totalPackagedVolume:0,buy:0,split:0,sell:0,buyTotal:0,splitTotal:0,sellTotal:0,error:String(error?.message||error).slice(0,180)};
+      return{resolved:false,typeId:null,name:input.name,amount:Number(input.quantity)||0,error:String(error?.message||error).slice(0,180)};
     }
   });
+
+  const typeIds=[...new Set(bases.filter(row=>row?.resolved!==false&&Number(row?.typeId)>0).map(row=>Number(row.typeId)))];
+  const shared=await trackerSupport.appraisalPriceSnapshots({marketId:hub.id,variant,typeIds});
+  const sharedByType=new Map((Array.isArray(shared?.snapshots)?shared.snapshots:[])
+    .filter(row=>Number(row?.typeId)>0)
+    .map(row=>[Number(row.typeId),row]));
+  const freshMs=Math.max(60_000,Number(shared?.freshMs)||APPRAISAL_ORDER_CACHE_MS);
+  const snapshotsToPersist=[];
+
+  const items=await forgeMapLimit(bases,4,async base=>{
+    if(base?.resolved===false){
+      return{
+        resolved:false,typeId:null,name:base.name,amount:Number(base.amount)||0,
+        totalVolume:0,totalPackagedVolume:0,buy:0,split:0,sell:0,
+        buyTotal:0,splitTotal:0,sellTotal:0,error:base.error||'ITEM_NOT_FOUND',
+      };
+    }
+    const cached=sharedByType.get(Number(base.typeId))||null;
+    if(cached&&!cached.stale){
+      return appraisalSnapshotItem(base,cached,{
+        marketDataSource:'support-cache',
+        marketDataStale:false,
+        marketDataAgeMs:cached.ageMs,
+      });
+    }
+
+    try{
+      const orderBundle=await appraisalMarketOrders(hub.regionId,base.typeId);
+      const eligible=await appraisalOrdersAtHub(orderBundle.rows,hub);
+      const prices=nativeAppraisalPriceSet({...eligible,variant});
+      const snapshot={
+        marketId:hub.id,
+        marketName:hub.name,
+        typeId:base.typeId,
+        typeName:base.name,
+        variant,
+        buy:prices.buy,split:prices.split,sell:prices.sell,
+        buyOrderCount:prices.buyOrderCount,sellOrderCount:prices.sellOrderCount,
+        buyVolume:prices.buyVolume,sellVolume:prices.sellVolume,
+        fetchedAt:orderBundle.fetchedAt,
+        source:'jlr-native-esi',
+      };
+      snapshotsToPersist.push(snapshot);
+      return appraisalSnapshotItem(base,snapshot,{
+        marketDataSource:orderBundle.cacheHit?'local-order-cache':'esi-live',
+        marketDataStale:false,
+        marketDataAgeMs:orderBundle.ageMs,
+      });
+    }catch(error){
+      if(cached){
+        return{
+          ...appraisalSnapshotItem(base,cached,{
+            marketDataSource:'support-stale',
+            marketDataStale:true,
+            marketDataAgeMs:cached.ageMs,
+          }),
+          marketDataWarning:String(error?.message||error).slice(0,160),
+        };
+      }
+      return{
+        resolved:false,typeId:base.typeId,name:base.name,amount:Number(base.amount)||0,
+        totalVolume:Math.max(0,Number(base.volumePerUnit)||0)*Math.max(0,Number(base.amount)||0),
+        totalPackagedVolume:Math.max(0,Number(base.packagedVolumePerUnit)||0)*Math.max(0,Number(base.amount)||0),
+        buy:0,split:0,sell:0,buyTotal:0,splitTotal:0,sellTotal:0,
+        error:String(error?.message||error).slice(0,180),
+      };
+    }
+  });
+
+  if(snapshotsToPersist.length){
+    await trackerSupport.rememberAppraisalPriceSnapshots({snapshots:snapshotsToPersist});
+  }
+
   const failures=[...parsed.rejected];
   if(parsed.rows.length>APPRAISAL_MAX_ITEM_TYPES)failures.push('Appraisal limited to the first '+APPRAISAL_MAX_ITEM_TYPES+' item types.');
   for(const row of items)if(row?.resolved===false&&row?.error)failures.push(row.name+': '+row.error);
@@ -6161,8 +6283,10 @@ async function nativeEsiAppraisal(text,{market=2,pricing='split',pricingVariant=
     failures:failures.join('\n'),
     items,
     summary:appraisalSummary(items,mode),
+    marketData:appraisalMarketDataSummary(items,freshMs),
   };
 }
+
 async function buildAppraisal(text,options={}){
   return attachAppraisalRefine(await nativeEsiAppraisal(text,options));
 }
