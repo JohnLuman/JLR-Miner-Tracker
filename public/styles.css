@@ -3837,3 +3837,53 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
   .nav-menu-panel{width:min(300px,calc(100vw - 18px))}
 }
 @media(prefers-reduced-motion:reduce){.nav-menu-panel{animation:none}.nav-menu-trigger,.nav-menu-chevron,.nav-menu-panel .app-tab{transition:none!important}}
+
+
+/* v2.10.3 — dropdown specificity fix */
+/* Older compact/expanded nav rules have higher specificity than the grouped
+   nav styles. Reassert the dropdown layout here so open menus are not clipped. */
+.app .information-tabs.nav-dropdown-bar,
+.app.compact .information-tabs.nav-dropdown-bar,
+.app.expanded .information-tabs.nav-dropdown-bar{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  align-items:stretch;
+  width:100%;
+  max-width:1360px;
+  overflow:visible;
+  white-space:normal;
+  scrollbar-width:auto;
+}
+.app .information-tabs.nav-dropdown-bar .nav-menu,
+.app.compact .information-tabs.nav-dropdown-bar .nav-menu,
+.app.expanded .information-tabs.nav-dropdown-bar .nav-menu{
+  min-width:0;
+}
+.app .information-tabs.nav-dropdown-bar .nav-menu-panel,
+.app.compact .information-tabs.nav-dropdown-bar .nav-menu-panel,
+.app.expanded .information-tabs.nav-dropdown-bar .nav-menu-panel{
+  display:grid;
+  overflow:visible;
+  white-space:normal;
+}
+.app .information-tabs.nav-dropdown-bar .nav-menu-panel .app-tab,
+.app.compact .information-tabs.nav-dropdown-bar .nav-menu-panel .app-tab,
+.app.expanded .information-tabs.nav-dropdown-bar .nav-menu-panel .app-tab{
+  display:block;
+  width:100%;
+  min-width:0;
+  min-height:46px;
+  padding:8px 10px 17px;
+  text-align:left;
+  font:900 9px/1 Oxanium,Segoe UI,sans-serif;
+  letter-spacing:.07em;
+}
+@media(max-width:760px){
+  .app .information-tabs.nav-dropdown-bar,
+  .app.compact .information-tabs.nav-dropdown-bar,
+  .app.expanded .information-tabs.nav-dropdown-bar{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    position:static;
+    overflow:visible;
+  }
+}
