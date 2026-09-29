@@ -3,6 +3,7 @@
   const GROUP_ID=1653;
   const DEFAULT_POLL_SECONDS=30;
   const ALERT_PREF='jlrHeavyFighterAlerts';
+  const ALERT_MAX_AGE_MS=60*1000;
 
   let trackerData=null;
   const trackerRouteByKill=new Map();
@@ -71,6 +72,12 @@
   }
   function isActive(){
     return Boolean(trackerPanel&&trackerPanel.classList.contains('active'));
+  }
+  function isAlertFresh(row){
+    const receivedMs=Date.parse(String(row?.receivedAt||''));
+    if(!Number.isFinite(receivedMs))return false;
+    const age=Date.now()-receivedMs;
+    return age>=0&&age<=ALERT_MAX_AGE_MS;
   }
   function toast(message){
     const el=document.getElementById('toast');
@@ -273,7 +280,8 @@
     const id=String(row&&row.killmailId||'');
     if(!id||trackerSeenIds.has(id))return;
     trackerSeenIds.add(id);
-    trackerFreshIds.add(id);
+    const alertFresh=isAlertFresh(row);
+    if(alertFresh)trackerFreshIds.add(id);
     const data=ensureTrackerData();
     const losses=mergeClientLosses([row].concat(Array.isArray(data.losses)?data.losses:[]));
     trackerData={
@@ -282,10 +290,12 @@
       count:losses.length,
       live:{...(data.live||{}),...(trackerStreamStatus||{}),caughtUp:true,lastHeavyFighterAt:row.receivedAt||new Date().toISOString()},
     };
-    if(isActive())trackerUnread=0;
-    else trackerUnread=Math.min(999,trackerUnread+1);
+    if(alertFresh){
+      if(isActive())trackerUnread=0;
+      else trackerUnread=Math.min(999,trackerUnread+1);
+      notifyLosses([row]);
+    }
     setBadge();
-    notifyLosses([row]);
     render();
   }
   function closeTrackerStream(){
@@ -373,10 +383,11 @@
     trackerTab.classList.toggle('tracker-unread',trackerUnread>0);
   }
   function notifyLosses(losses){
-    if(!trackerArmed||!losses.length)return;
-    const newest=losses[0]||{};
+    const eligible=(Array.isArray(losses)?losses:[]).filter(isAlertFresh);
+    if(!trackerArmed||!eligible.length)return;
+    const newest=eligible[0]||{};
     if(typeof window.jlrPlayFighterAlarm==='function')window.jlrPlayFighterAlarm(newest);
-    const count=losses.length;
+    const count=eligible.length;
     const fighter=newest.shipTypeName||'Heavy Fighter';
     const system=newest.systemName||'unknown system';
     toast(count===1?fighter+' DOWN in '+system:count+' Heavy Fighters DOWN — newest in '+system);
@@ -423,7 +434,7 @@
       }else{
         fresh=losses.filter(function(row){
           const id=String(row&&row.killmailId||'');
-          return id&&!trackerSeenIds.has(id);
+          return id&&!trackerSeenIds.has(id)&&isAlertFresh(row);
         });
         trackerSeenIds=new Set(ids.concat(Array.from(trackerSeenIds)).slice(0,500));
       }
