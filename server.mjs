@@ -6196,11 +6196,18 @@ async function buildAppraisal(text,options={}){
 }
 function appraisalSharePublic(row){
   if(!row)return null;
+  let appraisal=row.appraisal&&typeof row.appraisal==='object'?row.appraisal:null;
+  // Shares created before refine data was stored can still gain a useful
+  // refine view from their saved item rows. Preserve any historical refine
+  // snapshot already on the share; only backfill when it is completely absent.
+  if(appraisal&&!appraisal.refine){
+    appraisal={...appraisal,refine:appraisalRefineSummary(appraisal.items,MAX_REFINE_YIELD*100)};
+  }
   return{
     id:String(row.id||''),token:String(row.token||''),title:String(row.title||'JLR Appraisal'),
     owner:{name:String(row.owner?.name||'JLR Pilot')},
     createdAt:row.createdAt||null,
-    appraisal:row.appraisal||null,
+    appraisal,
   };
 }
 
