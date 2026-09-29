@@ -111,3 +111,6 @@ assert.match(server,/'rakovene i-grade':\{[^\n]+Zydrine:200/,'Rakovene I-Grade a
 assert.match(server,/'talassonite ii-grade':\{[^\n]+Nocxium:1008/,'Talassonite II-Grade uses current 5% refine output');
 assert.match(server,/mercoxit:\{[^\n]+Morphite:140/,'Mercoxit refine output is covered');
 assert.match(server,/REFINING_MINERALS=.*'Morphite'/,'Morphite receives live Jita mineral pricing');
+
+assert.match(server,/const mineralCoverageCurrent=REFINING_MINERALS\.every/,'market refresh verifies all required mineral prices');
+assert.match(server,/valuationCurrent&&historyCurrent&&jitaBuyBasisCurrent&&ledgerValuationCurrent&&mineralCoverageCurrent/,'missing mineral coverage prevents stale market cache from short-circuiting refresh');
