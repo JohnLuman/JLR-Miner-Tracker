@@ -4430,14 +4430,22 @@ function trackerBrainOreSurveyAnswer(question,rawContext){
   const followup=context.workflow==='ore-survey'&&/^(?:how much(?: is there| is in it)?|what(?: s| is) (?:there|in it)|which ore(?: is biggest| has the most)?|what ore(?: is there)?|largest|biggest|closest|where is this|what system(?: is this)?|summary|break it down)[\s?.!]*$/.test(q);
   if(!explicit&&!followup)return null;
 
+  const compactMetric=value=>{
+    const n=Math.max(0,Number(value)||0);
+    if(n>=1e12)return(n/1e12).toFixed(2)+'T';
+    if(n>=1e9)return(n/1e9).toFixed(2)+'B';
+    if(n>=1e6)return(n/1e6).toFixed(2)+'M';
+    if(n>=1e3)return(n/1e3).toFixed(1)+'K';
+    return Math.round(n).toLocaleString('en-US');
+  };
   const rowCount=Math.max(0,Number(survey.rowCount)||0);
   const totalVolume=Math.max(0,Number(survey.totalVolumeM3)||0);
   const pricedValue=Math.max(0,Number(survey.pricedValueISK)||0);
   const unpriced=Math.max(0,Number(survey.unpricedRowCount)||0);
   const system=trackerSpeechSafe(survey.system,80);
   const groups=Array.isArray(survey.groups)?survey.groups.filter(group=>group?.name):[];
-  const volumeLabel=compactNumber(totalVolume)+' m³';
-  const valueLabel=compactIsk(pricedValue)+' ISK';
+  const volumeLabel=compactMetric(totalVolume)+' m³';
+  const valueLabel=compactMetric(pricedValue)+' ISK';
   let text='';
 
   if(/\b(?:where|system)\b/.test(q)&&system){
@@ -4449,7 +4457,7 @@ function trackerBrainOreSurveyAnswer(question,rawContext){
   }else if(/\b(?:isk|worth|value|price|priced)\b/.test(q)){
     text='The survey has '+valueLabel+' from priced rocks'+(unpriced?' with '+unpriced+' unpriced rock'+(unpriced===1?'':'s')+', so the true total is higher.':'.');
   }else if(/\b(?:largest|biggest|most|which ore|what ore|what s in it|what is in it)\b/.test(q)){
-    const top=groups.slice(0,6).map(group=>group.name+' '+compactNumber(Math.max(0,Number(group.volumeM3)||0))+' m³').join('; ');
+    const top=groups.slice(0,6).map(group=>group.name+' '+compactMetric(Math.max(0,Number(group.volumeM3)||0))+' m³').join('; ');
     text=top?'Largest ore groups by volume: '+top+'.':'I have the survey totals, but no ore-group breakdown for that paste.';
   }else{
     text=(system?system+': ':'')+rowCount+' rocks • '+volumeLabel+' • '+valueLabel+' from priced rocks'
