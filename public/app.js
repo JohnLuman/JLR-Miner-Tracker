@@ -785,9 +785,10 @@
   }
   function renderAppraisal(){
     if(!$('forgePanel'))return;
-    const summary=$('appraisalSummary'),items=$('appraisalItems'),share=$('appraisalShare');
+    const summary=$('appraisalSummary'),refine=$('appraisalRefineSummary'),items=$('appraisalItems'),share=$('appraisalShare');
     if(!appraisalData){
       if(summary)summary.innerHTML='';
+      if(refine)refine.innerHTML='';
       if(items)items.innerHTML='<div class="visual-empty">Paste an EVE item list and click APPRAISE.</div>';
       if(share)share.disabled=true;
       return;
@@ -795,12 +796,26 @@
     const s=appraisalData.summary||{};
     const selected=appraisalModeLabel(appraisalData.pricing);
     if(summary)summary.innerHTML=`
-      <article class="appraisal-primary"><span>${esc(selected)} APPRAISAL</span><strong>${appraisalIsk(s.value)} ISK</strong></article>
+      <article class="appraisal-primary appraisal-copy-card" role="button" tabindex="0" data-copy-isk="${Number(s.value)||0}" data-copy-label="${esc(selected)} appraisal" title="Click to copy this appraisal price"><span>${esc(selected)} APPRAISAL</span><strong>${appraisalIsk(s.value)} ISK</strong><small>CLICK TO COPY PRICE</small></article>
       <article><span>JITA BUY</span><strong>${appraisalIsk(s.buy)} ISK</strong></article>
       <article><span>SPLIT</span><strong>${appraisalIsk(s.split)} ISK</strong></article>
       <article><span>JITA SELL</span><strong>${appraisalIsk(s.sell)} ISK</strong></article>
       <article><span>VOLUME</span><strong>${appraisalVolume(s.volume)}</strong></article>
       <article><span>ITEM TYPES</span><strong>${Number(s.resolvedLines||0).toLocaleString()}</strong></article>`;
+    if(refine){
+      const r=appraisalData.refine||null;
+      const minerals=Array.isArray(r?.minerals)?r.minerals:[];
+      refine.innerHTML=r&&Number(r.eligibleLines)>0?`
+        <section class="appraisal-refine-card">
+          <div class="appraisal-refine-head">
+            <div><span>REFINED VALUE</span><strong>ORE REPROCESS • ${Number(r.ratePct||0).toFixed(2)}% YIELD</strong><small>${Number(r.eligibleLines||0)} reprocessable item type${Number(r.eligibleLines||0)===1?'':'s'} • Jita mineral buy basis</small></div>
+            <article class="appraisal-refine-value appraisal-copy-card" role="button" tabindex="0" data-copy-isk="${Number(r.value)||0}" data-copy-label="refined value" title="Click to copy refined value"><span>REFINED JITA BUY</span><strong>${appraisalIsk(r.value)} ISK</strong><small>CLICK TO COPY PRICE</small></article>
+          </div>
+          <div class="appraisal-refine-minerals">${minerals.length?minerals.map(row=>`<div><span>${esc(row.name)}</span><strong>${Number(row.quantity||0).toLocaleString()}</strong><small>${appraisalIsk(row.value)} ISK</small></div>`).join(''):'<div class="appraisal-refine-empty">Mineral pricing is not available yet.</div>'}</div>
+          ${Number(r.leftoverUnits||0)>0?`<div class="appraisal-refine-note">Unprocessed remainder: ${Number(r.leftoverUnits||0).toLocaleString()} ore units below full reprocessing batch sizes.</div>`:''}
+        </section>`
+        :'<section class="appraisal-refine-card appraisal-refine-empty-card"><div><span>REFINED VALUE</span><strong>No reprocessable ore detected</strong><small>Ore refine value appears here when the appraisal contains supported raw or compressed ore.</small></div></section>';
+    }
     if(items){
       const rows=Array.isArray(appraisalData.items)?appraisalData.items:[];
       items.innerHTML=`<div class="appraisal-table-wrap"><table class="appraisal-table">
@@ -825,6 +840,7 @@
         market:Number($('appraisalMarket')?.value||2),
         pricing:String($('appraisalPricing')?.value||'split'),
         pricingVariant:String($('appraisalVariant')?.value||'immediate'),
+        refineRatePct:Number($('appraisalRefineRate')?.value||90.63),
       })});
       renderAppraisal();
       const s=appraisalData.summary||{};
@@ -857,6 +873,7 @@
         market:Number($('appraisalMarket')?.value||2),
         pricing:String($('appraisalPricing')?.value||'split'),
         pricingVariant:String($('appraisalVariant')?.value||'immediate'),
+        refineRatePct:Number($('appraisalRefineRate')?.value||90.63),
       })});
       const url=String(payload?.shareUrl||'');
       if(url){
@@ -2831,6 +2848,7 @@
             <label class="forge-field"><span>MARKET</span><select id="appraisalMarket"><option value="2">Jita 4-4</option></select></label>
             <label class="forge-field"><span>PRICE</span><select id="appraisalPricing"><option value="split" selected>SPLIT</option><option value="buy">BUY</option><option value="sell">SELL</option></select></label>
             <label class="forge-field"><span>PRICING BASIS</span><select id="appraisalVariant"><option value="immediate" selected>IMMEDIATE</option><option value="top5percent">TOP 5% AVERAGE</option></select></label>
+            <label class="forge-field appraisal-refine-rate-field"><span>REFINE RATE %</span><input id="appraisalRefineRate" type="number" min="0" max="100" step="0.01" inputmode="decimal" value="90.63" title="Ore reprocessing yield percentage"></label>
           </div>
           <textarea id="appraisalPaste" class="forge-paste appraisal-paste" rows="10" maxlength="100000" placeholder="Paste from EVE or type items here…&#10;10 Hulk&#10;Tritanium 1000000&#10;Compressed Arkonor&#9;27512&#10;&#10;Ctrl+Enter = Appraise"></textarea>
           <div class="forge-actions">
@@ -2840,6 +2858,7 @@
           </div>
           <div id="appraisalStatus" class="forge-status">Ready. Buy = current buy-side value, Sell = sell-side value, Split = midpoint.</div>
           <div id="appraisalSummary" class="forge-summary appraisal-summary"></div>
+          <div id="appraisalRefineSummary" class="appraisal-refine-summary"></div>
           <section class="appraisal-results">
             <div class="brain-card-head"><strong>APPRAISAL ITEMS</strong><small>Market values shown per item and for the full pasted quantity</small></div>
             <div id="appraisalItems" class="forge-list appraisal-list"><div class="visual-empty">Paste an EVE item list and click APPRAISE.</div></div>
@@ -2854,6 +2873,31 @@
       void calculateAppraisal();
     });
     $('appraisalShare')?.addEventListener('click',()=>void shareAppraisal());
+    const savedRefineRate=Number(localStorage.getItem('jlrAppraisalRefineRate'));
+    if($('appraisalRefineRate')&&Number.isFinite(savedRefineRate)&&savedRefineRate>=0&&savedRefineRate<=100)$('appraisalRefineRate').value=String(savedRefineRate);
+    const copyAppraisalValue=async target=>{
+      const card=target?.closest?.('[data-copy-isk]');
+      if(!card)return;
+      const value=Math.max(0,Number(card.dataset.copyIsk)||0);
+      const label=String(card.dataset.copyLabel||'appraisal price');
+      const text=value.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+' ISK';
+      try{
+        await navigator.clipboard.writeText(text);
+        card.classList.add('copied');
+        toast(label.charAt(0).toUpperCase()+label.slice(1)+' copied: '+text);
+        setTimeout(()=>card.classList.remove('copied'),900);
+      }catch(error){toast('Clipboard unavailable.')}
+    };
+    for(const id of ['appraisalSummary','appraisalRefineSummary']){
+      $(id)?.addEventListener('click',event=>void copyAppraisalValue(event.target));
+      $(id)?.addEventListener('keydown',event=>{
+        if(!['Enter',' '].includes(event.key))return;
+        const card=event.target?.closest?.('[data-copy-isk]');
+        if(!card)return;
+        event.preventDefault();
+        void copyAppraisalValue(card);
+      });
+    }
     $('appraisalPasteClipboard')?.addEventListener('click',async()=>{
       try{
         const text=await navigator.clipboard.readText();
@@ -2862,8 +2906,13 @@
         toast('Clipboard pasted into JLR Appraisal.');
       }catch(error){toast(String(error.message||'Clipboard unavailable'))}
     });
-    for(const id of ['appraisalMarket','appraisalPricing','appraisalVariant']){
+    for(const id of ['appraisalMarket','appraisalPricing','appraisalVariant','appraisalRefineRate']){
       $(id)?.addEventListener('change',()=>{
+        if(id==='appraisalRefineRate'){
+          const value=Math.max(0,Math.min(100,Number($('appraisalRefineRate')?.value)||0));
+          $('appraisalRefineRate').value=String(value);
+          localStorage.setItem('jlrAppraisalRefineRate',String(value));
+        }
         if(!appraisalData)return;
         $('appraisalStatus').textContent='Appraisal settings changed. Click APPRAISE to refresh the values.';
       });
