@@ -4115,6 +4115,9 @@ async function trackerBrainAppraisalAnswer(question,currentTab=''){
     };
   }
   const item=candidates[0]||null;
+  const interpreted=item&&['fuzzy','alias'].includes(String(item.matchSource||''))
+    ?'I read "'+String(item.matchedText||'').trim()+'" as '+item.name+'. '
+    :'';
   if(!item){
     if(currentTab==='forge'||currentTab==='appraisal'){
       return{
@@ -4142,7 +4145,8 @@ async function trackerBrainAppraisalAnswer(question,currentTab=''){
     return result?{
       handled:true,
       ...result,
-      voiceText:result.text,
+      text:interpreted+result.text,
+      voiceText:(interpreted?('I interpreted the item as '+item.name+'. '):'')+result.text,
       generatedAt:now(),
       staticData:{buildNumber:Number(matched?.meta?.buildNumber)||null,source:'ccp-sde'},
     }:null;
@@ -4172,7 +4176,8 @@ async function trackerBrainAppraisalAnswer(question,currentTab=''){
   return{
     handled:true,
     ...result,
-    voiceText:result.text,
+    text:interpreted+result.text,
+    voiceText:(interpreted?('I interpreted the item as '+item.name+'. '):'')+result.text,
     generatedAt:now(),
     staticData:appraisal.staticData||null,
     marketData:appraisal.marketData||null,
