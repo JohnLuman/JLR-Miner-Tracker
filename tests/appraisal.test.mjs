@@ -30,11 +30,15 @@ assert.equal(normalized.summary.volume,250);
 const buySummary=appraisalSummary(normalized.items,'buy');
 assert.equal(buySummary.value,18);
 
+normalized.refine={ratePct:90.63,value:123456789,eligibleLines:2,processedUnits:300,leftoverUnits:7,basis:'Jita mineral buy',minerals:[{name:'Tritanium',quantity:1234,unitPrice:4.1,value:5059.4}]};
 const share=sanitizeAppraisalShare({title:'  Fleet Loot  ',appraisal:normalized},{id:'u1',displayName:'John'});
 assert.equal(share.title,'Fleet Loot');
 assert.equal(share.owner.name,'John');
 assert.equal(share.appraisal.summary.split,22);
 assert.equal(share.appraisal.pricing,'split');
+assert.equal(share.appraisal.refine.ratePct,90.63);
+assert.equal(share.appraisal.refine.value,123456789);
+assert.equal(share.appraisal.refine.minerals[0].name,'Tritanium');
 
 console.log('JLR Appraisal tests passed.');
 
@@ -50,5 +54,8 @@ assert.match(server,/JANICE_API_URL\+'\/appraisal\?'/);
 assert.match(server,/fallbackJitaAppraisal/);
 assert.match(app,/CREATE SHARE LINK/);
 assert.match(app,/TOP 5% AVERAGE/);
+assert.match(app,/appraisalRefineRate/);
+assert.match(app,/CLICK TO COPY PRICE/);
+assert.match(server,/appraisalRefineSummary/);
 assert.match(index,/APPRAISAL<\/button>/);
 assert.match(shareClient,/\/api\/appraisal\/share\//);
