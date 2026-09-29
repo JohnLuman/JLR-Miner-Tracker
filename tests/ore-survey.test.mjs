@@ -89,7 +89,7 @@ assert.equal(inventory.inventoryRowCount,3);
 assert.equal(inventory.asteroidRowCount,0);
 assert.equal(inventory.rowCount,3);
 assert.equal(inventory.nearest.length,0,'inventory rows do not invent zero-meter distances');
-assert.equal(inventory.totalVolumeM3,42800.8);
+assert.ok(Math.abs(inventory.totalVolumeM3-42800.8)<1e-6);
 assert.equal(inventory.pricedValueISK,75672648);
 assert.equal(inventory.groups.find(row=>row.name==='Compressed Arkonor')?.pricedValueISK,4401920,'compressed ore values against raw-equivalent volume');
 assert.equal(inventory.groups.find(row=>row.name==='Compressed Kylixium II-Grade')?.pricedValueISK,71186560,'compressed grade keeps its variant for valuation');
