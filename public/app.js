@@ -876,7 +876,7 @@
   }
 
   function feedbackTypeLabel(type){
-    return {bug:'BUG',suggestion:'FEATURE IDEA',speech:'SPEECH / VOICE',data:'DATA ISSUE',ui:'UI / UX',other:'OTHER'}[String(type||'')]||'FEEDBACK';
+    return {bug:'BUG',suggestion:'FEATURE IDEA',data:'DATA ISSUE',ui:'UI / UX',other:'OTHER'}[String(type||'')]||'FEEDBACK';
   }
   function feedbackAreaLabel(area){
     return {general:'GENERAL',fields:'FIELDS',brain:'ADAM',fleet:'FLEET & FITS',performance:'FLEET PERFORMANCE',ice:'ICE',gas:'GAS',doctrine:'DOCTRINE MARKET',pvp:'INIT PVP',tracker:'TRACKER',threat:'THREAT SCAN',mer:'MER INTEL',toons:'TOONS'}[String(area||'')]||String(area||'GENERAL').toUpperCase();
@@ -1152,7 +1152,6 @@
         }
         if(snapshot.needsScan){
           if(id===String(scanCharacterId)&&!scanBusy)setScanStatus(snapshot.system+': SCAN UPDATE NEEDED','warning');
-          // Visual Scout/Adam attention is independent of the retired voice cooldown.
           // Keep the global alert active for any due tracked system until a fresh scan clears it.
           if(!prompt)prompt=snapshot;
         }else if(id===String(scanCharacterId)&&entered&&!scanBusy){
@@ -5716,7 +5715,6 @@
         }
       }
       if(preview?.boardScan?.recorded||preview?.a0?.scan?.valid||preview?.gasWormhole?.scan?.valid){
-        scoutVoiceCooldown.delete(String(preview.system));
         if(scoutPromptKey===String(selected.characterId)+':'+String(preview.system)){
           $('brainScanPrompt')?.classList.add('hidden');
           scoutPromptKey='';
