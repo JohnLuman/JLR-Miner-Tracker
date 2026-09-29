@@ -29,10 +29,10 @@
   let scoutLocationBusy = false;
   let companionStatusTimer = null;
   let companionStatusBusy = false;
-  let forgePlan = null;
-  let forgeBoard = [];
-  let forgeBusy = false;
-  let forgeBoardBusy = false;
+  let appraisalData = null;
+  let appraisalBusy = false;
+  let appraisalMarkets = [];
+  let appraisalMarketsBusy = false;
   let stateRenderFrame = 0;
   let stateRenderPending = false;
   const scoutLastSystem = new Map();
@@ -445,6 +445,7 @@
     if(tab==='toons')return'Ask Adam about a toon, ESI access, location readiness, or sync state…';
     if(tab==='threat')return'Ask Adam about this threat view or what the current data means…';
     if(tab==='doctrine')return'Ask Adam which item has the best ROI, how much to buy, or what stock and sales show…';
+    if(tab==='forge')return'Ask Adam about this appraisal, Jita buy/split/sell, volume, or what the numbers mean…';
     if(context.workflow==='scout-routing'||tab==='brain')return'Ask Adam where to go, what is closest, or what needs attention…';
     return'Ask Adam naturally about whatever you are looking at…';
   }
@@ -735,7 +736,7 @@
     const shortError=error==='none'?'No custom voice error is currently recorded.':'The last custom voice error is '+error.slice(0,180)+'.';
     return 'Diagnostics are displayed. Microphone track is '+mic+'. Local speech model is '+model+'. Custom voice mode is '+mode+', profile '+profile+'. '+shortError;
   }
-  function forgeIsk(value){
+  function appraisalIsk(value){
     const n=Math.max(0,Number(value)||0);
     if(n>=1e12)return (n/1e12).toFixed(2)+'T';
     if(n>=1e9)return (n/1e9).toFixed(2)+'B';
@@ -743,150 +744,130 @@
     if(n>=1e3)return (n/1e3).toFixed(1)+'K';
     return Math.round(n).toLocaleString();
   }
-  function forgeStatusLabel(status){
-    return ({
-      planning:'PLANNING',
-      'needs-mats':'NEEDS MATS',
-      ready:'READY TO BUILD',
-      building:'BUILDING',
-      done:'DONE',
-    })[status]||String(status||'PLANNING').toUpperCase();
+  function appraisalPrice(value){
+    const n=Math.max(0,Number(value)||0);
+    return n.toLocaleString(undefined,{maximumFractionDigits:2});
   }
-  function renderForge(){
+  function appraisalVolume(value){
+    const n=Math.max(0,Number(value)||0);
+    if(n>=1e9)return (n/1e9).toFixed(2)+'B m³';
+    if(n>=1e6)return (n/1e6).toFixed(2)+'M m³';
+    if(n>=1e3)return (n/1e3).toFixed(1)+'K m³';
+    return n.toLocaleString(undefined,{maximumFractionDigits:2})+' m³';
+  }
+  function appraisalModeLabel(value){
+    const key=String(value||'split');
+    return key==='buy'?'BUY':key==='sell'?'SELL':'SPLIT';
+  }
+  function appraisalVariantLabel(value){
+    return String(value||'immediate')==='top5percent'?'TOP 5% AVG':'IMMEDIATE';
+  }
+  async function loadAppraisalMarkets(){
+    if(appraisalMarketsBusy)return;
+    appraisalMarketsBusy=true;
+    const select=$('appraisalMarket');
+    const previous=select?.value||'2';
+    if(select&&!appraisalMarkets.length)select.innerHTML='<option value="2">LOADING MARKETS…</option>';
+    try{
+      const payload=await api('/api/appraisal/markets');
+      appraisalMarkets=Array.isArray(payload?.markets)?payload.markets:[];
+      if(select){
+        select.innerHTML=appraisalMarkets.map(row=>'<option value="'+Number(row.id)+'">'+esc(row.name)+'</option>').join('')||'<option value="2">Jita 4-4</option>';
+        const hasPrevious=Array.from(select.options).some(option=>option.value===previous);
+        select.value=hasPrevious?previous:String(appraisalMarkets[0]?.id||2);
+      }
+    }catch(error){
+      appraisalMarkets=[{id:2,name:'Jita 4-4'}];
+      if(select)select.innerHTML='<option value="2">Jita 4-4</option>';
+    }finally{
+      appraisalMarketsBusy=false;
+    }
+  }
+  function renderAppraisal(){
     if(!$('forgePanel'))return;
-    const summary=$('forgeSummary'),items=$('forgeItems'),materials=$('forgeMaterials'),share=$('forgeShare');
-    if(!forgePlan){
+    const summary=$('appraisalSummary'),items=$('appraisalItems'),share=$('appraisalShare');
+    if(!appraisalData){
       if(summary)summary.innerHTML='';
-      if(items)items.innerHTML='<div class="visual-empty">No build calculated yet.</div>';
-      if(materials)materials.innerHTML='<div class="visual-empty">Material totals will appear here.</div>';
+      if(items)items.innerHTML='<div class="visual-empty">Paste an EVE item list and click APPRAISE.</div>';
       if(share)share.disabled=true;
       return;
     }
-    const s=forgePlan.summary||{};
+    const s=appraisalData.summary||{};
+    const selected=appraisalModeLabel(appraisalData.pricing);
     if(summary)summary.innerHTML=`
-      <article><span>BUILDABLE</span><strong>${Number(s.buildableLines||0)}</strong></article>
-      <article><span>MATERIAL TYPES</span><strong>${Number(s.materialTypes||0)}</strong></article>
-      <article><span>BUILD ESTIMATE</span><strong>${forgeIsk(s.materialCost)} ISK</strong></article>
-      <article><span>95% ORE PAYOUT</span><strong>${forgeIsk(s.orePayoutValue)} ISK</strong></article>`;
+      <article class="appraisal-primary"><span>${esc(selected)} APPRAISAL</span><strong>${appraisalIsk(s.value)} ISK</strong></article>
+      <article><span>JITA BUY</span><strong>${appraisalIsk(s.buy)} ISK</strong></article>
+      <article><span>SPLIT</span><strong>${appraisalIsk(s.split)} ISK</strong></article>
+      <article><span>JITA SELL</span><strong>${appraisalIsk(s.sell)} ISK</strong></article>
+      <article><span>VOLUME</span><strong>${appraisalVolume(s.volume)}</strong></article>
+      <article><span>ITEM TYPES</span><strong>${Number(s.resolvedLines||0).toLocaleString()}</strong></article>`;
     if(items){
-      items.innerHTML=(forgePlan.items||[]).map(row=>{
-        const type=String(row.kind||'resource');
-        const detail=type==='manufacturing'
-          ?`${Number(row.runs||0).toLocaleString()} run${Number(row.runs)===1?'':'s'} • ${forgeIsk(row.totalCost)} ISK estimate`
-          :type==='ore'
-            ?`${fmt(row.totalVolume||0,'m3')} m³ • ${forgeIsk(row.orePayoutValue)} ISK @ 95%`
-            :type==='unresolved'
-              ?'Could not resolve this item'
-              :'Resolved resource • no manufacturing recipe';
-        return `<article class="forge-row"><div><strong>${esc(row.name)}</strong><small>${esc(type.toUpperCase())} • qty ${Number(row.quantity||0).toLocaleString()}</small></div><span>${esc(detail)}</span></article>`;
-      }).join('')||'<div class="visual-empty">No outputs.</div>';
+      const rows=Array.isArray(appraisalData.items)?appraisalData.items:[];
+      items.innerHTML=`<div class="appraisal-table-wrap"><table class="appraisal-table">
+        <thead><tr><th>ITEM</th><th>QTY</th><th>VOLUME</th><th>BUY / EA</th><th>SPLIT / EA</th><th>SELL / EA</th><th>BUY TOTAL</th><th>SELL TOTAL</th></tr></thead>
+        <tbody>${rows.length?rows.map(row=>row.resolved===false
+          ?`<tr class="appraisal-unresolved"><td><strong>${esc(row.name)}</strong><small>UNRESOLVED</small></td><td colspan="7">—</td></tr>`
+          :`<tr><td><strong>${esc(row.name)}</strong><small>${Number(row.buyOrderCount||0).toLocaleString()} buy orders • ${Number(row.sellOrderCount||0).toLocaleString()} sell orders</small></td><td>${Number(row.amount||0).toLocaleString()}</td><td>${appraisalVolume(row.totalVolume)}</td><td>${appraisalPrice(row.buy)}</td><td>${appraisalPrice(row.split)}</td><td>${appraisalPrice(row.sell)}</td><td>${appraisalIsk(row.buyTotal)}</td><td>${appraisalIsk(row.sellTotal)}</td></tr>`).join(''):'<tr><td colspan="8">No appraisal rows.</td></tr>'}</tbody>
+      </table></div>`;
     }
-    if(materials){
-      materials.innerHTML=(forgePlan.materials||[]).map(row=>`<article class="forge-row material"><div><strong>${esc(row.name)}</strong><small>MATERIAL</small></div><span>${Number(row.quantity||0).toLocaleString()} • ${forgeIsk(row.cost)} ISK</span></article>`).join('')||'<div class="visual-empty">No manufacturing materials in this list.</div>';
-    }
-    if(share)share.disabled=!(forgePlan.items||[]).length;
+    if(share)share.disabled=!Array.isArray(appraisalData.items)||!appraisalData.items.some(row=>row.resolved!==false);
   }
-  function renderForgeBoard(){
-    const host=$('forgeBoard');
-    if(!host)return;
-    if(forgeBoardBusy&&!forgeBoard.length){host.innerHTML='<div class="visual-empty">Loading Build Board…</div>';return}
-    if(!forgeBoard.length){host.innerHTML='<div class="visual-empty">No shared builds yet. Post the first one.</div>';return}
-    host.innerHTML=forgeBoard.map(row=>{
-      const summary=row.plan?.summary||{};
-      const url=location.origin+'/forge/'+encodeURIComponent(row.token||'');
-      return `<article class="forge-board-card" data-forge-id="${esc(row.id)}">
-        <div class="forge-board-card-head"><div><strong>${esc(row.title)}</strong><small>${esc(row.owner?.name||'JLR Pilot')} • ${ago(row.updatedAt||row.createdAt)}</small></div><span class="forge-status-chip ${esc(row.status)}">${esc(forgeStatusLabel(row.status))}</span></div>
-        <div class="forge-board-kpis"><span>${Number(summary.buildableLines||0)} build lines</span><span>${forgeIsk(summary.materialCost)} ISK mats</span><span>${Number(summary.materialTypes||0)} material types</span></div>
-        ${row.notes?`<p>${esc(row.notes)}</p>`:''}
-        <div class="forge-board-actions">
-          <select data-forge-status="${esc(row.id)}">
-            ${['planning','needs-mats','ready','building','done'].map(status=>`<option value="${status}" ${status===row.status?'selected':''}>${forgeStatusLabel(status)}</option>`).join('')}
-          </select>
-          <button class="board-tool" type="button" data-forge-copy="${esc(url)}">COPY SHARE LINK</button>
-          <a class="board-tool" href="${esc(url)}" target="_blank" rel="noopener">OPEN</a>
-          ${row.canDelete?'<button class="board-tool forge-delete" type="button" data-forge-delete="'+esc(row.id)+'">REMOVE BUILD</button>':''}
-        </div>
-      </article>`;
-    }).join('');
-  }
-  async function loadForgeBoard(force=true){
-    if(forgeBoardBusy)return;
-    forgeBoardBusy=true;
-    renderForgeBoard();
+  async function calculateAppraisal(){
+    if(appraisalBusy)return;
+    const text=String($('appraisalPaste')?.value||'').trim();
+    if(!text){toast('Paste an EVE item list first.');return}
+    appraisalBusy=true;
+    $('appraisalCalculate').disabled=true;
+    $('appraisalStatus').textContent='Pricing pasted items…';
     try{
-      const payload=await api('/api/forge/board'+(force?'?t='+Date.now():''));
-      forgeBoard=Array.isArray(payload?.shares)?payload.shares:[];
-    }catch(error){
-      if($('forgeBoard'))$('forgeBoard').innerHTML='<div class="visual-empty">Build Board unavailable: '+esc(error.message)+'</div>';
-    }finally{
-      forgeBoardBusy=false;
-      renderForgeBoard();
-    }
-  }
-  async function calculateForge(){
-    if(forgeBusy)return;
-    const text=String($('forgePaste')?.value||'').trim();
-    if(!text){toast('Paste a build list first.');return}
-    forgeBusy=true;
-    $('forgeCalculate').disabled=true;
-    $('forgeStatus').textContent='Resolving EVE blueprints and material requirements…';
-    try{
-      forgePlan=await api('/api/forge/plan',{method:'POST',body:JSON.stringify({
-        text,me:Number($('forgeMe')?.value||10),te:Number($('forgeTe')?.value||20),
+      appraisalData=await api('/api/appraisal',{method:'POST',body:JSON.stringify({
+        text,
+        market:Number($('appraisalMarket')?.value||2),
+        pricing:String($('appraisalPricing')?.value||'split'),
+        pricingVariant:String($('appraisalVariant')?.value||'immediate'),
       })});
-      renderForge();
-      const s=forgePlan.summary||{};
-      $('forgeStatus').textContent='Calculated '+Number(s.requestedLines||0)+' line'+(Number(s.requestedLines)===1?'':'s')+' • '+Number(s.buildableLines||0)+' buildable • '+Number(s.unresolvedLines||0)+' unresolved.';
-      adamRecordAction('forge-plan',{detail:Number(s.buildableLines||0)+' build lines • '+Number(s.materialTypes||0)+' materials'});
+      renderAppraisal();
+      const s=appraisalData.summary||{};
+      const unresolved=Number(s.unresolvedLines||0);
+      $('appraisalStatus').textContent=
+        (appraisalData.market?.name||'Jita 4-4')+' • '+appraisalVariantLabel(appraisalData.pricingVariant)+' • '
+        +Number(s.resolvedLines||0)+' item type'+(Number(s.resolvedLines)===1?'':'s')
+        +' • '+appraisalIsk(s.value)+' ISK'
+        +(unresolved?' • '+unresolved+' unresolved':'');
+      adamRecordAction('appraisal',{detail:appraisalModeLabel(appraisalData.pricing)+' • '+appraisalIsk(s.value)+' ISK'});
     }catch(error){
-      $('forgeStatus').textContent='Forge error: '+String(error.message||error);
-      toast('Forge calculation failed.');
+      $('appraisalStatus').textContent='Appraisal error: '+String(error.message||error);
+      toast('Appraisal failed.');
     }finally{
-      forgeBusy=false;
-      $('forgeCalculate').disabled=false;
+      appraisalBusy=false;
+      $('appraisalCalculate').disabled=false;
+      renderAppraisal();
     }
   }
-  async function shareForge(){
-    if(!forgePlan||forgeBusy)return;
-    forgeBusy=true;
-    $('forgeShare').disabled=true;
+  async function shareAppraisal(){
+    if(!appraisalData||appraisalBusy)return;
+    const text=String($('appraisalPaste')?.value||'').trim();
+    if(!text)return;
+    appraisalBusy=true;
+    $('appraisalShare').disabled=true;
     try{
-      const title=String($('forgeTitle')?.value||'').trim()||'JLR Build';
-      const notes='ME '+Number(forgePlan.me||0)+' / TE '+Number(forgePlan.te||0)+' • Generated in JLR Forge';
-      const payload=await api('/api/forge/share',{method:'POST',body:JSON.stringify({title,status:'planning',notes,plan:forgePlan})});
+      const payload=await api('/api/appraisal/share',{method:'POST',body:JSON.stringify({
+        title:String($('appraisalTitle')?.value||'').trim()||'JLR Appraisal',
+        text,
+        market:Number($('appraisalMarket')?.value||2),
+        pricing:String($('appraisalPricing')?.value||'split'),
+        pricingVariant:String($('appraisalVariant')?.value||'immediate'),
+      })});
       const url=String(payload?.shareUrl||'');
       if(url){
-        try{await navigator.clipboard.writeText(url);toast('Build posted. Share link copied.')}
-        catch{toast('Build posted to the JLR Build Board.')}
+        try{await navigator.clipboard.writeText(url);toast('JLR appraisal link copied.')}
+        catch{toast('JLR appraisal created. Open it from the returned link.')}
       }
-      await loadForgeBoard(true);
-    }catch(error){toast('Could not post build: '+String(error.message||error))}
-    finally{forgeBusy=false;renderForge()}
-  }
-  async function setForgeStatus(id,status){
-    try{
-      const payload=await api('/api/forge/share/'+encodeURIComponent(id)+'/status',{method:'POST',body:JSON.stringify({status})});
-      const next=payload?.share;
-      if(next){
-        const index=forgeBoard.findIndex(row=>String(row.id)===String(id));
-        if(index>=0)forgeBoard[index]=next;
-        renderForgeBoard();
-      }
-      toast('Build status: '+forgeStatusLabel(status));
-    }catch(error){toast('Could not update build status: '+String(error.message||error));await loadForgeBoard(true)}
-  }
-  async function removeForgeBuild(id){
-    const row=forgeBoard.find(item=>String(item.id)===String(id));
-    if(!row)return;
-    if(!confirm('Remove "'+String(row.title||'this build')+'" from the JLR Build Board?'))return;
-    try{
-      await api('/api/forge/share/'+encodeURIComponent(id)+'/delete',{method:'POST',body:'{}'});
-      forgeBoard=forgeBoard.filter(item=>String(item.id)!==String(id));
-      renderForgeBoard();
-      toast('Build removed from the JLR Build Board.');
     }catch(error){
-      toast('Could not remove build: '+String(error.message||error));
-      await loadForgeBoard(true);
+      toast('Could not create appraisal link: '+String(error.message||error));
+    }finally{
+      appraisalBusy=false;
+      renderAppraisal();
     }
   }
 
@@ -2784,8 +2765,8 @@
     if(activeTab==='doctrine'&&!doctrineMarket&&!doctrineMarketLoading)loadDoctrineMarket();
     if(activeTab==='performance')refreshFleetPerformanceData(false);
     if(activeTab==='forge'){
-      renderForge();
-      void loadForgeBoard(false);
+      renderAppraisal();
+      void loadAppraisalMarkets();
     }
     if(activeTab==='brain'){
       renderAdamContext();
@@ -2835,72 +2816,59 @@
     feedback.id='feedbackPanel';
 
     forge.innerHTML=`
-      <section class="forge-shell">
-        <section class="glass forge-planner">
+      <section class="forge-shell appraisal-shell">
+        <section class="glass forge-planner appraisal-panel">
           <div class="forge-head">
-            <div><span class="eyebrow">JLR INDUSTRIAL NETWORK // FORGE</span><h2>BUILD PLANNER</h2><p>Paste what you want to build. JLR resolves current EVE blueprints, totals the materials, and keeps ore on our 95% payout basis.</p></div>
-            <span class="status-pill">● LIVE BLUEPRINT DATA</span>
+            <div>
+              <span class="eyebrow">JLR MARKET NETWORK // APPRAISAL</span>
+              <h2>JLR APPRAISAL</h2>
+              <p>Paste inventory, cargo, ore, modules, loot, or a simple item list. JLR prices it, shows Buy / Split / Sell together, and can create a JLR share link.</p>
+            </div>
+            <span class="status-pill">● LIVE MARKET DATA</span>
           </div>
-          <div class="forge-controls">
-            <label class="forge-field forge-title-field"><span>BUILD NAME</span><input id="forgeTitle" maxlength="100" placeholder="Example: Hulk replacement batch"></label>
-            <label class="forge-field"><span>ME</span><input id="forgeMe" type="number" min="0" max="10" value="10"></label>
-            <label class="forge-field"><span>TE</span><input id="forgeTe" type="number" min="0" max="20" value="20"></label>
+          <div class="forge-controls appraisal-controls">
+            <label class="forge-field appraisal-title-field"><span>APPRAISAL NAME</span><input id="appraisalTitle" maxlength="120" placeholder="Example: Fleet loot split"></label>
+            <label class="forge-field"><span>MARKET</span><select id="appraisalMarket"><option value="2">Jita 4-4</option></select></label>
+            <label class="forge-field"><span>PRICE</span><select id="appraisalPricing"><option value="split" selected>SPLIT</option><option value="buy">BUY</option><option value="sell">SELL</option></select></label>
+            <label class="forge-field"><span>PRICING BASIS</span><select id="appraisalVariant"><option value="immediate" selected>IMMEDIATE</option><option value="top5percent">TOP 5% AVERAGE</option></select></label>
           </div>
-          <textarea id="forgePaste" class="forge-paste" rows="8" maxlength="100000" placeholder="Type a build and press Enter…&#10;10 Hulk&#10;Shift+Enter = another line"></textarea>
+          <textarea id="appraisalPaste" class="forge-paste appraisal-paste" rows="10" maxlength="100000" placeholder="Paste from EVE or type items here…&#10;10 Hulk&#10;Tritanium 1000000&#10;Compressed Arkonor&#9;27512&#10;&#10;Ctrl+Enter = Appraise"></textarea>
           <div class="forge-actions">
-            <button id="forgePasteClipboard" class="orb silver" type="button">PASTE CLIPBOARD</button>
-            <button id="forgeCalculate" class="orb purple" type="button">CALCULATE BUILD</button>
-            <button id="forgeShare" class="orb silver" type="button" disabled>POST TO BUILD BOARD</button>
+            <button id="appraisalPasteClipboard" class="orb silver" type="button">PASTE CLIPBOARD</button>
+            <button id="appraisalCalculate" class="orb purple" type="button">APPRAISE</button>
+            <button id="appraisalShare" class="orb silver" type="button" disabled>CREATE SHARE LINK</button>
           </div>
-          <div id="forgeStatus" class="forge-status">Ready for a build list.</div>
-          <div id="forgeSummary" class="forge-summary"></div>
-          <div class="forge-results-grid">
-            <section><div class="brain-card-head"><strong>OUTPUTS</strong><small>What you asked JLR to build/value</small></div><div id="forgeItems" class="forge-list"><div class="visual-empty">No build calculated yet.</div></div></section>
-            <section><div class="brain-card-head"><strong>MATERIAL SHOPPING LIST</strong><small>Combined materials across buildable items</small></div><div id="forgeMaterials" class="forge-list"><div class="visual-empty">Material totals will appear here.</div></div></section>
-          </div>
+          <div id="appraisalStatus" class="forge-status">Ready. Buy = current buy-side value, Sell = sell-side value, Split = midpoint.</div>
+          <div id="appraisalSummary" class="forge-summary appraisal-summary"></div>
+          <section class="appraisal-results">
+            <div class="brain-card-head"><strong>APPRAISAL ITEMS</strong><small>Market values shown per item and for the full pasted quantity</small></div>
+            <div id="appraisalItems" class="forge-list appraisal-list"><div class="visual-empty">Paste an EVE item list and click APPRAISE.</div></div>
+          </section>
         </section>
-        <aside class="glass forge-board-panel">
-          <div class="forge-board-head"><div><span class="eyebrow">SHARED WITH JLR</span><h2>BUILD BOARD</h2></div><button id="forgeRefresh" class="board-tool" type="button">↻ REFRESH</button></div>
-          <p class="forge-board-copy">Post a build once, share the link anywhere, and let the board show whether it still needs materials or is already in production.</p>
-          <div id="forgeBoard" class="forge-board"><div class="visual-empty">Loading shared builds…</div></div>
-        </aside>
       </section>`;
 
-    // Forge controls are created dynamically inside initTabs, so bind only
-    // after the Forge DOM exists.
-    $('forgeCalculate')?.addEventListener('click',()=>void calculateForge());
-    $('forgePaste')?.addEventListener('keydown',event=>{
-      if(event.key!=='Enter'||event.shiftKey||event.ctrlKey||event.altKey||event.metaKey||event.isComposing)return;
+    $('appraisalCalculate')?.addEventListener('click',()=>void calculateAppraisal());
+    $('appraisalPaste')?.addEventListener('keydown',event=>{
+      if(event.key!=='Enter'||!(event.ctrlKey||event.metaKey)||event.shiftKey||event.altKey||event.isComposing)return;
       event.preventDefault();
-      void calculateForge();
+      void calculateAppraisal();
     });
-    $('forgeShare')?.addEventListener('click',()=>void shareForge());
-    $('forgeRefresh')?.addEventListener('click',()=>void loadForgeBoard(true));
-    $('forgePasteClipboard')?.addEventListener('click',async()=>{
+    $('appraisalShare')?.addEventListener('click',()=>void shareAppraisal());
+    $('appraisalPasteClipboard')?.addEventListener('click',async()=>{
       try{
         const text=await navigator.clipboard.readText();
         if(!text.trim())throw new Error('Clipboard is empty');
-        $('forgePaste').value=text;
-        toast('Clipboard pasted into JLR Forge.');
+        $('appraisalPaste').value=text;
+        toast('Clipboard pasted into JLR Appraisal.');
       }catch(error){toast(String(error.message||'Clipboard unavailable'))}
     });
-    $('forgeBoard')?.addEventListener('change',event=>{
-      const select=event.target instanceof Element?event.target.closest('select[data-forge-status]'):null;
-      if(select)void setForgeStatus(String(select.dataset.forgeStatus||''),String(select.value||'planning'));
-    });
-    $('forgeBoard')?.addEventListener('click',async event=>{
-      const target=event.target instanceof Element?event.target:null;
-      if(!target)return;
-      const remove=target.closest('[data-forge-delete]');
-      if(remove){
-        void removeForgeBuild(String(remove.dataset.forgeDelete||''));
-        return;
-      }
-      const button=target.closest('[data-forge-copy]');
-      if(!button)return;
-      try{await navigator.clipboard.writeText(String(button.dataset.forgeCopy||''));toast('Build share link copied.')}
-      catch{toast('Could not copy the build link.')}
-    });
+    for(const id of ['appraisalMarket','appraisalPricing','appraisalVariant']){
+      $(id)?.addEventListener('change',()=>{
+        if(!appraisalData)return;
+        $('appraisalStatus').textContent='Appraisal settings changed. Click APPRAISE to refresh the values.';
+      });
+    }
+
 
     const quick=document.querySelector('.quick-update');
     let assistant=document.querySelector('.tracker-assistant-panel');
