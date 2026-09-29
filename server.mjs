@@ -4518,9 +4518,6 @@ function trackerBrainAnswer(user,question,options={}){
 
   if(!q)return answer('help','Ask me a question about JLR Miner Tracker.');
 
-  const oreSurveyAnswer=trackerBrainOreSurveyAnswer(raw,context);
-  if(oreSurveyAnswer)return oreSurveyAnswer;
-
   if(/\b(?:explain recent fleet performance variance|why is this low|why is it low|why did this drop|what changed in fleet performance)\b/.test(q)){
     const p=context.performance||{};
     const latest=Number(p.latestRate);
