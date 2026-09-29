@@ -1,4 +1,4 @@
-/* JLR Appraisal — Janice-style payout + clipboard tools */
+/* JLR Native Appraisal — payout, clipboard, decision and market-intel tools */
 .jlr-appraisal-payout-bar{
   display:grid;
   grid-template-columns:minmax(230px,1fr) auto minmax(110px,150px);
@@ -133,4 +133,82 @@
 @media(max-width:760px){
   .jlr-intel-card-head{align-items:flex-start;flex-direction:column}
   .jlr-intel-card-head small{text-align:left}
+}
+
+
+.jlr-appraisal-freshness{
+  display:flex;
+  align-items:center;
+  gap:9px;
+  flex-wrap:wrap;
+  margin:-6px 0 14px;
+  padding:9px 12px;
+  border:1px solid rgba(93,220,166,.22);
+  border-radius:10px;
+  background:rgba(62,169,122,.055);
+}
+.jlr-appraisal-freshness strong{
+  font:700 11px/1 'Share Tech Mono',monospace;
+  letter-spacing:.04em;
+}
+.jlr-appraisal-freshness small{opacity:.68}
+.jlr-appraisal-freshness.jlr-stale,
+.jlr-intel-meta.jlr-stale{
+  border-color:rgba(255,190,80,.36);
+  background:rgba(255,190,80,.06);
+}
+.jlr-decision-card{
+  border-color:rgba(126,221,173,.22);
+  background:linear-gradient(145deg,rgba(36,105,75,.10),rgba(0,0,0,.18));
+}
+.jlr-decision-options{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:9px;
+  margin-bottom:10px;
+}
+.jlr-decision-option{
+  display:grid;
+  gap:4px;
+  padding:11px;
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:10px;
+  background:rgba(255,255,255,.025);
+}
+.jlr-decision-option>span{
+  font:700 10px/1 'Share Tech Mono',monospace;
+  letter-spacing:.1em;
+  opacity:.62;
+}
+.jlr-decision-option strong{font:700 17px/1.15 'Oxanium',sans-serif}
+.jlr-decision-option small{font:700 9px/1 'Share Tech Mono',monospace;letter-spacing:.1em;color:#92f4bc}
+.jlr-decision-option.winner{
+  border-color:rgba(97,239,159,.44);
+  background:rgba(75,190,124,.09);
+  box-shadow:0 0 0 1px rgba(97,239,159,.08) inset;
+}
+.jlr-decision-banner{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+  margin:0 0 10px;
+  padding:9px 11px;
+  border-left:3px solid rgba(97,239,159,.7);
+  background:rgba(62,169,122,.055);
+}
+.jlr-decision-banner>span{
+  font:700 9px/1 'Share Tech Mono',monospace;
+  letter-spacing:.12em;
+  opacity:.65;
+}
+.jlr-decision-banner>strong{font:700 14px/1 'Oxanium',sans-serif;color:#92f4bc}
+.jlr-decision-banner>small{opacity:.68}
+.jlr-decision-table{min-width:900px}
+.jlr-decision-winner{font-weight:700;color:#92f4bc}
+.jlr-decision-winner small{display:inline!important;margin-left:5px!important;color:inherit}
+.jlr-liquidity-table{min-width:1180px}
+@media(max-width:760px){
+  .jlr-decision-options{grid-template-columns:1fr}
+  .jlr-appraisal-freshness{align-items:flex-start}
 }

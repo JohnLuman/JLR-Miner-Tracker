@@ -22,6 +22,13 @@
     return n.toLocaleString(undefined,{maximumFractionDigits:2})+' m³';
   };
   const pct=clamp(Number(new URLSearchParams(location.search).get('p'))||100,0,200);
+  const ageText=ms=>{
+    const value=Math.max(0,Number(ms)||0);
+    if(value<60_000)return Math.max(1,Math.round(value/1000))+'s';
+    if(value<60*60_000)return Math.round(value/60_000)+'m';
+    if(value<24*60*60_000)return (value/(60*60_000)).toFixed(value<10*60*60_000?1:0)+'h';
+    return (value/(24*60*60_000)).toFixed(1)+'d';
+  };
   let share=null;
 
   async function copyText(text){
@@ -69,6 +76,7 @@
     const appraisal=share.appraisal||{};
     const summary=appraisal.summary||{};
     const rows=Array.isArray(appraisal.items)?appraisal.items:[];
+    const marketName=appraisal.market&&appraisal.market.name||'Market';
     const factor=pct/100;
     const payout=selectedSummary(appraisal,summary)*factor;
 
@@ -77,6 +85,7 @@
       hero.insertAdjacentHTML('beforeend',
         '<div class="share-copy-actions">'+
           '<div class="share-payout-badge"><span>PAYOUT</span><strong>'+esc(pct.toFixed(1).replace(/\.0$/,''))+'%</strong></div>'+
+          '<div class="share-payout-badge"><span>MARKET DATA</span><strong>'+esc(ageText(appraisal.marketData?.maxAgeMs||0))+'</strong></div>'+
           '<button type="button" data-share-action="summary">COPY SUMMARY</button>'+
           '<button type="button" data-share-action="table">COPY TABLE</button>'+
         '</div>');
@@ -86,9 +95,9 @@
     if(kpis){
       kpis.innerHTML=
         '<article class="kpi share-payout-kpi"><span>PAYOUT TOTAL</span>'+copyButton(payout,isk(payout)+' ISK','payout total','share-kpi-copy')+'</article>'+
-        '<article class="kpi"><span>JITA BUY</span>'+copyButton(summary.buy,isk(summary.buy)+' ISK','Jita buy','share-kpi-copy')+'</article>'+
+        '<article class="kpi"><span>'+esc(String(marketName).toUpperCase())+' BUY</span>'+copyButton(summary.buy,isk(summary.buy)+' ISK','market buy','share-kpi-copy')+'</article>'+
         '<article class="kpi"><span>SPLIT</span>'+copyButton(summary.split,isk(summary.split)+' ISK','split','share-kpi-copy')+'</article>'+
-        '<article class="kpi"><span>JITA SELL</span>'+copyButton(summary.sell,isk(summary.sell)+' ISK','Jita sell','share-kpi-copy')+'</article>'+
+        '<article class="kpi"><span>'+esc(String(marketName).toUpperCase())+' SELL</span>'+copyButton(summary.sell,isk(summary.sell)+' ISK','market sell','share-kpi-copy')+'</article>'+
         '<article class="kpi"><span>VOLUME</span>'+copyButton(summary.volume,vol(summary.volume),'volume','share-kpi-copy')+'</article>'+
         '<article class="kpi"><span>ITEM TYPES</span>'+copyButton(summary.resolvedLines,Number(summary.resolvedLines||0).toLocaleString(),'item types','share-kpi-copy')+'</article>'+
         '<article class="kpi"><span>TOTAL UNITS</span>'+copyButton(summary.units,Number(summary.units||0).toLocaleString(),'total units','share-kpi-copy')+'</article>';
@@ -148,9 +157,9 @@
       share.title||'JLR Appraisal',
       (appraisal.market&&appraisal.market.name||'Jita 4-4')+' • '+String(appraisal.pricingVariant||'immediate').toUpperCase(),
       'Payout: '+pct.toFixed(1).replace(/\.0$/,'')+'%',
-      'Jita Buy: '+exactPretty(summary.buy)+' ISK',
+      (appraisal.market&&appraisal.market.name||'Market')+' Buy: '+exactPretty(summary.buy)+' ISK',
       'Split: '+exactPretty(summary.split)+' ISK',
-      'Jita Sell: '+exactPretty(summary.sell)+' ISK',
+      (appraisal.market&&appraisal.market.name||'Market')+' Sell: '+exactPretty(summary.sell)+' ISK',
       'Payout Total: '+exactPretty(payout)+' ISK',
       'Volume: '+exactPretty(summary.volume)+' m³',
       location.href
