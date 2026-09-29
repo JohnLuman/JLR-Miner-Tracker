@@ -26,6 +26,12 @@ assert.match(app,/context,\s*\}\),/,'Adam request sends structured context with 
 assert.match(server,/const context=trackerBrainContext\(body\?\.context\)/,'Brain API sanitizes structured context');
 assert.match(server,/trackerSupport\.resolveQuestion\(\{[\s\S]*?context,/,'Brain API passes structured context into shared support');
 assert.match(server,/Reds or hostiles|reds, hostiles/,'Fleet variance explanation explicitly preserves interruption uncertainty');
+assert.match(app,/jlrAdamOreSurveyContext/,'Adam persists the last ore survey for follow-up questions');
+assert.match(app,/function adamOreSurveySystemAssignment\(text\)/,'Adam recognizes a follow-up system assignment for an ore survey');
+assert.match(app,/upper\.startsWith\(candidate\+'-'\)/,'Adam resolves shorthand such as 3WE to the full tracked system name');
+assert.match(app,/lastOreSurvey:/,'Adam sends the saved ore survey in structured context');
+assert.match(server,/function trackerBrainOreSurveyAnswer\(question,rawContext\)/,'server can answer follow-ups from ore survey context');
+assert.match(server,/oreContextAnswer=trackerBrainOreSurveyAnswer\(question,context\)/,'ore survey follow-ups are grounded before shared support fallback');
 
 assert.match(server,/what am i looking at/,'contextual current-tab questions are supported');
 
