@@ -77,7 +77,7 @@ assert.match(app,/TOP 5% AVERAGE/);
 assert.match(app,/JLR Native • CCP ESI Jita buy/);
 assert.match(index,/APPRAISAL<\/button>/);
 assert.match(shareClient,/\/api\/appraisal\/share\//);
-assert.match(server,/function appraisalRefinePreview\(items\)/,'server calculates an ore refine preview for appraisals');
+assert.match(server,/function appraisalRefinePreview\(items,sdeMaterialRows=\[\]\)/,'server calculates an SDE-aware ore refine preview for appraisals');
 assert.match(server,/replace\(\/\^compressed\\s\+\//,'compressed ore maps to the same reprocessing recipe');
 assert.match(app,/ORE EFFICIENCY/,'Appraisal exposes its ore efficiency control');
 assert.match(app,/REFINE DIFFERENCE/,'Appraisal compares refined value with raw ore value');
