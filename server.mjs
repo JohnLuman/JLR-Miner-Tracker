@@ -6118,19 +6118,81 @@ async function fallbackJitaAppraisal(text,{pricing='split',pricingVariant='immed
     failures:parsed.rejected.join('\n'),items,summary:appraisalSummary(items,mode),
   };
 }
+function appraisalRefineRatePct(value){
+  const n=Number(value);
+  const fallback=MAX_REFINE_YIELD*100;
+  return Number.isFinite(n)?Math.max(0,Math.min(100,n)):fallback;
+}
+function appraisalOreRecipeForItem(name){
+  const normalized=String(name||'').trim().toLowerCase().replace(/^compressed\s+/,'');
+  if(!normalized)return null;
+  return ORE_SURVEY_T3_REPROCESSING[normalized]||ORE_SURVEY_EXTRA_REPROCESSING[normalized]||null;
+}
+function appraisalRefineSummary(items,requestedRatePct){
+  const ratePct=appraisalRefineRatePct(requestedRatePct);
+  const rate=ratePct/100;
+  const prices=effectiveJitaMineralPrices();
+  const totals=new Map();
+  const unpriced=new Set();
+  let eligibleLines=0;
+  let processedUnits=0;
+  let leftoverUnits=0;
+
+  for(const item of Array.isArray(items)?items:[]){
+    if(item?.resolved===false)continue;
+    const recipe=appraisalOreRecipeForItem(item?.name);
+    if(!recipe)continue;
+    const amount=Math.max(0,Math.floor(Number(item?.amount)||0));
+    const portion=Math.max(1,Math.floor(Number(recipe?.portionSize)||1));
+    const batches=Math.floor(amount/portion);
+    if(batches<=0)continue;
+    eligibleLines++;
+    processedUnits+=batches*portion;
+    leftoverUnits+=amount-(batches*portion);
+    for(const [mineral,grossPerBatchRaw] of Object.entries(recipe?.minerals||{})){
+      const grossPerBatch=Math.max(0,Number(grossPerBatchRaw)||0);
+      const quantity=Math.floor(batches*grossPerBatch*rate);
+      if(quantity<=0)continue;
+      const unitPrice=Math.max(0,Number(prices[mineral])||0);
+      if(!(unitPrice>0))unpriced.add(mineral);
+      const previous=totals.get(mineral)||{name:mineral,quantity:0,unitPrice,value:0};
+      previous.quantity+=quantity;
+      previous.unitPrice=unitPrice||previous.unitPrice||0;
+      previous.value+=quantity*unitPrice;
+      totals.set(mineral,previous);
+    }
+  }
+
+  const minerals=[...totals.values()].sort((a,b)=>b.value-a.value||b.quantity-a.quantity||a.name.localeCompare(b.name));
+  return{
+    ratePct:Number(ratePct.toFixed(4)),
+    value:minerals.reduce((sum,row)=>sum+Math.max(0,Number(row.value)||0),0),
+    eligibleLines,
+    processedUnits,
+    leftoverUnits,
+    basis:'Jita mineral buy',
+    minerals,
+    unpricedMinerals:[...unpriced].sort(),
+  };
+}
 async function buildAppraisal(text,options={}){
   const market=Math.max(1,Number(options.market)||2);
   const pricing=appraisalMode(options.pricing);
   const pricingVariant=appraisalVariant(options.pricingVariant);
+  let appraisal=null;
   if(JANICE_API_KEY){
-    try{return await janiceAppraisal(text,{market,pricing,pricingVariant})}
+    try{appraisal=await janiceAppraisal(text,{market,pricing,pricingVariant})}
     catch(error){
       if(market!==2||pricingVariant!=='immediate')throw error;
       console.warn('Janice appraisal failed; using Jita ESI fallback',String(error?.message||error));
     }
   }
-  if(market!==2)throw new Error('This market requires the configured appraisal provider.');
-  return fallbackJitaAppraisal(text,{pricing,pricingVariant});
+  if(!appraisal){
+    if(market!==2)throw new Error('This market requires the configured appraisal provider.');
+    appraisal=await fallbackJitaAppraisal(text,{pricing,pricingVariant});
+  }
+  appraisal.refine=appraisalRefineSummary(appraisal.items,options.refineRatePct);
+  return appraisal;
 }
 function appraisalSharePublic(row){
   if(!row)return null;
@@ -9331,7 +9393,7 @@ async function routeApi(req,res,url) {
     const textInput=String(body?.text||'').trim();
     if(!textInput)return json(res,400,{error:'EMPTY_APPRAISAL',message:'Paste one or more EVE items and quantities.'});
     try{
-      return json(res,200,await buildAppraisal(textInput,{market:body?.market,pricing:body?.pricing,pricingVariant:body?.pricingVariant}));
+      return json(res,200,await buildAppraisal(textInput,{market:body?.market,pricing:body?.pricing,pricingVariant:body?.pricingVariant,refineRatePct:body?.refineRatePct}));
     }catch(err){
       return json(res,502,{error:'APPRAISAL_FAILED',message:String(err.message||err)});
     }
@@ -9344,7 +9406,7 @@ async function routeApi(req,res,url) {
     const textInput=String(body?.text||'').trim();
     if(!textInput)return json(res,400,{error:'EMPTY_APPRAISAL',message:'Paste one or more EVE items and quantities.'});
     try{
-      const appraisal=await buildAppraisal(textInput,{market:body?.market,pricing:body?.pricing,pricingVariant:body?.pricingVariant});
+      const appraisal=await buildAppraisal(textInput,{market:body?.market,pricing:body?.pricing,pricingVariant:body?.pricingVariant,refineRatePct:body?.refineRatePct});
       const base=sanitizeAppraisalShare({title:body?.title,appraisal},user);
       if(!base.appraisal.items.some(row=>row.resolved!==false))return json(res,400,{error:'EMPTY_APPRAISAL_SHARE',message:'No EVE items could be resolved.'});
       state.appraisals ||= {shares:{}};
