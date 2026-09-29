@@ -6052,6 +6052,31 @@ async function appraisalResolveItem(name){
   appraisalItemResolveCache.set(key,{at:Date.now(),value});
   return value;
 }
+async function appraisalResolveItems(rows){
+  const inputs=Array.isArray(rows)?rows:[];
+  const names=[...new Set(inputs.map(row=>String(row?.name||'').trim()).filter(name=>name.length>=2))];
+  const resolvedByKey=new Map();
+  const missing=[];
+  for(const name of names){
+    const key=name.toLowerCase();
+    const cached=appraisalItemResolveCache.get(key);
+    if(cached&&Date.now()-cached.at<24*60*60*1000)resolvedByKey.set(key,cached.value);
+    else missing.push(name);
+  }
+  if(missing.length){
+    const {data}=await esiPost('https://esi.evetech.net/latest/universe/ids/?datasource=tranquility',missing.slice(0,APPRAISAL_MAX_ITEM_TYPES));
+    const inventory=Array.isArray(data?.inventory_types)?data.inventory_types:[];
+    const found=new Map(inventory.filter(row=>row?.name&&Number(row?.id)>0)
+      .map(row=>[String(row.name).trim().toLowerCase(),{typeId:Number(row.id),name:String(row.name)}]));
+    for(const name of missing){
+      const key=name.toLowerCase();
+      const value=found.get(key)||null;
+      appraisalItemResolveCache.set(key,{at:Date.now(),value});
+      resolvedByKey.set(key,value);
+    }
+  }
+  return resolvedByKey;
+}
 async function appraisalMarketOrders(regionId,typeId){
   const key=String(regionId)+':'+String(typeId);
   const cached=appraisalOrderCache.get(key);
@@ -6178,10 +6203,11 @@ async function nativeEsiAppraisal(text,{market=2,pricing='split',pricingVariant=
   const mode=appraisalMode(pricing);
   const variant=appraisalVariant(pricingVariant);
   const selectedRows=parsed.rows.slice(0,APPRAISAL_MAX_ITEM_TYPES);
+  const resolvedNames=await appraisalResolveItems(selectedRows);
 
   const bases=await forgeMapLimit(selectedRows,6,async input=>{
     try{
-      const resolved=await appraisalResolveItem(input.name);
+      const resolved=resolvedNames.get(String(input.name||'').trim().toLowerCase())||null;
       if(!resolved)return{resolved:false,typeId:null,name:input.name,amount:Number(input.quantity)||0,error:'ITEM_NOT_FOUND'};
       await ensureType([resolved.typeId]);
       const type=state.esi.typeCache[String(resolved.typeId)]||{};
@@ -6267,7 +6293,7 @@ async function nativeEsiAppraisal(text,{market=2,pricing='split',pricingVariant=
   });
 
   if(snapshotsToPersist.length){
-    await trackerSupport.rememberAppraisalPriceSnapshots({snapshots:snapshotsToPersist});
+    void trackerSupport.rememberAppraisalPriceSnapshots({snapshots:snapshotsToPersist});
   }
 
   const failures=[...parsed.rejected];
