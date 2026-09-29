@@ -155,6 +155,9 @@ const TRACKER_R2Z2_EDGE_WAIT_MS = 6 * 1000;
 const TRACKER_R2Z2_REQUEST_GAP_MS = 120;
 const TRACKER_R2Z2_ERROR_WAIT_MS = 5 * 1000;
 const TRACKER_LIVE_RETENTION_MS = 24 * 60 * 60 * 1000;
+const TRACKER_CLOSEST_LOOKUP_TIMEOUT_MS = 1_800;
+const TRACKER_CLOSEST_HISTORY_LIMIT = 12;
+const TRACKER_AU_METERS = 149_597_870_700;
 const TRACKER_R2Z2_ENABLED = String(process.env.TRACKER_R2Z2_ENABLED || 'true').trim().toLowerCase() !== 'false';
 const WANDERER_BASE_URL = String(process.env.WANDERER_BASE_URL || 'https://wanderer.the-initiative.rocks').trim().replace(/\/$/,'');
 const WANDERER_MAP_SLUG = String(process.env.WANDERER_MAP_SLUG || '').trim();
@@ -410,6 +413,7 @@ let fountainRouteSystemsCache = {at:0,ids:null,promise:null};
 let wandererConnectionsCache = {at:0,data:null,promise:null};
 let trackerRouteOriginCache = {at:0,id:null};
 const trackerLiveSeenKillIds = new Set();
+const trackerClosestCache = new Map();
 const trackerVoiceJobs = new Map();
 const trackerBrainAnnouncementMemory = new Map();
 let trackerR2z2State = {
@@ -6253,8 +6257,95 @@ async function zkillJson(url){
   throw lastError||new Error('zKillboard request failed after retries');
 }
 
+function reportableHeavyFighterKillmail(km){
+  return Number(km?.victim?.alliance_id)!==INIT_ALLIANCE_ID;
+}
+
+function reportableHeavyFighterLoss(row){
+  return Number(row?.victim?.allianceId)!==INIT_ALLIANCE_ID;
+}
+
+function trackerKillPosition(km){
+  const position=km?.victim?.position||null;
+  const x=Number(position?.x),y=Number(position?.y),z=Number(position?.z);
+  if(!Number.isFinite(x)||!Number.isFinite(y)||!Number.isFinite(z))return null;
+  return{x,y,z};
+}
+
+async function trackerClosestCelestial(km){
+  const killmailId=Number(km?.killmail_id)||0;
+  const systemId=Number(km?.solar_system_id)||0;
+  const position=trackerKillPosition(km);
+  const zkillLocationId=Number(km?.zkb?.locationID)||null;
+  if(!killmailId||!systemId||!position)return zkillLocationId?{locationId:zkillLocationId,zkillLocationId,name:null,distanceMeters:null,distanceAu:null,source:'zkill-location-id'}:null;
+
+  const cached=trackerClosestCache.get(killmailId);
+  if(cached?.value)return cached.value;
+  if(cached?.promise)return cached.promise;
+  if(cached?.failedAt&&Date.now()-cached.failedAt<5*60*1000)return cached.value||null;
+
+  const pending=(async()=>{
+    const query=new URLSearchParams({
+      x:String(position.x),
+      y:String(position.y),
+      z:String(position.z),
+      solarsystemid:String(systemId),
+    });
+    const response=await fetch('https://www.fuzzwork.co.uk/api/nearestCelestial.php?'+query.toString(),{
+      headers:{
+        'Accept':'application/json',
+        'User-Agent':`${ESI_USER_AGENT} | JLR Heavy Fighter closest celestial`,
+      },
+      signal:AbortSignal.timeout(TRACKER_CLOSEST_LOOKUP_TIMEOUT_MS),
+    });
+    if(!response.ok)throw new Error(`Nearest celestial HTTP ${response.status}`);
+    const payload=await response.json();
+    const distanceMeters=Number(payload?.distance);
+    const locationId=Number(payload?.itemid)||zkillLocationId||null;
+    const result={
+      locationId,
+      zkillLocationId,
+      name:String(payload?.itemName||'').trim()||null,
+      distanceMeters:Number.isFinite(distanceMeters)&&distanceMeters>=0?distanceMeters:null,
+      distanceAu:Number.isFinite(distanceMeters)&&distanceMeters>=0?distanceMeters/TRACKER_AU_METERS:null,
+      source:'killmail-position',
+      matchesZkillLocation:zkillLocationId&&locationId?Number(zkillLocationId)===Number(locationId):null,
+    };
+    trackerClosestCache.set(killmailId,{at:Date.now(),value:result,promise:null,failedAt:0});
+    return result;
+  })().catch(err=>{
+    const fallback=zkillLocationId?{locationId:zkillLocationId,zkillLocationId,name:null,distanceMeters:null,distanceAu:null,source:'zkill-location-id'}:null;
+    trackerClosestCache.set(killmailId,{at:Date.now(),value:fallback,promise:null,failedAt:Date.now()});
+    console.warn('Heavy Fighter closest lookup failed',killmailId,String(err?.message||err));
+    return fallback;
+  }).finally(()=>{
+    const current=trackerClosestCache.get(killmailId);
+    if(current?.promise===pending)trackerClosestCache.set(killmailId,{...current,promise:null});
+  });
+  trackerClosestCache.set(killmailId,{at:Date.now(),value:null,promise:pending,failedAt:0});
+  return pending;
+}
+
+async function trackerClosestBatch(rows,limit=TRACKER_CLOSEST_HISTORY_LIMIT){
+  const selected=(Array.isArray(rows)?rows:[]).slice(0,Math.max(0,Number(limit)||0));
+  const result=new Map();
+  let cursor=0;
+  const worker=async()=>{
+    while(cursor<selected.length){
+      const index=cursor++;
+      const km=selected[index];
+      const killmailId=Number(km?.killmail_id)||0;
+      if(!killmailId)continue;
+      const closest=await trackerClosestCelestial(km);
+      if(closest)result.set(killmailId,closest);
+    }
+  };
+  await Promise.all(Array.from({length:Math.min(4,selected.length)},()=>worker()));
+  return result;
+}
+
 async function decorateHeavyFighterKillmails(rows){
-  const sourceRows=Array.isArray(rows)?rows:[];
+  const sourceRows=(Array.isArray(rows)?rows:[]).filter(reportableHeavyFighterKillmail);
   const ids=[];
   for(const km of sourceRows){
     const victim=km?.victim||{};
@@ -6274,7 +6365,10 @@ async function decorateHeavyFighterKillmails(rows){
       if(number>0)ids.push(number);
     }
   }
-  const names=await resolveUniverseNames(ids);
+  const [names,closestByKill]=await Promise.all([
+    resolveUniverseNames(ids),
+    trackerClosestBatch(sourceRows),
+  ]);
   const nameOf=id=>{
     const number=Number(id);
     return number>0?(names.get(number)||String(number)):null;
@@ -6286,6 +6380,7 @@ async function decorateHeavyFighterKillmails(rows){
     const killmailId=Number(km?.killmail_id)||0;
     const shipTypeId=Number(victim?.ship_type_id)||0;
     const systemId=Number(km?.solar_system_id)||0;
+    const closest=closestByKill.get(killmailId)||null;
     return{
       killmailId,
       killmailTime:km?.killmail_time||null,
@@ -6293,6 +6388,7 @@ async function decorateHeavyFighterKillmails(rows){
       shipTypeName:nameOf(shipTypeId)||'Heavy Fighter',
       systemId,
       systemName:nameOf(systemId)||`System ${systemId}`,
+      closest,
       victim:{
         characterId:Number(victim?.character_id)||null,
         characterName:nameOf(victim?.character_id),
@@ -6321,7 +6417,7 @@ async function decorateHeavyFighterKillmails(rows){
       awox:Boolean(km?.zkb?.awox),
       href:killmailId?`https://zkillboard.com/kill/${killmailId}/`:null,
     };
-  }).filter(row=>row.killmailId&&row.shipTypeId);
+  }).filter(row=>row.killmailId&&row.shipTypeId&&reportableHeavyFighterLoss(row));
 }
 
 async function heavyFighterTypeIds(){
@@ -6886,6 +6982,7 @@ function sendTrackerEvent(event,payload){
 function trimTrackerLiveLosses(){
   const cutoff=Date.now()-TRACKER_LIVE_RETENTION_MS;
   trackerLiveLosses=trackerLiveLosses.filter(row=>{
+    if(!reportableHeavyFighterLoss(row))return false;
     const at=Date.parse(row?.killmailTime||row?.receivedAt||'');
     return !Number.isFinite(at)||at>=cutoff;
   }).slice(0,200);
@@ -6900,6 +6997,7 @@ function mergeTrackerLosses(historyLosses){
   trimTrackerLiveLosses();
   const merged=new Map();
   for(const row of [...trackerLiveLosses,...(Array.isArray(historyLosses)?historyLosses:[])]){
+    if(!reportableHeavyFighterLoss(row))continue;
     const id=Number(row?.killmailId)||0;
     if(id&&!merged.has(id))merged.set(id,row);
   }
@@ -6952,7 +7050,7 @@ async function r2z2Json(url,{allow404=false}={}){
 
 async function processR2z2TrackerPayload(payload,sequence){
   const km=extractR2z2Killmail(payload);
-  if(!km)return;
+  if(!km||!reportableHeavyFighterKillmail(km))return;
   const shipTypeId=Number(km?.victim?.ship_type_id)||0;
   if(!shipTypeId)return;
   const typeIds=await heavyFighterTypeIds();
@@ -7058,7 +7156,7 @@ async function heavyFighterTracker(force=false){
     const rows=await zkillJson(url);
     if(!Array.isArray(rows))throw new Error('zKillboard Heavy Fighter feed was not a killmail list.');
 
-    const recent=rows.slice(0,200);
+    const recent=rows.filter(reportableHeavyFighterKillmail).slice(0,200);
     const losses=await decorateHeavyFighterKillmails(recent);
     const data={
       groupId:HEAVY_FIGHTER_GROUP_ID,
