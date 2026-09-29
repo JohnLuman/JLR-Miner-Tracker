@@ -1,7 +1,7 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.146';
-  const CORE_URL='/tracker-core.js?v=2.9.146-alert60';
+  const ALARM_VERSION='2.9.147';
+  const CORE_URL='/tracker-core.js?v=2.9.147-closest-init1';
 
   let alarmContext=null;
   let alarmNodes=[];
@@ -84,9 +84,15 @@
     if(detail){
       const system=String(loss?.systemName||'').trim();
       const value=Math.max(0,Number(loss?.totalValue)||0);
+      const closestName=String(loss?.closest?.name||'').trim();
+      const closestAu=Number(loss?.closest?.distanceAu);
+      const closestDistance=Number.isFinite(closestAu)&&closestAu>=0
+        ?' ('+closestAu.toFixed(closestAu>=10?1:closestAu>=1?2:closestAu>=.1?2:3)+' AU)'
+        :'';
+      const closest=closestName?' • Closest: '+closestName+closestDistance:'';
       detail.textContent=loss?.test
         ?'Dedicated local two-tone alarm • no spoken voice'
-        :(system||'Unknown system')+(value?' • '+Math.round(value).toLocaleString()+' ISK':'');
+        :(system||'Unknown system')+closest+(value?' • '+Math.round(value).toLocaleString()+' ISK':'');
     }
     el.classList.remove('hidden');
   }
