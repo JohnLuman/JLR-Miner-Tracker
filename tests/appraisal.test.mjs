@@ -57,5 +57,6 @@ assert.match(app,/TOP 5% AVERAGE/);
 assert.match(app,/appraisalRefineRate/);
 assert.match(app,/CLICK TO COPY PRICE/);
 assert.match(server,/appraisalRefineSummary/);
+assert.match(server,/Shares created before refine data was stored/);
 assert.match(index,/APPRAISAL<\/button>/);
 assert.match(shareClient,/\/api\/appraisal\/share\//);
