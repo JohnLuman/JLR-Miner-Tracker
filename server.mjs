@@ -6233,6 +6233,19 @@ function appraisalSnapshotItem(base,snapshot,{marketDataSource='support-cache',m
     marketDataAgeMs:Number.isFinite(parsedAge)?parsedAge:0,
     marketDataStale:Boolean(marketDataStale),
     marketDataSource:String(marketDataSource||'jlr-native-esi'),
+    staticSource:String(base?.staticSource||''),
+    sdeBuildNumber:Number(base?.sdeBuildNumber)||null,
+    groupId:Number(base?.groupId)||null,
+    groupName:String(base?.groupName||''),
+    categoryId:Number(base?.categoryId)||null,
+    categoryName:String(base?.categoryName||''),
+    marketGroupId:Number(base?.marketGroupId)||null,
+    marketGroupName:String(base?.marketGroupName||''),
+    portionSize:Math.max(1,Number(base?.portionSize)||1),
+    compressedTypeId:Number(base?.compressedTypeId)||null,
+    compressedName:String(base?.compressedName||''),
+    rawTypeId:Number(base?.rawTypeId)||null,
+    rawName:String(base?.rawName||''),
   };
 }
 function appraisalMarketDataSummary(items,freshMs=APPRAISAL_ORDER_CACHE_MS){
@@ -6288,6 +6301,17 @@ async function nativeEsiAppraisal(text,{market=2,pricing='split',pricingVariant=
         packagedVolumePerUnit:Math.max(0,Number(packagedVolumePerUnit)||0),
         staticSource:String(resolved.staticSource||'esi'),
         sdeBuildNumber:Number(resolved.sdeBuildNumber)||null,
+        groupId:Number(resolved.groupId)||null,
+        groupName:String(resolved.groupName||''),
+        categoryId:Number(resolved.categoryId)||null,
+        categoryName:String(resolved.categoryName||''),
+        marketGroupId:Number(resolved.marketGroupId)||null,
+        marketGroupName:String(resolved.marketGroupName||''),
+        portionSize:Math.max(1,Number(resolved.portionSize)||1),
+        compressedTypeId:Number(resolved.compressedTypeId)||null,
+        compressedName:String(resolved.compressedName||''),
+        rawTypeId:Number(resolved.rawTypeId)||null,
+        rawName:String(resolved.rawName||''),
       };
     }catch(error){
       return{resolved:false,typeId:null,name:input.name,amount:Number(input.quantity)||0,error:String(error?.message||error).slice(0,180)};
@@ -6385,22 +6409,45 @@ async function nativeEsiAppraisal(text,{market=2,pricing='split',pricingVariant=
 }
 
 async function buildAppraisal(text,options={}){
-  return attachAppraisalRefine(await nativeEsiAppraisal(text,options));
+  const appraisal=await nativeEsiAppraisal(text,options);
+  const typeIds=[...new Set((appraisal.items||[]).flatMap(row=>[
+    Number(row?.typeId)||0,
+    Number(row?.rawTypeId)||0,
+  ]).filter(id=>id>0))];
+  const sdeMaterials=await trackerSupport.sdeMaterials({typeIds});
+  return attachAppraisalRefine(appraisal,sdeMaterials?.available?sdeMaterials.items:[]);
 }
 function appraisalOreRecipe(name){
   const key=String(name||'').trim().toLowerCase().replace(/^compressed\s+/,'');
   if(!key)return null;
   return ORE_SURVEY_T3_REPROCESSING[key]||ORE_SURVEY_EXTRA_REPROCESSING[key]||null;
 }
-function appraisalRefinePreview(items){
+function appraisalRefinePreview(items,sdeMaterialRows=[]){
   const prices=effectiveJitaMineralPrices();
   const mineralTotals=new Map();
   const refineItems=[];
+  const sdeMaterials=new Map((Array.isArray(sdeMaterialRows)?sdeMaterialRows:[])
+    .filter(row=>Number(row?.typeId)>0)
+    .map(row=>[Number(row.typeId),row]));
   let recognizedLines=0,recognizedUnits=0,buyAt100=0,eligibleBuy=0,eligibleSplit=0,eligibleSell=0;
+  let sdeRecipeLines=0,legacyRecipeLines=0;
   for(const row of Array.isArray(items)?items:[]){
     if(row?.resolved===false)continue;
-    const recipe=appraisalOreRecipe(row?.name);
     const amount=Math.max(0,Number(row?.amount)||0);
+    const category=String(row?.categoryName||'').trim().toLowerCase();
+    const sdeRow=sdeMaterials.get(Number(row?.typeId))||sdeMaterials.get(Number(row?.rawTypeId))||null;
+    let recipe=null;
+    let recipeSource='legacy';
+    if(sdeRow&&Array.isArray(sdeRow.materials)&&sdeRow.materials.length&&(category==='asteroid'||row?.compressedTypeId||row?.rawTypeId)){
+      recipe={
+        portionSize:Math.max(1,Number(sdeRow.portionSize)||Number(row?.portionSize)||1),
+        minerals:Object.fromEntries(sdeRow.materials
+          .filter(material=>String(material?.name||'').trim()&&Number(material?.quantity)>0)
+          .map(material=>[String(material.name),Number(material.quantity)])),
+      };
+      recipeSource='ccp-sde';
+    }
+    if(!recipe)recipe=appraisalOreRecipe(row?.name);
     const portionSize=Math.max(1,Number(recipe?.portionSize)||0);
     if(!recipe||!amount||!portionSize)continue;
     const batches=amount/portionSize;
@@ -6422,6 +6469,7 @@ function appraisalRefinePreview(items){
     eligibleBuy+=Math.max(0,Number(row?.buyTotal)||0);
     eligibleSplit+=Math.max(0,Number(row?.splitTotal)||0);
     eligibleSell+=Math.max(0,Number(row?.sellTotal)||0);
+    if(recipeSource==='ccp-sde')sdeRecipeLines++;else legacyRecipeLines++;
     refineItems.push({
       typeId:Number(row?.typeId)||null,
       name:String(row?.name||'').trim(),
@@ -6430,6 +6478,7 @@ function appraisalRefinePreview(items){
       splitTotal:Math.max(0,Number(row?.splitTotal)||0),
       sellTotal:Math.max(0,Number(row?.sellTotal)||0),
       valueAt100:lineValue,
+      recipeSource,
     });
     for(const mineral of lineMinerals){
       const current=mineralTotals.get(mineral.mineral)||{mineral:mineral.mineral,quantityAt100:0,unitBuy:mineral.unitBuy,valueAt100:0};
@@ -6452,11 +6501,14 @@ function appraisalRefinePreview(items){
     items:refineItems,
     minerals:[...mineralTotals.values()].sort((a,b)=>b.valueAt100-a.valueAt100||a.mineral.localeCompare(b.mineral)),
     pricingBasis:'Jita mineral buy',
+    recipeSource:sdeRecipeLines>0?'ccp-sde':(legacyRecipeLines>0?'legacy-fallback':'none'),
+    sdeRecipeLines,
+    legacyRecipeLines,
   };
 }
-function attachAppraisalRefine(appraisal){
+function attachAppraisalRefine(appraisal,sdeMaterialRows=[]){
   if(!appraisal||typeof appraisal!=='object')return appraisal;
-  return{...appraisal,refine:appraisalRefinePreview(appraisal.items)};
+  return{...appraisal,refine:appraisalRefinePreview(appraisal.items,sdeMaterialRows)};
 }
 function appraisalSharePublic(row){
   if(!row)return null;
