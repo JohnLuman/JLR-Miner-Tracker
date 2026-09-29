@@ -20,10 +20,10 @@ assert.match(styles,/repeat\(6,minmax\(105px,1fr\)\)/,'summary compresses evenly
 assert.doesNotMatch(index,/market-payout-pair/,'summary no longer needs a nested market row');
 assert.match(index,/appLedgerCoverageBadge/,'app ledger coverage is a compact badge');
 assert.match(index,/myLedgerCoverageBadge/,'personal ledger coverage is a compact badge');
-assert.match(index,/app-tab-group-label[^>]*>OPS</,'navigation has an Operations group');
-assert.match(index,/app-tab-group-label[^>]*>RESOURCES</,'navigation has a Resources group');
-assert.match(index,/app-tab-group-label[^>]*>INTEL</,'navigation has an Intel group');
-assert.match(index,/app-tab-group-label[^>]*>SYSTEM</,'navigation has a System group');
+assert.match(index,/data-nav-group="ops"[\s\S]*?<strong>OPS<\/strong>/,'navigation has an Operations group');
+assert.match(index,/data-nav-group="resources"[\s\S]*?<strong>RESOURCES<\/strong>/,'navigation has a Resources group');
+assert.match(index,/data-nav-group="intel"[\s\S]*?<strong>INTEL<\/strong>/,'navigation has an Intel group');
+assert.match(index,/data-nav-group="system"[\s\S]*?<strong>SYSTEM<\/strong>/,'navigation has a System group');
 assert.match(index,/id="donateTop"/,'global Donate control is present in the app header');
 assert.match(index,/paypal\.com\/ncp\/payment\/J7UYHR2RJFS6N/,'global Donate control uses the configured PayPal destination');
 assert.match(app,/jlr-donate-banner-feedback/,'Feedback hub contains the full Donate banner');
