@@ -6118,19 +6118,79 @@ async function fallbackJitaAppraisal(text,{pricing='split',pricingVariant='immed
     failures:parsed.rejected.join('\n'),items,summary:appraisalSummary(items,mode),
   };
 }
+function appraisalOreRecipe(name){
+  const key=String(name||'').trim().toLowerCase().replace(/^compressed\s+/,'');
+  if(!key)return null;
+  return ORE_SURVEY_T3_REPROCESSING[key]||ORE_SURVEY_EXTRA_REPROCESSING[key]||null;
+}
+function appraisalRefinePreview(items){
+  const prices=effectiveJitaMineralPrices();
+  const mineralTotals=new Map();
+  let recognizedLines=0,recognizedUnits=0,buyAt100=0,eligibleBuy=0,eligibleSplit=0,eligibleSell=0;
+  for(const row of Array.isArray(items)?items:[]){
+    if(row?.resolved===false)continue;
+    const recipe=appraisalOreRecipe(row?.name);
+    const amount=Math.max(0,Number(row?.amount)||0);
+    const portionSize=Math.max(1,Number(recipe?.portionSize)||0);
+    if(!recipe||!amount||!portionSize)continue;
+    const batches=amount/portionSize;
+    let lineValue=0,priced=true;
+    const lineMinerals=[];
+    for(const [mineral,grossPerBatchRaw] of Object.entries(recipe.minerals||{})){
+      const grossPerBatch=Math.max(0,Number(grossPerBatchRaw)||0);
+      const unitBuy=Math.max(0,Number(prices[mineral])||0);
+      if(!grossPerBatch||!unitBuy){priced=false;break}
+      const quantityAt100=grossPerBatch*batches;
+      const valueAt100=quantityAt100*unitBuy;
+      lineValue+=valueAt100;
+      lineMinerals.push({mineral,quantityAt100,unitBuy,valueAt100});
+    }
+    if(!priced||!lineMinerals.length)continue;
+    recognizedLines++;
+    recognizedUnits+=amount;
+    buyAt100+=lineValue;
+    eligibleBuy+=Math.max(0,Number(row?.buyTotal)||0);
+    eligibleSplit+=Math.max(0,Number(row?.splitTotal)||0);
+    eligibleSell+=Math.max(0,Number(row?.sellTotal)||0);
+    for(const mineral of lineMinerals){
+      const current=mineralTotals.get(mineral.mineral)||{mineral:mineral.mineral,quantityAt100:0,unitBuy:mineral.unitBuy,valueAt100:0};
+      current.quantityAt100+=mineral.quantityAt100;
+      current.valueAt100+=mineral.valueAt100;
+      current.unitBuy=mineral.unitBuy;
+      mineralTotals.set(mineral.mineral,current);
+    }
+  }
+  return{
+    kind:'ore',
+    defaultRate:MAX_REFINE_YIELD,
+    selectedRate:MAX_REFINE_YIELD,
+    recognizedLines,
+    recognizedUnits,
+    buyAt100,
+    eligibleBuy,
+    eligibleSplit,
+    eligibleSell,
+    minerals:[...mineralTotals.values()].sort((a,b)=>b.valueAt100-a.valueAt100||a.mineral.localeCompare(b.mineral)),
+    pricingBasis:'Jita mineral buy',
+  };
+}
+function attachAppraisalRefine(appraisal){
+  if(!appraisal||typeof appraisal!=='object')return appraisal;
+  return{...appraisal,refine:appraisalRefinePreview(appraisal.items)};
+}
 async function buildAppraisal(text,options={}){
   const market=Math.max(1,Number(options.market)||2);
   const pricing=appraisalMode(options.pricing);
   const pricingVariant=appraisalVariant(options.pricingVariant);
   if(JANICE_API_KEY){
-    try{return await janiceAppraisal(text,{market,pricing,pricingVariant})}
+    try{return attachAppraisalRefine(await janiceAppraisal(text,{market,pricing,pricingVariant}))}
     catch(error){
       if(market!==2||pricingVariant!=='immediate')throw error;
       console.warn('Janice appraisal failed; using Jita ESI fallback',String(error?.message||error));
     }
   }
   if(market!==2)throw new Error('This market requires the configured appraisal provider.');
-  return fallbackJitaAppraisal(text,{pricing,pricingVariant});
+  return attachAppraisalRefine(await fallbackJitaAppraisal(text,{pricing,pricingVariant}));
 }
 function appraisalSharePublic(row){
   if(!row)return null;
@@ -9258,6 +9318,9 @@ async function routeApi(req,res,url) {
   }
 
   const user=requireUser(req,res);if(!user)return;
+  if(url.pathname.startsWith('/api/voice/')||/^\/api\/tracker\/heavy-fighters\/voice(?:\/|$)/.test(url.pathname)){
+    return json(res,410,{error:'VOICE_REMOVED',message:'Spoken voice output has been removed from JLR. The Heavy Fighter alarm tone remains available.'});
+  }
 
   if(req.method==='GET'&&url.pathname==='/api/companion/clipboard/stream'){
     const uid=String(user.id);
@@ -9345,6 +9408,10 @@ async function routeApi(req,res,url) {
     if(!textInput)return json(res,400,{error:'EMPTY_APPRAISAL',message:'Paste one or more EVE items and quantities.'});
     try{
       const appraisal=await buildAppraisal(textInput,{market:body?.market,pricing:body?.pricing,pricingVariant:body?.pricingVariant});
+      const requestedRefineRate=Number(body?.refineRate);
+      if(appraisal?.refine&&Number.isFinite(requestedRefineRate)){
+        appraisal.refine.selectedRate=Math.max(0,Math.min(1,requestedRefineRate/100));
+      }
       const base=sanitizeAppraisalShare({title:body?.title,appraisal},user);
       if(!base.appraisal.items.some(row=>row.resolved!==false))return json(res,400,{error:'EMPTY_APPRAISAL_SHARE',message:'No EVE items could be resolved.'});
       state.appraisals ||= {shares:{}};
@@ -10170,7 +10237,15 @@ setInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': trac
 setInterval(()=>resetExpired(true),15_000).unref();
 async function runAutomaticSyncLoop(){
   const startedAt=Date.now();
-  await syncAll().catch(console.error);
+  let result=null;
+  try{result=await syncAll()}
+  catch(error){console.error(error)}
+  // A manual/global sync can overlap the 15-minute tick. Previously that
+  // skipped the chart sample and then waited a full 15 minutes again.
+  if(result?.reason==='already-running'){
+    setTimeout(runAutomaticSyncLoop,30_000).unref();
+    return;
+  }
   const elapsed=Date.now()-startedAt;
   setTimeout(runAutomaticSyncLoop,Math.max(30_000,ESI_AUTO_REFRESH_MS-elapsed)).unref();
 }
