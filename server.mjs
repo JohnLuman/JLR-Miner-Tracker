@@ -4430,6 +4430,7 @@ function trackerBrainContext(value){
       pricedValueISK:finite(surveyInput.pricedValueISK),
       unpricedRowCount:finite(surveyInput.unpricedRowCount),
       pricingBasis:trackerSpeechSafe(surveyInput.pricingBasis,40),
+      sourceFormat:trackerSpeechSafe(surveyInput.sourceFormat,40),
       groups:surveyGroups,
     }:null,
     recentActions:(Array.isArray(input.recentActions)?input.recentActions:[]).slice(-8).map(row=>({
@@ -4501,25 +4502,27 @@ function trackerBrainOreSurveyAnswer(question,rawContext){
   const payoutBasis=survey.pricingBasis==='jlr-95-refined';
   const refinedBasis=payoutBasis||survey.pricingBasis==='jlr-refined';
   const valueLabel=compactMetric(pricedValue)+' ISK'+(payoutBasis?' 95% JBV payout value':(refinedBasis?' refined value':''));
+  const inventoryOnly=survey.sourceFormat==='ore-inventory';
+  const rowWord=inventoryOnly?'stack':'rock';
   let text='';
 
   if(/\b(?:where|system)\b/.test(q)&&system){
     text='That ore survey is linked to '+system+'.';
   }else if(/\b(?:unpriced|missing price|no price|without price)\b/.test(q)){
     text=unpriced
-      ?unpriced+' rock'+(unpriced===1?'':'s')+' in the survey do not have an ISK value, so the known value is partial.'
-      :'Every parsed rock in that survey has an ISK value.';
+      ?unpriced+' '+rowWord+(unpriced===1?'':'s')+' in the ore data do not have an ISK value, so the known value is partial.'
+      :'Every parsed '+rowWord+' in that ore data has an ISK value.';
   }else if(/\b(?:isk|worth|value|price|priced)\b/.test(q)){
     text=refinedBasis
-      ?'The survey has '+valueLabel+(payoutBasis?' at 95% of JLR max-refine mineral value using current Jita mineral buy prices':' at JLR max-refine yield and current Jita mineral buy prices')+(unpriced?' with '+unpriced+' rock'+(unpriced===1?'':'s')+' not yet covered by refined pricing.':'.')
-      :'The survey has '+valueLabel+' from priced rocks'+(unpriced?' with '+unpriced+' unpriced rock'+(unpriced===1?'':'s')+', so the true total is higher.':'.');
+      ?'The survey has '+valueLabel+(payoutBasis?' at 95% of JLR max-refine mineral value using current Jita mineral buy prices':' at JLR max-refine yield and current Jita mineral buy prices')+(unpriced?' with '+unpriced+' '+rowWord+(unpriced===1?'':'s')+' not yet covered by refined pricing.':'.')
+      :'The survey has '+valueLabel+' from priced '+rowWord+(unpriced?' with '+unpriced+' unpriced '+rowWord+(unpriced===1?'':'s')+', so the true total is higher.':'.');
   }else if(/\b(?:largest|biggest|most|which ore|what ore|what s in it|what is in it)\b/.test(q)){
     const top=groups.slice(0,6).map(group=>group.name+' '+compactMetric(Math.max(0,Number(group.volumeM3)||0))+' m³').join('; ');
     text=top?'Largest ore groups by volume: '+top+'.':'I have the survey totals, but no ore-group breakdown for that paste.';
   }else{
-    text=(system?system+': ':'')+rowCount+' rocks • '+volumeLabel+' • '+valueLabel
+    text=(system?system+': ':'')+rowCount+' '+rowWord+(rowCount===1?'':'s')+' • '+volumeLabel+' • '+valueLabel
       +(payoutBasis?' @ 95% JBV payout':(refinedBasis?' @ max refine / Jita mineral buy':' from priced rocks'))
-      +(unpriced?' • '+unpriced+' unpriced rock'+(unpriced===1?'':'s'):'')+'.';
+      +(unpriced?' • '+unpriced+' unpriced '+rowWord+(unpriced===1?'':'s'):'')+'.';
   }
 
   return{
@@ -4529,7 +4532,7 @@ function trackerBrainOreSurveyAnswer(question,rawContext){
     voiceText:trackerSpeechSafe(text,600),
     generatedAt:now(),
     focusSystem:system||undefined,
-    oreSurvey:{system:system||null,rowCount,totalVolumeM3:totalVolume,pricedValueISK:pricedValue,unpricedRowCount:unpriced,pricingBasis:survey.pricingBasis||null},
+    oreSurvey:{system:system||null,rowCount,totalVolumeM3:totalVolume,pricedValueISK:pricedValue,unpricedRowCount:unpriced,pricingBasis:survey.pricingBasis||null,sourceFormat:survey.sourceFormat||null},
   };
 }
 
