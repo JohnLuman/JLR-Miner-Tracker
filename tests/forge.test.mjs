@@ -66,3 +66,8 @@ assert.match(server,/jlr-95-refined/);
 assert.match(app,/BUILD PLANNER/);
 assert.match(app,/BUILD BOARD/);
 assert.match(index,/data-tab="forge"/);
+
+const forgeMarkupAt=app.indexOf("forge.innerHTML=`");
+const forgeCalculateBindingAt=app.indexOf("$('forgeCalculate')?.addEventListener");
+assert.ok(forgeMarkupAt>=0,'Forge dynamic markup exists');
+assert.ok(forgeCalculateBindingAt>forgeMarkupAt,'Forge controls bind only after the dynamic Forge DOM is created');
