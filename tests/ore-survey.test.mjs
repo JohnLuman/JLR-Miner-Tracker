@@ -60,6 +60,7 @@ assert.equal(refined.nearest[0].reportedValueISK,999999999);
 assert.equal(refined.nearest[0].valueBasis,'jlr-refined');
 assert.match(oreSurveySummaryText(refined),/refined value/);
 assert.match(oreSurveySummaryText(refined),/Max-refine mineral value at current Jita buy prices/);
+assert.match(oreSurveySummaryText(refined),/Unvalued: Unknownium x1 \(500 m³\)/);
 
 const payout=parseOreSurvey('Kylixium\t100\t1,000 m3\t999,999,999.00 ISK\t1 km',{
   pricePerM3ForName:name=>name==='Kylixium'?237.5:null,
