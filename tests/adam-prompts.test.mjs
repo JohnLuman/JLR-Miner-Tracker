@@ -6,9 +6,12 @@ import { brainLiveIntent } from '../lib/brain-intel.mjs';
 
 assert.equal(explicitAdamHelpQuestion('Adam, what can you do?'),true);
 assert.equal(explicitAdamHelpQuestion('Help'),true);
+assert.equal(explicitAdamHelpQuestion('halp'),true,'simple help typo is normalized');
+assert.equal(explicitAdamHelpQuestion('wats can you do'),true,'capability question typo is normalized');
 assert.equal(explicitAdamHelpQuestion('Help me find the next system'),false,'an operational request must not trigger the capabilities speech');
 assert.deepEqual(brainLiveIntent('Help me find the next system'),{kind:'nearest',updatesOnly:true});
 assert.equal(adamOverviewQuestion('Explain the Fields board'),true);
+assert.equal(adamOverviewQuestion('explane the fields board'),true,'overview verb typo is normalized');
 assert.equal(adamOverviewQuestion('When will this field respawn?'),false,'a timer question is not a request for a feature overview');
 assert.equal(adamOverviewQuestion('How much is this field worth?'),false,'a value question is not a request for a feature overview');
 assert.equal(adamUnknownText({currentTab:'fields',selectedSystem:'APM-6K'}),'I can’t verify that for APM-6K from the information JLR currently has.');
