@@ -71,3 +71,14 @@ const forgeMarkupAt=app.indexOf("forge.innerHTML=`");
 const forgeCalculateBindingAt=app.indexOf("$('forgeCalculate')?.addEventListener");
 assert.ok(forgeMarkupAt>=0,'Forge dynamic markup exists');
 assert.ok(forgeCalculateBindingAt>forgeMarkupAt,'Forge controls bind only after the dynamic Forge DOM is created');
+
+assert.match(app,/forgePaste'\)\?\.addEventListener\('keydown'/,'Forge build input handles Enter');
+assert.match(app,/event\.key!==['"]Enter['"]/,'Forge Enter shortcut is explicit');
+assert.match(app,/event\.shiftKey/,'Shift+Enter remains available for another build line');
+assert.doesNotMatch(app,/<small>TYPE \$\{esc\(row\.typeId/,'internal EVE type IDs are hidden from Forge materials');
+assert.match(app,/data-forge-delete/,'Build Board renders a remove control for owned posts');
+assert.match(app,/removeForgeBuild/,'Forge client can remove a posted build');
+assert.match(server,/\/api\/forge\/share\/\[\^\/\]\+\\\/delete/,'Forge server exposes build removal route');
+assert.match(server,/FORGE_DELETE_FORBIDDEN/,'Forge removal is owner-protected');
+assert.match(server,/canDelete:Boolean\(userId&&String\(row\?\.owner\?\.id/,'Forge board only marks owned builds removable');
+assert.match(index,/app\.js\?v=2\.10\.0-forge3/,'Forge UX fix is cache-busted');
