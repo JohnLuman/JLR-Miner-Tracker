@@ -24,6 +24,41 @@
     return 'Priced '+new Date(ms).toLocaleString([],{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
   };
   const kpi=(label,value,klass='')=>`<article class="kpi ${klass}"><span>${esc(label)}</span><strong>${value}</strong></article>`;
+  const normalizeRefine=value=>{
+    const source=value&&typeof value==='object'?value:null;
+    if(!source)return null;
+    if(Number.isFinite(Number(source.ratePct))){
+      return {
+        ratePct:Math.max(0,Math.min(100,Number(source.ratePct)||0)),
+        value:Math.max(0,Number(source.value)||0),
+        eligibleLines:Math.max(0,Number(source.eligibleLines)||0),
+        processedUnits:Math.max(0,Number(source.processedUnits)||0),
+        leftoverUnits:Math.max(0,Number(source.leftoverUnits)||0),
+        basis:String(source.basis||'Jita mineral buy'),
+        minerals:(Array.isArray(source.minerals)?source.minerals:[]).map(row=>({
+          name:String(row?.name||row?.mineral||''),
+          quantity:Math.max(0,Number(row?.quantity)||0),
+          unitPrice:Math.max(0,Number(row?.unitPrice)||0),
+          value:Math.max(0,Number(row?.value)||0),
+        })).filter(row=>row.name),
+      };
+    }
+    const selectedRate=Math.max(0,Math.min(1,Number(source.selectedRate??source.defaultRate)||0));
+    return {
+      ratePct:selectedRate*100,
+      value:Math.max(0,Number(source.buyAt100)||0)*selectedRate,
+      eligibleLines:Math.max(0,Number(source.recognizedLines)||0),
+      processedUnits:Math.max(0,Number(source.recognizedUnits)||0),
+      leftoverUnits:0,
+      basis:String(source.pricingBasis||'Jita mineral buy'),
+      minerals:(Array.isArray(source.minerals)?source.minerals:[]).map(row=>({
+        name:String(row?.name||row?.mineral||''),
+        quantity:Math.floor(Math.max(0,Number(row?.quantityAt100)||0)*selectedRate),
+        unitPrice:Math.max(0,Number(row?.unitPrice??row?.unitBuy)||0),
+        value:Math.max(0,Number(row?.valueAt100)||0)*selectedRate,
+      })).filter(row=>row.name),
+    };
+  };
 
   async function boot(){
     const token=location.pathname.split('/').filter(Boolean).pop()||'';
@@ -34,6 +69,7 @@
       const share=payload.share||{};
       const appraisal=share.appraisal||{},summary=appraisal.summary||{};
       const items=Array.isArray(appraisal.items)?appraisal.items:[];
+      const refine=normalizeRefine(appraisal.refine);
       const pricing=mode(appraisal.pricing);
       const pricingKey=String(appraisal.pricing||'split').toLowerCase();
       const selectedLabel=pricingKey==='buy'?'JITA BUY':pricingKey==='sell'?'JITA SELL':'SPLIT';
@@ -64,13 +100,13 @@
           ${kpi('TOTAL UNITS',Number(summary.units||0).toLocaleString())}
         </section>
 
-        ${appraisal.refine&&Number(appraisal.refine.eligibleLines)>0?`
+        ${refine&&Number(refine.eligibleLines)>0?`
         <section class="share-refine">
           <div class="share-refine-head">
-            <div><span>REFINED VALUE</span><strong>ORE REPROCESS • ${Number(appraisal.refine.ratePct||0).toFixed(2)}% YIELD</strong><small>${Number(appraisal.refine.eligibleLines||0)} reprocessable item type${Number(appraisal.refine.eligibleLines||0)===1?'':'s'} • Jita mineral buy basis</small></div>
-            <div class="share-refine-value copy-price" role="button" tabindex="0" data-copy-isk="${Number(appraisal.refine.value)||0}" data-copy-label="refined value" title="Click to copy refined value"><span>REFINED JITA BUY</span><strong>${isk(appraisal.refine.value)} ISK</strong><small>CLICK TO COPY</small></div>
+            <div><span>REFINED VALUE</span><strong>ORE REPROCESS • ${Number(refine.ratePct||0).toFixed(2)}% YIELD</strong><small>${Number(refine.eligibleLines||0)} reprocessable item type${Number(refine.eligibleLines||0)===1?'':'s'} • Jita mineral buy basis</small></div>
+            <div class="share-refine-value copy-price" role="button" tabindex="0" data-copy-isk="${Number(refine.value)||0}" data-copy-label="refined value" title="Click to copy refined value"><span>REFINED JITA BUY</span><strong>${isk(refine.value)} ISK</strong><small>CLICK TO COPY</small></div>
           </div>
-          <div class="share-refine-minerals">${(Array.isArray(appraisal.refine.minerals)?appraisal.refine.minerals:[]).map(row=>`<div><span>${esc(row.name)}</span><strong>${Number(row.quantity||0).toLocaleString()}</strong><small>${isk(row.value)} ISK</small></div>`).join('')}</div>
+          <div class="share-refine-minerals">${(Array.isArray(refine.minerals)?refine.minerals:[]).map(row=>`<div><span>${esc(row.name)}</span><strong>${Number(row.quantity||0).toLocaleString()}</strong><small>${isk(row.value)} ISK</small></div>`).join('')}</div>
         </section>`:''}
 
         <section class="items-panel">
