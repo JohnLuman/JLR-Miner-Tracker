@@ -125,6 +125,9 @@
   try{adamRecentActions=JSON.parse(localStorage.getItem('jlrAdamRecentActions')||'[]')}catch{}
   if(!Array.isArray(adamRecentActions))adamRecentActions=[];
   adamRecentActions=adamRecentActions.filter(row=>row&&Date.now()-Number(row.at||0)<6*60*60*1000).slice(-16);
+  let adamOreSurveyContext=null;
+  try{adamOreSurveyContext=JSON.parse(localStorage.getItem('jlrAdamOreSurveyContext')||'null')}catch{}
+  if(!adamOreSurveyContext||Date.now()-Number(adamOreSurveyContext.at||0)>6*60*60*1000)adamOreSurveyContext=null;
   let brainSpeechHistory=[];
   try{brainSpeechHistory=JSON.parse(localStorage.getItem('jlrBrainSpeechHistory')||'[]')}catch{}
   if(!Array.isArray(brainSpeechHistory))brainSpeechHistory=[];
@@ -251,7 +254,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.144');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.147');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -293,6 +296,71 @@
     localStorage.setItem('jlrAdamRecentActions',JSON.stringify(adamRecentActions));
     renderAdamContext();
   }
+  function adamSaveOreSurveyContext(survey,system=''){
+    const groups=(Array.isArray(survey?.groups)?survey.groups:[]).slice(0,12).map(group=>({
+      name:String(group?.name||'').slice(0,80),
+      rocks:Math.max(0,Number(group?.rocks)||0),
+      volumeM3:Math.max(0,Number(group?.volumeM3)||0),
+      pricedValueISK:Math.max(0,Number(group?.pricedValueISK)||0),
+      pricedRows:Math.max(0,Number(group?.pricedRows)||0),
+      unpricedRows:Math.max(0,Number(group?.unpricedRows)||0),
+      nearestMeters:Number.isFinite(Number(group?.nearestMeters))?Math.max(0,Number(group.nearestMeters)):null,
+    })).filter(group=>group.name);
+    adamOreSurveyContext={
+      at:Date.now(),
+      system:String(system||'').slice(0,80),
+      rowCount:Math.max(0,Number(survey?.rowCount)||0),
+      totalVolumeM3:Math.max(0,Number(survey?.totalVolumeM3)||0),
+      pricedValueISK:Math.max(0,Number(survey?.pricedValueISK)||0),
+      unpricedRowCount:Math.max(0,Number(survey?.unpricedRowCount)||0),
+      groups,
+    };
+    localStorage.setItem('jlrAdamOreSurveyContext',JSON.stringify(adamOreSurveyContext));
+    return adamOreSurveyContext;
+  }
+  function adamResolveTrackedSystem(value){
+    const candidate=String(value||'').trim().toUpperCase();
+    if(!candidate)return'';
+    const systems=Object.keys(state?.fields||{});
+    const exact=systems.find(system=>String(system).toUpperCase()===candidate);
+    if(exact)return exact;
+    const compact=candidate.replace(/[^A-Z0-9]/g,'');
+    if(!compact)return'';
+    const matches=systems.filter(system=>{
+      const upper=String(system).toUpperCase();
+      const systemCompact=upper.replace(/[^A-Z0-9]/g,'');
+      return upper.startsWith(candidate+'-')||systemCompact.startsWith(compact);
+    });
+    return matches.length===1?matches[0]:'';
+  }
+  function adamOreSurveySystemAssignment(text){
+    if(!adamOreSurveyContext||Date.now()-Number(adamOreSurveyContext.at||0)>6*60*60*1000)return'';
+    const raw=String(text||'').trim();
+    const patterns=[
+      /^(?:this|that|it)\s+(?:is|was)\s+(?:in\s+)?([a-z0-9-]{2,16})[.!?]*$/i,
+      /^(?:it'?s|its)\s+(?:in\s+)?([a-z0-9-]{2,16})[.!?]*$/i,
+      /^(?:the\s+)?system\s+(?:is\s+)?([a-z0-9-]{2,16})[.!?]*$/i,
+      /^in\s+([a-z0-9-]{2,16})[.!?]*$/i,
+      /^([a-z0-9-]{2,16})[.!?]*$/i,
+    ];
+    for(const pattern of patterns){
+      const match=raw.match(pattern);
+      if(!match)continue;
+      const resolved=adamResolveTrackedSystem(match[1]);
+      if(resolved)return resolved;
+    }
+    return'';
+  }
+  function adamOreSurveyLinkedText(system){
+    const survey=adamOreSurveyContext||{};
+    const unpriced=Math.max(0,Number(survey.unpricedRowCount)||0);
+    return 'Got it — I linked the last ore survey to '+system+'. '
+      +Math.max(0,Number(survey.rowCount)||0)+' rocks • '
+      +fmt(survey.totalVolumeM3||0,'m3')+' m³ • '
+      +fmt(survey.pricedValueISK||0)+' ISK from priced rocks'
+      +(unpriced?' • '+unpriced+' rock'+(unpriced===1?'':'s')+' still unpriced':'')+'.';
+  }
+
   function adamPerformanceContext(){
     try{
       const performance=scopedFleetPerformance();
@@ -316,6 +384,8 @@
     const sourceTab=activeTab==='brain'?(adamWorkingTab||'fields'):activeTab;
     const recentScan=recent.some(row=>row.kind==='scan-updated');
     const recentScout=recent.some(row=>row.kind==='location-check'||row.kind==='scout-target');
+    const recentOreSurvey=recent.some(row=>row.kind==='ore-survey'||row.kind==='ore-survey-system');
+    if(activeTab==='brain'&&recentOreSurvey)return'ore-survey';
     if(sourceTab==='fields'&&recentScan)return'scan-update';
     if(activeTab==='brain'&&recentScout)return'scout-routing';
     if(sourceTab==='performance')return'performance-review';
@@ -345,6 +415,7 @@
       selectedDoctrineItem:Date.now()-adamLastDoctrineItemAt<30*60*1000?adamLastDoctrineItem:'',
       performance:adamPerformanceContext(),
       recentActions:adamRecentActions.filter(row=>Date.now()-Number(row?.at||0)<60*60*1000).slice(-8),
+      lastOreSurvey:adamOreSurveyContext&&Date.now()-Number(adamOreSurveyContext.at||0)<6*60*60*1000?adamOreSurveyContext:null,
     };
   }
   function adamContextLabel(context=adamContextSnapshot()){
@@ -400,11 +471,26 @@
       reply.textContent='Checking JLR context…';
     }
     try{
+      const oreSurveySystem=adamOreSurveySystemAssignment(text);
+      if(oreSurveySystem){
+        adamSaveOreSurveyContext(adamOreSurveyContext,oreSurveySystem);
+        brainLastSystem=oreSurveySystem;
+        if(state?.fields?.[oreSurveySystem])chooseSystem(oreSurveySystem);
+        adamRecordAction('ore-survey-system',{
+          system:oreSurveySystem,
+          detail:String(adamOreSurveyContext?.rowCount||0)+' rocks • '+fmt(adamOreSurveyContext?.totalVolumeM3||0,'m3')+' m³',
+        });
+        const answer=adamOreSurveyLinkedText(oreSurveySystem);
+        for(const reply of replies){reply.classList.remove('loading');reply.textContent=answer}
+        for(const input of inputs)input.value='';
+        return;
+      }
       if(isOreSurvey){
         const survey=await api('/api/tracker/brain/ore-survey',{
           method:'POST',
           body:JSON.stringify({text}),
         });
+        adamSaveOreSurveyContext(survey);
         const answer=String(survey?.text||'Adam read the ore survey.');
         for(const reply of replies){reply.classList.remove('loading');reply.textContent=answer}
         for(const input of inputs)input.value='';
@@ -526,7 +612,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR ADAM MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.144'),
+      'Version: '+String(state?.app?.version||'2.9.147'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -6330,7 +6416,7 @@
       try{
         const ledger=state?.esi?.ledgerDebug||{};
         const context={
-          version:state?.app?.version||'2.9.144',
+          version:state?.app?.version||'2.9.147',
           sourceTab,
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           displayMode:$('app')?.classList.contains('expanded')?'expanded':'compact',
