@@ -29,6 +29,10 @@
   let scoutLocationBusy = false;
   let companionStatusTimer = null;
   let companionStatusBusy = false;
+  let forgePlan = null;
+  let forgeBoard = [];
+  let forgeBusy = false;
+  let forgeBoardBusy = false;
   let stateRenderFrame = 0;
   let stateRenderPending = false;
   const scoutLastSystem = new Map();
@@ -256,7 +260,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.9.148');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.10.0');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -633,7 +637,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR ADAM MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.9.148'),
+      'Version: '+String(state?.app?.version||'2.10.0'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -731,6 +735,146 @@
     const shortError=error==='none'?'No custom voice error is currently recorded.':'The last custom voice error is '+error.slice(0,180)+'.';
     return 'Diagnostics are displayed. Microphone track is '+mic+'. Local speech model is '+model+'. Custom voice mode is '+mode+', profile '+profile+'. '+shortError;
   }
+  function forgeIsk(value){
+    const n=Math.max(0,Number(value)||0);
+    if(n>=1e12)return (n/1e12).toFixed(2)+'T';
+    if(n>=1e9)return (n/1e9).toFixed(2)+'B';
+    if(n>=1e6)return (n/1e6).toFixed(2)+'M';
+    if(n>=1e3)return (n/1e3).toFixed(1)+'K';
+    return Math.round(n).toLocaleString();
+  }
+  function forgeStatusLabel(status){
+    return ({
+      planning:'PLANNING',
+      'needs-mats':'NEEDS MATS',
+      ready:'READY TO BUILD',
+      building:'BUILDING',
+      done:'DONE',
+    })[status]||String(status||'PLANNING').toUpperCase();
+  }
+  function renderForge(){
+    if(!$('forgePanel'))return;
+    const summary=$('forgeSummary'),items=$('forgeItems'),materials=$('forgeMaterials'),share=$('forgeShare');
+    if(!forgePlan){
+      if(summary)summary.innerHTML='';
+      if(items)items.innerHTML='<div class="visual-empty">No build calculated yet.</div>';
+      if(materials)materials.innerHTML='<div class="visual-empty">Material totals will appear here.</div>';
+      if(share)share.disabled=true;
+      return;
+    }
+    const s=forgePlan.summary||{};
+    if(summary)summary.innerHTML=`
+      <article><span>BUILDABLE</span><strong>${Number(s.buildableLines||0)}</strong></article>
+      <article><span>MATERIAL TYPES</span><strong>${Number(s.materialTypes||0)}</strong></article>
+      <article><span>BUILD ESTIMATE</span><strong>${forgeIsk(s.materialCost)} ISK</strong></article>
+      <article><span>95% ORE PAYOUT</span><strong>${forgeIsk(s.orePayoutValue)} ISK</strong></article>`;
+    if(items){
+      items.innerHTML=(forgePlan.items||[]).map(row=>{
+        const type=String(row.kind||'resource');
+        const detail=type==='manufacturing'
+          ?`${Number(row.runs||0).toLocaleString()} run${Number(row.runs)===1?'':'s'} • ${forgeIsk(row.totalCost)} ISK estimate`
+          :type==='ore'
+            ?`${fmt(row.totalVolume||0,'m3')} m³ • ${forgeIsk(row.orePayoutValue)} ISK @ 95%`
+            :type==='unresolved'
+              ?'Could not resolve this item'
+              :'Resolved resource • no manufacturing recipe';
+        return `<article class="forge-row"><div><strong>${esc(row.name)}</strong><small>${esc(type.toUpperCase())} • qty ${Number(row.quantity||0).toLocaleString()}</small></div><span>${esc(detail)}</span></article>`;
+      }).join('')||'<div class="visual-empty">No outputs.</div>';
+    }
+    if(materials){
+      materials.innerHTML=(forgePlan.materials||[]).map(row=>`<article class="forge-row material"><div><strong>${esc(row.name)}</strong><small>TYPE ${esc(row.typeId||'—')}</small></div><span>${Number(row.quantity||0).toLocaleString()} • ${forgeIsk(row.cost)} ISK</span></article>`).join('')||'<div class="visual-empty">No manufacturing materials in this list.</div>';
+    }
+    if(share)share.disabled=!(forgePlan.items||[]).length;
+  }
+  function renderForgeBoard(){
+    const host=$('forgeBoard');
+    if(!host)return;
+    if(forgeBoardBusy&&!forgeBoard.length){host.innerHTML='<div class="visual-empty">Loading Build Board…</div>';return}
+    if(!forgeBoard.length){host.innerHTML='<div class="visual-empty">No shared builds yet. Post the first one.</div>';return}
+    host.innerHTML=forgeBoard.map(row=>{
+      const summary=row.plan?.summary||{};
+      const url=location.origin+'/forge/'+encodeURIComponent(row.token||'');
+      return `<article class="forge-board-card" data-forge-id="${esc(row.id)}">
+        <div class="forge-board-card-head"><div><strong>${esc(row.title)}</strong><small>${esc(row.owner?.name||'JLR Pilot')} • ${ago(row.updatedAt||row.createdAt)}</small></div><span class="forge-status-chip ${esc(row.status)}">${esc(forgeStatusLabel(row.status))}</span></div>
+        <div class="forge-board-kpis"><span>${Number(summary.buildableLines||0)} build lines</span><span>${forgeIsk(summary.materialCost)} ISK mats</span><span>${Number(summary.materialTypes||0)} material types</span></div>
+        ${row.notes?`<p>${esc(row.notes)}</p>`:''}
+        <div class="forge-board-actions">
+          <select data-forge-status="${esc(row.id)}">
+            ${['planning','needs-mats','ready','building','done'].map(status=>`<option value="${status}" ${status===row.status?'selected':''}>${forgeStatusLabel(status)}</option>`).join('')}
+          </select>
+          <button class="board-tool" type="button" data-forge-copy="${esc(url)}">COPY SHARE LINK</button>
+          <a class="board-tool" href="${esc(url)}" target="_blank" rel="noopener">OPEN</a>
+        </div>
+      </article>`;
+    }).join('');
+  }
+  async function loadForgeBoard(force=true){
+    if(forgeBoardBusy)return;
+    forgeBoardBusy=true;
+    renderForgeBoard();
+    try{
+      const payload=await api('/api/forge/board'+(force?'?t='+Date.now():''));
+      forgeBoard=Array.isArray(payload?.shares)?payload.shares:[];
+    }catch(error){
+      if($('forgeBoard'))$('forgeBoard').innerHTML='<div class="visual-empty">Build Board unavailable: '+esc(error.message)+'</div>';
+    }finally{
+      forgeBoardBusy=false;
+      renderForgeBoard();
+    }
+  }
+  async function calculateForge(){
+    if(forgeBusy)return;
+    const text=String($('forgePaste')?.value||'').trim();
+    if(!text){toast('Paste a build list first.');return}
+    forgeBusy=true;
+    $('forgeCalculate').disabled=true;
+    $('forgeStatus').textContent='Resolving EVE blueprints and material requirements…';
+    try{
+      forgePlan=await api('/api/forge/plan',{method:'POST',body:JSON.stringify({
+        text,me:Number($('forgeMe')?.value||10),te:Number($('forgeTe')?.value||20),
+      })});
+      renderForge();
+      const s=forgePlan.summary||{};
+      $('forgeStatus').textContent='Calculated '+Number(s.requestedLines||0)+' line'+(Number(s.requestedLines)===1?'':'s')+' • '+Number(s.buildableLines||0)+' buildable • '+Number(s.unresolvedLines||0)+' unresolved.';
+      adamRecordAction('forge-plan',{detail:Number(s.buildableLines||0)+' build lines • '+Number(s.materialTypes||0)+' materials'});
+    }catch(error){
+      $('forgeStatus').textContent='Forge error: '+String(error.message||error);
+      toast('Forge calculation failed.');
+    }finally{
+      forgeBusy=false;
+      $('forgeCalculate').disabled=false;
+    }
+  }
+  async function shareForge(){
+    if(!forgePlan||forgeBusy)return;
+    forgeBusy=true;
+    $('forgeShare').disabled=true;
+    try{
+      const title=String($('forgeTitle')?.value||'').trim()||'JLR Build';
+      const notes='ME '+Number(forgePlan.me||0)+' / TE '+Number(forgePlan.te||0)+' • Generated in JLR Forge';
+      const payload=await api('/api/forge/share',{method:'POST',body:JSON.stringify({title,status:'planning',notes,plan:forgePlan})});
+      const url=String(payload?.shareUrl||'');
+      if(url){
+        try{await navigator.clipboard.writeText(url);toast('Build posted. Share link copied.')}
+        catch{toast('Build posted to the JLR Build Board.')}
+      }
+      await loadForgeBoard(true);
+    }catch(error){toast('Could not post build: '+String(error.message||error))}
+    finally{forgeBusy=false;renderForge()}
+  }
+  async function setForgeStatus(id,status){
+    try{
+      const payload=await api('/api/forge/share/'+encodeURIComponent(id)+'/status',{method:'POST',body:JSON.stringify({status})});
+      const next=payload?.share;
+      if(next){
+        const index=forgeBoard.findIndex(row=>String(row.id)===String(id));
+        if(index>=0)forgeBoard[index]=next;
+        renderForgeBoard();
+      }
+      toast('Build status: '+forgeStatusLabel(status));
+    }catch(error){toast('Could not update build status: '+String(error.message||error));await loadForgeBoard(true)}
+  }
+
   async function refreshCompanionStatus(){
     if(document.hidden||activeTab!=='brain'||companionStatusBusy)return;
     const status=$('brainCompanionStatus');
@@ -2597,7 +2741,7 @@
     }
   }
   function applyTab(tab){
-    const valid=['fields','brain','fleet','performance','ice','gas','pvp','threat','mer','toons','feedback'];
+    const valid=['fields','brain','fleet','performance','ice','gas','forge','pvp','threat','mer','toons','feedback'];
     if(doctrineAllowed())valid.splice(5,0,'doctrine');
     if(trackerAllowed()){
       const pvpIndex=valid.indexOf('pvp');
@@ -2624,6 +2768,10 @@
     }
     if(activeTab==='doctrine'&&!doctrineMarket&&!doctrineMarketLoading)loadDoctrineMarket();
     if(activeTab==='performance')refreshFleetPerformanceData(false);
+    if(activeTab==='forge'){
+      renderForge();
+      void loadForgeBoard(false);
+    }
     if(activeTab==='brain'){
       renderAdamContext();
       refreshCompanionStatus();
@@ -2655,6 +2803,8 @@
     const performance=makePanel('performance');
     const ice=makePanel('ice');
     const gas=makePanel('gas');
+    const forge=makePanel('forge');
+    forge.id='forgePanel';
     const doctrine=makePanel('doctrine');
     doctrine.id='doctrineMarketPanel';
     const pvp=makePanel('pvp');
@@ -2668,6 +2818,38 @@
     const toons=makePanel('toons');
     const feedback=makePanel('feedback');
     feedback.id='feedbackPanel';
+
+    forge.innerHTML=`
+      <section class="forge-shell">
+        <section class="glass forge-planner">
+          <div class="forge-head">
+            <div><span class="eyebrow">JLR INDUSTRIAL NETWORK // FORGE</span><h2>BUILD PLANNER</h2><p>Paste what you want to build. JLR resolves current EVE blueprints, totals the materials, and keeps ore on our 95% payout basis.</p></div>
+            <span class="status-pill">● LIVE BLUEPRINT DATA</span>
+          </div>
+          <div class="forge-controls">
+            <label class="forge-field forge-title-field"><span>BUILD NAME</span><input id="forgeTitle" maxlength="100" placeholder="Example: Hulk replacement batch"></label>
+            <label class="forge-field"><span>ME</span><input id="forgeMe" type="number" min="0" max="10" value="10"></label>
+            <label class="forge-field"><span>TE</span><input id="forgeTe" type="number" min="0" max="20" value="20"></label>
+          </div>
+          <textarea id="forgePaste" class="forge-paste" rows="8" maxlength="100000" placeholder="Paste one item per line…&#10;10 Hulk&#10;5 Rorqual&#10;250000 Kylixium"></textarea>
+          <div class="forge-actions">
+            <button id="forgePasteClipboard" class="orb silver" type="button">PASTE CLIPBOARD</button>
+            <button id="forgeCalculate" class="orb purple" type="button">CALCULATE BUILD</button>
+            <button id="forgeShare" class="orb silver" type="button" disabled>POST TO BUILD BOARD</button>
+          </div>
+          <div id="forgeStatus" class="forge-status">Ready for a build list.</div>
+          <div id="forgeSummary" class="forge-summary"></div>
+          <div class="forge-results-grid">
+            <section><div class="brain-card-head"><strong>OUTPUTS</strong><small>What you asked JLR to build/value</small></div><div id="forgeItems" class="forge-list"><div class="visual-empty">No build calculated yet.</div></div></section>
+            <section><div class="brain-card-head"><strong>MATERIAL SHOPPING LIST</strong><small>Combined materials across buildable items</small></div><div id="forgeMaterials" class="forge-list"><div class="visual-empty">Material totals will appear here.</div></div></section>
+          </div>
+        </section>
+        <aside class="glass forge-board-panel">
+          <div class="forge-board-head"><div><span class="eyebrow">SHARED WITH JLR</span><h2>BUILD BOARD</h2></div><button id="forgeRefresh" class="board-tool" type="button">↻ REFRESH</button></div>
+          <p class="forge-board-copy">Post a build once, share the link anywhere, and let the board show whether it still needs materials or is already in production.</p>
+          <div id="forgeBoard" class="forge-board"><div class="visual-empty">Loading shared builds…</div></div>
+        </aside>
+      </section>`;
 
     const quick=document.querySelector('.quick-update');
     let assistant=document.querySelector('.tracker-assistant-panel');
@@ -6519,7 +6701,7 @@
       try{
         const ledger=state?.esi?.ledgerDebug||{};
         const context={
-          version:state?.app?.version||'2.9.148',
+          version:state?.app?.version||'2.10.0',
           sourceTab,
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           displayMode:$('app')?.classList.contains('expanded')?'expanded':'compact',
@@ -6870,6 +7052,28 @@
       toast(e.message);
       setTimeout(()=>{button.textContent='↻ SYNC EVE DATA';button.disabled=false},3000);
     }
+  });
+
+  $('forgeCalculate')?.addEventListener('click',()=>void calculateForge());
+  $('forgeShare')?.addEventListener('click',()=>void shareForge());
+  $('forgeRefresh')?.addEventListener('click',()=>void loadForgeBoard(true));
+  $('forgePasteClipboard')?.addEventListener('click',async()=>{
+    try{
+      const text=await navigator.clipboard.readText();
+      if(!text.trim())throw new Error('Clipboard is empty');
+      $('forgePaste').value=text;
+      toast('Clipboard pasted into JLR Forge.');
+    }catch(error){toast(String(error.message||'Clipboard unavailable'))}
+  });
+  $('forgeBoard')?.addEventListener('change',event=>{
+    const select=event.target instanceof Element?event.target.closest('select[data-forge-status]'):null;
+    if(select)void setForgeStatus(String(select.dataset.forgeStatus||''),String(select.value||'planning'));
+  });
+  $('forgeBoard')?.addEventListener('click',async event=>{
+    const button=event.target instanceof Element?event.target.closest('[data-forge-copy]'):null;
+    if(!button)return;
+    try{await navigator.clipboard.writeText(String(button.dataset.forgeCopy||''));toast('Build share link copied.')}
+    catch{toast('Could not copy the build link.')}
   });
 
   $('scanAllFits')?.addEventListener('click',async()=>{

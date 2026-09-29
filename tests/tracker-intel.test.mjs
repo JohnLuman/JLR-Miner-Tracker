@@ -43,7 +43,7 @@ assert.match(trackerCss,/\.tracker-overview-grid>/,'paired overview scopes Hot Z
 assert.doesNotMatch(tracker,/tracker-intel-valuebar/,'Hot Zones does not render misleading full-width red bars');
 assert.match(trackerCss,/tracker-region-picker/,'region selector is styled');
 
-assert.equal(pkg.version,'2.9.148','Hot Zones-only Tracker release is versioned');
+assert.equal(pkg.version,'2.10.0','Hot Zones-only Tracker release is versioned');
 assert.ok(index.includes('/tracker.css?v=2.9.145'),'browser loads Tracker intel CSS');
 assert.ok(index.includes('/tracker.js?v=2.9.145'),'browser loads Tracker loader');
 assert.ok(index.includes('/app.js?v='+pkg.version),'browser loads matching app release');

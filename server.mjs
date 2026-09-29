@@ -16,6 +16,7 @@ import { explicitAdamHelpQuestion, adamOverviewQuestion, adamUnknownText } from 
 import { createTrackerSupportClient } from './lib/tracker-support-client.mjs';
 import { chooseRapidResponseRoutes, wandererRiskPenalty, wandererWarnings } from './lib/rapid-response-route.mjs';
 import { parseThreatPaste, compactThreatStats, threatActivityLabels, fountainThreatTags, jlrThreatScore, threatIgnoreReason } from './lib/threat-scan.mjs';
+import { parseForgePaste, aggregateForgeMaterials, forgeSummary, sanitizeForgeShare, FORGE_STATUSES } from './lib/forge/forge.mjs';
 import {
   BASE_T3_ORE_REPROCESSING,
   T3_ORE_VARIANTS_BY_TYPE_ID,
@@ -568,6 +569,7 @@ function freshState() {
     characters: {},
     scans: {},
     pvpLifetimeDamage: {},
+    forge: { shares: {} },
     trackerIntel: {
       regionCatalog: [],
       regionCatalogUpdatedAt: null,
@@ -615,6 +617,8 @@ async function loadState() {
     }
     parsed.scans ||= {};
     parsed.pvpLifetimeDamage ||= {};
+    parsed.forge = { ...base.forge, ...(parsed.forge || {}) };
+    parsed.forge.shares ||= {};
     parsed.trackerIntel = { ...base.trackerIntel, ...(parsed.trackerIntel || {}) };
     if(!Array.isArray(parsed.trackerIntel.regionCatalog))parsed.trackerIntel.regionCatalog=[];
     parsed.trackerIntel.regionCatalogUpdatedAt ||= null;
@@ -1256,7 +1260,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.9.148',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
+    app:{name:'JLR Miner Tracker',version:'2.10.0',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}])),wormholes:{reports:wormholeGasPublicReports(),reportHours:WORMHOLE_GAS_REPORT_TTL/3600000}},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans,
@@ -4290,6 +4294,12 @@ const TRACKER_APP_KNOWLEDGE = {
     description:'Gas is the dedicated gas-mining view. It separates gas opportunities from ore and ice, compares gas types, fleet output, known site quantities and market values, and includes a shared Wormhole Gas Tracker. In J-space, a complete Probe Scanner paste records the current known Fullerite gas signatures for that J-system, keeps the report current for 12 hours, and replaces that system’s previous signature list on the next complete scan.',
     panels:['gas types','site types','regional availability','site quantities','value information','wormhole gas tracker','shared J-space probe scans','Fullerite signatures']
   },
+  forge:{
+    label:'JLR Forge',
+    aliases:['forge','jlr forge','build planner','build board','industry planner','manufacturing planner'],
+    description:'JLR Forge is the shared industry workspace. Paste items and quantities to resolve current EVE manufacturing recipes, combine the required materials into one shopping list, keep raw ore valuation on JLRs max-refine and 95 percent payout basis, and post the result to the shared Build Board. Build Board cards move through planning, needs materials, ready to build, building and done, and each card has a public share link that does not expose EVE tokens or private account data.',
+    panels:['build-list paste','ME and TE settings','manufacturing outputs','combined material shopping list','95 percent ore payout','shared Build Board','public build links']
+  },
   doctrine:{
     label:'Doctrine Market',
     aliases:['doctrine','doctrine market','doctrine stock','market doctrine'],
@@ -4585,7 +4595,7 @@ function trackerBrainAnswer(user,question,options={}){
   const snapshot=trackerBrainSnapshot();
   const linked=(user?.characterIds||[]).map(String).filter(Boolean);
   const primaryName=trackerBrainPrimaryName(user);
-  const appVersion='2.9.148';
+  const appVersion='2.10.0';
 
   const voiceSummary=(text,max=120)=>{
     const clean=trackerSpeechSafe(text,1200).replace(/\s+/g,' ').trim();
@@ -5819,6 +5829,157 @@ async function serveVoskModel(req,res,pathname){
 async function serveStatic(req,res,pathname) {
   const rel=pathname==='/'?'index.html':pathname.slice(1);const file=path.resolve(PUBLIC_DIR,rel);if(!file.startsWith(path.resolve(PUBLIC_DIR)+path.sep)&&file!==path.join(PUBLIC_DIR,'index.html'))return false;
   try{const st=await fsp.stat(file);if(!st.isFile())return false;const ext=path.extname(file).toLowerCase();const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.gif':'image/gif','.svg':'image/svg+xml','.ico':'image/x-icon'};securityHeaders(res);res.writeHead(200,{'Content-Type':types[ext]||'application/octet-stream','Cache-Control':ext==='.html'?'no-cache':'public, max-age=60'});fs.createReadStream(file).pipe(res);return true}catch{return false}
+}
+
+const forgeItemSearchCache=new Map();
+const forgeIndustryCache=new Map();
+
+async function forgeResolveItem(name){
+  const query=String(name||'').trim();
+  if(query.length<2)return null;
+  const key=query.toLowerCase();
+  const cached=forgeItemSearchCache.get(key);
+  if(cached&&Date.now()-cached.at<24*60*60*1000)return cached.value;
+
+  const response=await fetch('https://api.everef.net/v1/search?q='+encodeURIComponent(query),{
+    headers:{'Accept':'application/json','User-Agent':ESI_USER_AGENT},
+    signal:AbortSignal.timeout(12_000),
+  });
+  if(!response.ok)throw new Error('EVE Ref search '+response.status);
+  const payload=await response.json();
+  const entries=(Array.isArray(payload?.entries)?payload.entries:[])
+    .filter(row=>row?.type==='inventory_type'&&Number(row?.id)>0);
+  const exact=entries.find(row=>String(row.title||'').trim().toLowerCase()===key);
+  const best=exact||entries[0]||null;
+  const value=best?{typeId:Number(best.id),name:String(best.title||query)}:null;
+  forgeItemSearchCache.set(key,{at:Date.now(),value});
+  return value;
+}
+
+async function forgeIndustryCost(typeId,runs,me,te){
+  const safeRuns=Math.max(1,Math.min(100000,Math.ceil(Number(runs)||1)));
+  const safeMe=Math.max(0,Math.min(10,Math.floor(Number(me)||0)));
+  const safeTe=Math.max(0,Math.min(20,Math.floor(Number(te)||0)));
+  const key=[typeId,safeRuns,safeMe,safeTe].join(':');
+  const cached=forgeIndustryCache.get(key);
+  if(cached&&Date.now()-cached.at<10*60*1000)return cached.value;
+  const qs=new URLSearchParams({product_id:String(typeId),runs:String(safeRuns),me:String(safeMe),te:String(safeTe)});
+  const response=await fetch('https://api.everef.net/v1/industry/cost?'+qs.toString(),{
+    headers:{'Accept':'application/json','User-Agent':ESI_USER_AGENT},
+    signal:AbortSignal.timeout(20_000),
+  });
+  if(!response.ok)throw new Error('EVE Ref industry '+response.status);
+  const value=await response.json();
+  forgeIndustryCache.set(key,{at:Date.now(),value});
+  return value;
+}
+
+async function forgeMapLimit(items,limit,worker){
+  const input=[...(items||[])],output=new Array(input.length);
+  let cursor=0;
+  const runners=Array.from({length:Math.min(Math.max(1,limit),Math.max(1,input.length))},async()=>{
+    while(true){
+      const index=cursor++;
+      if(index>=input.length)return;
+      output[index]=await worker(input[index],index);
+    }
+  });
+  await Promise.all(runners);
+  return output;
+}
+
+async function buildForgePlan(text,{me=10,te=20}={}){
+  const parsed=parseForgePaste(String(text||'').slice(0,100_000));
+  if(!parsed.valid)return{valid:false,items:[],materials:[],summary:forgeSummary([],[]),me,te,rejected:parsed.rejected};
+
+  const items=await forgeMapLimit(parsed.rows,4,async input=>{
+    try{
+      const resolved=await forgeResolveItem(input.name);
+      if(!resolved)return{name:input.name,quantity:input.quantity,typeId:null,kind:'unresolved',error:'ITEM_NOT_FOUND'};
+
+      const one=await forgeIndustryCost(resolved.typeId,1,me,te);
+      const first=one?.manufacturing?.[String(resolved.typeId)]||one?.manufacturing?.[resolved.typeId]||null;
+      if(first){
+        const unitsPerRun=Math.max(1,Number(first.units_per_run)||1);
+        const runs=Math.max(1,Math.ceil(Number(input.quantity)/unitsPerRun));
+        const payload=runs===1?one:await forgeIndustryCost(resolved.typeId,runs,me,te);
+        const manufacturing=payload?.manufacturing?.[String(resolved.typeId)]||payload?.manufacturing?.[resolved.typeId]||first;
+        const materials=Object.values(manufacturing?.materials||{}).map(row=>({
+          typeId:Number(row?.type_id)||null,
+          name:String(row?.type_id||'Material'),
+          quantity:Math.max(0,Number(row?.quantity)||0),
+          costPerUnit:Math.max(0,Number(row?.cost_per_unit)||0),
+          cost:Math.max(0,Number(row?.cost)||0),
+          volume:Math.max(0,Number(row?.volume)||0),
+        }));
+        return{
+          name:resolved.name,typeId:resolved.typeId,quantity:Number(input.quantity),
+          kind:'manufacturing',runs,unitsPerRun,units:Number(manufacturing?.units)||runs*unitsPerRun,
+          me:Number(manufacturing?.me??me),te:Number(manufacturing?.te??te),
+          blueprintId:Number(manufacturing?.blueprint_id)||null,
+          time:String(manufacturing?.time||''),
+          totalCost:Math.max(0,Number(manufacturing?.total_cost)||0),
+          materialCost:Math.max(0,Number(manufacturing?.total_material_cost)||0),
+          jobCost:Math.max(0,Number(manufacturing?.total_job_cost)||0),
+          materials,
+          source:'eve-ref-industry',
+        };
+      }
+
+      await ensureType([resolved.typeId]).catch(()=>{});
+      const volume=Number(state.esi.typeCache[String(resolved.typeId)]?.volume)||0;
+      const orePerM3=oreSurveyRefinedPricePerM3(resolved.name);
+      if(orePerM3>0&&volume>0){
+        return{
+          name:resolved.name,typeId:resolved.typeId,quantity:Number(input.quantity),
+          kind:'ore',volumePerUnit:volume,totalVolume:volume*Number(input.quantity),
+          orePayoutPerM3:orePerM3,
+          orePayoutValue:orePerM3*volume*Number(input.quantity),
+          source:'jlr-95-refined',
+        };
+      }
+      return{name:resolved.name,typeId:resolved.typeId,quantity:Number(input.quantity),kind:'resource',source:'eve-ref-search'};
+    }catch(error){
+      return{name:input.name,quantity:Number(input.quantity),typeId:null,kind:'unresolved',error:String(error?.message||error).slice(0,180)};
+    }
+  });
+
+  const materialIds=[...new Set(items.flatMap(item=>(item.materials||[]).map(row=>Number(row.typeId)).filter(id=>id>0)))];
+  const names=await resolveUniverseNames(materialIds);
+  for(const item of items){
+    for(const material of item.materials||[])material.name=names.get(Number(material.typeId))||String(material.typeId);
+  }
+  const materials=aggregateForgeMaterials(items);
+  const summary=forgeSummary(items,materials);
+  return{
+    valid:true,
+    generatedAt:now(),
+    me:Math.max(0,Math.min(10,Number(me)||0)),
+    te:Math.max(0,Math.min(20,Number(te)||0)),
+    items,materials,summary,rejected:parsed.rejected,
+    sources:{
+      blueprints:'EVE Ref industry cost / current SDE',
+      materialCost:'EVE Ref cost estimate',
+      ore:'JLR max refine × 95% JBV payout',
+    },
+  };
+}
+
+function forgeSharePublic(row){
+  if(!row)return null;
+  return{
+    id:String(row.id||''),token:String(row.token||''),title:String(row.title||'JLR Build'),
+    status:FORGE_STATUSES.includes(String(row.status))?String(row.status):'planning',
+    notes:String(row.notes||''),owner:{name:String(row.owner?.name||'JLR Pilot')},
+    createdAt:row.createdAt||null,updatedAt:row.updatedAt||null,updatedBy:row.updatedBy||null,
+    plan:row.plan||{items:[],materials:[],summary:{}},
+  };
+}
+function forgeBoardRows(){
+  return Object.values(state.forge?.shares||{})
+    .map(forgeSharePublic)
+    .sort((a,b)=>Date.parse(b.updatedAt||b.createdAt||0)-Date.parse(a.updatedAt||a.createdAt||0))
+    .slice(0,100);
 }
 
 async function resolveUniverseNames(ids){
@@ -8665,7 +8826,7 @@ async function routeApi(req,res,url) {
     });
     return res.end(ref.audio);
   }
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.9.148',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.10.0',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -8923,6 +9084,13 @@ async function routeApi(req,res,url) {
     }
   }
 
+  if(req.method==='GET'&&url.pathname.startsWith('/api/forge/share/')){
+    const token=String(url.pathname.split('/').pop()||'');
+    const row=Object.values(state.forge?.shares||{}).find(entry=>String(entry?.token||'')===token);
+    if(!row)return json(res,404,{error:'FORGE_SHARE_NOT_FOUND'});
+    return json(res,200,{share:forgeSharePublic(row)});
+  }
+
   const user=requireUser(req,res);if(!user)return;
 
   if(req.method==='GET'&&url.pathname==='/api/companion/clipboard/stream'){
@@ -8986,6 +9154,53 @@ async function routeApi(req,res,url) {
     refreshDoctrineMarket().catch(console.error);
     return json(res,200,await doctrineMarketSnapshot());
   }
+  if(req.method==='GET'&&url.pathname==='/api/forge/board'){
+    return json(res,200,{shares:forgeBoardRows(),statuses:FORGE_STATUSES});
+  }
+  if(req.method==='POST'&&url.pathname==='/api/forge/plan'){
+    if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
+    let body;
+    try{body=await readBody(req,120_000)}
+    catch(err){return json(res,400,{error:'BAD_FORGE_PLAN',message:String(err.message||err)})}
+    const textInput=String(body?.text||'').trim();
+    if(!textInput)return json(res,400,{error:'EMPTY_BUILD_LIST',message:'Paste one or more EVE item names and quantities.'});
+    try{return json(res,200,await buildForgePlan(textInput,{me:body?.me,te:body?.te}))}
+    catch(err){return json(res,502,{error:'FORGE_PLAN_FAILED',message:String(err.message||err)})}
+  }
+  if(req.method==='POST'&&url.pathname==='/api/forge/share'){
+    if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
+    let body;
+    try{body=await readBody(req,220_000)}
+    catch(err){return json(res,400,{error:'BAD_FORGE_SHARE',message:String(err.message||err)})}
+    state.forge ||= {shares:{}};
+    state.forge.shares ||= {};
+    const base=sanitizeForgeShare(body,user);
+    if(!base.plan.items.length)return json(res,400,{error:'EMPTY_FORGE_SHARE',message:'Build Board posts need at least one item.'});
+    const id='forge_'+randomId(10);
+    const token=randomId(18);
+    const row={id,token,...base,createdAt:now(),updatedAt:now(),updatedBy:user.displayName||'JLR Pilot'};
+    state.forge.shares[id]=row;
+    // Keep the board bounded so old one-off build links do not grow state forever.
+    const ordered=Object.values(state.forge.shares).sort((a,b)=>Date.parse(b.createdAt||0)-Date.parse(a.createdAt||0));
+    for(const stale of ordered.slice(250))delete state.forge.shares[stale.id];
+    await save();
+    broadcast();
+    return json(res,200,{share:forgeSharePublic(row),shareUrl:requestBaseUrl(req)+'/forge/'+token});
+  }
+  if(req.method==='POST'&&url.pathname.match(/^\/api\/forge\/share\/[^/]+\/status$/)){
+    if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
+    const id=String(url.pathname.split('/')[4]||'');
+    const row=state.forge?.shares?.[id];
+    if(!row)return json(res,404,{error:'FORGE_SHARE_NOT_FOUND'});
+    let body;
+    try{body=await readBody(req,4_000)}
+    catch(err){return json(res,400,{error:'BAD_FORGE_STATUS',message:String(err.message||err)})}
+    const status=String(body?.status||'');
+    if(!FORGE_STATUSES.includes(status))return json(res,400,{error:'BAD_FORGE_STATUS'});
+    row.status=status;row.updatedAt=now();row.updatedBy=user.displayName||'JLR Pilot';
+    await save();broadcast();
+    return json(res,200,{share:forgeSharePublic(row)});
+  }
   if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
   if(req.method==='POST'&&url.pathname==='/api/fleet-performance'){
     if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
@@ -9003,7 +9218,7 @@ async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname==='/api/tracker/speech/diagnostics'){
     const voiceWorker=await trackerVoiceHealth().catch(err=>({configured:Boolean(TRACKER_TTS_WORKER_URL),reachable:false,message:String(err?.message||err)}));
     return json(res,200,{
-      version:'2.9.148',
+      version:'2.10.0',
       modelCached:Boolean(voskModelArchive),
       modelBytes:voskModelArchive?.length||0,
       modelSource:voskModelSource||null,
@@ -9715,12 +9930,15 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&url.pathname==='/auth/eve/callback')return await handleCallback(req,res,url);
   if(req.method==='POST'&&url.pathname==='/auth/logout'){clearSessionCookie(res,req);return json(res,200,{ok:true})}
   if(url.pathname.startsWith('/api/'))return await routeApi(req,res,url);
+  if(req.method==='GET'&&/^\/forge\/[A-Za-z0-9_-]{8,}$/.test(url.pathname)){
+    if(await serveStatic(req,res,'/forge-share.html'))return;
+  }
   if(await serveVoskRuntime(req,res,url.pathname))return;
   if(await serveVoskModel(req,res,url.pathname))return;
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.9.148 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.10.0 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>{
   Promise.all([
     loadVoskRuntimeAsset(VOSK_RUNTIME_FILES['/vendor/vosk/vosk-0.0.8.js']),
