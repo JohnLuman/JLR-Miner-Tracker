@@ -50,7 +50,7 @@
         <div class="refine-rate"><span>ORE EFFICIENCY</span><strong>${ratePct.toFixed(2)}%</strong></div>
       </div>
       <div class="refine-grid">
-        <article class="refine-card"><span>REFINED BUY</span><strong>${isk(refined)} ISK</strong><small>Jita mineral buy</small></article>
+        <article class="refine-card copy-price" role="button" tabindex="0" data-copy-isk="${refined}" data-copy-label="Refined value" title="Click to copy the full refined ISK value"><span>REFINED BUY</span><strong>${isk(refined)} ISK</strong><small>Jita mineral buy • click to copy</small></article>
         <article class="refine-card"><span>RAW ORE BUY</span><strong>${isk(raw)} ISK</strong><small>recognized ore only</small></article>
         <article class="refine-card ${delta>=0?'positive':'negative'}"><span>REFINE DIFFERENCE</span><strong>${delta>=0?'+':'−'}${isk(Math.abs(delta))} ISK</strong><small>refined − raw buy</small></article>
         <article class="refine-card"><span>REFINABLE</span><strong>${lines.toLocaleString()} LINE${lines===1?'':'S'}</strong><small>${number(refine.recognizedUnits).toLocaleString()} ore units</small></article>
@@ -87,10 +87,10 @@
             <p class="sub">Shared by <strong>${esc(share.owner?.name||'JLR Pilot')}</strong> • ${variant(appraisal.pricingVariant)} pricing</p>
             <p class="snapshot">${esc(dateTime(appraisal.datasetTime||appraisal.generatedAt))}</p>
           </div>
-          <div class="hero-value">
+          <div class="hero-value copy-price" role="button" tabindex="0" data-copy-isk="${Number(summary.value)||0}" data-copy-label="${esc(selectedLabel)} appraisal" title="Click to copy the full appraisal ISK value">
             <span>${esc(selectedLabel)} APPRAISAL</span>
             <strong>${isk(summary.value)} <small>ISK</small></strong>
-            <em>${pricing} MODE</em>
+            <em>${pricing} MODE • CLICK TO COPY</em>
           </div>
         </section>
 
@@ -102,6 +102,8 @@
           ${kpi('ITEM TYPES',Number(summary.resolvedLines||0).toLocaleString())}
           ${kpi('TOTAL UNITS',Number(summary.units||0).toLocaleString())}
         </section>
+
+        ${refineHtml(appraisal.refine)}
 
         <section class="items-panel">
           <div class="section-head">
@@ -126,8 +128,6 @@
           </table></div>
         </section>
 
-        ${refineHtml(appraisal.refine)}
-
         <footer class="footer">
           <div><strong>JLR MARKET NETWORK</strong><span>Market pricing is sourced through the configured appraisal provider and presented in JLR format.</span></div>
           <a href="/">OPEN JLR MINER TRACKER <span aria-hidden="true">›</span></a>
@@ -138,5 +138,32 @@
       root.innerHTML='<section class="error-state"><span>JLR MARKET NETWORK</span><h1>Appraisal unavailable</h1><p class="bad">'+esc(error.message||error)+'</p><a href="/">Return to JLR</a></section>';
     }
   }
+  async function copyPrice(card){
+    const amount=Math.max(0,Number(card?.dataset?.copyIsk)||0);
+    const label=String(card?.dataset?.copyLabel||'Appraisal price');
+    const text=amount.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+' ISK';
+    try{
+      await navigator.clipboard.writeText(text);
+      card.classList.add('copied');
+      const status=card.querySelector('em,small:last-child');
+      const prior=status?.textContent||'';
+      if(status)status.textContent='COPIED • '+text;
+      setTimeout(()=>{
+        card.classList.remove('copied');
+        if(status)status.textContent=prior;
+      },1100);
+    }catch(error){}
+  }
+  document.addEventListener('click',event=>{
+    const card=event.target?.closest?.('.copy-price');
+    if(card)void copyPrice(card);
+  });
+  document.addEventListener('keydown',event=>{
+    if(!['Enter',' '].includes(event.key))return;
+    const card=event.target?.closest?.('.copy-price');
+    if(!card)return;
+    event.preventDefault();
+    void copyPrice(card);
+  });
   boot();
 })();
