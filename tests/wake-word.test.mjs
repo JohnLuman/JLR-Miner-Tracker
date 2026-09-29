@@ -25,6 +25,6 @@ assert.match(index,/id="scoutGlobalAlert"/,'Scout has a persistent app-wide upda
 assert.match(app,/ADAM • UPDATE/,'Adam tab highlights when Scout needs a scan update');
 
 assert.equal(pkg.version,'2.10.0','JLR release remains on the current app version');
-assert.match(index,/\/app\.js\?v=2\.10\.1-opsfix1/,'browser cachebuster loads the current operations-fix build');
+assert.match(index,/\/app\.js\?v=2\.10\.1-enterdelete1/,'browser cachebuster loads the current operations-fix build');
 
 console.log('Adam context / retired-microphone regression tests passed.');

@@ -72,4 +72,10 @@ assert.doesNotMatch(app,/BUILD BOARD/);
 assert.match(index,/data-tab="forge" type="button">APPRAISAL</);
 assert.match(app,/appraisalCalculate/);
 assert.match(app,/event\.ctrlKey\|\|event\.metaKey/,'Ctrl/Cmd+Enter runs appraisal while normal Enter remains a newline');
-assert.match(index,/app\.js\?v=2\.10\.1-opsfix1/,'Appraisal UI is cache-busted');
+assert.match(index,/app\.js\?v=2\.10\.1-enterdelete1/,'Appraisal UI is cache-busted');
+
+assert.match(app,/appraisalQuickEntry/,'Appraisal includes a one-line quick-entry control');
+assert.match(app,/event\.key!==['"]Enter['"]/,'Quick entry handles Enter');
+assert.match(app,/data-forge-plan-delete/,'Owned build plans expose a remove action');
+assert.match(app,/\/api\/forge\/share\/'\+encodeURIComponent\(id\)\+'\/delete/,'Build plan removal calls the delete endpoint');
+assert.match(server,/FORGE_DELETE_FORBIDDEN/,'Server restricts build-plan deletion to the posting user');
