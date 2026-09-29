@@ -37,7 +37,7 @@
         </div>
         <div class="grid">
           <section><h2>OUTPUTS</h2><div class="list">${items.length?items.map(row=>`<div class="row"><div><strong>${esc(row.name)}</strong><small>${esc(String(row.kind||'').toUpperCase())}</small></div><span>× ${Number(row.quantity||0).toLocaleString()}</span></div>`).join(''):'<div class="row">No output rows.</div>'}</div></section>
-          <section><h2>MATERIAL SHOPPING LIST</h2><div class="list">${materials.length?materials.map(row=>`<div class="row"><div><strong>${esc(row.name)}</strong><small>TYPE ${esc(row.typeId||'—')}</small></div><span>${Number(row.quantity||0).toLocaleString()} • ${isk(row.cost)} ISK</span></div>`).join(''):'<div class="row">No manufacturing materials.</div>'}</div></section>
+          <section><h2>MATERIAL SHOPPING LIST</h2><div class="list">${materials.length?materials.map(row=>`<div class="row"><div><strong>${esc(row.name)}</strong><small>MATERIAL</small></div><span>${Number(row.quantity||0).toLocaleString()} • ${isk(row.cost)} ISK</span></div>`).join(''):'<div class="row">No manufacturing materials.</div>'}</div></section>
         </div>
         ${share.notes?`<div class="notes">${esc(share.notes)}</div>`:''}
         <div class="footer">JLR Forge • blueprint math from current EVE industry data • ore values use the JLR 95% payout basis.</div>
