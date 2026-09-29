@@ -3,31 +3,24 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#080b12">
   <title>JLR Appraisal</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-  <style>
-    :root{color-scheme:dark;font-family:Oxanium,system-ui,sans-serif;background:#080b12;color:#edf2ff}
-    *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 15% 0,#271437 0,#0b0d15 42%,#070910 100%);padding:28px}
-    main{max-width:1240px;margin:auto}.eyebrow{font:11px "Share Tech Mono",monospace;letter-spacing:.16em;color:#c88cff}
-    .panel{margin-top:12px;background:rgba(13,15,25,.92);border:1px solid #3b2a4b;border-radius:18px;padding:20px;box-shadow:0 24px 80px rgba(0,0,0,.35)}
-    .head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}.head h1{margin:.35rem 0 0;font-size:clamp(26px,5vw,48px)}
-    .sub{color:#939bad;margin:.5rem 0 0;font-size:13px}.chip{white-space:nowrap;font:11px "Share Tech Mono";padding:7px 10px;border:1px solid #74449a;border-radius:999px;color:#d8a8ff}
-    .kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:9px;margin:18px 0}.kpi{padding:11px;background:#0b0e16;border:1px solid #29223a;border-radius:11px;min-width:0}
-    .kpi span{display:block;font:10px "Share Tech Mono";color:#858da0}.kpi strong{display:block;margin-top:4px;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .table-wrap{overflow:auto;border:1px solid #29223a;border-radius:12px}.table{width:100%;min-width:860px;border-collapse:separate;border-spacing:0;font-size:12px}
-    th,td{padding:9px 10px;border-bottom:1px solid #211c2d;text-align:right;white-space:nowrap}th{position:sticky;top:0;background:#11131d;color:#929bad;font:10px "Share Tech Mono";letter-spacing:.06em}
-    th:first-child,td:first-child{text-align:left}.item strong{display:block}.item small{display:block;color:#737c90;margin-top:2px}.bad{color:#ff9a9a}
-    .footer{margin-top:15px;color:#6e7585;font:11px "Share Tech Mono";line-height:1.45}
-    @media(max-width:900px){body{padding:14px}.head{display:block}.chip{display:inline-block;margin-top:10px}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
-  </style>
+  <link rel="stylesheet" href="/appraisal-share.css?v=2">
 </head>
 <body>
-<main>
-  <span class="eyebrow">JLR MARKET NETWORK // SHARED APPRAISAL</span>
-  <div id="root" class="panel">Loading appraisal…</div>
+<main class="share-shell">
+  <header class="share-brand">
+    <a class="brand-lockup" href="/" aria-label="Open JLR Miner Tracker">
+      <span class="brand-mark">JLR</span>
+      <span class="brand-copy"><strong>MARKET NETWORK</strong><small>SHARED APPRAISAL</small></span>
+    </a>
+    <a class="open-jlr" href="/">OPEN JLR <span aria-hidden="true">›</span></a>
+  </header>
+  <div id="root" class="panel loading-panel">Loading appraisal…</div>
 </main>
-<script src="/appraisal-share.js?v=1" defer></script>
+<script src="/appraisal-share.js?v=2" defer></script>
 </body>
 </html>
