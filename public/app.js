@@ -4806,7 +4806,7 @@
     const appTodayM3=Math.max(0,Number(state.esi.actual.today.m3)||0);
     const appTodayPayout=Math.max(0,actualValue(state.esi.actual.today.jbv));
     $('actualTodayIsk').textContent=fmt(appTodayPayout)+' ISK';
-    const payoutPriceBasis=state.market?.jitaBuyBasis==='janice-immediate-buy'?'Janice Jita buy':'ESI Jita buy fallback';
+    const payoutPriceBasis='JLR Native • CCP ESI Jita buy';
     const unpricedM3=Math.max(0,Number(state.esi.actual.today.unpricedM3)||0);
     const appCached=Number(ledgerDebug?.cachedCharacters||0);
     const appLinked=Number(ledgerDebug?.linkedCharacters||0);
@@ -6506,7 +6506,7 @@
     if(title)title.textContent='EVE DAY '+String(data&&data.date||'—')+' (UTC)';
     if(summary)summary.textContent=cached+'/'+linked+' linked characters included'+(missing?' • '+missing+' waiting for ledger cache':'')+'.';
     if(!body)return;
-    const basis=data&&data.jitaBuyBasis==='janice-immediate-buy'?'Janice Jita immediate buy':'ESI Jita buy fallback';
+    const basis='JLR Native • CCP ESI Jita buy';
     const list=rows.map(row=>{
       const ready=Boolean(row.cacheReady);
       const sync=row.lastSyncAt?ago(row.lastSyncAt):'not synced';
