@@ -1,0 +1,54 @@
+/* Shared JLR appraisal — payout + copy tools */
+.share-copy-actions{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+  flex-wrap:wrap;
+}
+.share-copy-actions>button{
+  border:1px solid rgba(255,255,255,.16);
+  border-radius:9px;
+  padding:9px 12px;
+  background:rgba(255,255,255,.055);
+  color:inherit;
+  font:700 11px/1 'Share Tech Mono',monospace;
+  letter-spacing:.06em;
+  cursor:pointer;
+}
+.share-copy-actions>button:hover{border-color:rgba(189,139,255,.6);background:rgba(133,83,201,.14)}
+.share-payout-badge{
+  display:flex;
+  align-items:center;
+  gap:7px;
+  padding:8px 10px;
+  border:1px solid rgba(188,137,255,.38);
+  border-radius:9px;
+  background:rgba(132,79,205,.12);
+}
+.share-payout-badge span{font:700 10px/1 'Share Tech Mono',monospace;opacity:.68}
+.share-payout-badge strong{font:700 14px/1 'Oxanium',sans-serif}
+.share-copy-value{
+  border:0;
+  background:transparent;
+  color:inherit;
+  font:inherit;
+  font-weight:inherit;
+  padding:0;
+  cursor:copy;
+  border-radius:6px;
+  transition:background .13s ease,box-shadow .13s ease,transform .13s ease;
+}
+.share-copy-value:hover,.share-copy-inline:hover{
+  background:rgba(255,255,255,.07);
+  box-shadow:0 0 0 4px rgba(255,255,255,.07);
+}
+.share-copy-value.copied{transform:scale(.97);box-shadow:0 0 0 4px rgba(95,255,180,.14)}
+.share-copy-inline{cursor:copy;border-radius:5px}
+.share-payout-kpi{border-color:rgba(188,137,255,.44)!important;background:rgba(126,77,191,.08)!important}
+.share-payout-cell{background:rgba(126,77,191,.08)}
+.share-payout-copy{color:#d9b8ff}
+.table{min-width:1180px}
+@media(max-width:760px){
+  .share-copy-actions{justify-content:flex-start;width:100%}
+}

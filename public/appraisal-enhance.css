@@ -1,0 +1,75 @@
+/* JLR Appraisal — Janice-style payout + clipboard tools */
+.jlr-appraisal-payout-bar{
+  display:grid;
+  grid-template-columns:minmax(230px,1fr) auto minmax(110px,150px);
+  gap:14px;
+  align-items:center;
+  margin:12px 0 14px;
+  padding:13px 14px;
+  border:1px solid rgba(169,116,255,.28);
+  border-radius:14px;
+  background:linear-gradient(135deg,rgba(104,58,175,.13),rgba(10,12,20,.64));
+}
+.jlr-payout-copy{display:grid;gap:2px}
+.jlr-payout-copy>span,.jlr-payout-input>span{
+  font:700 11px/1 'Share Tech Mono',monospace;
+  letter-spacing:.12em;
+  opacity:.72;
+}
+.jlr-payout-copy>strong{font:700 14px/1.25 'Oxanium',sans-serif}
+.jlr-payout-copy>small{opacity:.66;line-height:1.35}
+.jlr-payout-presets{display:flex;gap:7px;flex-wrap:wrap;justify-content:center}
+.jlr-payout-presets button{
+  min-width:52px;
+  padding:8px 10px;
+  border:1px solid rgba(255,255,255,.14);
+  border-radius:9px;
+  background:rgba(255,255,255,.045);
+  color:inherit;
+  font:700 12px/1 'Share Tech Mono',monospace;
+  cursor:pointer;
+}
+.jlr-payout-presets button:hover,.jlr-payout-presets button.active{
+  border-color:rgba(190,142,255,.72);
+  box-shadow:0 0 0 1px rgba(190,142,255,.18) inset;
+  background:rgba(132,79,205,.18);
+}
+.jlr-payout-input{display:grid;gap:5px}
+.jlr-payout-input>div{display:flex;align-items:center;gap:7px}
+.jlr-payout-input input{
+  width:92px;
+  padding:8px 9px;
+  border:1px solid rgba(255,255,255,.16);
+  border-radius:8px;
+  background:rgba(0,0,0,.24);
+  color:inherit;
+  font:700 14px/1 'Share Tech Mono',monospace;
+}
+.jlr-appraisal-copy-value{
+  border:0;
+  background:transparent;
+  color:inherit;
+  font:inherit;
+  font-weight:700;
+  padding:0;
+  margin:0;
+  cursor:copy;
+  text-align:inherit;
+  border-radius:6px;
+  transition:background .14s ease,box-shadow .14s ease,transform .14s ease;
+}
+.jlr-appraisal-copy-value:hover,.jlr-appraisal-copy-inline:hover{
+  background:rgba(255,255,255,.07);
+  box-shadow:0 0 0 4px rgba(255,255,255,.07);
+}
+.jlr-appraisal-copy-value.jlr-copied{transform:scale(.97);box-shadow:0 0 0 4px rgba(92,255,174,.14)}
+.jlr-appraisal-copy-inline{cursor:copy;border-radius:5px}
+.jlr-appraisal-payout-card{border-color:rgba(188,137,255,.42)!important}
+.jlr-appraisal-payout-card small{display:block;margin-top:3px;opacity:.56;font-size:10px}
+.jlr-payout-cell{background:rgba(127,78,190,.08)}
+.jlr-payout-copy-value{color:#d9b8ff}
+.jlr-appraisal-table{min-width:1120px}
+@media(max-width:900px){
+  .jlr-appraisal-payout-bar{grid-template-columns:1fr}
+  .jlr-payout-presets{justify-content:flex-start}
+}
