@@ -19,5 +19,7 @@ assert.match(app,/const performance=scopedFleetPerformance\(\)/,'Fleet Performan
 assert.match(app,/samples=performance\.samples\|\|\[\]/,'live chart uses scoped samples');
 assert.match(app,/performance\.actual\?\.today\?\.m3/,'today volume uses assigned-fleet actuals');
 assert.doesNotMatch(app,/const daily=fleetHistoryRows\(fleetHistoryDays\),samples=state\.esi\?\.performance\?\.samples/,'Fleet Performance must not use the global sample stream');
+assert.match(server,/result\?\.reason==='already-running'/,'15-minute automatic sampling detects an overlapping sync instead of silently skipping');
+assert.match(server,/setTimeout\(runAutomaticSyncLoop,30_000\)/,'overlapped automatic samples retry in 30 seconds instead of waiting another 15 minutes');
 
 console.log('Assigned Fleet Performance scope tests passed.');

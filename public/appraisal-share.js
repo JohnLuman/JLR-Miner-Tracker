@@ -16,6 +16,7 @@
     if(n>=1e3)return(n/1e3).toFixed(1)+'K m³';
     return n.toLocaleString(undefined,{maximumFractionDigits:2})+' m³';
   };
+  const number=value=>Math.max(0,Number(value)||0);
   const mode=value=>String(value||'split').toUpperCase();
   const variant=value=>String(value||'immediate')==='top5percent'?'TOP 5% AVG':'IMMEDIATE';
   const dateTime=value=>{
@@ -24,6 +25,44 @@
     return 'Priced '+new Date(ms).toLocaleString([],{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
   };
   const kpi=(label,value,klass='')=>`<article class="kpi ${klass}"><span>${esc(label)}</span><strong>${value}</strong></article>`;
+
+  function refineHtml(refine){
+    if(!refine||typeof refine!=='object')return'';
+    const lines=Math.max(0,Number(refine.recognizedLines)||0);
+    const rate=Math.max(0,Math.min(1,Number(refine.selectedRate??refine.defaultRate??0)));
+    const ratePct=rate*100;
+    if(!lines){
+      return `<section class="refine-panel">
+        <div class="refine-head">
+          <div><span>JLR REPROCESS // ORE</span><strong>REFINE ESTIMATE</strong><small>No refinable ore was recognized in this appraisal.</small></div>
+          <div class="refine-rate"><span>ORE EFFICIENCY</span><strong>${ratePct.toFixed(2)}%</strong></div>
+        </div>
+        <div class="refine-note">Modules, ships, loot, and non-ore items remain appraisal-only.</div>
+      </section>`;
+    }
+    const refined=number(refine.buyAt100)*rate;
+    const raw=number(refine.eligibleBuy);
+    const delta=refined-raw;
+    const minerals=(Array.isArray(refine.minerals)?refine.minerals:[]).slice(0,14);
+    return `<section class="refine-panel">
+      <div class="refine-head">
+        <div><span>JLR REPROCESS // ORE</span><strong>REFINE ESTIMATE</strong><small>Recognized ore compared with its raw Jita buy value.</small></div>
+        <div class="refine-rate"><span>ORE EFFICIENCY</span><strong>${ratePct.toFixed(2)}%</strong></div>
+      </div>
+      <div class="refine-grid">
+        <article class="refine-card"><span>REFINED BUY</span><strong>${isk(refined)} ISK</strong><small>Jita mineral buy</small></article>
+        <article class="refine-card"><span>RAW ORE BUY</span><strong>${isk(raw)} ISK</strong><small>recognized ore only</small></article>
+        <article class="refine-card ${delta>=0?'positive':'negative'}"><span>REFINE DIFFERENCE</span><strong>${delta>=0?'+':'−'}${isk(Math.abs(delta))} ISK</strong><small>refined − raw buy</small></article>
+        <article class="refine-card"><span>REFINABLE</span><strong>${lines.toLocaleString()} LINE${lines===1?'':'S'}</strong><small>${number(refine.recognizedUnits).toLocaleString()} ore units</small></article>
+      </div>
+      ${minerals.length?`<div class="refine-minerals">${minerals.map(row=>{
+        const qty=number(row.quantityAt100)*rate;
+        const value=number(row.valueAt100)*rate;
+        return `<div class="refine-mineral"><span>${esc(row.mineral)}</span><strong>${Math.floor(qty).toLocaleString()}</strong><small>${isk(value)} ISK</small></div>`;
+      }).join('')}</div>`:''}
+      <div class="refine-note">Estimate uses ${esc(refine.pricingBasis||'Jita mineral buy')}. This is an appraisal comparison, not an in-game reprocessing quote.</div>
+    </section>`;
+  }
 
   async function boot(){
     const token=location.pathname.split('/').filter(Boolean).pop()||'';
@@ -86,6 +125,8 @@
               </tr>`).join(''):'<tr><td colspan="9" class="empty-row">No appraisal rows.</td></tr>'}</tbody>
           </table></div>
         </section>
+
+        ${refineHtml(appraisal.refine)}
 
         <footer class="footer">
           <div><strong>JLR MARKET NETWORK</strong><span>Market pricing is sourced through the configured appraisal provider and presented in JLR format.</span></div>
