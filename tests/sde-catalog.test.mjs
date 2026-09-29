@@ -50,6 +50,11 @@ const resolved=catalog.resolveNames(['Arkonor','Compressed Arkonor','No Such Thi
 assert.equal(resolved.items.length,2);
 assert.deepEqual(resolved.missing,['No Such Thing']);
 
+const matched=catalog.matchQuestion('What does Arkonor refine into?');
+assert.equal(matched.items[0].name,'Arkonor');
+const compressedMatch=catalog.matchQuestion('Is Compressed Arkonor worth more than Arkonor?');
+assert.equal(compressedMatch.items[0].name,'Compressed Arkonor','longest embedded item name wins');
+
 const raw=resolved.items.find(row=>row.name==='Arkonor');
 const compressed=resolved.items.find(row=>row.name==='Compressed Arkonor');
 assert.equal(raw.compressedTypeId,28367);
