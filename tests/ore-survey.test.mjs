@@ -73,6 +73,30 @@ assert.equal(payout.nearest[0].valueBasis,'jlr-95-refined');
 assert.match(oreSurveySummaryText(payout),/95% JBV payout value/);
 assert.match(oreSurveySummaryText(payout),/95% of max-refine mineral value/);
 
+const compressedInventory=[
+  'Compressed Arkonor\t27,512\tArkonor\t\t\t4,401.92 m3\t121,644,032.88 ISK',
+  'Compressed Kylixium II-Grade\t2,966,107\tKylixium\t\t\t35,593.28 m3\t828,937,923.29 ISK',
+  'Plagioclase II-Grade\t8,016\tPlagioclase\t\t\t2,805.60 m3\t219,798.72 ISK',
+].join('\n');
+const inventory=parseOreSurvey(compressedInventory,{
+  pricePerM3ForName:name=>name==='Arkonor'?10:name==='Kylixium II-Grade'?20:name==='Plagioclase II-Grade'?30:null,
+  replaceReportedValues:true,
+  pricingBasis:'jlr-95-refined',
+});
+assert.equal(inventory.valid,true);
+assert.equal(inventory.sourceFormat,'ore-inventory');
+assert.equal(inventory.inventoryRowCount,3);
+assert.equal(inventory.asteroidRowCount,0);
+assert.equal(inventory.rowCount,3);
+assert.equal(inventory.nearest.length,0,'inventory rows do not invent zero-meter distances');
+assert.ok(Math.abs(inventory.totalVolumeM3-42800.8)<1e-6);
+assert.equal(inventory.pricedValueISK,75672648);
+assert.equal(inventory.groups.find(row=>row.name==='Compressed Arkonor')?.pricedValueISK,4401920,'compressed ore values against raw-equivalent volume');
+assert.equal(inventory.groups.find(row=>row.name==='Compressed Kylixium II-Grade')?.pricedValueISK,71186560,'compressed grade keeps its variant for valuation');
+const inventoryText=oreSurveySummaryText(inventory);
+assert.match(inventoryText,/Ore inventory read: 3 stacks/);
+assert.doesNotMatch(inventoryText,/Closest:/);
+
 assert.equal(parseOreSurvey('Ueganite II-Grade').valid,false);
 assert.equal(parseOreSurvey('random clipboard text').valid,false);
 
