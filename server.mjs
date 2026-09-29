@@ -6056,26 +6056,87 @@ async function appraisalResolveItems(rows){
   const inputs=Array.isArray(rows)?rows:[];
   const names=[...new Set(inputs.map(row=>String(row?.name||'').trim()).filter(name=>name.length>=2))];
   const resolvedByKey=new Map();
+  let sdeMeta=null;
+  let sdeResolved=0;
+  let esiResolved=0;
   const missing=[];
+
   for(const name of names){
     const key=name.toLowerCase();
     const cached=appraisalItemResolveCache.get(key);
-    if(cached&&Date.now()-cached.at<24*60*60*1000)resolvedByKey.set(key,cached.value);
-    else missing.push(name);
+    if(cached&&Date.now()-cached.at<24*60*60*1000){
+      resolvedByKey.set(key,cached.value);
+      if(cached.value?.staticSource==='sde')sdeResolved++;
+      else if(cached.value)esiResolved++;
+    }else missing.push(name);
   }
-  if(missing.length){
-    const {data}=await esiPost('https://esi.evetech.net/latest/universe/ids/?datasource=tranquility',missing.slice(0,APPRAISAL_MAX_ITEM_TYPES));
+
+  let unresolved=[...missing];
+  if(unresolved.length){
+    const sde=await trackerSupport.sdeResolve({names:unresolved});
+    if(sde?.available){
+      sdeMeta=sde.meta||null;
+      const found=new Map((Array.isArray(sde.items)?sde.items:[])
+        .filter(row=>row?.name&&Number(row?.typeId)>0)
+        .map(row=>[String(row.name).trim().toLowerCase(),row]));
+      const next=[];
+      for(const name of unresolved){
+        const key=name.toLowerCase();
+        const row=found.get(key);
+        if(!row){next.push(name);continue}
+        const value={
+          typeId:Number(row.typeId),
+          name:String(row.name||name),
+          groupId:Number(row.groupId)||null,
+          groupName:String(row.groupName||''),
+          categoryId:Number(row.categoryId)||null,
+          categoryName:String(row.categoryName||''),
+          marketGroupId:Number(row.marketGroupId)||null,
+          marketGroupName:String(row.marketGroupName||''),
+          volume:Math.max(0,Number(row.volume)||0),
+          packagedVolume:Math.max(0,Number(row.packagedVolume)||0),
+          portionSize:Math.max(1,Number(row.portionSize)||1),
+          published:Boolean(row.published),
+          compressedTypeId:Number(row.compressedTypeId)||null,
+          compressedName:String(row.compressedName||''),
+          rawTypeId:Number(row.rawTypeId)||null,
+          rawName:String(row.rawName||''),
+          staticSource:'sde',
+          sdeBuildNumber:Number(sde.meta?.buildNumber)||null,
+        };
+        appraisalItemResolveCache.set(key,{at:Date.now(),value});
+        resolvedByKey.set(key,value);
+        sdeResolved++;
+      }
+      unresolved=next;
+    }
+  }
+
+  if(unresolved.length){
+    const {data}=await esiPost('https://esi.evetech.net/latest/universe/ids/?datasource=tranquility',unresolved.slice(0,APPRAISAL_MAX_ITEM_TYPES));
     const inventory=Array.isArray(data?.inventory_types)?data.inventory_types:[];
     const found=new Map(inventory.filter(row=>row?.name&&Number(row?.id)>0)
-      .map(row=>[String(row.name).trim().toLowerCase(),{typeId:Number(row.id),name:String(row.name)}]));
-    for(const name of missing){
+      .map(row=>[String(row.name).trim().toLowerCase(),{typeId:Number(row.id),name:String(row.name),staticSource:'esi'}]));
+    for(const name of unresolved){
       const key=name.toLowerCase();
       const value=found.get(key)||null;
       appraisalItemResolveCache.set(key,{at:Date.now(),value});
       resolvedByKey.set(key,value);
+      if(value)esiResolved++;
     }
   }
-  return resolvedByKey;
+
+  return{
+    map:resolvedByKey,
+    staticData:{
+      provider:sdeResolved>0?'ccp-sde':(esiResolved>0?'ccp-esi':'unresolved'),
+      buildNumber:Number(sdeMeta?.buildNumber)||null,
+      releaseDate:sdeMeta?.releaseDate||null,
+      sdeResolved,
+      esiFallbackResolved:esiResolved,
+      totalRequested:names.length,
+    },
+  };
 }
 async function appraisalMarketOrders(regionId,typeId){
   const key=String(regionId)+':'+String(typeId);
@@ -6203,21 +6264,30 @@ async function nativeEsiAppraisal(text,{market=2,pricing='split',pricingVariant=
   const mode=appraisalMode(pricing);
   const variant=appraisalVariant(pricingVariant);
   const selectedRows=parsed.rows.slice(0,APPRAISAL_MAX_ITEM_TYPES);
-  const resolvedNames=await appraisalResolveItems(selectedRows);
+  const resolvedLookup=await appraisalResolveItems(selectedRows);
+  const resolvedNames=resolvedLookup.map;
 
   const bases=await forgeMapLimit(selectedRows,6,async input=>{
     try{
       const resolved=resolvedNames.get(String(input.name||'').trim().toLowerCase())||null;
       if(!resolved)return{resolved:false,typeId:null,name:input.name,amount:Number(input.quantity)||0,error:'ITEM_NOT_FOUND'};
-      await ensureType([resolved.typeId]);
-      const type=state.esi.typeCache[String(resolved.typeId)]||{};
+      let volumePerUnit=Number(resolved.volume);
+      let packagedVolumePerUnit=Number(resolved.packagedVolume);
+      if(resolved.staticSource!=='sde'){
+        await ensureType([resolved.typeId]);
+        const type=state.esi.typeCache[String(resolved.typeId)]||{};
+        volumePerUnit=Math.max(0,Number(type.volume)||0);
+        packagedVolumePerUnit=Math.max(0,Number(type.packagedVolume??type.packaged_volume??type.volume)||0);
+      }
       return{
         resolved:true,
         typeId:resolved.typeId,
         name:resolved.name,
         amount:Math.max(1,Number(input.quantity)||1),
-        volumePerUnit:Math.max(0,Number(type.volume)||0),
-        packagedVolumePerUnit:Math.max(0,Number(type.packagedVolume??type.packaged_volume??type.volume)||0),
+        volumePerUnit:Math.max(0,Number(volumePerUnit)||0),
+        packagedVolumePerUnit:Math.max(0,Number(packagedVolumePerUnit)||0),
+        staticSource:String(resolved.staticSource||'esi'),
+        sdeBuildNumber:Number(resolved.sdeBuildNumber)||null,
       };
     }catch(error){
       return{resolved:false,typeId:null,name:input.name,amount:Number(input.quantity)||0,error:String(error?.message||error).slice(0,180)};
@@ -6309,6 +6379,7 @@ async function nativeEsiAppraisal(text,{market=2,pricing='split',pricingVariant=
     failures:failures.join('\n'),
     items,
     summary:appraisalSummary(items,mode),
+    staticData:resolvedLookup.staticData,
     marketData:appraisalMarketDataSummary(items,freshMs),
   };
 }
