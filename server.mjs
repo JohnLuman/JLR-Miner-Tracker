@@ -2931,7 +2931,7 @@ async function ensureType(ids) {
     let pending=typeLookupPromises.get(id);
     if(!pending){
       pending=esiGet(`https://esi.evetech.net/latest/universe/types/${id}/?datasource=tranquility`)
-        .then(({data})=>{state.esi.typeCache[id]={name:data.name||`Type ${id}`,volume:Number(data.volume||0)}})
+        .then(({data})=>{state.esi.typeCache[id]={name:data.name||`Type ${id}`,volume:Number(data.volume||0),packagedVolume:Number(data.packaged_volume??data.volume??0)}})
         .finally(()=>typeLookupPromises.delete(id));
       typeLookupPromises.set(id,pending);
     }
