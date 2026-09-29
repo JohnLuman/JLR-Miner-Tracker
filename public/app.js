@@ -50,7 +50,6 @@
   let scoutTargetsOriginSystem = '';
   let scoutPromptKey = '';
   let adamCurrentTimer = null;
-  const scoutVoiceCooldown = new Map();
   let merIntel = null;
   let merIntelError = '';
   let pvpIntel = null;
@@ -80,49 +79,6 @@
   let threatShareError='';
   let ledgerAuditLoading=false;
   let myLedgerSummary=null;
-  let startupGreetingQueued=false;
-  let brainRecognition=null;
-  let brainMicStream=null;
-  let brainMicTrack=null;
-  let brainMicDevices=[];
-  let brainMicDeviceId=localStorage.getItem('jlrBrainMicDeviceId')||'default';
-  let brainMicRestartTimer=null;
-  let brainMicStartToken=0;
-  let brainPreferBrowserSpeechInput=false;
-  let brainNetworkFailures=0;
-  let brainSpeechStartHangs=0;
-  let brainLocalModel=null;
-  let brainLocalModelPromise=null;
-  let brainLocalRecognizer=null;
-  let brainLocalAudioContext=null;
-  let brainLocalSource=null;
-  let brainLocalProcessor=null;
-  let brainLocalMute=null;
-  let brainLocalSession=0;
-  let brainMicAudioFrames=0;
-  let brainMicWatchdogTimer=null;
-  let brainMicWatchdogLastFrameAt=0;
-  let brainMicTrackMutedAt=0;
-  let brainLongUptimeRecoveryBusy=false;
-  let brainMicCurrentRms=0;
-  let brainMicPeakRms=0;
-  let brainMicLastSignalAt=0;
-  let brainMicVoiceLikeAt=0;
-  let brainMicVoiceFrames=0;
-  let brainMicNoiseFloor=0.0015;
-  let brainMicLastMeterPaint=0;
-  let brainMicLastPartial='';
-  let brainMicLastFinal='';
-  let brainMicWakeDebounceUntil=0;
-  let brainMicSuppressedTranscripts=0;
-  let brainMicLastError=null;
-  let brainMicDiagTrail=[];
-  try{brainMicDiagTrail=JSON.parse(localStorage.getItem('jlrBrainMicDiagTrail')||'[]')}catch{}
-  if(!Array.isArray(brainMicDiagTrail))brainMicDiagTrail=[];
-  brainMicDiagTrail=brainMicDiagTrail.slice(0,30);
-  const ADAM_VOICE_ENABLED=false;
-  let brainMicWanted=false;
-  let brainConversationUntil=0;
   let brainLastSystem='';
   let adamAskBusy=false;
   let adamWorkingTab=localStorage.getItem('jlrAdamWorkingTab')||'fields';
@@ -135,10 +91,7 @@
   let adamOreSurveyContext=null;
   try{adamOreSurveyContext=JSON.parse(localStorage.getItem('jlrAdamOreSurveyContext')||'null')}catch{}
   if(!adamOreSurveyContext||Date.now()-Number(adamOreSurveyContext.at||0)>6*60*60*1000)adamOreSurveyContext=null;
-  let brainSpeechHistory=[];
-  try{brainSpeechHistory=JSON.parse(localStorage.getItem('jlrBrainSpeechHistory')||'[]')}catch{}
-  if(!Array.isArray(brainSpeechHistory))brainSpeechHistory=[];
-  brainSpeechHistory=brainSpeechHistory.slice(0,20);
+
 
   const DEFAULT_FLEET = { members:{}, uptime:100, payout:95, order:[] };
   function loadFleet() {
@@ -571,172 +524,6 @@
     }
   }
 
-  function recordBrainSpeech(kind,text){
-    const message=String(text||'').trim();
-    if(!message)return;
-    brainSpeechHistory.unshift({at:new Date().toISOString(),kind:String(kind||'voice'),text:message});
-    brainSpeechHistory=brainSpeechHistory.slice(0,20);
-    localStorage.setItem('jlrBrainSpeechHistory',JSON.stringify(brainSpeechHistory));
-    renderBrainSpeechHistory();
-  }
-  function renderBrainSpeechHistory(){
-    const el=$('brainSpeechHistory');
-    if(!el)return;
-    if(!brainSpeechHistory.length){
-      el.innerHTML='<div class="visual-empty">No Tracker speech recorded in this browser yet.</div>';
-      return;
-    }
-    el.innerHTML=brainSpeechHistory.slice(0,10).map((row,index)=>`<div class="brain-speech-row">
-      <span>${esc(new Date(row.at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}))}</span>
-      <b>${esc(String(row.kind||'voice').toUpperCase())}</b>
-      <p>${esc(row.text)}</p>
-      <button class="board-tool brain-repeat-row" type="button" data-history-index="${index}">REPEAT</button>
-    </div>`).join('');
-  }
-  function brainConversationMs(){
-    const seconds=Math.max(15,Math.min(60,Number(localStorage.getItem('jlrBrainConversationWindow')||30)||30));
-    return seconds*1000;
-  }
-  function brainMicCodeError(code,stage,detail){
-    const error=new Error(String(detail||'Tracker microphone error.'));
-    error.jlrCode=String(code||'MIC-E999');
-    error.jlrStage=String(stage||'UNKNOWN');
-    return error;
-  }
-  function brainRecordMicDiag(code,stage,detail){
-    const row={at:new Date().toISOString(),code:String(code||'MIC-I000'),stage:String(stage||'INFO'),detail:String(detail||'').slice(0,800)};
-    brainMicDiagTrail.unshift(row);
-    brainMicDiagTrail=brainMicDiagTrail.slice(0,30);
-    localStorage.setItem('jlrBrainMicDiagTrail',JSON.stringify(brainMicDiagTrail));
-    return row;
-  }
-  function renderBrainMicDiagnostic(){
-    const panel=$('brainMicDiagnostic');
-    if(!panel)return;
-    const row=brainMicLastError;
-    panel.classList.toggle('hidden',!row);
-    if(!row)return;
-    if($('brainMicErrorCode'))$('brainMicErrorCode').textContent=row.code;
-    if($('brainMicErrorStage'))$('brainMicErrorStage').textContent=row.stage;
-    if($('brainMicErrorDetail'))$('brainMicErrorDetail').textContent=row.detail;
-  }
-  function brainSetMicError(error,recovery='Click TALK TO ADAM to retry.'){
-    const code=String(error?.jlrCode||'MIC-E999');
-    const stage=String(error?.jlrStage||error?.name||'UNKNOWN');
-    const detail=String(error?.message||error||'Tracker microphone failed.').trim();
-    brainMicLastError=brainRecordMicDiag(code,stage,detail);
-    brainSetListen('MIC AI ERROR • '+code,detail+' '+recovery);
-    renderBrainMicDiagnostic();
-  }
-  function brainClearMicError(){
-    brainMicLastError=null;
-    renderBrainMicDiagnostic();
-  }
-  function brainMicDiagnosticsText(serverDiag=null){
-    const last=brainMicLastError;
-    const recognition=Boolean(window.SpeechRecognition||window.webkitSpeechRecognition);
-    const localModel=Boolean(brainLocalModel);
-    const track=brainMicTrack;
-    const lines=[
-      'JLR ADAM MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.10.0'),
-      'Time: '+new Date().toISOString(),
-      'Browser: '+String(navigator.userAgent||'unknown'),
-      'SpeechRecognition: '+String(recognition),
-      'Vosk library: '+String(Boolean(window.Vosk)),
-      'Vosk model ready: '+String(localModel),
-      'Selected mic: '+brainMicLabel(),
-      'Mic track: '+String(track?.readyState||'none'),
-      'Last code: '+String(last?.code||'none'),
-      'Last stage: '+String(last?.stage||'none'),
-      'Last detail: '+String(last?.detail||'none'),
-      'Audio frames: '+String(brainMicAudioFrames),
-      'Current RMS: '+Number(brainMicCurrentRms||0).toFixed(6),
-      'Peak RMS: '+Number(brainMicPeakRms||0).toFixed(6),
-      'Last signal age ms: '+String(brainMicLastSignalAt?Date.now()-brainMicLastSignalAt:'none'),
-      'Last partial: '+String(brainMicLastPartial||'none'),
-      'Last final: '+String(brainMicLastFinal||'none'),
-      'Voice active now: '+String(brainVoiceActive()),
-      'Suppressed transcripts: '+String(brainMicSuppressedTranscripts),
-      'Voice mode: '+String(window.jlrVoiceMode||'unknown'),
-      'Voice profile: '+String(window.jlrVoiceProfile||'unknown'),
-      'Voice transport: '+String(window.jlrVoiceTransport||'unknown'),
-      'Voice first audio ms: '+String(window.jlrVoiceFirstAudioMs??'unknown'),
-      'Voice last error: '+String(window.jlrVoiceLastError||'none'),
-    ];
-    try{
-      const runtime=window.jlrVoiceRuntimeStatus?.();
-      if(runtime){
-        lines.push('Voice queue running: '+String(Boolean(runtime.queueRunning)));
-        lines.push('Voice queued: '+String(runtime.queued??0));
-        lines.push('Voice queue active ms: '+String(runtime.activeForMs??0));
-        lines.push('Voice last progress ms: '+String(runtime.lastProgressMs??0));
-        lines.push('Voice recovery count: '+String(runtime.recoveryCount??0));
-        lines.push('Voice audio context: '+String(runtime.audioContext||'none'));
-        lines.push('Voice fetch active: '+String(Boolean(runtime.activeFetch)));
-        lines.push('Voice audio active: '+String(Boolean(runtime.activeAudio)));
-      }
-    }catch(error){}
-
-    if(serverDiag){
-      lines.push('Server speech model cached: '+String(Boolean(serverDiag.modelCached)));
-      lines.push('Server model bytes: '+String(serverDiag.modelBytes||0));
-      lines.push('Server model source: '+String(serverDiag.modelSource||'none'));
-      lines.push('Server model in flight: '+String(Boolean(serverDiag.modelLoadInFlight)));
-      lines.push('Server model last error: '+String(serverDiag.modelLastError||'none'));
-      const worker=serverDiag.voiceWorker||{};
-      lines.push('Voice worker reachable: '+String(Boolean(worker.reachable)));
-      lines.push('Voice worker latency ms: '+String(worker.latencyMs??'unknown'));
-      lines.push('Voice worker version: '+String(worker.workerVersion||'unknown'));
-      lines.push('Voice worker streaming: '+String(Boolean(worker.streaming)));
-      lines.push('Voice worker stable streaming: '+String(Boolean(worker.stableStreaming)));
-      lines.push('Voice worker streaming modes: '+String(Array.isArray(worker.streamingModes)?worker.streamingModes.join(','):'unknown'));
-    }
-    lines.push('Recent stages:');
-    for(const row of brainMicDiagTrail.slice(0,12))lines.push(row.at+' | '+row.code+' | '+row.stage+' | '+row.detail);
-    return lines.join('\n');
-  }
-  async function runBrainMicDiagnostic(copy=true){
-    let serverDiag=null;
-    try{serverDiag=await api('/api/tracker/speech/diagnostics')}catch(error){
-      brainRecordMicDiag('MIC-D901','SERVER_DIAGNOSTIC',String(error?.message||error));
-    }
-    const text=brainMicDiagnosticsText(serverDiag);
-    window.jlrLastMicDiagnostics=text;
-    if(copy){
-      try{
-        await navigator.clipboard.writeText(text);
-        toast('Mic diagnostics copied.');
-      }catch(error){
-        console.info(text);
-        toast('Mic diagnostics printed to browser console.');
-      }
-    }
-    return text;
-  }
-  function showBrainDiagnostics(report){
-    const text=String(report||'No diagnostics available.');
-    const reply=$('brainReply');
-    if(reply){
-      reply.textContent=text;
-      reply.classList.add('diagnostic-report');
-    }
-    const panel=$('brainMicDiagnostic');
-    panel?.classList.remove('hidden');
-    panel?.classList.add('info');
-    if($('brainMicErrorCode'))$('brainMicErrorCode').textContent='DIAGNOSTICS';
-    if($('brainMicErrorStage'))$('brainMicErrorStage').textContent='LIVE REPORT';
-    if($('brainMicErrorDetail'))$('brainMicErrorDetail').textContent='Live Adam microphone and custom-voice diagnostics are shown below. Use COPY DIAGNOSTICS to copy the full report.';
-  }
-  function brainDiagnosticsVoiceSummary(){
-    const mic=brainMicTrack?.readyState||'none';
-    const model=brainLocalModel?'ready':'not ready';
-    const mode=String(window.jlrVoiceMode||'unknown');
-    const profile=String(window.jlrVoiceProfile||'unknown');
-    const error=String(window.jlrVoiceLastError||'none');
-    const shortError=error==='none'?'No custom voice error is currently recorded.':'The last custom voice error is '+error.slice(0,180)+'.';
-    return 'Diagnostics are displayed. Microphone track is '+mic+'. Local speech model is '+model+'. Custom voice mode is '+mode+', profile '+profile+'. '+shortError;
-  }
   function appraisalIsk(value){
     const n=Math.max(0,Number(value)||0);
     if(n>=1e12)return (n/1e12).toFixed(2)+'T';
@@ -1088,781 +875,6 @@
     }catch(error){toast(String(error?.message||error))}
   }
 
-  function brainSetListen(status,hint=''){
-    if($('brainListenStatus'))$('brainListenStatus').textContent=status;
-    if($('brainListenHint')&&hint)$('brainListenHint').textContent=hint;
-    $('brainListenPanel')?.classList.toggle('active',brainMicWanted);
-  }
-  async function brainSpeakBriefing(){
-    const briefing=await api('/api/tracker/brain/briefing?force=1');
-    const text=String(briefing?.text||'Tracker briefing ready.');
-    if($('brainReply'))$('brainReply').textContent=text;
-    await speakBrainAnswer(text,'briefing',{});
-  }
-  async function handleBrainCommand(transcript){
-    const heard=String(transcript||'').trim();
-    if(!heard)return;
-    if($('brainHeard'))$('brainHeard').textContent='HEARD: “'+heard+'”';
-    const command=heard.toLowerCase().replace(/^adam[\s,.:;-]*/,'').trim();
-    if(!command){
-      brainConversationUntil=Date.now()+brainConversationMs();
-      brainSetListen('MIC ON','Listening for your question.');
-      return;
-    }
-    brainConversationUntil=Date.now()+brainConversationMs();
-    try{
-      if(/\b(diagnostic|diagnostics|diag|voice report|mic report|microphone report|speech report|system report|troubleshoot|troubleshooting)\b/.test(command)){
-        brainSetListen('ADAM DIAGNOSTICS','Collecting microphone and custom-voice status…');
-        const report=await runBrainMicDiagnostic(false);
-        showBrainDiagnostics(report);
-        const summary=brainDiagnosticsVoiceSummary();
-        await speakBrainAnswer(summary,'brain',{text:summary});
-        return;
-      }
-      if(/^(?:stop|cancel|quiet|stop speaking|be quiet)[.!?]*$/.test(command)){
-        if(typeof window.jlrStopFighterAlarm==='function')window.jlrStopFighterAlarm();
-        const answer='Stopped.';
-        if($('brainReply'))$('brainReply').textContent=answer;
-        await speakBrainAnswer(answer,'brain',{text:answer});
-        return;
-      }
-      if(/\b(repeat|say that again)\b/.test(command)){
-        const row=brainSpeechHistory[0];
-        if(!row){
-          const answer='Nothing to repeat yet.';
-          if($('brainReply'))$('brainReply').textContent=answer;
-          await speakBrainAnswer(answer,'brain',{text:answer});
-          return;
-        }
-        if($('brainReply'))$('brainReply').textContent=row.text;
-        await speakBrainAnswer(row.text,'repeat',{text:row.text});
-        return;
-      }
-      if(/\bwhy\b/.test(command)){
-        const system=brainLastSystem||selectedSystem;
-        if(!system){
-          const answer='No system context yet.';
-          if($('brainReply'))$('brainReply').textContent=answer;
-          await speakBrainAnswer(answer,'brain',{text:answer});
-          return;
-        }
-        const explanation=await api('/api/tracker/brain/why?system='+encodeURIComponent(system));
-        brainLastSystem=system;
-        const answer=String(explanation?.summary||explanation?.voice||'');
-        if($('brainReply'))$('brainReply').textContent=answer;
-        await speakBrainAnswer(explanation?.voice||answer,'why',{system});
-        return;
-      }
-
-      if(/\b(?:highest priority|first priority|top priority|which issue)\b/.test(command)&&state?.trackerBrain?.issues?.length){
-        const issue=state.trackerBrain.issues.find(row=>row.system)||state.trackerBrain.issues[0];
-        if(issue?.system)brainLastSystem=String(issue.system);
-        const answer=String(issue?.voice||issue?.reason||issue?.title||'No priority issue.');
-        if($('brainReply'))$('brainReply').textContent=answer;
-        await speakBrainAnswer(answer,'brain',{text:answer});
-        return;
-      }
-      if(/\b(?:brief|briefing|status update|give me an update|what changed|anything else|what needs attention)\b/.test(command)
-        &&!/\b(?:closest|nearest|nearby|scan|system|field)\b/.test(command)){
-        await brainSpeakBriefing();
-        return;
-      }
-
-      brainSetListen('ADAM THINKING','Checking JLR data and EVE location when needed…');
-      const response=await api('/api/tracker/brain/ask',{
-        method:'POST',
-        body:JSON.stringify({question:command,characterId:scanCharacterId,payoutPct:Number(fleetSettings.payout),currentTab:activeTab}),
-      });
-      const answer=String(response?.text||'I do not have an answer for that yet.');
-      const spokenAnswer=String(response?.voiceText||answer);
-      if($('brainReply')){
-        $('brainReply').classList.remove('diagnostic-report');
-        $('brainReply').textContent=answer;
-      }
-      brainConversationUntil=Date.now()+brainConversationMs();
-      await speakBrainAnswer(spokenAnswer,'brain',{text:spokenAnswer});
-    }catch(error){
-      const answer=String(error?.message||error||'Tracker could not answer that.');
-      if($('brainReply'))$('brainReply').textContent=answer;
-      await speakBrainAnswer(answer,'brain',{text:answer});
-    }
-  }
-  function brainMicLabel(deviceId=brainMicDeviceId){
-    if(!deviceId||deviceId==='default')return 'System default microphone';
-    const device=brainMicDevices.find(row=>row.deviceId===deviceId);
-    return String(device?.label||'Selected microphone');
-  }
-  function renderBrainMicSelect(){
-    const select=$('brainMicDevice');
-    if(!select)return;
-    const current=brainMicDeviceId||'default';
-    const fingerprint=current+'::'+brainMicDevices.map(row=>String(row.deviceId||'')+'|'+String(row.label||'')).join('~');
-    if(select.dataset.micFingerprint===fingerprint){
-      select.value=current;
-      return;
-    }
-    select.textContent='';
-    const systemDefault=document.createElement('option');
-    systemDefault.value='default';
-    systemDefault.textContent='SYSTEM DEFAULT';
-    select.appendChild(systemDefault);
-    const seen=new Set(['default','communications']);
-    let unnamed=0;
-    for(const device of brainMicDevices){
-      const id=String(device?.deviceId||'');
-      if(!id||seen.has(id))continue;
-      seen.add(id);
-      const option=document.createElement('option');
-      option.value=id;
-      option.textContent=String(device?.label||('MICROPHONE '+(++unnamed)));
-      select.appendChild(option);
-    }
-    if(current!=='default'&&!seen.has(current)){
-      const saved=document.createElement('option');
-      saved.value=current;
-      saved.textContent='SAVED MICROPHONE — RECONNECTING';
-      select.appendChild(saved);
-    }
-    select.value=current;
-    select.dataset.micFingerprint=fingerprint;
-  }
-  async function refreshBrainMicrophones(){
-    if(!navigator.mediaDevices?.enumerateDevices){
-      brainMicDevices=[];
-      renderBrainMicSelect();
-      return [];
-    }
-    try{
-      const devices=await navigator.mediaDevices.enumerateDevices();
-      brainMicDevices=devices.filter(device=>device.kind==='audioinput');
-    }catch(error){
-      console.warn('JLR microphone list unavailable.',error);
-      brainMicDevices=[];
-    }
-    renderBrainMicSelect();
-    return brainMicDevices;
-  }
-  function stopBrainMicStream(){
-    const stream=brainMicStream;
-    brainMicStream=null;
-    brainMicTrack=null;
-    if(stream){
-      try{stream.getTracks().forEach(track=>track.stop())}catch{}
-    }
-  }
-  function scheduleBrainMicRestart(delay=700){
-    if(brainMicRestartTimer)clearTimeout(brainMicRestartTimer);
-    brainMicRestartTimer=setTimeout(()=>{
-      brainMicRestartTimer=null;
-      startBrainListening();
-    },Math.max(100,Number(delay)||700));
-  }
-  async function ensureBrainMicTrack(force=false){
-    if(!ADAM_VOICE_ENABLED)return null;
-    if(!navigator.mediaDevices?.getUserMedia)return null;
-    if(!force&&brainMicTrack?.readyState==='live')return brainMicTrack;
-    stopBrainMicStream();
-    const selected=brainMicDeviceId||'default';
-    brainSetListen('MIC STARTING','Opening '+brainMicLabel(selected)+'…');
-    const speechAudio={echoCancellation:true,noiseSuppression:true,channelCount:1};
-    const audio=selected==='default'?speechAudio:{...speechAudio,deviceId:{exact:selected}};
-    const stream=await navigator.mediaDevices.getUserMedia({audio});
-    const track=stream.getAudioTracks()[0]||null;
-    if(!track){
-      try{stream.getTracks().forEach(row=>row.stop())}catch{}
-      throw brainMicCodeError('MIC-E203','MIC_TRACK','No live microphone track was returned.');
-    }
-    brainMicStream=stream;
-    brainMicTrack=track;
-    brainMicTrackMutedAt=track.muted?Date.now():0;
-    track.addEventListener('ended',()=>{
-      if(brainMicTrack!==track||!brainMicWanted)return;
-      brainRecordMicDiag('MIC-I611','LONG_UPTIME_RECOVERY','Microphone track ended; reopening the selected microphone.');
-      stopBrainLocalCapture(true);
-      scheduleBrainMicRestart(500);
-    },{once:true});
-    track.addEventListener('mute',()=>{
-      if(brainMicTrack===track)brainMicTrackMutedAt=Date.now();
-    });
-    track.addEventListener('unmute',()=>{
-      if(brainMicTrack===track)brainMicTrackMutedAt=0;
-    });
-    await refreshBrainMicrophones();
-    return track;
-  }
-  function brainVoiceActive(){
-    try{return Boolean(typeof window.jlrVoiceIsActive==='function'&&window.jlrVoiceIsActive())}
-    catch{return false}
-  }
-  function paintBrainMicLevel(rms){
-    const bar=$('brainMicLevelFill');
-    const text=$('brainMicLevelText');
-    if(!bar&&!text)return;
-    const normalized=Math.max(0,Math.min(1,Number(rms||0)*18));
-    if(bar)bar.style.width=Math.max(2,Math.round(normalized*100))+'%';
-    if(text){
-      if(normalized>.12)text.textContent='VOICE';
-      else if(normalized>.025)text.textContent='SIGNAL';
-      else text.textContent='QUIET';
-    }
-  }
-  function handleBrainPartialTranscript(partial){
-    const heard=String(partial||'').trim();
-    if(!heard)return;
-    brainMicLastPartial=heard;
-    if($('brainHeard'))$('brainHeard').textContent='HEARING: “'+heard+'”';
-    const lower=heard.toLowerCase();
-    const wakeMatch=/\badam\b/.exec(lower);
-    const localVoiceReady=!brainLocalRecognizer||Date.now()-brainMicVoiceLikeAt<1500;
-    if(!wakeMatch||!localVoiceReady||Date.now()<brainMicWakeDebounceUntil||brainVoiceActive())return;
-    const wake=wakeMatch.index;
-    brainMicWakeDebounceUntil=Date.now()+1500;
-    brainConversationUntil=Date.now()+brainConversationMs();
-    brainRecordMicDiag('MIC-I501','WAKE_PARTIAL','Wake word heard in partial transcript: '+heard);
-    brainSetListen('ADAM AWAKE','Wake word detected. Ask your question.');
-    if($('brainReply'))$('brainReply').textContent='Listening…';
-  }
-  function handleBrainTranscript(transcript){
-    const heard=String(transcript||'').trim();
-    if(!heard)return;
-    if(brainLocalRecognizer&&Date.now()-brainMicVoiceLikeAt>=1500){
-      brainMicSuppressedTranscripts++;
-      brainRecordMicDiag('MIC-I504','NOISE_SUPPRESS','Ignored local transcript without sustained voice energy: '+heard);
-      return;
-    }
-    brainMicLastFinal=heard;
-    brainRecordMicDiag('MIC-I502','FINAL_TRANSCRIPT',heard);
-    if(brainVoiceActive()){
-      brainMicSuppressedTranscripts++;
-      brainRecordMicDiag('MIC-I503','VOICE_SUPPRESS','Ignored transcript while Tracker voice was active: '+heard);
-      return;
-    }
-    if($('brainHeard'))$('brainHeard').textContent='HEARD: “'+heard+'”';
-    const lower=heard.toLowerCase();
-    const wakeMatch=/\badam\b/.exec(lower);
-    if(wakeMatch){
-      handleBrainCommand(heard.slice(wakeMatch.index));
-    }else if(Date.now()<brainConversationUntil){
-      handleBrainCommand(heard);
-    }
-  }
-  function stopBrainLocalCapture(stopStream=false){
-    brainLocalSession++;
-    const recognizer=brainLocalRecognizer;
-    brainLocalRecognizer=null;
-    try{recognizer?.remove?.()}catch{}
-    try{brainLocalSource?.disconnect()}catch{}
-    try{brainLocalProcessor?.disconnect()}catch{}
-    try{brainLocalMute?.disconnect()}catch{}
-    brainLocalSource=null;
-    brainLocalProcessor=null;
-    brainLocalMute=null;
-    const context=brainLocalAudioContext;
-    brainLocalAudioContext=null;
-    if(context&&context.state!=='closed'){
-      try{void context.close()}catch{}
-    }
-    if(stopStream)stopBrainMicStream();
-  }
-  async function resetBrainVoskStorageOnce(){
-    const marker='classic-vosk-0.0.8-official-zip-jlr1';
-    if(localStorage.getItem('jlrVoskStorageVersion')===marker)return;
-    if(!('indexedDB' in window))throw brainMicCodeError('MIC-E102','INDEXEDDB','IndexedDB is unavailable in this browser session.');
-
-    try{
-      brainRecordMicDiag('MIC-I102','INDEXEDDB','Checking Vosk browser storage before first load.');
-      if(typeof indexedDB.databases==='function'){
-        const dbs=await indexedDB.databases();
-        const voskNames=(dbs||[]).map(row=>String(row?.name||'')).filter(name=>/vosk/i.test(name));
-        for(const name of voskNames){
-          await new Promise(resolve=>{
-            const request=indexedDB.deleteDatabase(name);
-            request.onsuccess=request.onerror=request.onblocked=()=>resolve();
-          });
-          brainRecordMicDiag('MIC-I103','INDEXEDDB_RESET','Cleared old Vosk database: '+name);
-        }
-      }
-
-      await new Promise((resolve,reject)=>{
-        const request=indexedDB.open('jlr-vosk-storage-probe',1);
-        request.onupgradeneeded=()=>{try{request.result.createObjectStore('probe')}catch{}};
-        request.onerror=()=>reject(request.error||new Error('IndexedDB open failed.'));
-        request.onsuccess=()=>{
-          const db=request.result;
-          try{
-            const tx=db.transaction('probe','readwrite');
-            tx.objectStore('probe').put('ok','status');
-            tx.oncomplete=()=>{db.close();indexedDB.deleteDatabase('jlr-vosk-storage-probe');resolve()};
-            tx.onerror=()=>{db.close();reject(tx.error||new Error('IndexedDB write failed.'))};
-            tx.onabort=()=>{db.close();reject(tx.error||new Error('IndexedDB write aborted.'))};
-          }catch(error){
-            db.close();
-            reject(error);
-          }
-        };
-      });
-      localStorage.setItem('jlrVoskStorageVersion',marker);
-      brainRecordMicDiag('MIC-I104','INDEXEDDB','Vosk browser storage is writable.');
-    }catch(error){
-      throw brainMicCodeError('MIC-E103','INDEXEDDB',String(error?.message||error||'IndexedDB storage test failed.'));
-    }
-  }
-
-  async function loadBrainLocalModel(){
-    if(brainLocalModel)return brainLocalModel;
-    if(brainLocalModelPromise)return brainLocalModelPromise;
-
-    brainLocalModelPromise=(async()=>{
-      await resetBrainVoskStorageOnce();
-
-      brainSetListen('MIC AI LOADING • MIC-I110','Loading JLR speech runtime…');
-      const started=Date.now();
-      while(!(window.Vosk&&typeof window.Vosk.Model==='function')){
-        if(Date.now()-started>15000){
-          throw brainMicCodeError('MIC-E104','VOSK_RUNTIME','vosk-browser 0.0.8 did not expose the Model API.');
-        }
-        await new Promise(resolve=>setTimeout(resolve,100));
-      }
-      brainRecordMicDiag('MIC-I110','VOSK_RUNTIME','vosk-browser 0.0.8 runtime ready.');
-
-      // Important: use the original Vosk ZIP. The old repacked .tar.gz model
-      // can hang during browser extraction/IDBFS even when the download succeeds.
-      const modelUrl=location.origin+'/vendor/vosk/model-en-us-0.15.zip?v=1';
-      brainSetListen('MIC AI LOADING • MIC-I120','Loading the official offline English model…');
-      brainRecordMicDiag('MIC-I120','VOSK_MODEL','Starting official ZIP model load through JLR: '+modelUrl);
-
-      const model=await new Promise((resolve,reject)=>{
-        let settled=false;
-        let instance=null;
-        let timer=null;
-        const finish=(ok,value)=>{
-          if(settled)return;
-          settled=true;
-          if(timer)clearTimeout(timer);
-          if(ok){
-            brainRecordMicDiag('MIC-I129','VOSK_MODEL','Official ZIP model loaded successfully.');
-            resolve(value);
-          }else{
-            try{instance?.terminate?.()}catch{}
-            reject(value instanceof Error?value:brainMicCodeError('MIC-E129','VOSK_MODEL',String(value||'Model failed.')));
-          }
-        };
-
-        try{
-          instance=new window.Vosk.Model(modelUrl,-1);
-          const worker=instance?.worker||instance?._worker||null;
-          if(worker&&typeof worker.addEventListener==='function'){
-            worker.addEventListener('error',event=>{
-              finish(false,brainMicCodeError('MIC-E122','VOSK_WORKER',String(event?.message||event?.error?.message||'Speech worker crashed.')));
-            },{once:true});
-            worker.addEventListener('messageerror',()=>{
-              finish(false,brainMicCodeError('MIC-E123','VOSK_WORKER_MESSAGE','Speech worker returned an unreadable message.'));
-            },{once:true});
-          }
-          instance.on('load',message=>{
-            if(message?.result)finish(true,instance);
-            else finish(false,brainMicCodeError('MIC-E124','VOSK_MODEL_LOAD','Speech model returned load=false.'));
-          });
-          instance.on('error',message=>{
-            const detail=String(message?.error||message?.message||'Unknown Vosk worker error.');
-            let code='MIC-E126',stage='VOSK_MODEL_ERROR';
-            if(/content security policy|unsafe-eval|violates the following content security/i.test(detail)){code='MIC-E124';stage='VOSK_CSP'}
-            else if(/sync file system|indexeddb|idb|fs error/i.test(detail)){code='MIC-E125';stage='VOSK_INDEXEDDB'}
-            else if(/archive|extract|zip|tar/i.test(detail)){code='MIC-E128';stage='VOSK_ARCHIVE'}
-            finish(false,brainMicCodeError(code,stage,detail));
-          });
-          timer=setTimeout(()=>finish(false,brainMicCodeError('MIC-E121','VOSK_MODEL_TIMEOUT','Official ZIP model did not finish loading within 3 minutes.')),180000);
-        }catch(error){
-          finish(false,brainMicCodeError('MIC-E127','VOSK_MODEL_CONSTRUCTOR',String(error?.message||error||'Could not create Vosk model.')));
-        }
-      });
-
-      try{model.setLogLevel?.(-1)}catch{}
-      brainLocalModel=model;
-      return model;
-    })().catch(error=>{
-      brainLocalModelPromise=null;
-      throw error;
-    });
-
-    return brainLocalModelPromise;
-  }
-  async function startBrainLocalListening(reason='LOCAL AI'){
-    if(!ADAM_VOICE_ENABLED){brainMicWanted=false;return;}
-    if(brainLocalRecognizer)return;
-    brainMicWanted=true;
-    localStorage.setItem('jlrBrainMicArmed','true');
-    const session=++brainLocalSession;
-    try{
-      await ensureBrainMicTrack(false);
-      if(session!==brainLocalSession||!brainMicWanted)return;
-      const model=await loadBrainLocalModel();
-      if(session!==brainLocalSession||!brainMicWanted)return;
-      const AudioContextClass=window.AudioContext||window.webkitAudioContext;
-      if(!AudioContextClass)throw brainMicCodeError('MIC-E401','WEB_AUDIO','This browser does not expose Web Audio.');
-      const context=new AudioContextClass();
-      brainLocalAudioContext=context;
-      if(context.state==='suspended'){
-        try{await context.resume()}catch{}
-      }
-      if(session!==brainLocalSession||!brainMicWanted){
-        try{await context.close()}catch{}
-        return;
-      }
-      const stream=brainMicStream;
-      if(!stream)throw new Error('Microphone stream is unavailable.');
-      let recognizer=null;
-      try{recognizer=new model.KaldiRecognizer(context.sampleRate)}
-      catch(error){throw brainMicCodeError('MIC-E402','RECOGNIZER_CREATE',String(error?.message||error||'Could not create local speech recognizer.'))}
-      brainLocalRecognizer=recognizer;
-      try{recognizer.setWords?.(false)}catch{}
-      recognizer.on('result',message=>{
-        if(session!==brainLocalSession)return;
-        const transcript=String(message?.result?.text||'').trim();
-        if(transcript)handleBrainTranscript(transcript);
-      });
-      recognizer.on('partialresult',message=>{
-        if(session!==brainLocalSession)return;
-        const partial=String(message?.result?.partial||'').trim();
-        if(partial)handleBrainPartialTranscript(partial);
-      });
-      const source=context.createMediaStreamSource(stream);
-      const processor=context.createScriptProcessor(4096,1,1);
-      const mute=context.createGain();
-      mute.gain.value=0;
-      brainMicAudioFrames=0;
-      brainMicWatchdogLastFrameAt=Date.now();
-      brainMicCurrentRms=0;
-      brainMicPeakRms=0;
-      brainMicLastSignalAt=0;
-      brainMicVoiceLikeAt=0;
-      brainMicVoiceFrames=0;
-      brainMicNoiseFloor=0.0015;
-      brainMicLastPartial='';
-      brainMicLastFinal='';
-      brainMicSuppressedTranscripts=0;
-      paintBrainMicLevel(0);
-      processor.onaudioprocess=event=>{
-        if(session!==brainLocalSession||brainLocalRecognizer!==recognizer)return;
-        const buffer=event.inputBuffer;
-        try{
-          const data=buffer.getChannelData(0);
-          let sum=0;
-          for(let i=0;i<data.length;i++)sum+=data[i]*data[i];
-          const rms=Math.sqrt(sum/Math.max(1,data.length));
-          brainMicAudioFrames++;
-          brainMicWatchdogLastFrameAt=Date.now();
-          brainMicCurrentRms=rms;
-          if(rms>brainMicPeakRms)brainMicPeakRms=rms;
-          if(rms>0.002)brainMicLastSignalAt=Date.now();
-          const voiceThreshold=Math.max(0.006,brainMicNoiseFloor*3.4);
-          if(rms<voiceThreshold*.75)brainMicNoiseFloor=brainMicNoiseFloor*.985+rms*.015;
-          if(rms>=voiceThreshold){
-            brainMicVoiceFrames=Math.min(8,brainMicVoiceFrames+1);
-            if(brainMicVoiceFrames>=3)brainMicVoiceLikeAt=Date.now();
-          }else{
-            brainMicVoiceFrames=Math.max(0,brainMicVoiceFrames-1);
-          }
-          if(performance.now()-brainMicLastMeterPaint>120){
-            brainMicLastMeterPaint=performance.now();
-            paintBrainMicLevel(rms);
-          }
-        }catch(error){}
-        // Keep feeding the recognizer even while Tracker is speaking. Transcript
-        // handling is suppressed instead; this prevents a stale voice-active flag
-        // from making the microphone silently stop processing audio.
-        try{recognizer.acceptWaveform(buffer)}catch(error){
-          console.debug('JLR local speech frame skipped.',error);
-          brainRecordMicDiag('MIC-E403','AUDIO_FRAME',String(error?.message||error).slice(0,220));
-        }
-      };
-      source.connect(processor);
-      processor.connect(mute);
-      mute.connect(context.destination);
-      brainLocalSource=source;
-      brainLocalProcessor=processor;
-      brainLocalMute=mute;
-      brainNetworkFailures=0;
-      brainSpeechStartHangs=0;
-      brainClearMicError();
-      brainRecordMicDiag('MIC-OK','LISTENING',reason+' • '+brainMicLabel()+' • '+context.sampleRate+' Hz');
-      brainSetListen('MIC ON','MIC-OK • '+reason+' • '+brainMicLabel()+' • Say “Tracker” to wake the assistant.');
-      setTimeout(()=>{
-        if(session!==brainLocalSession||brainLocalRecognizer!==recognizer)return;
-        if(brainMicAudioFrames===0){
-          brainSetMicError(brainMicCodeError('MIC-E204','AUDIO_PIPELINE','Microphone track is live, but no Web Audio frames are arriving.'),'Choose another microphone or click TALK TO ADAM to reopen it.');
-        }
-      },5000);
-    }catch(error){
-      if(session!==brainLocalSession)return;
-      stopBrainLocalCapture(false);
-      const name=String(error?.name||'');
-      if(name==='NotAllowedError'||name==='SecurityError'){
-        brainSetMicError(brainMicCodeError('MIC-E201','MIC_PERMISSION','Microphone permission was blocked.'),'Allow microphone access, then click TALK TO ADAM.');
-        return;
-      }
-      if((name==='NotFoundError'||name==='OverconstrainedError')&&brainMicDeviceId!=='default'){
-        const missing=brainMicLabel();
-        brainMicDeviceId='default';
-        localStorage.setItem('jlrBrainMicDeviceId','default');
-        stopBrainMicStream();
-        renderBrainMicSelect();
-        brainSetMicError(brainMicCodeError('MIC-E202','MIC_DEVICE',missing+' is unavailable.'),'Tracker is falling back to the system default microphone.');
-        scheduleBrainMicRestart(900);
-        return;
-      }
-      console.warn('JLR local speech engine failed.',error);
-      brainSetMicError(error,'Click TALK TO ADAM to retry, then use COPY DIAGNOSTICS if it fails again.');
-    }
-  }
-  async function ensureBrainLongRunHealth(reason='watchdog'){
-    if(!brainMicWanted||document.hidden||brainLongUptimeRecoveryBusy)return;
-    brainLongUptimeRecoveryBusy=true;
-    try{
-      try{await window.jlrWarmVoice?.(reason)}catch(error){}
-
-      if(brainLocalRecognizer){
-        const context=brainLocalAudioContext;
-        if(context?.state==='suspended'){
-          try{await context.resume()}catch(error){}
-        }
-        const trackLive=brainMicTrack?.readyState==='live';
-        const frameAge=brainMicWatchdogLastFrameAt?Date.now()-brainMicWatchdogLastFrameAt:Infinity;
-        const mutedTooLong=brainMicTrackMutedAt&&Date.now()-brainMicTrackMutedAt>30000;
-        const stalled=!trackLive||!context||context.state!=='running'||frameAge>30000||mutedTooLong;
-        if(stalled){
-          const detail='Auto-recovering stale local speech pipeline • track '+String(brainMicTrack?.readyState||'none')+' • audio '+String(context?.state||'none')+' • last frame '+Math.round(frameAge/1000)+'s ago';
-          brainRecordMicDiag('MIC-I612','LONG_UPTIME_RECOVERY',detail);
-          stopBrainLocalCapture(true);
-          await startBrainLocalListening('JLR LOCAL AI • AUTO RECOVERY');
-        }
-        return;
-      }
-
-      if(brainRecognition){
-        if(brainRecognition.__jlrStarted===true)return;
-        brainRecordMicDiag('MIC-I613','LONG_UPTIME_RECOVERY','Browser speech recognizer exists but is not started; resetting it.');
-        brainRecognition.__jlrRetry=false;
-        const stale=brainRecognition;
-        brainRecognition=null;
-        try{stale.abort()}catch{try{stale.stop()}catch{}}
-        scheduleBrainMicRestart(300);
-        return;
-      }
-
-      brainRecordMicDiag('MIC-I614','LONG_UPTIME_RECOVERY','No active speech recognizer found; restarting Tracker microphone.');
-      await startBrainListening();
-    }catch(error){
-      console.warn('Tracker long-uptime recovery failed.',error);
-      brainRecordMicDiag('MIC-E610','LONG_UPTIME_RECOVERY',String(error?.message||error).slice(0,220));
-    }finally{
-      brainLongUptimeRecoveryBusy=false;
-    }
-  }
-
-  function startBrainLongUptimeWatchdog(){
-    if(brainMicWatchdogTimer)clearInterval(brainMicWatchdogTimer);
-    brainMicWatchdogTimer=setInterval(()=>{
-      if(document.hidden||!brainMicWanted)return;
-      void ensureBrainLongRunHealth('30-second uptime watchdog');
-    },30000);
-  }
-
-  async function startBrainListening(){
-    if(!ADAM_VOICE_ENABLED){brainMicWanted=false;localStorage.setItem('jlrBrainMicArmed','false');return;}
-    const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
-    const ua=String(navigator.userAgent||'');
-    const isOpera=ua.includes('OPR/')||ua.includes('Opera/');
-    if(isOpera||!Recognition){
-      brainMicWanted=true;
-      localStorage.setItem('jlrBrainMicArmed','true');
-      await startBrainLocalListening(isOpera?'JLR LOCAL AI • OPERA GX':'JLR LOCAL AI');
-      return;
-    }
-    brainMicWanted=true;
-    localStorage.setItem('jlrBrainMicArmed','true');
-    if(brainRecognition)return;
-    const startToken=++brainMicStartToken;
-    if(brainMicRestartTimer){
-      clearTimeout(brainMicRestartTimer);
-      brainMicRestartTimer=null;
-    }
-    const wantsDirectTrack=brainMicDeviceId!=='default'&&!brainPreferBrowserSpeechInput;
-    let track=null;
-    try{
-      if(wantsDirectTrack){
-        track=await ensureBrainMicTrack(false);
-      }else{
-        stopBrainMicStream();
-        brainSetListen('MIC STARTING','Starting browser speech recognition…');
-      }
-    }catch(error){
-      if(startToken!==brainMicStartToken)return;
-      const name=String(error?.name||'');
-      if(name==='NotAllowedError'||name==='SecurityError'){
-        brainSetMicError(brainMicCodeError('MIC-E201','MIC_PERMISSION','Microphone permission was blocked.'),'Allow microphone access, then click TALK TO ADAM.');
-        return;
-      }
-      if((name==='NotFoundError'||name==='OverconstrainedError')&&brainMicDeviceId!=='default'){
-        const missing=brainMicLabel();
-        brainMicDeviceId='default';
-        localStorage.setItem('jlrBrainMicDeviceId','default');
-        stopBrainMicStream();
-        renderBrainMicSelect();
-        brainSetListen('MIC DEVICE LOST',missing+' is unavailable. Falling back to system default.');
-        scheduleBrainMicRestart(900);
-        return;
-      }
-      brainSetListen('MIC INPUT ERROR',String(error?.message||error||'Could not open microphone.'));
-      scheduleBrainMicRestart(1800);
-      return;
-    }
-    if(startToken!==brainMicStartToken||!brainMicWanted)return;
-    if(brainRecognition)return;
-
-    const recognition=new Recognition();
-    brainRecognition=recognition;
-    recognition.continuous=true;
-    recognition.interimResults=false;
-    recognition.lang='en-US';
-    let localSpeech=false;
-    if('processLocally' in recognition&&typeof Recognition.available==='function'){
-      try{
-        const availability=await Recognition.available({langs:['en-US'],processLocally:true});
-        if(availability==='available'){
-          recognition.processLocally=true;
-          localSpeech=true;
-        }
-      }catch(error){
-        console.debug('JLR on-device speech recognition unavailable.',error);
-      }
-    }
-    let trackBound=Boolean(track)&&brainMicDeviceId!=='default'&&!brainPreferBrowserSpeechInput;
-    if(!trackBound&&track)stopBrainMicStream();
-    recognition.__jlrRetry=true;
-    recognition.__jlrStarted=false;
-    recognition.onstart=()=>{
-      if(recognition.__jlrStartWatchdog)clearTimeout(recognition.__jlrStartWatchdog);
-      recognition.__jlrStarted=true;
-      brainNetworkFailures=0;
-      brainSpeechStartHangs=0;
-      const input=trackBound?brainMicLabel():'Browser default microphone';
-      const engine=localSpeech?'ON-DEVICE • ':(isOpera?'OPERA SPEECH • ':'');
-      brainSetListen('MIC ON',engine+input+' • Say “Tracker” to wake the assistant. Follow-up questions work briefly without repeating it.');
-    };
-    recognition.onerror=event=>{
-      if(recognition.__jlrStartWatchdog)clearTimeout(recognition.__jlrStartWatchdog);
-      const code=String(event?.error||'microphone error');
-      if(code==='not-allowed'||code==='service-not-allowed'){
-        recognition.__jlrRetry=false;
-        brainSetMicError(brainMicCodeError('MIC-E201','MIC_PERMISSION','Microphone permission was blocked.'),'Allow microphone access, then click TALK TO ADAM.');
-        return;
-      }
-      if(code==='audio-capture'){
-        brainSetMicError(brainMicCodeError('MIC-E303','BROWSER_CAPTURE',brainMicLabel()+' is not providing audio.'),'Tracker will retry automatically.');
-        return;
-      }
-      if(code==='no-speech'){
-        const input=trackBound?brainMicLabel():'Browser default microphone';
-        brainSetListen('MIC ON',input+' • Say “Tracker” to wake the assistant.');
-        return;
-      }
-      if(code==='network'){
-        recognition.__jlrRetry=false;
-        brainNetworkFailures+=1;
-        if(trackBound){
-          brainPreferBrowserSpeechInput=true;
-          brainSetListen('MIC RETRYING','Selected microphone opened, but direct-track speech failed. Retrying with the browser speech input.');
-          if(brainRecognition===recognition)brainRecognition=null;
-          try{recognition.abort()}catch{}
-          scheduleBrainMicRestart(500);
-          return;
-        }
-        brainRecordMicDiag('MIC-E301','BROWSER_SPEECH_NETWORK','Browser speech service returned a network error; switching to JLR local speech.');
-        brainSetListen('MIC AI FALLBACK • MIC-E301','Browser speech service is unavailable. Switching Tracker to JLR local speech recognition…');
-        if(brainRecognition===recognition)brainRecognition=null;
-        try{recognition.abort()}catch{}
-        stopBrainMicStream();
-        setTimeout(()=>{ if(brainMicWanted)void startBrainLocalListening('JLR LOCAL AI • BROWSER FALLBACK'); },250);
-        return;
-      }
-      brainSetListen('MIC '+code.toUpperCase(),'Tracker will retry automatically.');
-    };
-    recognition.onresult=event=>{
-      for(let i=event.resultIndex;i<event.results.length;i++){
-        if(!event.results[i].isFinal)continue;
-        handleBrainTranscript(String(event.results[i][0]?.transcript||''));
-      }
-    };
-    recognition.onend=()=>{
-      if(recognition.__jlrStartWatchdog)clearTimeout(recognition.__jlrStartWatchdog);
-      if(brainRecognition===recognition)brainRecognition=null;
-      if(brainMicWanted&&recognition.__jlrRetry!==false)scheduleBrainMicRestart(700);
-    };
-    try{
-      if(trackBound){
-        try{
-          recognition.start(track);
-        }catch(trackError){
-          const name=String(trackError?.name||trackError?.constructor?.name||'');
-          if(name!=='TypeError'&&name!=='NotSupportedError')throw trackError;
-          trackBound=false;
-          recognition.start();
-        }
-      }else{
-        trackBound=false;
-        recognition.start();
-      }
-      recognition.__jlrStartWatchdog=setTimeout(()=>{
-        if(brainRecognition!==recognition||recognition.__jlrStarted)return;
-        recognition.__jlrRetry=false;
-        brainSpeechStartHangs+=1;
-        if(brainRecognition===recognition)brainRecognition=null;
-        try{recognition.abort()}catch{try{recognition.stop()}catch{}}
-
-        if(trackBound){
-          brainPreferBrowserSpeechInput=true;
-        }else if(brainSpeechStartHangs>=2){
-          brainRecordMicDiag('MIC-E302','BROWSER_SPEECH_START','Browser speech recognition failed to start twice; switching to JLR local speech.');
-          brainSetListen('MIC AI FALLBACK • MIC-E302','Browser speech recognition did not start. Switching Tracker to JLR local speech recognition…');
-          stopBrainMicStream();
-          setTimeout(()=>{ if(brainMicWanted)void startBrainLocalListening('JLR LOCAL AI • STARTUP FALLBACK'); },250);
-          return;
-        }else if(brainMicDeviceId!=='default'&&brainSpeechStartHangs%2===0){
-          brainPreferBrowserSpeechInput=false;
-        }
-        brainSetListen('MIC RETRYING',trackBound
-          ?brainMicLabel()+' opened, but speech recognition did not start. Retrying with browser-managed input.'
-          :'Browser speech recognition did not start. Tracker is resetting the speech engine and retrying.');
-        scheduleBrainMicRestart(Math.min(5000,800+brainSpeechStartHangs*700));
-      },6000);
-    }catch(error){
-      if(brainRecognition===recognition)brainRecognition=null;
-      brainSetMicError(brainMicCodeError('MIC-E304','BROWSER_SPEECH_START',String(error?.message||error||'Speech recognition could not start.')),'Tracker will retry automatically.');
-      scheduleBrainMicRestart(1200);
-    }
-  }
-  function restartBrainListening(reopenMic=true,immediate=false){
-    if(!ADAM_VOICE_ENABLED){brainMicWanted=false;stopBrainLocalCapture(false);stopBrainMicStream();return;}
-    stopBrainLocalCapture(false);
-    brainMicWanted=true;
-    brainMicStartToken++;
-    if(brainMicRestartTimer){
-      clearTimeout(brainMicRestartTimer);
-      brainMicRestartTimer=null;
-    }
-    const current=brainRecognition;
-    if(current){
-      current.__jlrRetry=false;
-      try{current.abort()}catch{try{current.stop()}catch{}}
-    }
-    brainRecognition=null;
-    if(reopenMic)stopBrainMicStream();
-    brainSetListen('MIC STARTING','Opening '+brainMicLabel()+'…');
-    if(immediate)void startBrainListening();
-    else scheduleBrainMicRestart(250);
-  }
-
   function feedbackTypeLabel(type){
     return {bug:'BUG',suggestion:'FEATURE IDEA',speech:'SPEECH / VOICE',data:'DATA ISSUE',ui:'UI / UX',other:'OTHER'}[String(type||'')]||'FEEDBACK';
   }
@@ -1949,71 +961,6 @@
     if(!el)return;
     el.textContent=message;
     el.className=tone;
-  }
-
-  async function speakJlr(type,payload,fallbackText){
-    return true;
-  }
-
-  function browserSpeakTracker(text){
-    return false;
-  }
-
-  function restoreBrainListenAfterVoice(){
-    const started=Date.now();
-    const tick=()=>{
-      if(!brainMicWanted)return;
-      const active=brainVoiceActive();
-      if(!active||Date.now()-started>120000){
-        brainSetListen('MIC ON','Follow-up ready. You can keep talking briefly without saying “Tracker” again.');
-        return;
-      }
-      setTimeout(tick,150);
-    };
-    setTimeout(tick,250);
-  }
-
-  async function speakBrainAnswer(text,type='brain',payload={}){
-    const response=String(text||'').trim();
-    if(!response)return false;
-    if($('brainReply')&&!String($('brainReply').textContent||'').trim())$('brainReply').textContent=response;
-    brainSetListen(brainMicWanted?'MIC ON':'TEXT ONLY','Spoken output is disabled. Adam responses remain available as text.');
-    return true;
-  }
-
-  function scanVoiceFallback(preview){
-    const system=String(preview?.system||'current system');
-    const parts=[system+' scan synchronized.'];
-    if(preview?.tracked&&preview?.definition){
-      const ore=String(preview.definition.ore||'T3 ore');
-      parts.push(preview?.scan?.detected?ore+' deposit detected.':ore+' deposit not detected.');
-    }
-    const ice=preview?.boardScan?.ice;
-    if(ice){
-      const seen=Math.max(0,Number(ice.seen)||0),expected=Math.max(1,Number(ice.expected)||1);
-      parts.push(seen+' of '+expected+' ice fields detected.');
-    }
-    if(preview?.a0?.tracked){
-      parts.push(preview?.a0?.scan?.detected?'A zero rare asteroid site detected.':'No active A zero rare asteroid site detected.');
-    }
-    if(preview?.gasWormhole?.tracked){
-      const gasCount=Math.max(0,Number(preview?.gasWormhole?.scan?.detectedCount)||0);
-      parts.push(gasCount?gasCount+' wormhole gas signature'+(gasCount===1?'':'s')+' detected.':'No known wormhole gas signatures detected.');
-    }
-    return parts.join(' ');
-  }
-
-  function scoutFallbackText(snapshot){
-    const system=String(snapshot?.spokenSystem||snapshot?.system||'current system');
-    return 'I noticed '+String(snapshot?.characterName||'your toon')+' is in '+system+', and its scan is due. Could you send a new Probe Scanner copy when it is safe?';
-  }
-
-  function scoutShouldSpeak(snapshot,entered){
-    if(!snapshot?.tracked||!snapshot?.needsScan)return false;
-    const key=String(snapshot.system||'');
-    const last=Number(scoutVoiceCooldown.get(key)||0);
-    const cooldown=30*60*1000;
-    return !last||entered&&Date.now()-last>cooldown;
   }
 
   function renderScoutTargets(){
@@ -2232,47 +1179,6 @@
     pollScoutLocation(true);
     if(activeTab==='brain')void loadScoutTargets(false);
     scoutLocationTimer=setInterval(()=>pollScoutLocation(false),30*1000);
-  }
-
-  function queueStartupGreeting(){
-    if(localStorage.getItem('jlrBrainStartupBriefing')==='false')return;
-    if(startupGreetingQueued)return;
-    startupGreetingQueued=true;
-    if(soundEnabled)toast('🔊 Tracker voice ready — click once to activate.');
-    const trigger=async()=>{
-      window.removeEventListener('pointerdown',trigger,true);
-      window.removeEventListener('keydown',trigger,true);
-      if(!soundEnabled){startupGreetingQueued=false;return;}
-      // Keep audio.play inside this exact user gesture. Awaiting AudioContext.resume
-      // first can consume the browser's autoplay activation window.
-      if(typeof window.jlrSpeakEvent!=='function'){
-        startupGreetingQueued=false;
-        toast('🔊 JLR voice is still loading — click once more.');
-        setTimeout(queueStartupGreeting,400);
-        return;
-      }
-      if(window.jlrAutoVoiceAllowed?.()===false){startupGreetingQueued=false;return;}
-      try{
-        if(typeof window.jlrUnlockFighterAlarm==='function')window.jlrUnlockFighterAlarm();
-      }catch(error){}
-      const primary=(me?.characters||[]).find(character=>String(character.characterId)===String(me?.primaryCharacterId));
-      const mainName=String(primary?.name||me?.displayName||'pilot');
-      const played=await speakJlr('startup',{automatic:true},'Welcome back, '+mainName+'. Tracker is online.');
-      if(played){
-        const mode=String(window.jlrVoiceMode||'unknown');
-        toast(mode==='custom'?'🔊 TRACKER CUSTOM VOICE ONLINE.':mode==='fallback'?'⚠ Custom voice unavailable.':'🔊 Tracker voice played.');
-        // Give the startup line room to finish, then immediately re-check
-        // whether the Adam travel toon’s current system needs a spoken update.
-        setTimeout(()=>pollScoutLocation(true),9000);
-      }else{
-        window.jlrReleaseAutoVoice?.();
-        startupGreetingQueued=false;
-        toast('⚠ Tracker voice did not start. Click again or use the Tracker voice test.');
-        setTimeout(queueStartupGreeting,700);
-      }
-    };
-    window.addEventListener('pointerdown',trigger,true);
-    window.addEventListener('keydown',trigger,true);
   }
 
   function compactNumber(v){
@@ -2543,11 +1449,6 @@
   $('soundStatus').addEventListener('click',async()=>{
     soundEnabled=!soundEnabled;
     localStorage.setItem('jlrSoundEnabled',String(soundEnabled));
-    if(!soundEnabled){
-      window.jlrReleaseAutoVoice?.();
-      window.jlrStopVoice?.();
-      try{window.speechSynthesis?.cancel?.()}catch(error){}
-    }
     if(soundEnabled){
       unlockAudio();
       if(audio?.state==='suspended'){
@@ -2580,7 +1481,7 @@
   // Native <select> popups are drawn by the browser/OS, so moving over their
   // options does not produce page events. Use an app-owned popup for the fit
   // and booster selectors while retaining their existing change handlers.
-  const audibleSelects='#calcBoosterCharacter,#calcBoosterFitting,.fleet-fit-select,#doctrineClass,#doctrineCategory,#themeSelect,#brainVoiceEnabled,#brainStartupBriefing,#brainConversationWindow';
+  const audibleSelects='#calcBoosterCharacter,#calcBoosterFitting,.fleet-fit-select,#doctrineClass,#doctrineCategory,#themeSelect';
   let soundMenu=null, soundMenuSerial=0;
   function closeSoundMenu(refocus=false){
     if(!soundMenu)return;
@@ -6430,7 +5331,7 @@
 
   function renderAll(){if(!state)return;renderFleet();renderTop();renderTrackerBrain();renderSelect();renderBoards();renderHits();renderFleetPerformance();renderMiningVisuals();renderIceMining();renderGasHuffing();renderRanking();renderTimers();renderSelected();renderNotes();renderScanCharacters();renderCharacters();renderCalculator();renderMerIntel();}
 
-  async function refreshMe(){const p=await api('/api/me');if(me?.id&&me.id!==p.user?.id)window.jlrReleaseAutoVoice?.();me=p.user;if(me){window.jlrVoiceAccountId=String(me.id||'');$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;syncDoctrineTabAccess();syncTrackerTabAccess()}return p.authenticated}
+  async function refreshMe(){const p=await api('/api/me');me=p.user;if(me){window.jlrAccountId=String(me.id||'');$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;syncDoctrineTabAccess();syncTrackerTabAccess()}return p.authenticated}
   async function loadState(){
     const [nextState,myLedger]=await Promise.all([
       api('/api/state'),
@@ -6464,45 +5365,6 @@
     fleetPerformanceRefreshPromise=pending;
     return pending;
   }
-  function announceFieldEsiChanges(previousState,nextState){
-    if(!previousState||!nextState||!soundEnabled||window.jlrVoiceUserActivated!==true)return;
-    const queued=new Set();
-    for(const d of (nextState.source?.systems||[])){
-      const system=String(d.system||'');
-      if(!system)continue;
-      const beforeField=previousState.fields?.[system]||null;
-      const afterField=nextState.fields?.[system]||null;
-      const beforeLedger=previousState.scans?.[system]?.ledger||null;
-      const afterLedger=nextState.scans?.[system]?.ledger||null;
-      if(!afterField||!afterLedger)continue;
-
-      const beforeMined=Math.max(0,Number(beforeLedger?.minedM3SinceSite)||0);
-      const afterMined=Math.max(0,Number(afterLedger.minedM3SinceSite)||0);
-      const firstMining=afterMined>0&&beforeMined<=0;
-      const esiPicked=afterField.status==='picked'
-        && beforeField?.status!=='picked'
-        && Boolean(afterField.ledgerPickedAt||afterField.autoReopenedAt);
-      const depletionAlert=Boolean(afterLedger.likelyDepleted&&!beforeLedger?.likelyDepleted);
-      const scanAlert=Boolean(afterLedger.needsScan&&!beforeLedger?.needsScan);
-
-      if(firstMining||esiPicked||depletionAlert||scanAlert)queued.add(system);
-    }
-    const systems=[...queued];
-    if(systems.length>1){
-      speakJlr('briefing',{automatic:true},'Tracker has multiple mining updates that need attention.');
-      return;
-    }
-    for(const system of systems){
-      const ledger=nextState.scans?.[system]?.ledger||{};
-      const mined=Math.max(0,Number(ledger.minedM3SinceSite)||0);
-      const pct=Number(ledger.depletionPct);
-      let fallback='Mining detected in '+system+'. Field marked picked.';
-      if(mined>0)fallback+=' About '+Math.round(mined).toLocaleString()+' cubic meters reported mined.';
-      if(Number.isFinite(pct)&&pct>=80)fallback+=' Estimated depletion '+Math.round(pct)+' percent. Scan recommended.';
-      speakJlr('field',{system,automatic:true},fallback);
-    }
-  }
-
   function scheduleStateRender(){
     stateRenderPending=true;
     if(document.hidden||stateRenderFrame)return;
@@ -6522,12 +5384,10 @@
     if(eventSource)eventSource.close();
     eventSource=new EventSource('/api/events');
     eventSource.addEventListener('state',e=>{
-      const previousState=state;
       const previousSync=state?.esi?.lastSyncAt||null;
       const nextState=JSON.parse(e.data);
       const syncChanged=Boolean(nextState?.esi?.lastSyncAt&&nextState.esi.lastSyncAt!==previousSync);
       state=nextState;
-      announceFieldEsiChanges(previousState,nextState);
       if(syncChanged){
         refreshMe()
           .then(()=>refreshFleetPerformanceSnapshot(true))
@@ -6542,14 +5402,7 @@
 
   document.addEventListener('change',async event=>{
     const target=event.target;
-    if(target?.id==='brainVoiceEnabled'){
-      target.value='off';
-      window.jlrReleaseAutoVoice?.();
-      window.jlrStopVoice?.();
-      try{window.speechSynthesis?.cancel?.()}catch(error){}
-      brainSetListen(brainMicWanted?'MIC ON':'TEXT ONLY','Spoken output has been removed. Text responses remain enabled.');
-      toast('JLR spoken voice is disabled permanently.');
-    }else if(target?.id==='scoutCharacterSelect'){
+    if(target?.id==='scoutCharacterSelect'){
       scoutSelectedCharacterId=String(target.value||'');
       localStorage.setItem('jlrScoutCharacter',scoutSelectedCharacterId);
       scoutTargets=[];scoutTargetsError='';scoutTargetsOriginSystem='';
@@ -6564,20 +5417,6 @@
         $('scoutGlobalAlert')?.classList.add('hidden');
       }
       startScoutLocationWatch();
-    }else if(target?.id==='brainStartupBriefing'){
-      localStorage.setItem('jlrBrainStartupBriefing',String(target.value==='on'));
-    }else if(target?.id==='brainConversationWindow'){
-      localStorage.setItem('jlrBrainConversationWindow',String(target.value));
-    }else if(target?.id==='brainMicDevice'){
-      const next=String(target.value||'default');
-      if(next!==brainMicDeviceId){
-        brainMicDeviceId=next;
-        brainPreferBrowserSpeechInput=false;
-        brainNetworkFailures=0;
-        localStorage.setItem('jlrBrainMicDeviceId',brainMicDeviceId);
-        brainSetListen('MIC SWITCHING','Opening '+brainMicLabel(brainMicDeviceId)+'…');
-        restartBrainListening(true);
-      }
     }
   });
 
@@ -6669,12 +5508,6 @@
       toast('Adam routes refreshed.');
       return;
     }
-    if(target.closest('#trackerRepeatLast')){
-      const row=brainSpeechHistory[0];
-      if(!row){toast('Nothing to repeat yet.');return}
-      await speakJlr('repeat',{text:row.text},row.text);
-      return;
-    }
     if(target.closest('#brainScanOpen')||target.closest('#scoutGlobalOpen')){
       const id=String($('brainScanPrompt')?.dataset.characterId||$('scoutGlobalAlert')?.dataset.characterId||'');
       if((me?.characters||[]).some(ch=>String(ch.characterId)===id)){
@@ -6685,21 +5518,6 @@
       applyTab('fields');
       $('pasteScan')?.scrollIntoView({behavior:'smooth',block:'center'});
       $('pasteScan')?.focus();
-      return;
-    }
-    if(target.closest('#brainMicCopyDiag')){
-      await runBrainMicDiagnostic(true);
-      return;
-    }
-    if(target.closest('#brainMicClearDiag')){
-      brainClearMicError();
-      toast('Mic error display cleared.');
-      return;
-    }
-    const repeatRow=target.closest('.brain-repeat-row');
-    if(repeatRow){
-      const row=brainSpeechHistory[Number(repeatRow.dataset.historyIndex||0)];
-      if(row)await speakJlr('repeat',{text:row.text},row.text);
       return;
     }
     const feedbackType=target.closest('.feedback-type');
@@ -6781,41 +5599,25 @@
   document.addEventListener('click',async event=>{
     const target=event.target instanceof Element?event.target:null;
     if(!target)return;
-
-    const briefButton=target.closest('#trackerBriefMe');
-    if(briefButton){
-      briefButton.disabled=true;
-      try{
-        const played=await speakJlr('briefing',{},'Tracker briefing ready.');
-        if(!played)toast('Tracker briefing could not be played.');
-      }finally{
-        briefButton.disabled=false;
-      }
-      return;
-    }
-
     const whyButton=target.closest('#trackerWhySystem');
-    if(whyButton){
-      const system=selectedSystem||$('systemSelect')?.value||'';
-      if(!system){toast('Select a T3 system first.');return}
-      whyButton.disabled=true;
-      try{
-        const explanation=await api('/api/tracker/brain/why?system='+encodeURIComponent(system));
-        const summary=$('trackerBrainSummary');
-        if(summary&&explanation?.facts?.length)summary.textContent=system+': '+explanation.facts.join(' ');
-        const played=await speakJlr('why',{system},explanation?.voice||('Tracker explanation for '+system+'.'));
-        if(!played)toast('Tracker explanation could not be played.');
-      }catch(error){
-        toast(error.message||String(error));
-      }finally{
-        whyButton.disabled=false;
-      }
+    if(!whyButton)return;
+    const system=selectedSystem||$('systemSelect')?.value||'';
+    if(!system){toast('Select a T3 system first.');return}
+    whyButton.disabled=true;
+    try{
+      const explanation=await api('/api/tracker/brain/why?system='+encodeURIComponent(system));
+      const summary=$('trackerBrainSummary');
+      if(summary)summary.textContent=explanation?.facts?.length?system+': '+explanation.facts.join(' '):String(explanation?.summary||'No explanation available.');
+    }catch(error){
+      toast(error.message||String(error));
+    }finally{
+      whyButton.disabled=false;
     }
   });
 
   function addToon(){location.href='/auth/eve/start?intent=link'}
   $('addToon').addEventListener('click',addToon);$('addToonTop').addEventListener('click',addToon);
-  $('logout').addEventListener('click',async()=>{window.jlrReleaseAutoVoice?.();try{await api('/auth/logout',{method:'POST',body:'{}'})}catch{}location.href='/' });
+  $('logout').addEventListener('click',async()=>{try{await api('/auth/logout',{method:'POST',body:'{}'})}catch{}location.href='/' });
   $('compactMode').addEventListener('click',()=>applyMode('compact'));$('expandedMode').addEventListener('click',()=>applyMode('expanded'));
   $('themeSelect').value=activeTheme;
   $('themeSelect').addEventListener('change',()=>applyTheme($('themeSelect').value));
@@ -7267,7 +6069,7 @@
       if(!config.ssoConfigured){$('setupWarning').classList.remove('hidden');$('setupWarning').textContent='Login is not configured yet.';}
       const auth=await fetch('/api/me',{credentials:'same-origin'}).then(r=>r.json());
       if(!auth.authenticated){showLogin();return}
-      me=auth.user;window.jlrVoiceAccountId=String(me.id||'');syncDoctrineTabAccess();syncTrackerTabAccess();initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');brainMicWanted=false;localStorage.setItem('jlrBrainMicArmed','false');stopBrainLocalCapture(false);stopBrainMicStream();await loadMerIntel();await loadState();await refreshFleetPerformanceSnapshot(true);renderFleetPerformance();connectSse();connectCompanionClipboardStream();startScoutLocationWatch();
+      me=auth.user;window.jlrAccountId=String(me.id||'');syncDoctrineTabAccess();syncTrackerTabAccess();initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');await loadMerIntel();await loadState();await refreshFleetPerformanceSnapshot(true);renderFleetPerformance();connectSse();connectCompanionClipboardStream();startScoutLocationWatch();
       const params=new URLSearchParams(location.search);if(params.get('linked'))toast('Toon connected.');if(params.get('login'))toast('Logged in.');if(params.get('market')==='authorized')toast('John market access authorized.');if(params.get('error'))toast(decodeURIComponent(params.get('error')));if(params.toString())history.replaceState({},'',location.pathname);
     }catch(e){console.error(e);showLogin();$('setupWarning').classList.remove('hidden');$('setupWarning').textContent=`JLR could not load: ${e.message}`}
   }
