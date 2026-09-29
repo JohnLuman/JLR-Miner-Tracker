@@ -314,6 +314,7 @@
       pricedValueISK:Math.max(0,Number(survey?.pricedValueISK)||0),
       unpricedRowCount:Math.max(0,Number(survey?.unpricedRowCount)||0),
       pricingBasis:String(survey?.pricingBasis||'').slice(0,40),
+      sourceFormat:String(survey?.sourceFormat||'').slice(0,40),
       groups,
     };
     localStorage.setItem('jlrAdamOreSurveyContext',JSON.stringify(adamOreSurveyContext));
@@ -357,8 +358,9 @@
     const unpriced=Math.max(0,Number(survey.unpricedRowCount)||0);
     const payout=survey.pricingBasis==='jlr-95-refined';
     const refined=payout||survey.pricingBasis==='jlr-refined';
+    const rowWord=survey.sourceFormat==='ore-inventory'?'stacks':'rocks';
     return 'Got it — I linked the last ore survey to '+system+'. '
-      +Math.max(0,Number(survey.rowCount)||0)+' rocks • '
+      +Math.max(0,Number(survey.rowCount)||0)+' '+rowWord+' • '
       +fmt(survey.totalVolumeM3||0,'m3')+' m³ • '
       +fmt(survey.pricedValueISK||0)+' ISK '+(payout?'95% JBV payout value':(refined?'refined value':'from priced rocks'))
       +(unpriced?' • '+unpriced+' rock'+(unpriced===1?'':'s')+' still unpriced':'')+'.';
@@ -451,11 +453,25 @@
     if($('adamQuestion'))$('adamQuestion').placeholder=prompt;
     if($('adamQuickQuestion'))$('adamQuickQuestion').placeholder=prompt;
   }
+  function adamLooksLikeOrePaste(text){
+    return String(text||'').split(/\r?\n/).some(line=>{
+      const cells=String(line||'').split('\t').map(cell=>cell.trim()).filter(Boolean);
+      if(cells.length<4||!/^[\d,]+$/.test(cells[1]||''))return false;
+      const volumeIndex=cells.findIndex((cell,index)=>index>=2&&/^[\d,.]+\s*m(?:3|³)$/i.test(cell));
+      if(volumeIndex<2)return false;
+      if(!/^(?:-|[\d,.]+\s*ISK)$/i.test(cells[volumeIndex+1]||''))return false;
+      // Asteroid survey rows carry distance after value. Inventory/appraisal
+      // rows instead carry a base-ore column before volume.
+      return volumeIndex===2
+        ?/^[\d,.]+\s*(?:km|m)$/i.test(cells[volumeIndex+2]||'')
+        :volumeIndex===3;
+    });
+  }
   async function askAdamText(question){
     const text=String(question||'').trim();
     if(!text||adamAskBusy)return;
     const isProbeScan=/(?:^|\n)\s*[A-Z]{3}-\d{3}\s+Cosmic\s+(?:Anomaly|Signature)\b/i.test(text);
-    const isOreSurvey=/(?:^|\n)[^\t\r\n]+\t[\d,]+\t[\d,.]+\s*m(?:3|³)\t(?:-|[\d,.]+\s*ISK)\t[\d,.]+\s*(?:km|m)\s*$/im.test(text);
+    const isOreSurvey=adamLooksLikeOrePaste(text);
     const inputs=[$('adamQuestion'),$('adamQuickQuestion')].filter(Boolean);
     const buttons=[$('adamAsk'),$('adamQuickAsk')].filter(Boolean);
     const replies=[$('adamReply'),$('adamQuickReply')].filter(Boolean);
@@ -481,7 +497,7 @@
         if(state?.fields?.[oreSurveySystem])chooseSystem(oreSurveySystem);
         adamRecordAction('ore-survey-system',{
           system:oreSurveySystem,
-          detail:String(adamOreSurveyContext?.rowCount||0)+' rocks • '+fmt(adamOreSurveyContext?.totalVolumeM3||0,'m3')+' m³',
+          detail:String(adamOreSurveyContext?.rowCount||0)+' '+(adamOreSurveyContext?.sourceFormat==='ore-inventory'?'stacks':'rocks')+' • '+fmt(adamOreSurveyContext?.totalVolumeM3||0,'m3')+' m³',
         });
         const answer=adamOreSurveyLinkedText(oreSurveySystem);
         for(const reply of replies){reply.classList.remove('loading');reply.textContent=answer}
@@ -498,7 +514,7 @@
         for(const reply of replies){reply.classList.remove('loading');reply.textContent=answer}
         for(const input of inputs)input.value='';
         adamRecordAction('ore-survey',{
-          detail:String(survey?.rowCount||0)+' rocks • '+fmt(survey?.totalVolumeM3||0,'m3')+' m³',
+          detail:String(survey?.rowCount||0)+' '+(survey?.sourceFormat==='ore-inventory'?'stacks':'rocks')+' • '+fmt(survey?.totalVolumeM3||0,'m3')+' m³',
         });
         return;
       }
