@@ -190,6 +190,18 @@ const ORE_SURVEY_EXTRA_REPROCESSING = Object.freeze({
   'ducinium ii-grade':{name:'Ducinium II-Grade',volume:16,portionSize:100,minerals:{Megacyte:179}},
   'ducinium iii-grade':{name:'Ducinium III-Grade',volume:16,portionSize:100,minerals:{Megacyte:187}},
   'ducinium iv-grade':{name:'Ducinium IV-Grade',volume:16,portionSize:100,minerals:{Megacyte:196}},
+  gneiss:{name:'Gneiss',volume:5,portionSize:100,minerals:{Pyerite:2000,Mexallon:1500,Isogen:800}},
+  'gneiss ii-grade':{name:'Gneiss II-Grade',volume:5,portionSize:100,minerals:{Pyerite:2100,Mexallon:1575,Isogen:840}},
+  'gneiss iii-grade':{name:'Gneiss III-Grade',volume:5,portionSize:100,minerals:{Pyerite:2200,Mexallon:1650,Isogen:880}},
+  'gneiss iv-grade':{name:'Gneiss IV-Grade',volume:5,portionSize:100,minerals:{Pyerite:2300,Mexallon:1725,Isogen:920}},
+  jaspet:{name:'Jaspet',volume:2,portionSize:100,minerals:{Mexallon:150,Nocxium:50}},
+  'jaspet ii-grade':{name:'Jaspet II-Grade',volume:2,portionSize:100,minerals:{Mexallon:158,Nocxium:53}},
+  'jaspet iii-grade':{name:'Jaspet III-Grade',volume:2,portionSize:100,minerals:{Mexallon:165,Nocxium:55}},
+  'jaspet iv-grade':{name:'Jaspet IV-Grade',volume:2,portionSize:100,minerals:{Mexallon:173,Nocxium:58}},
+  plagioclase:{name:'Plagioclase',volume:0.35,portionSize:100,minerals:{Tritanium:175,Mexallon:70}},
+  'plagioclase ii-grade':{name:'Plagioclase II-Grade',volume:0.35,portionSize:100,minerals:{Tritanium:184,Mexallon:74}},
+  'plagioclase iii-grade':{name:'Plagioclase III-Grade',volume:0.35,portionSize:100,minerals:{Tritanium:193,Mexallon:77}},
+  'plagioclase iv-grade':{name:'Plagioclase IV-Grade',volume:0.35,portionSize:100,minerals:{Tritanium:201,Mexallon:81}},
 });
 const ORE_SURVEY_T3_REPROCESSING = Object.freeze(Object.fromEntries(
   Object.values(T3_ORE_VARIANTS_BY_TYPE_ID).map(row=>[
