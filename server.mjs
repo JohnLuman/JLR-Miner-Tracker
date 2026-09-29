@@ -113,6 +113,9 @@ const typeLookupPromises = new Map();
 const systemLookupPromises = new Map();
 const trackerLocationCache = new Map();
 const companionPairCodes = new Map();
+const companionClipboardStreams = new Map();
+const companionClipboardLatest = new Map();
+const COMPANION_CLIPBOARD_REPLAY_MS = 2 * 60 * 1000;
 const COMPANION_PAIR_TTL_MS = 10 * 60 * 1000;
 const COMPANION_LOCATION_TTL_MS = 90 * 1000;
 const scoutLocationInFlight = new Map();
@@ -925,6 +928,45 @@ function companionCharacterForUser(user,body){
   const wanted=companionText(body?.characterName,120).toLowerCase();
   if(!wanted)return null;
   return linked.map(id=>state.characters[id]).find(ch=>String(ch?.name||'').trim().toLowerCase()===wanted)||null;
+}
+function classifyCompanionClipboard(text){
+  const value=String(text||'').trim();
+  if(value.length<2)return null;
+
+  // Ore Survey / inventory rows are distinctive enough to test first.
+  const survey=parseOreSurvey(value);
+  if(survey?.valid&&Number(survey.rowCount)>0)return'ore-survey';
+
+  // Probe Scanner copies include scanner-specific labels. Do not use the
+  // generic tab/distance shape because D-scan rows share that layout.
+  if(/\b(?:cosmic\s+(?:anomaly|signature)|signal\s+strength|ore\s+site|gas\s+site|probe\s+scanner)\b/i.test(value)){
+    return'probe-scan';
+  }
+
+  const threat=parseThreatPaste(value);
+  const shipIdCount=[...(threat?.shipTypeIds?.values?.()||[])].reduce((sum,count)=>sum+Number(count||0),0);
+  const shipNameCount=Array.isArray(threat?.shipNames)?threat.shipNames.length:0;
+  const pilotCount=Array.isArray(threat?.names)?threat.names.length:0;
+  if(Number(threat?.rawLineCount)>=2&&(pilotCount>=2||shipIdCount>0||shipNameCount>0))return'threat-scan';
+  return null;
+}
+function companionClipboardPublish(user,event){
+  const uid=String(user?.id||'');
+  if(!uid||!event)return;
+  companionClipboardLatest.set(uid,event);
+  const timer=setTimeout(()=>{
+    if(companionClipboardLatest.get(uid)?.id===event.id)companionClipboardLatest.delete(uid);
+  },COMPANION_CLIPBOARD_REPLAY_MS);
+  timer.unref?.();
+
+  const payload=`event: clipboard\ndata: ${JSON.stringify(event)}\n\n`;
+  const clients=companionClipboardStreams.get(uid);
+  if(!clients)return;
+  for(const res of [...clients]){
+    try{res.write(payload)}
+    catch{clients.delete(res)}
+  }
+  if(!clients.size)companionClipboardStreams.delete(uid);
 }
 
 function json(res, status, obj, extra = {}) {
@@ -8786,6 +8828,70 @@ async function routeApi(req,res,url) {
     return json(res,200,{ok:true,...snapshot,observerAllowed:jlrOwnerAccess(auth.user)});
   }
 
+  if(req.method==='POST'&&url.pathname==='/api/companion/clipboard'){
+    const auth=companionAuth(req);
+    if(!auth)return json(res,401,{error:'COMPANION_AUTH_REQUIRED',message:'Companion pairing is missing or has been revoked.'});
+    let body;
+    try{body=await readBody(req,260_000)}
+    catch(err){return json(res,400,{error:'BAD_CLIPBOARD',message:String(err.message||err)})}
+    const clipText=String(body?.text||'').trim();
+    if(clipText.length<2)return json(res,200,{ok:true,accepted:false,kind:'ignored'});
+    if(clipText.length>250_000)return json(res,413,{error:'CLIPBOARD_TOO_LARGE',message:'EVE clipboard text is too large to auto-import.'});
+
+    const kind=classifyCompanionClipboard(clipText);
+    if(!kind)return json(res,200,{ok:true,accepted:false,kind:'ignored'});
+
+    const ch=companionCharacterForUser(auth.user,body);
+    const observedSystem=companionText(body?.system,96);
+    const event={
+      id:'clip_'+randomId(12),
+      kind,
+      at:now(),
+      characterId:ch?String(ch.characterId):null,
+      characterName:companionText(body?.characterName,120)||(ch?String(ch.name||''):null),
+      system:observedSystem||null,
+      deviceName:auth.device.deviceName||'Windows PC',
+    };
+
+    try{
+      if(kind==='ore-survey'){
+        const survey=parseOreSurvey(clipText,{
+          pricePerM3ForName:oreSurveyRefinedPricePerM3,
+          replaceReportedValues:true,
+          pricingBasis:'jlr-95-refined',
+        });
+        event.survey={...survey,text:oreSurveySummaryText(survey)};
+      }else if(kind==='probe-scan'){
+        if(!ch)return json(res,404,{error:'CHARACTER_NOT_LINKED',message:'The foreground EVE character is not linked to this JLR account.'});
+        if(!(Array.isArray(ch.scopes)&&ch.scopes.includes(LOCATION_SCOPE)))return json(res,409,{error:'LOCATION_SCOPE_REQUIRED',message:'Update this toon’s EVE location access before automatic scan imports.'});
+        const preview=await probeScanPreview(ch,clipText,observedSystem||null);
+        const valid=Boolean(preview.scan?.valid||preview.a0?.scan?.valid||preview.gasWormhole?.scan?.valid||preview.boardScan?.valid);
+        if(!valid)return json(res,200,{ok:true,accepted:false,kind:'ignored'});
+        event.preview=preview;
+        event.system=String(preview.system||observedSystem||'')||null;
+        if(preview.correction?.applied||preview.a0?.tracked||preview.gasWormhole?.recorded||preview.boardScan?.recorded)broadcast();
+      }else if(kind==='threat-scan'){
+        event.text=clipText;
+      }
+
+      auth.device.lastSeenAt=now();
+      companionClipboardPublish(auth.user,event);
+      return json(res,200,{
+        ok:true,
+        accepted:true,
+        id:event.id,
+        kind,
+        system:event.system,
+        message:kind==='ore-survey'?'Ore Survey → Adam':kind==='probe-scan'?'Probe Scanner → Fields':'Local / D-scan → Threat Scan',
+      });
+    }catch(err){
+      if(err?.code==='OBSERVER_SYSTEM_CHANGED')return json(res,409,{error:err.code,message:String(err.message||err)});
+      if(err?.code==='LOCATION_SCOPE_REQUIRED')return json(res,409,{error:err.code,message:String(err.message||err)});
+      console.warn('Companion clipboard import failed',kind,String(err.message||err));
+      return json(res,400,{error:'CLIPBOARD_IMPORT_FAILED',message:String(err.message||err)});
+    }
+  }
+
   if(req.method==='POST'&&url.pathname==='/api/companion/scan'){
     const auth=companionAuth(req);
     if(!auth)return json(res,401,{error:'COMPANION_AUTH_REQUIRED',message:'Companion pairing is missing or has been revoked.'});
@@ -8818,6 +8924,30 @@ async function routeApi(req,res,url) {
   }
 
   const user=requireUser(req,res);if(!user)return;
+
+  if(req.method==='GET'&&url.pathname==='/api/companion/clipboard/stream'){
+    const uid=String(user.id);
+    res.writeHead(200,{
+      'Content-Type':'text/event-stream',
+      'Cache-Control':'no-cache, no-transform',
+      'Connection':'keep-alive',
+      'X-Accel-Buffering':'no',
+    });
+    res.write('retry: 2500\n\n');
+    let clients=companionClipboardStreams.get(uid);
+    if(!clients){clients=new Set();companionClipboardStreams.set(uid,clients)}
+    clients.add(res);
+    const latest=companionClipboardLatest.get(uid);
+    const age=Date.now()-Date.parse(latest?.at||'');
+    if(latest&&Number.isFinite(age)&&age<=COMPANION_CLIPBOARD_REPLAY_MS){
+      res.write(`event: clipboard\ndata: ${JSON.stringify(latest)}\n\n`);
+    }
+    req.on('close',()=>{
+      clients.delete(res);
+      if(!clients.size)companionClipboardStreams.delete(uid);
+    });
+    return;
+  }
 
   if(req.method==='GET'&&url.pathname==='/api/companion/status'){
     const devices=companionDevicesForUser(user);

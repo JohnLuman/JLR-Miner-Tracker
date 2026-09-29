@@ -15,6 +15,8 @@
   document.documentElement.dataset.theme=activeTheme;
   let toastTimer = null;
   let eventSource = null;
+  let companionClipboardSource = null;
+  let companionClipboardBusy = false;
   let fleetPerformanceRefreshPromise = null;
   let fleetPerformanceSnapshotPromise = null;
   let fleetPerformanceSnapshotRequestKey = '';
@@ -780,6 +782,88 @@
     if(companionStatusTimer)clearInterval(companionStatusTimer);
     refreshCompanionStatus();
     companionStatusTimer=setInterval(()=>refreshCompanionStatus(),5000);
+  }
+
+  async function handleCompanionClipboardEvent(payload){
+    const id=String(payload?.id||'');
+    if(!id||localStorage.getItem('jlrCompanionClipboardLast')===id||companionClipboardBusy)return;
+    // Mark first so a reconnect cannot double-submit an expensive threat scan.
+    localStorage.setItem('jlrCompanionClipboardLast',id);
+    companionClipboardBusy=true;
+    try{
+      const kind=String(payload?.kind||'');
+      const character=(me?.characters||[]).find(ch=>
+        String(ch.characterId)===String(payload?.characterId||'')||
+        String(ch.name||'').toLowerCase()===String(payload?.characterName||'').toLowerCase()
+      );
+      if(character){
+        scanCharacterId=String(character.characterId);
+        localStorage.setItem('jlrScanCharacter',scanCharacterId);
+        renderScanCharacters();
+      }
+
+      if(kind==='ore-survey'&&payload?.survey){
+        const system=String(payload.system||'');
+        adamSaveOreSurveyContext(payload.survey,system);
+        if(system){
+          brainLastSystem=system;
+          if(state?.fields?.[system])chooseSystem(system);
+        }
+        if($('brainReply'))$('brainReply').textContent=String(payload.survey.text||'Adam auto-imported the EVE ore survey.');
+        adamRecordAction('clipboard-ore-survey',{
+          system,
+          characterName:String(payload.characterName||''),
+          detail:String(payload.survey.rowCount||0)+' rocks • '+fmt(payload.survey.totalVolumeM3||0,'m3')+' m³',
+        });
+        applyTab('brain');
+        renderAdamContext();
+        toast('Adam auto-imported the EVE Ore Survey.');
+        return;
+      }
+
+      if(kind==='probe-scan'&&payload?.preview){
+        const preview=payload.preview;
+        applyPreviewBoardScan(preview);
+        applyPreviewWormholeGas(preview);
+        const system=String(preview.system||payload.system||'');
+        if(system&&state?.fields?.[system])chooseSystem(system);
+        adamRecordAction('clipboard-probe-scan',{
+          system,
+          characterName:String(payload.characterName||preview.characterName||''),
+          detail:'Probe Scanner auto-imported',
+        });
+        const gasOnly=Boolean(preview?.gasWormhole?.recorded)&&!Boolean(preview?.boardScan?.recorded||preview?.a0?.tracked||preview?.tracked);
+        applyTab(gasOnly?'gas':'fields');
+        setScanStatus((system?system+': ':'')+'Probe Scanner auto-imported from EVE.','success');
+        toast((system?system+' • ':'')+'Probe Scanner imported automatically.');
+        return;
+      }
+
+      if(kind==='threat-scan'&&String(payload?.text||'').trim()){
+        applyTab('threat');
+        await runThreatScan(String(payload.text));
+        adamRecordAction('clipboard-threat-scan',{
+          system:String(payload.system||''),
+          characterName:String(payload.characterName||''),
+          detail:'Local / D-scan auto-imported',
+        });
+        toast('Local / D-scan auto-imported to Threat Scan.');
+      }
+    }catch(error){
+      console.warn('Companion clipboard import failed',error);
+      toast('Adam clipboard import failed: '+String(error?.message||error));
+    }finally{
+      companionClipboardBusy=false;
+    }
+  }
+
+  function connectCompanionClipboardStream(){
+    if(companionClipboardSource)companionClipboardSource.close();
+    companionClipboardSource=new EventSource('/api/companion/clipboard/stream');
+    companionClipboardSource.addEventListener('clipboard',event=>{
+      try{void handleCompanionClipboardEvent(JSON.parse(event.data))}
+      catch(error){console.warn('Bad companion clipboard event',error)}
+    });
   }
   async function createCompanionPairCode(){
     const status=$('brainCompanionStatus');
@@ -6975,7 +7059,7 @@
       if(!config.ssoConfigured){$('setupWarning').classList.remove('hidden');$('setupWarning').textContent='Login is not configured yet.';}
       const auth=await fetch('/api/me',{credentials:'same-origin'}).then(r=>r.json());
       if(!auth.authenticated){showLogin();return}
-      me=auth.user;window.jlrVoiceAccountId=String(me.id||'');syncDoctrineTabAccess();syncTrackerTabAccess();initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');brainMicWanted=false;localStorage.setItem('jlrBrainMicArmed','false');stopBrainLocalCapture(false);stopBrainMicStream();await loadMerIntel();await loadState();await refreshFleetPerformanceSnapshot(true);renderFleetPerformance();connectSse();startScoutLocationWatch();
+      me=auth.user;window.jlrVoiceAccountId=String(me.id||'');syncDoctrineTabAccess();syncTrackerTabAccess();initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');brainMicWanted=false;localStorage.setItem('jlrBrainMicArmed','false');stopBrainLocalCapture(false);stopBrainMicStream();await loadMerIntel();await loadState();await refreshFleetPerformanceSnapshot(true);renderFleetPerformance();connectSse();connectCompanionClipboardStream();startScoutLocationWatch();
       const params=new URLSearchParams(location.search);if(params.get('linked'))toast('Toon connected.');if(params.get('login'))toast('Logged in.');if(params.get('market')==='authorized')toast('John market access authorized.');if(params.get('error'))toast(decodeURIComponent(params.get('error')));if(params.toString())history.replaceState({},'',location.pathname);
     }catch(e){console.error(e);showLogin();$('setupWarning').classList.remove('hidden');$('setupWarning').textContent=`JLR could not load: ${e.message}`}
   }
