@@ -277,3 +277,35 @@
   .tracker-route-option-head{align-items:flex-start;flex-direction:column}
   .tracker-response-router{align-items:flex-start;flex-direction:column}
 }
+
+
+/* v2.9.147 — per-loss closest celestial */
+.tracker-closest{
+  display:flex;
+  align-items:baseline;
+  gap:7px;
+  min-width:0;
+  margin-top:4px;
+  padding:4px 7px;
+  border:1px solid color-mix(in srgb,var(--theme-accent-line,#9f4dff) 34%,#302b34 66%);
+  border-radius:6px;
+  background:color-mix(in srgb,var(--theme-accent,#9d34ed) 7%,#111117 93%);
+}
+.tracker-closest span{
+  flex:0 0 auto;
+  color:var(--theme-accent-hi,#ce68ff);
+  font:900 7px/1 "Share Tech Mono",monospace;
+  letter-spacing:.12em;
+}
+.tracker-closest strong{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:#e6e8ee;
+  font:900 9px/1.2 Oxanium,Segoe UI,sans-serif;
+}
+@media(max-width:560px){
+  .tracker-closest{align-items:flex-start;flex-direction:column;gap:3px}
+  .tracker-closest strong{white-space:normal;overflow:visible}
+}
