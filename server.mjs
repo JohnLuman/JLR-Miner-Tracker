@@ -180,7 +180,7 @@ const ORE_SURVEY_PAYOUT_PCT = 0.95;
 const LEDGER_VALUATION_VERSION = 3;
 const ORE_REPROCESSING = BASE_T3_ORE_REPROCESSING;
 const ORE_TYPE_NAME={Mordinium:'Mordunium'};
-const REFINING_MINERALS=[...new Set(Object.values(ORE_REPROCESSING).flatMap(x=>Object.keys(x.minerals)))];
+const REFINING_MINERALS=[...new Set([...Object.values(ORE_REPROCESSING).flatMap(x=>Object.keys(x.minerals)),'Morphite'])];
 
 // Ore-survey valuation must compare the value of the minerals we actually get
 // after reprocessing, not the market value of the raw/compressed asteroid.
@@ -206,6 +206,32 @@ const ORE_SURVEY_EXTRA_REPROCESSING = Object.freeze({
   'plagioclase ii-grade':{name:'Plagioclase II-Grade',volume:0.35,portionSize:100,minerals:{Tritanium:184,Mexallon:74}},
   'plagioclase iii-grade':{name:'Plagioclase III-Grade',volume:0.35,portionSize:100,minerals:{Tritanium:193,Mexallon:77}},
   'plagioclase iv-grade':{name:'Plagioclase IV-Grade',volume:0.35,portionSize:100,minerals:{Tritanium:201,Mexallon:81}},
+
+  spodumain:{name:'Spodumain',volume:16,portionSize:100,minerals:{Tritanium:48000,Isogen:1000,Nocxium:160,Zydrine:80,Megacyte:40}},
+  'spodumain i-grade':{name:'Spodumain I-Grade',volume:16,portionSize:100,minerals:{Tritanium:48000,Isogen:1000,Nocxium:160,Zydrine:80,Megacyte:40}},
+  'spodumain ii-grade':{name:'Spodumain II-Grade',volume:16,portionSize:100,minerals:{Tritanium:50400,Isogen:1050,Nocxium:168,Zydrine:84,Megacyte:42}},
+  'spodumain iii-grade':{name:'Spodumain III-Grade',volume:16,portionSize:100,minerals:{Tritanium:52800,Isogen:1100,Nocxium:176,Zydrine:88,Megacyte:44}},
+  'spodumain iv-grade':{name:'Spodumain IV-Grade',volume:16,portionSize:100,minerals:{Tritanium:55200,Isogen:1150,Nocxium:184,Zydrine:92,Megacyte:46}},
+
+  bezdnacine:{name:'Bezdnacine',volume:16,portionSize:100,minerals:{Tritanium:40000,Isogen:4800,Megacyte:128}},
+  'bezdnacine i-grade':{name:'Bezdnacine I-Grade',volume:16,portionSize:100,minerals:{Tritanium:40000,Isogen:4800,Megacyte:128}},
+  'bezdnacine ii-grade':{name:'Bezdnacine II-Grade',volume:16,portionSize:100,minerals:{Tritanium:42000,Isogen:5040,Megacyte:134}},
+  'bezdnacine iii-grade':{name:'Bezdnacine III-Grade',volume:16,portionSize:100,minerals:{Tritanium:44000,Isogen:5280,Megacyte:141}},
+
+  rakovene:{name:'Rakovene',volume:16,portionSize:100,minerals:{Tritanium:40000,Isogen:3200,Zydrine:200}},
+  'rakovene i-grade':{name:'Rakovene I-Grade',volume:16,portionSize:100,minerals:{Tritanium:40000,Isogen:3200,Zydrine:200}},
+  'rakovene ii-grade':{name:'Rakovene II-Grade',volume:16,portionSize:100,minerals:{Tritanium:42000,Isogen:3360,Zydrine:210}},
+  'rakovene iii-grade':{name:'Rakovene III-Grade',volume:16,portionSize:100,minerals:{Tritanium:44000,Isogen:3520,Zydrine:220}},
+
+  talassonite:{name:'Talassonite',volume:16,portionSize:100,minerals:{Tritanium:40000,Nocxium:960,Megacyte:32}},
+  'talassonite i-grade':{name:'Talassonite I-Grade',volume:16,portionSize:100,minerals:{Tritanium:40000,Nocxium:960,Megacyte:32}},
+  'talassonite ii-grade':{name:'Talassonite II-Grade',volume:16,portionSize:100,minerals:{Tritanium:42000,Nocxium:1008,Megacyte:34}},
+  'talassonite iii-grade':{name:'Talassonite III-Grade',volume:16,portionSize:100,minerals:{Tritanium:44000,Nocxium:1056,Megacyte:35}},
+
+  mercoxit:{name:'Mercoxit',volume:40,portionSize:100,minerals:{Morphite:140}},
+  'mercoxit i-grade':{name:'Mercoxit I-Grade',volume:40,portionSize:100,minerals:{Morphite:140}},
+  'mercoxit ii-grade':{name:'Mercoxit II-Grade',volume:40,portionSize:100,minerals:{Morphite:147}},
+  'mercoxit iii-grade':{name:'Mercoxit III-Grade',volume:40,portionSize:100,minerals:{Morphite:154}},
 });
 const ORE_SURVEY_T3_REPROCESSING = Object.freeze(Object.fromEntries(
   Object.values(T3_ORE_VARIANTS_BY_TYPE_ID).map(row=>[
