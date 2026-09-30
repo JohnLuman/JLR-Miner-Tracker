@@ -1,21 +1,21 @@
 (()=>{
+  'use strict';
   const $=id=>document.getElementById(id);
   let share=null;
-  let mode='text';
   let dscanRows=[];
+  let saving=false;
 
   function tokenFromPath(){
-    const parts=location.pathname.split('/').filter(Boolean);
-    return parts.at(-1)||'';
+    return location.pathname.split('/').filter(Boolean).at(-1)||'';
+  }
+  function rawLines(text){
+    return String(text||'').replace(/\r/g,'').split('\n').map(v=>v.trim()).filter(Boolean);
   }
   function columnsFor(line){
     return (line.includes('\t')?line.split('\t'):line.split(/\s{3,}/)).map(v=>v.trim()).filter(Boolean);
   }
   function isDistance(value){
     return /^(?:-|\d+(?:\.\d+)?\s*(?:m|km|au))$/i.test(String(value||'').replace(/,/g,'').trim());
-  }
-  function rawLines(text){
-    return String(text||'').replace(/\r/g,'').split('\n').map(v=>v.trim()).filter(Boolean);
   }
   function parseDscan(text){
     const out=[];
@@ -33,35 +33,18 @@
     }
     return out;
   }
-  function detectMode(text){
-    const lines=rawLines(text);
-    if(!lines.length)return'text';
-    const distanceRows=lines.filter(line=>{
-      const cols=columnsFor(line);
-      return cols.length>=2&&isDistance(cols.at(-1));
-    }).length;
-    if(distanceRows>=1&&(distanceRows/lines.length>=.15||lines.filter(line=>line.includes('\t')).length/lines.length>=.5))return'dscan';
-    return lines.filter(line=>!line.includes('\t')&&columnsFor(line).length===1).length/lines.length>=.8?'local':'text';
-  }
-  function setStats(rows){
-    rows.forEach((row,index)=>{
-      $('stat'+(index+1)+'Label').textContent=row[0];
-      $('stat'+(index+1)+'Value').textContent=Number(row[1]||0).toLocaleString();
-    });
-  }
-  function makeLink(label,url){
-    const a=document.createElement('a');
-    a.textContent=label||'—';
-    a.className='entity-link';
-    a.href=url;
-    a.target='_blank';
-    a.rel='noopener noreferrer';
-    return a;
+  function groupDscan(rows){
+    const map=new Map();
+    for(const row of rows){
+      const key=String(row.type||'Unknown').trim()||'Unknown';
+      map.set(key,(map.get(key)||0)+1);
+    }
+    return [...map.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));
   }
   function localFallback(){
-    return rawLines(share?.text||'').map((name,index)=>({
+    return rawLines(share?.localText||'').map(name=>({
       id:null,name,corporationId:null,corporationName:'',corporationTicker:'',
-      allianceId:null,allianceName:'',allianceTicker:'',rawIndex:index,
+      allianceId:null,allianceName:'',allianceTicker:'',
     }));
   }
   function groupedLocal(rows,key,nameKey,tickerKey){
@@ -76,7 +59,16 @@
     }
     return [...map.values()].sort((a,b)=>b.count-a.count||a.name.localeCompare(b.name));
   }
-  function groupCard(row,kind){
+  function makeLink(label,url){
+    const a=document.createElement('a');
+    a.textContent=label||'—';
+    a.className='entity-link';
+    a.href=url;
+    a.target='_blank';
+    a.rel='noopener noreferrer';
+    return a;
+  }
+  function intelCard(row,kind){
     const card=document.createElement('article');
     card.className='intel-card';
     card.title=row.pilots.join('\n');
@@ -92,56 +84,100 @@
     card.append(count,copy);
     return card;
   }
-  function sectionBlock(title,rows,kind){
+  function intelSection(title,rows,kind){
     const block=document.createElement('section');
     block.className='intel-block';
     const head=document.createElement('div');
     head.className='intel-block-head';
-    const h=document.createElement('strong'); h.textContent=title;
-    const n=document.createElement('span'); n.textContent=String(rows.length);
-    head.append(h,n);
+    const label=document.createElement('strong'); label.textContent=title;
+    const count=document.createElement('span'); count.textContent=String(rows.length);
+    head.append(label,count);
     const grid=document.createElement('div'); grid.className='intel-grid';
-    if(rows.length)for(const row of rows)grid.append(groupCard(row,kind));
+    if(rows.length)rows.forEach(row=>grid.append(intelCard(row,kind)));
     else{
-      const empty=document.createElement('span');
-      empty.className='muted';
-      empty.textContent='No '+title.toLowerCase()+' resolved yet.';
+      const empty=document.createElement('span'); empty.className='muted'; empty.textContent='No '+title.toLowerCase()+' resolved.';
       grid.append(empty);
     }
     block.append(head,grid);
     return block;
   }
-  function renderLocal(){
+  function renderHeader(){
+    const system=String(share?.system||'').trim();
+    $('shareTitle').textContent=system?system+' • SHARED INTEL':'SHARED INTEL';
+    const created=share?.createdAt?new Date(share.createdAt):null;
+    const updated=share?.updatedAt?new Date(share.updatedAt):null;
+    const createdText=created&&!Number.isNaN(created.getTime())?'created '+created.toLocaleString():'created through JLR';
+    const updatedText=updated&&!Number.isNaN(updated.getTime())?'updated '+updated.toLocaleString():'';
+    $('scanMeta').textContent=[createdText,updatedText].filter(Boolean).join(' • ');
+    document.title=(system?system+' • ':'')+'JLR Shared Intel';
+  }
+  function renderStats(){
+    $('dscanObjectCount').textContent=dscanRows.length.toLocaleString();
     const local=share?.local||{};
-    const sourcePilots=Array.isArray(local.pilots)&&local.pilots.length?local.pilots:localFallback();
-    const q=String($('filter').value||'').trim().toLowerCase();
-    const filtered=q?sourcePilots.filter(row=>[
+    const pilots=Number(local.pilotCount)||rawLines(share?.localText||'').length;
+    $('localPilotCount').textContent=pilots.toLocaleString();
+    const recons=(share?.manualRecons||[]).reduce((sum,row)=>sum+Math.max(0,Number(row?.count)||0),0);
+    $('reconCount').textContent=recons.toLocaleString();
+  }
+  function renderRecons(){
+    const rows=Array.isArray(share?.manualRecons)?share.manualRecons:[];
+    $('manualReconPanel').classList.toggle('hidden',!rows.length);
+    const host=$('manualReconList');
+    host.replaceChildren(...rows.map(row=>{
+      const card=document.createElement('article');
+      card.className='recon-card';
+      const count=document.createElement('strong'); count.textContent=String(row.count);
+      const copy=document.createElement('div');
+      const tag=document.createElement('span'); tag.textContent='MANUAL';
+      const name=document.createElement('b'); name.textContent=row.name;
+      copy.append(tag,name); card.append(count,copy);
+      return card;
+    }));
+  }
+  function renderDscan(){
+    const text=String(share?.dscanText||'');
+    $('dscanPanel').classList.toggle('hidden',!text);
+    $('copyDscan').disabled=!text;
+    $('rawDscan').textContent=text;
+    if(!text)return;
+    const q=String($('dscanFilter').value||'').trim().toLowerCase();
+    const filtered=q?dscanRows.filter(row=>[row.name,row.type,row.distance].some(v=>String(v||'').toLowerCase().includes(q))):dscanRows;
+    const summary=$('dscanSummary');
+    summary.replaceChildren(...groupDscan(filtered).map(([type,count])=>{
+      const el=document.createElement('div'); el.className='group';
+      const n=document.createElement('strong'); n.textContent=String(count);
+      const t=document.createElement('span'); t.textContent=type;
+      el.append(n,t); return el;
+    }));
+    $('dscanRows').replaceChildren(...filtered.map((row,index)=>{
+      const tr=document.createElement('tr');
+      [String(index+1),row.name,row.type,row.distance||'—'].forEach(value=>{
+        const td=document.createElement('td'); td.textContent=value; tr.append(td);
+      });
+      return tr;
+    }));
+    $('dscanShownCount').textContent=filtered.length===dscanRows.length
+      ?filtered.length+' objects'
+      :filtered.length+' of '+dscanRows.length+' objects';
+  }
+  function renderLocal(){
+    const text=String(share?.localText||'');
+    $('localPanel').classList.toggle('hidden',!text);
+    $('rawLocal').textContent=text;
+    if(!text)return;
+    const local=share?.local||{};
+    const source=Array.isArray(local.pilots)&&local.pilots.length?local.pilots:localFallback();
+    const q=String($('localFilter').value||'').trim().toLowerCase();
+    const filtered=q?source.filter(row=>[
       row.name,row.corporationName,row.corporationTicker,row.allianceName,row.allianceTicker
-    ].some(value=>String(value||'').toLowerCase().includes(q))):sourcePilots;
+    ].some(v=>String(v||'').toLowerCase().includes(q))):source;
     const corporations=groupedLocal(filtered,'corporationId','corporationName','corporationTicker');
     const alliances=groupedLocal(filtered,'allianceId','allianceName','allianceTicker');
-    const allCorps=Array.isArray(local.corporations)?local.corporations:groupedLocal(sourcePilots,'corporationId','corporationName','corporationTicker');
-    const allAlliances=Array.isArray(local.alliances)?local.alliances:groupedLocal(sourcePilots,'allianceId','allianceName','allianceTicker');
-
-    setStats([
-      ['PILOTS',local.pilotCount||share?.lineCount||sourcePilots.length],
-      ['CORPORATIONS',allCorps.length],
-      ['ALLIANCES',allAlliances.length],
-    ]);
-    $('summaryTitle').textContent='LOCAL COMPOSITION';
-    $('detailTitle').textContent='CHARACTER LIST';
-    $('filter').placeholder='Filter pilot, corporation, or alliance…';
-    $('summaryHost').replaceChildren(
-      sectionBlock('ALLIANCES',alliances,'alliance'),
-      sectionBlock('CORPORATIONS',corporations,'corporation'),
+    $('localSummary').replaceChildren(
+      intelSection('ALLIANCES',alliances,'alliance'),
+      intelSection('CORPORATIONS',corporations,'corporation'),
     );
-
-    const head=document.createElement('tr');
-    for(const label of ['CHARACTER','CORPORATION','ALLIANCE']){
-      const th=document.createElement('th'); th.textContent=label; head.appendChild(th);
-    }
-    $('detailHead').replaceChildren(head);
-    $('detailRows').replaceChildren(...filtered.map(row=>{
+    $('localRows').replaceChildren(...filtered.map(row=>{
       const tr=document.createElement('tr');
       const char=document.createElement('td');
       if(row.id)char.append(makeLink(row.name,'https://zkillboard.com/character/'+encodeURIComponent(String(row.id))+'/'));
@@ -159,129 +195,129 @@
       tr.append(char,corp,alliance);
       return tr;
     }));
-
     const unresolved=Array.isArray(local.unresolved)?local.unresolved:[];
-    $('shownCount').textContent=(q?filtered.length+' of ':'')+sourcePilots.length+' pilots'+(unresolved.length?' • '+unresolved.length+' unresolved':'');
-    if(unresolved.length){
-      const notice=document.createElement('div');
-      notice.className='unresolved';
-      notice.textContent='Unresolved from ESI: '+unresolved.join(', ');
-      $('summaryHost').append(notice);
-    }
+    $('localShownCount').textContent=(q?filtered.length+' of ':'')+source.length+' pilots'+(unresolved.length?' • '+unresolved.length+' unresolved':'');
   }
-  function groupedDscan(rows){
-    const map=new Map();
-    for(const row of rows){
-      const key=String(row.type||'Unknown').trim()||'Unknown';
-      map.set(key,(map.get(key)||0)+1);
-    }
-    return [...map.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));
+  function reconRowsFromEditor(){
+    return [...document.querySelectorAll('.recon-edit-row')].map(row=>({
+      name:String(row.querySelector('[data-recon-name]')?.value||'').trim(),
+      count:Math.max(0,Math.min(9999,Math.floor(Number(row.querySelector('[data-recon-count]')?.value)||0))),
+    })).filter(row=>row.name&&row.count);
   }
-  function renderDscan(){
-    const q=String($('filter').value||'').trim().toLowerCase();
-    const filtered=q?dscanRows.filter(row=>[
-      row.name,row.type,row.distance
-    ].some(value=>String(value||'').toLowerCase().includes(q))):dscanRows;
-    setStats([
-      ['OBJECTS',dscanRows.length],
-      ['UNIQUE TYPES',groupedDscan(dscanRows).length],
-      ['RAW LINES',share?.lineCount||0],
-    ]);
-    $('summaryTitle').textContent='D-SCAN BREAKDOWN';
-    $('detailTitle').textContent='INDIVIDUAL OBJECTS';
-    $('filter').placeholder='Filter type, object, or distance…';
-
-    const groups=document.createElement('div');
-    groups.className='groups';
-    for(const [type,count] of groupedDscan(filtered)){
-      const el=document.createElement('div'); el.className='group';
-      const n=document.createElement('strong'); n.textContent=String(count);
-      const t=document.createElement('span'); t.textContent=type;
-      el.append(n,t); groups.append(el);
-    }
-    $('summaryHost').replaceChildren(groups);
-
-    const head=document.createElement('tr');
-    for(const label of ['#','NAME','TYPE','DISTANCE']){
-      const th=document.createElement('th'); th.textContent=label; head.appendChild(th);
-    }
-    $('detailHead').replaceChildren(head);
-    $('detailRows').replaceChildren(...filtered.map((row,index)=>{
-      const tr=document.createElement('tr');
-      for(const value of [String(index+1),row.name,row.type,row.distance||'—']){
-        const td=document.createElement('td'); td.textContent=value; tr.appendChild(td);
-      }
-      return tr;
-    }));
-    $('shownCount').textContent=filtered.length===dscanRows.length
-      ? filtered.length+' objects'
-      : filtered.length+' of '+dscanRows.length+' objects';
+  function addReconEditorRow(name='',count=1){
+    const row=document.createElement('div');
+    row.className='recon-edit-row';
+    const nameInput=document.createElement('input');
+    nameInput.dataset.reconName='1';
+    nameInput.maxLength=80;
+    nameInput.placeholder='Ship / recon type';
+    nameInput.value=name;
+    const countInput=document.createElement('input');
+    countInput.dataset.reconCount='1';
+    countInput.type='number';
+    countInput.min='1'; countInput.max='9999'; countInput.step='1';
+    countInput.value=String(Math.max(1,Number(count)||1));
+    const remove=document.createElement('button');
+    remove.type='button'; remove.className='secondary recon-remove'; remove.textContent='REMOVE';
+    remove.addEventListener('click',()=>row.remove());
+    row.append(nameInput,countInput,remove);
+    $('reconEditorRows').append(row);
+    return row;
   }
-  function renderText(){
-    const lines=rawLines(share?.text||'');
-    const q=String($('filter').value||'').trim().toLowerCase();
-    const filtered=q?lines.filter(line=>line.toLowerCase().includes(q)):lines;
-    setStats([['LINES',lines.length],['MATCHING',filtered.length],['RAW LINES',share?.lineCount||lines.length]]);
-    $('summaryTitle').textContent='SHARED TEXT';
-    $('detailTitle').textContent='LINES';
-    $('filter').placeholder='Filter shared text…';
-    $('summaryHost').replaceChildren();
-    const head=document.createElement('tr');
-    const th=document.createElement('th'); th.textContent='TEXT'; head.appendChild(th);
-    $('detailHead').replaceChildren(head);
-    $('detailRows').replaceChildren(...filtered.map(line=>{
-      const tr=document.createElement('tr'); const td=document.createElement('td');
-      td.textContent=line; tr.append(td); return tr;
-    }));
-    $('shownCount').textContent=filtered.length+' lines';
+  function addPreset(name){
+    const rows=[...document.querySelectorAll('.recon-edit-row')];
+    const existing=rows.find(row=>String(row.querySelector('[data-recon-name]')?.value||'').trim().toLowerCase()===name.toLowerCase());
+    if(existing){
+      const count=existing.querySelector('[data-recon-count]');
+      count.value=String(Math.min(9999,(Number(count.value)||0)+1));
+      count.focus();
+    }else addReconEditorRow(name,1).querySelector('[data-recon-count]')?.focus();
+  }
+  function renderOwnerEditor(){
+    const canEdit=Boolean(share?.canEdit);
+    $('ownerPanel').classList.toggle('hidden',!canEdit);
+    if(!canEdit)return;
+    $('editSystem').value=share?.system||'';
+    $('editDscan').value=share?.dscanText||'';
+    $('editLocal').value=share?.localText||'';
+    $('reconEditorRows').replaceChildren();
+    const rows=Array.isArray(share?.manualRecons)?share.manualRecons:[];
+    rows.forEach(row=>addReconEditorRow(row.name,row.count));
+    $('ownerStatus').textContent='Only you can edit this share • saving keeps the same URL.';
   }
   function render(){
-    if(mode==='local')return renderLocal();
-    if(mode==='dscan')return renderDscan();
-    return renderText();
+    dscanRows=parseDscan(share?.dscanText||'');
+    renderHeader();
+    renderStats();
+    renderRecons();
+    renderDscan();
+    renderLocal();
+    renderOwnerEditor();
+    const hasAny=Boolean(share?.dscanText||share?.localText||(share?.manualRecons||[]).length);
+    $('emptyPanel').classList.toggle('hidden',hasAny);
+    $('content').classList.remove('hidden');
   }
   function fail(message){
-    $('errorPanel').textContent=String(message||'Shared scan could not be loaded.');
+    $('errorPanel').textContent=String(message||'Shared intel could not be loaded.');
     $('errorPanel').classList.remove('hidden');
     $('content').classList.add('hidden');
-    $('scanMeta').textContent='JLR shared scan unavailable';
+    $('scanMeta').textContent='JLR shared intel unavailable';
   }
-  async function copyScan(){
-    if(!share?.text)return;
+  async function copyText(text,button,done='COPIED'){
     try{
-      await navigator.clipboard.writeText(share.text);
-      const button=$('copyScan');
-      const previous=button.textContent;
-      button.textContent='COPIED';
-      setTimeout(()=>button.textContent=previous,1200);
-    }catch{
-      $('rawText').scrollIntoView({behavior:'smooth',block:'center'});
+      await navigator.clipboard.writeText(String(text||''));
+      if(button){
+        const prior=button.textContent; button.textContent=done;
+        setTimeout(()=>button.textContent=prior,1200);
+      }
+    }catch{}
+  }
+  async function save(){
+    if(saving||!share?.canEdit)return;
+    saving=true;
+    $('saveShare').disabled=true;
+    $('ownerStatus').textContent='Saving update…';
+    try{
+      const response=await fetch('/api/dscan-share/'+encodeURIComponent(tokenFromPath())+'/update',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Accept':'application/json'},
+        body:JSON.stringify({
+          system:$('editSystem').value,
+          dscanText:$('editDscan').value,
+          localText:$('editLocal').value,
+          manualRecons:reconRowsFromEditor(),
+        }),
+      });
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(payload?.message||payload?.error||('HTTP '+response.status));
+      share=payload.share;
+      render();
+      $('ownerStatus').textContent='Saved • this same link is now updated.';
+    }catch(error){
+      $('ownerStatus').textContent='Update failed: '+String(error?.message||error);
+    }finally{
+      saving=false;
+      $('saveShare').disabled=false;
     }
   }
   async function load(){
     const token=tokenFromPath();
-    if(!/^[A-Za-z0-9_-]{8,}$/.test(token))return fail('Invalid JLR shared scan link.');
+    if(!/^[A-Za-z0-9_-]{8,}$/.test(token))return fail('Invalid JLR shared-intel link.');
     try{
-      const response=await fetch('/api/dscan-share/'+encodeURIComponent(token),{headers:{Accept:'application/json'}});
+      const response=await fetch('/api/dscan-share/'+encodeURIComponent(token),{headers:{Accept:'application/json'},cache:'no-store'});
       const payload=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(payload?.message||payload?.error||('HTTP '+response.status));
       share=payload.share;
-      mode=String(share?.kind||detectMode(share?.text||''));
-      dscanRows=mode==='dscan'?parseDscan(share?.text||''):[];
-      const created=share?.createdAt?new Date(share.createdAt):null;
-      const label=mode==='local'?'LOCAL SCAN':mode==='dscan'?'D-SCAN':'SHARED SCAN';
-      $('shareTitle').textContent=label;
-      $('copyScan').textContent=mode==='local'?'COPY LOCAL':mode==='dscan'?'COPY D-SCAN':'COPY SCAN';
-      $('rawSummary').textContent=mode==='local'?'RAW LOCAL TEXT':mode==='dscan'?'RAW D-SCAN TEXT':'RAW SHARED TEXT';
-      $('scanMeta').textContent=label+' • shared '+(created&&!Number.isNaN(created.getTime())?created.toLocaleString():'through JLR');
-      $('rawText').textContent=share?.text||'';
-      $('copyScan').disabled=!share?.text;
-      $('content').classList.remove('hidden');
-      document.title='JLR '+label+' • '+Number(share?.lineCount||0).toLocaleString()+' lines';
       render();
     }catch(error){fail(error?.message||error)}
   }
-  $('copyScan').addEventListener('click',copyScan);
-  $('filter').addEventListener('input',render);
+
+  $('copyLink').addEventListener('click',()=>copyText(location.href,$('copyLink'),'LINK COPIED'));
+  $('copyDscan').addEventListener('click',()=>copyText(share?.dscanText||'',$('copyDscan'),'D-SCAN COPIED'));
+  $('dscanFilter').addEventListener('input',renderDscan);
+  $('localFilter').addEventListener('input',renderLocal);
+  $('saveShare').addEventListener('click',save);
+  $('addReconRow').addEventListener('click',()=>addReconEditorRow('',1).querySelector('[data-recon-name]')?.focus());
+  document.querySelectorAll('[data-recon-preset]').forEach(button=>button.addEventListener('click',()=>addPreset(button.dataset.reconPreset||'')));
   load();
 })();
