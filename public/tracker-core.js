@@ -155,7 +155,7 @@
   }
   function trackerHotZonesHtml(){
     if(trackerIntelLoading&&!trackerIntel)return '<div class="tracker-intel-empty">Loading regional activity…</div>';
-    if(!trackerIntel)return '<div class="tracker-intel-empty">'+esc(trackerIntelError||'Regional activity unavailable.')+'</div>';
+    if(!trackerIntel)return '<div class="tracker-intel-empty">'+esc(trackerIntelError||'Loading regional activity…')+'</div>';
     const hot=trackerIntel.hotZones||{};
     const rows=trackerIntelHotRows();
     const location=trackerIntel.location||null;
@@ -779,6 +779,19 @@
       scheduleTrackerIntel(60_000);
     });
     observer.observe(trackerPanel,{attributes:true,attributeFilter:['class']});
+
+    // The Tracker panel can already be active when this script binds (for
+    // example after a refresh while Tracker was the selected tab). In that
+    // case there is no click or class mutation to trigger the first intel
+    // request, so load it immediately instead of showing a dead empty state.
+    if(isActive()){
+      trackerUnread=0;
+      setBadge();
+      if(!trackerData&&!trackerLoading)loadTracker(false,false);
+      if(!trackerIntel&&!trackerIntelLoading)loadTrackerIntel(false);
+      scheduleTrackerIntel(60_000);
+      schedule();
+    }
 
     syncTrackerStream();
     if(trackerArmed)setTimeout(function(){loadTracker(false,true);},1200);
