@@ -17,7 +17,12 @@
     return n.toLocaleString(undefined,{maximumFractionDigits:2})+' m³';
   };
   const number=value=>Math.max(0,Number(value)||0);
-  const mode=value=>String(value||'split').toUpperCase();
+  const mode=value=>{
+    const key=String(value||'split').toLowerCase();
+    if(key==='refine-buy')return'REFINE BUY';
+    if(key==='refine-sell')return'REFINE SELL';
+    return key.toUpperCase();
+  };
   const variant=value=>String(value||'immediate')==='top5percent'?'TOP 5% AVG':'IMMEDIATE';
   const dateTime=value=>{
     const ms=Date.parse(String(value||''));
@@ -41,6 +46,7 @@
       </section>`;
     }
     const refined=number(refine.buyAt100)*rate;
+    const refinedSell=number(refine.sellAt100)*rate;
     const raw=number(refine.eligibleBuy);
     const delta=refined-raw;
     const minerals=(Array.isArray(refine.minerals)?refine.minerals:[]).slice(0,14);
@@ -51,8 +57,9 @@
       </div>
       <div class="refine-grid">
         <article class="refine-card"><span>REFINED BUY</span><strong>${isk(refined)} ISK</strong><small>Jita mineral buy</small></article>
+        <article class="refine-card"><span>REFINED SELL</span><strong>${isk(refinedSell)} ISK</strong><small>Jita mineral sell</small></article>
         <article class="refine-card"><span>RAW ORE BUY</span><strong>${isk(raw)} ISK</strong><small>recognized ore only</small></article>
-        <article class="refine-card ${delta>=0?'positive':'negative'}"><span>REFINE DIFFERENCE</span><strong>${delta>=0?'+':'−'}${isk(Math.abs(delta))} ISK</strong><small>refined − raw buy</small></article>
+        <article class="refine-card ${delta>=0?'positive':'negative'}"><span>REFINE DIFFERENCE</span><strong>${delta>=0?'+':'−'}${isk(Math.abs(delta))} ISK</strong><small>refined buy − raw buy</small></article>
         <article class="refine-card"><span>REFINABLE</span><strong>${lines.toLocaleString()} LINE${lines===1?'':'S'}</strong><small>${number(refine.recognizedUnits).toLocaleString()} ore units</small></article>
       </div>
       ${minerals.length?`<div class="refine-minerals">${minerals.map(row=>{
@@ -75,7 +82,11 @@
       const items=Array.isArray(appraisal.items)?appraisal.items:[];
       const pricing=mode(appraisal.pricing);
       const pricingKey=String(appraisal.pricing||'split').toLowerCase();
-      const selectedLabel=pricingKey==='buy'?'JITA BUY':pricingKey==='sell'?'JITA SELL':'SPLIT';
+      const selectedLabel=pricingKey==='buy'?'JITA BUY'
+        :pricingKey==='sell'?'JITA SELL'
+        :pricingKey==='refine-buy'?'REFINED BUY'
+        :pricingKey==='refine-sell'?'REFINED SELL'
+        :'SPLIT';
       document.title=(share.title||'JLR Appraisal')+' • JLR';
 
       root.classList.remove('loading-panel');
