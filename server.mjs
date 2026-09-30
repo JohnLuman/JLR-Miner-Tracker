@@ -4474,6 +4474,12 @@ const TRACKER_APP_KNOWLEDGE = {
     description:'Toons manages the EVE characters linked to your JLR account through EVE SSO. It shows character connection state and supports the ESI permissions JLR needs for mining ledgers, fits, assets, skills and location features. Updating EVE access refreshes the permissions for an existing linked character.',
     panels:['linked characters','EVE SSO access','ESI scope status','fit and asset sync','ledger sync','location access']
   },
+  ceo:{
+    label:'CEO Command',
+    aliases:['ceo','ceo command','corp command','corporation command','corp finance'],
+    description:'CEO Command is a private corporation administration workspace restricted on the server to the JLR owner and Renius. Renius uses a dedicated corporation ESI authorization that is separate from normal linked-toon access. The workspace is designed for monthly corporation income, wallet divisions, member finance and loyalty tracking, moon and structure administration, corporation assets, jobs, contracts and market orders. Discord activity requires a separate bot connection and is intended to store participation totals rather than message contents or voice recordings.',
+    panels:['monthly income sources','corporation wallet breakdown','member finance and loyalty','moon and structure baseline','corporation assets, industry, contracts and orders','Discord participation totals','CEO ESI permission health']
+  },
   feedback:{
     label:'Feedback',
     aliases:['feedback','bug report','report bug','suggestion','feature idea'],
