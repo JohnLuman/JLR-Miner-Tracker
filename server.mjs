@@ -4393,9 +4393,9 @@ const TRACKER_APP_KNOWLEDGE = {
     description:'Gas is the dedicated gas-mining view. It separates gas opportunities from ore and ice, compares gas types, fleet output, known site quantities and market values, and includes a shared Wormhole Gas Tracker. In J-space, a complete Probe Scanner paste records the current known Fullerite gas signatures for that J-system, keeps the report current for 12 hours, and replaces that system’s previous signature list on the next complete scan.',
     panels:['gas types','site types','regional availability','site quantities','value information','wormhole gas tracker','shared J-space probe scans','Fullerite signatures']
   },
-  forge:{
+  appraisal:{
     label:'JLR Appraisal',
-    aliases:['appraisal','jlr appraisal','price check','market appraisal','item appraisal','forge'],
+    aliases:['appraisal','jlr appraisal','price check','market appraisal','item appraisal'],
     description:'JLR Appraisal is JLR’s native market-value workspace. Static item names, type IDs, volumes, compression pairs and reprocessing materials are resolved from JLR’s persistent local copy of CCP’s official Static Data Export (SDE), with CCP ESI used as a fallback while the catalog is warming or for missing data. Live market orders and history still come from CCP ESI. JLR calculates Buy, Split and Sell values, supports Immediate and Top 5 percent volume-weighted pricing, compares raw/compressed/refined economics, shows data age and cache source, and can create a public JLR share link without exposing EVE tokens or private account data.',
     panels:['item-list paste','CCP SDE static catalog status','JLR native market selector','buy split sell pricing','immediate or top 5 percent basis','compression comparison','refine economics','market history and liquidity','data age and source','volume and value totals','item price table','public appraisal link']
   },
