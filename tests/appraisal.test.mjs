@@ -63,12 +63,13 @@ const preview=appraisalSharePreview(share,{payoutPercent:95});
 assert.equal(preview.payoutPercent,95);
 assert.equal(preview.selectedValue,22);
 assert.equal(preview.payoutValue,20.9);
-assert.match(preview.title,/Fleet Loot .* 20\.9 ISK payout @ 95%/);
-assert.match(preview.description,/Jita 4-4 .* SPLIT .* IMMEDIATE .* 95% payout/);
-assert.match(preview.description,/Buy 18 .* Split 22 .* Sell 26/);
+assert.match(preview.title,/Fleet Loot .* SPLIT 22 ISK/);
+assert.match(preview.description,/Jita 4-4 .* IMMEDIATE/);
+assert.match(preview.description,/SPLIT VALUE 22 ISK/);
+assert.match(preview.description,/Payout 95% = 20\.9 ISK/);
+assert.doesNotMatch(preview.description,/Buy 18|Sell 26/,'Discord preview only exposes the selected appraisal value');
 assert.match(preview.description,/2 types .* 3 units .* 250 m³/);
-assert.match(preview.description,/Refined 88% buy 1\.3K ISK/);
-assert.match(preview.description,/Top value: Pyerite 12 ISK .* Tritanium 10 ISK/);
+assert.match(preview.description,/Top items: Pyerite .* Tritanium/);
 
 const previewHtml=renderAppraisalShareHtml(
   '<!doctype html><html><head><title>JLR Appraisal</title></head><body></body></html>',
