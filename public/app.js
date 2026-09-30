@@ -85,6 +85,11 @@
   let threatShareSaving=false;
   let threatShareRecord=null;
   let threatShareEditError='';
+  let ceoCommandStatus=null;
+  let ceoCommandLoading=false;
+  let ceoFinanceData=null;
+  let ceoFinanceLoading=false;
+  let ceoSelectedMonth='';
   let ledgerAuditLoading=false;
   let myLedgerSummary=null;
   let brainLastSystem='';
@@ -1711,6 +1716,141 @@
   let feedbackOwnerCharacter='';
   function doctrineAllowed(){return Boolean(me?.doctrineMarketAccess?.allowed)}
   function trackerAllowed(){return Boolean(me?.trackerAccess?.allowed)}
+  function ceoAllowed(){return Boolean(me?.ceoAccess?.allowed)}
+  function syncCeoTabAccess(){
+    const button=document.querySelector('.app-tab[data-tab="ceo"]');
+    const allowed=ceoAllowed();
+    if(button){
+      button.classList.toggle('hidden',!allowed);
+      button.setAttribute('aria-hidden',String(!allowed));
+      button.title=allowed
+        ?(me?.ceoAccess?.role==='CEO'?'Renius CEO access':'JLR owner access')
+        :'Restricted to the JLR owner and Renius';
+    }
+    if(!allowed&&activeTab==='ceo'){
+      activeTab='fields';
+      localStorage.setItem('jlrTab',activeTab);
+    }
+  }
+  function renderCeoCommand(){
+    const host=$('ceoCommandPanel');
+    if(!host)return;
+    const status=ceoCommandStatus;
+    const statusText=$('ceoCommandStatusText');
+    const auth=$('ceoAuthorize');
+    const scopeList=$('ceoScopeList');
+    if(!status){
+      if(statusText)statusText.textContent=ceoCommandLoading?'Checking CEO backend…':'CEO backend status has not loaded yet.';
+      if(auth)auth.classList.add('hidden');
+      return;
+    }
+    if(statusText){
+      statusText.textContent=status.connected
+        ?'Renius CEO ESI is connected'+(status.corporationName?' • '+status.corporationName:'')+'.'
+        :status.canAuthorize
+          ?'Backend is ready. Renius can authorize the corporation read scopes here.'
+          :'Backend is ready. Waiting for Renius to authorize the corporation read scopes.';
+    }
+    if(auth){
+      auth.classList.toggle('hidden',!status.canAuthorize||status.connected);
+      auth.disabled=!status.authorizeUrl;
+      auth.dataset.authorizeUrl=status.authorizeUrl||'';
+    }
+    const badge=$('ceoConnectionBadge');
+    if(badge){
+      badge.textContent=status.connected?'● CEO ESI CONNECTED':'○ CEO ESI NOT CONNECTED';
+      badge.classList.toggle('connected',Boolean(status.connected));
+    }
+    if(scopeList){
+      const granted=new Set(status.grantedScopes||[]);
+      scopeList.innerHTML=(status.requestedScopes||[]).map(scope=>
+        '<div class="ceo-scope-row '+(granted.has(scope)?'granted':'pending')+'"><span>'+
+        (granted.has(scope)?'✓':'○')+'</span><code>'+esc(scope)+'</code></div>'
+      ).join('')||'<div class="visual-empty">No CEO scopes configured.</div>';
+    }
+  }
+  function ceoMoney(value){return Math.round(Number(value)||0).toLocaleString()+' ISK'}
+  const CEO_PIE_COLORS=['#9c5cff','#ff496c','#51d6ff','#ffc75a','#6bf09a','#ff8b4c','#7d8cff','#e66dff','#6fe6c0','#d9e36a'];
+  function ceoPieStyle(rows){
+    const list=(rows||[]).filter(row=>Number(row.value)>0);
+    const total=list.reduce((sum,row)=>sum+Number(row.value||0),0);
+    if(!(total>0))return'conic-gradient(#272b36 0 100%)';
+    let cursor=0;
+    return'conic-gradient('+list.map((row,index)=>{
+      const start=cursor;
+      cursor+=Number(row.value||0)/total*100;
+      return CEO_PIE_COLORS[index%CEO_PIE_COLORS.length]+' '+start.toFixed(3)+'% '+cursor.toFixed(3)+'%';
+    }).join(',')+')';
+  }
+  function ceoLegend(rows,total){
+    const list=(rows||[]).filter(row=>Number(row.value)>0);
+    return list.map((row,index)=>{
+      const pct=total>0?Number(row.value||0)/total*100:0;
+      return '<div class="ceo-legend-row"><i style="background:'+CEO_PIE_COLORS[index%CEO_PIE_COLORS.length]+'"></i><span>'+esc(row.name)+'</span><b>'+esc(ceoMoney(row.value))+'</b><small>'+pct.toFixed(1)+'%</small></div>';
+    }).join('')||'<div class="visual-empty">No values available yet.</div>';
+  }
+  function renderCeoFinance(){
+    const data=ceoFinanceData;
+    if($('ceoFinanceLoading'))$('ceoFinanceLoading').classList.toggle('hidden',!ceoFinanceLoading);
+    if(!data)return;
+    const months=data.finance?.months||[];
+    if(!ceoSelectedMonth||!months.some(row=>row.month===ceoSelectedMonth))ceoSelectedMonth=months[0]?.month||'';
+    const month=months.find(row=>row.month===ceoSelectedMonth)||null;
+    const monthSelect=$('ceoIncomeMonth');
+    if(monthSelect){
+      const current=monthSelect.value;
+      monthSelect.innerHTML=months.map(row=>'<option value="'+esc(row.month)+'">'+esc(row.month)+'</option>').join('');
+      monthSelect.value=ceoSelectedMonth||current;
+    }
+    const sources=(month?.sources||[]).map(row=>({name:row.name,value:Number(row.value)||0}));
+    const sourceTotal=sources.reduce((sum,row)=>sum+row.value,0);
+    if($('ceoIncomePie'))$('ceoIncomePie').style.background=ceoPieStyle(sources);
+    if($('ceoIncomeLegend'))$('ceoIncomeLegend').innerHTML=ceoLegend(sources,sourceTotal);
+    if($('ceoIncomeTotals'))$('ceoIncomeTotals').innerHTML=month
+      ?'<span>IN '+esc(ceoMoney(month.income))+'</span><span>OUT '+esc(ceoMoney(month.expenses))+'</span><strong>NET '+esc(ceoMoney(month.net))+'</strong>'
+      :'<span>No journal month available yet.</span>';
+
+    const wallets=(data.finance?.wallets||[]).map(row=>({name:row.name,value:Math.max(0,Number(row.balance)||0)}));
+    const walletTotal=wallets.reduce((sum,row)=>sum+row.value,0);
+    if($('ceoWalletPie'))$('ceoWalletPie').style.background=ceoPieStyle(wallets);
+    if($('ceoWalletLegend'))$('ceoWalletLegend').innerHTML=ceoLegend(wallets,walletTotal);
+    if($('ceoWalletTotal'))$('ceoWalletTotal').textContent=ceoMoney(data.finance?.totalBalance||0);
+    if($('ceoMemberCount'))$('ceoMemberCount').textContent=Number(data.members?.count||0).toLocaleString();
+    if($('ceoFinanceStamp'))$('ceoFinanceStamp').textContent=data.generatedAt?'ESI '+new Date(data.generatedAt).toLocaleString():'';
+    const warnings=$('ceoFinanceWarnings');
+    if(warnings){
+      const errors=data.errors||[];
+      warnings.classList.toggle('hidden',!errors.length);
+      warnings.textContent=errors.length?'Some ESI sections need a corporation role or retry: '+errors.map(row=>row.section).join(', '):'';
+    }
+  }
+  async function loadCeoFinance(force=false){
+    if(!ceoAllowed()||!ceoCommandStatus?.connected||ceoFinanceLoading)return;
+    if(ceoFinanceData&&!force){renderCeoFinance();return}
+    ceoFinanceLoading=true;renderCeoFinance();
+    try{ceoFinanceData=await api('/api/ceo/finance'+(force?'?force=1':''))}
+    catch(error){toast('CEO finance: '+String(error.message||error))}
+    finally{ceoFinanceLoading=false;renderCeoFinance()}
+  }
+  async function loadCeoCommand(force=false){
+    if(!ceoAllowed()||ceoCommandLoading)return;
+    if(ceoCommandStatus&&!force){
+      renderCeoCommand();
+      if(ceoCommandStatus.connected)void loadCeoFinance(false);
+      return;
+    }
+    ceoCommandLoading=true;
+    renderCeoCommand();
+    try{ceoCommandStatus=await api('/api/ceo/status')}
+    catch(error){
+      ceoCommandStatus={connected:false,canAuthorize:false,requestedScopes:[],grantedScopes:[],error:String(error.message||error)};
+      toast('CEO Command status: '+String(error.message||error));
+    }finally{
+      ceoCommandLoading=false;
+      renderCeoCommand();
+      if(ceoCommandStatus?.connected)void loadCeoFinance(force);
+    }
+  }
   function syncTrackerTabAccess(){
     const button=document.querySelector('.app-tab[data-tab="tracker"]');
     const allowed=trackerAllowed();
@@ -1741,7 +1881,7 @@
       localStorage.setItem('jlrTab',activeTab);
     }
   }
-  const NAV_TAB_LABELS={fields:'FIELDS',fleet:'FLEET',performance:'PERFORMANCE',tracker:'TRACKER',ice:'ICE',gas:'GAS',appraisal:'APPRAISAL',doctrine:'DOCTRINE',pvp:'INIT PVP',threat:'THREAT',mer:'MER',brain:'ADAM',toons:'TOONS',feedback:'FEEDBACK'};
+  const NAV_TAB_LABELS={fields:'FIELDS',fleet:'FLEET',performance:'PERFORMANCE',tracker:'TRACKER',ice:'ICE',gas:'GAS',appraisal:'APPRAISAL',doctrine:'DOCTRINE',pvp:'INIT PVP',threat:'THREAT',mer:'MER',brain:'ADAM',toons:'TOONS',ceo:'CEO COMMAND',feedback:'FEEDBACK'};
   function closeNavDropdowns(except=null){
     document.querySelectorAll('.nav-menu[open]').forEach(menu=>{if(menu!==except)menu.open=false});
   }
@@ -1771,6 +1911,7 @@
       const pvpIndex=valid.indexOf('pvp');
       valid.splice(pvpIndex+1,0,'tracker');
     }
+    if(ceoAllowed())valid.push('ceo');
     const nextTab=valid.includes(tab)?tab:'fields';
     if(nextTab==='feedback'&&activeTab!=='feedback')feedbackOpenedFrom=activeTab;
     const previousTab=activeTab;
@@ -1805,6 +1946,7 @@
     }
     if(activeTab==='pvp'&&!pvpIntel&&!pvpIntelLoading)loadPvpIntel();
     if(activeTab==='threat')renderThreatScan();
+    if(activeTab==='ceo')void loadCeoCommand(false);
     if(activeTab==='feedback'){
       renderFeedbackHub();
       loadFeedbackHistory(false);
@@ -1841,8 +1983,49 @@
     const mer=makePanel('mer');
     mer.id='merIntelPanel';
     const toons=makePanel('toons');
+    const ceo=makePanel('ceo');
+    ceo.id='ceoCommandPanel';
     const feedback=makePanel('feedback');
     feedback.id='feedbackPanel';
+
+    ceo.innerHTML=`
+      <section class="ceo-command-shell">
+        <section class="glass ceo-command-hero">
+          <div>
+            <span class="eyebrow">PRIVATE // JLR OWNER + RENIUS</span>
+            <h2>CEO COMMAND</h2>
+            <p id="ceoCommandStatusText">Checking CEO backend…</p>
+          </div>
+          <div class="ceo-command-actions">
+            <span id="ceoConnectionBadge" class="status-pill">○ CEO ESI NOT CONNECTED</span>
+            <button id="ceoAuthorize" class="orb purple hidden" type="button">AUTHORIZE RENIUS CEO ESI</button>
+          </div>
+        </section>
+        <section class="ceo-command-grid">
+          <article class="glass ceo-command-card ceo-chart-card"><div class="ceo-card-title"><div><span class="eyebrow">MONTHLY INCOME</span><h3>INCOME SOURCES</h3></div><select id="ceoIncomeMonth" aria-label="Income month"></select></div><p>Positive corporation-wallet journal entries grouped by EVE reference type. JLR retains observed journal entries so monthly history grows over time.</p><div class="ceo-chart-row"><div id="ceoIncomePie" class="ceo-pie"></div><div id="ceoIncomeLegend" class="ceo-legend"><div class="visual-empty">Waiting for Renius CEO ESI.</div></div></div><div id="ceoIncomeTotals" class="ceo-finance-totals"></div></article>
+          <article class="glass ceo-command-card ceo-chart-card"><span class="eyebrow">CORE FINANCE</span><h3>WALLET BREAKDOWN</h3><p>Live corporation wallet divisions and current balances.</p><div class="ceo-chart-row"><div id="ceoWalletPie" class="ceo-pie"></div><div id="ceoWalletLegend" class="ceo-legend"><div class="visual-empty">Waiting for Renius CEO ESI.</div></div></div><div class="ceo-big-number"><small>TOTAL CORP WALLET</small><strong id="ceoWalletTotal">—</strong></div></article>
+          <article class="glass ceo-command-card"><span class="eyebrow">MEMBERS</span><h3>FINANCE + LOYALTY</h3><p>Corp-wide member roster is available from CEO ESI. The loyalty ledger is reserved for a TMP-defined point formula so JLR does not invent what should earn points.</p><div class="ceo-big-number"><small>CORP MEMBERS</small><strong id="ceoMemberCount">—</strong></div><div class="ceo-placeholder">LOYALTY FORMULA • READY TO CONFIGURE</div></article>
+          <article class="glass ceo-command-card"><span class="eyebrow">COMMUNICATIONS</span><h3>DISCORD ACTIVITY</h3><p>Bot-fed participation counts for text and voice activity. JLR will track activity totals, not message contents or voice recordings.</p><div class="ceo-placeholder">DISCORD BOT CONNECTION REQUIRED</div></article>
+          <article class="glass ceo-command-card"><span class="eyebrow">ADMIN SHEET</span><h3>MOONS + STRUCTURES</h3><p>The TMP Admin workbook remains the baseline for moon, structure, tax, fuel and breakeven knowledge while live ESI is layered on top.</p><div class="ceo-placeholder">SHEET BASELINE</div></article>
+          <article class="glass ceo-command-card"><span class="eyebrow">OPERATIONS</span><h3>ASSETS • JOBS • CONTRACTS • ORDERS</h3><p>Read-only corporation operational data in one private view for Renius and JLR administration.</p><div class="ceo-placeholder">WAITING FOR CEO ESI</div></article>
+        </section>
+        <div class="ceo-finance-foot"><span id="ceoFinanceLoading" class="hidden">Refreshing corporation ESI…</span><span id="ceoFinanceStamp"></span><button id="ceoFinanceRefresh" class="orb silver" type="button">REFRESH CEO DATA</button></div>
+        <div id="ceoFinanceWarnings" class="ceo-finance-warnings hidden"></div>
+        <section class="glass ceo-scope-panel">
+          <div class="brain-card-head"><strong>CEO ESI PERMISSION SET</strong><small>Dedicated Renius token • normal JLR toon permissions stay unchanged</small></div>
+          <div id="ceoScopeList" class="ceo-scope-list"><div class="visual-empty">Loading requested scopes…</div></div>
+        </section>
+      </section>`;
+
+    $('ceoAuthorize')?.addEventListener('click',()=>{
+      const url=String(ceoCommandStatus?.authorizeUrl||$('ceoAuthorize')?.dataset?.authorizeUrl||'');
+      if(url)window.location.assign(url);
+    });
+    $('ceoFinanceRefresh')?.addEventListener('click',()=>void loadCeoFinance(true));
+    $('ceoIncomeMonth')?.addEventListener('change',event=>{
+      ceoSelectedMonth=String(event.target.value||'');
+      renderCeoFinance();
+    });
 
     appraisal.innerHTML=`
       <section class="appraisal-shell">
@@ -5830,9 +6013,9 @@
     }finally{ledgerAuditLoading=false;}
   }
 
-  function renderAll(){if(!state)return;renderFleet();renderTop();renderTrackerBrain();renderSelect();renderBoards();renderHits();renderFleetPerformance();renderMiningVisuals();renderIceMining();renderGasHuffing();renderRanking();renderTimers();renderSelected();renderNotes();renderScanCharacters();renderCharacters();renderCalculator();renderMerIntel();}
+  function renderAll(){if(!state)return;renderFleet();renderTop();renderTrackerBrain();renderSelect();renderBoards();renderHits();renderFleetPerformance();renderMiningVisuals();renderIceMining();renderGasHuffing();renderRanking();renderTimers();renderSelected();renderNotes();renderScanCharacters();renderCharacters();renderCalculator();renderMerIntel();if(activeTab==='ceo')renderCeoCommand();}
 
-  async function refreshMe(){const p=await api('/api/me');me=p.user;if(me){window.jlrAlarmAccountId=String(me.id||'');$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;syncDoctrineTabAccess();syncTrackerTabAccess()}return p.authenticated}
+  async function refreshMe(){const p=await api('/api/me');me=p.user;if(me){window.jlrAlarmAccountId=String(me.id||'');$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;syncDoctrineTabAccess();syncTrackerTabAccess();syncCeoTabAccess()}return p.authenticated}
   async function loadState(){
     const [nextState,myLedger]=await Promise.all([
       api('/api/state'),
@@ -6592,8 +6775,8 @@
       if(!config.ssoConfigured){$('setupWarning').classList.remove('hidden');$('setupWarning').textContent='Login is not configured yet.';}
       const auth=await fetch('/api/me',{credentials:'same-origin'}).then(r=>r.json());
       if(!auth.authenticated){showLogin();return}
-      me=auth.user;window.jlrAlarmAccountId=String(me.id||'');syncDoctrineTabAccess();syncTrackerTabAccess();initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');await loadMerIntel();await loadState();await refreshFleetPerformanceSnapshot(true);renderFleetPerformance();connectSse();connectCompanionClipboardStream();startScoutLocationWatch();
-      const params=new URLSearchParams(location.search);if(params.get('linked'))toast('Toon connected.');if(params.get('login'))toast('Logged in.');if(params.get('market')==='authorized')toast('John market access authorized.');if(params.get('error'))toast(decodeURIComponent(params.get('error')));if(params.toString())history.replaceState({},'',location.pathname);
+      me=auth.user;window.jlrAlarmAccountId=String(me.id||'');syncDoctrineTabAccess();syncTrackerTabAccess();syncCeoTabAccess();initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');await loadMerIntel();await loadState();await refreshFleetPerformanceSnapshot(true);renderFleetPerformance();connectSse();connectCompanionClipboardStream();startScoutLocationWatch();
+      const params=new URLSearchParams(location.search);if(params.get('linked'))toast('Toon connected.');if(params.get('login'))toast('Logged in.');if(params.get('market')==='authorized')toast('John market access authorized.');if(params.get('ceo')==='authorized'){toast('Renius CEO ESI authorized.');void loadCeoCommand(true);}if(params.get('error'))toast(decodeURIComponent(params.get('error')));if(params.toString())history.replaceState({},'',location.pathname);
     }catch(e){console.error(e);showLogin();$('setupWarning').classList.remove('hidden');$('setupWarning').textContent=`JLR could not load: ${e.message}`}
   }
   document.addEventListener('visibilitychange',()=>{
