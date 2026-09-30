@@ -3033,6 +3033,8 @@
       if(threatShareUrl&&input.value!==threatScanText)threatShareUrl='';
       threatShareError='';
       threatScanText=input.value;
+      const clearButton=$('threatClearScan');
+      if(clearButton)clearButton.disabled=!input.value.trim();
     });
     input?.addEventListener('keydown',event=>{
       if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){event.preventDefault();runThreatScan(input.value)}
