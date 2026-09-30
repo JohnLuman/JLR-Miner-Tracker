@@ -501,11 +501,104 @@ html[data-theme="solar"] .kpi,html[data-theme="solar"] .system-node{border-radiu
 html[data-theme="solar"] .orb{border-radius:999px;border-color:#fffbd08f}
 html[data-theme="solar"] .orb:hover{box-shadow:inset 0 2px #fff,inset 0 -5px 9px #0004,0 0 20px #ffe26470}
 
+
+/* v2.10.8 — second personality pass: geometry, motion and interface language */
+
+/* VOID — quiet event-horizon observatory */
+html[data-theme="void"] body::after{background:radial-gradient(circle at 86% 72%,transparent 0 54px,#b77cff18 55px 56px,transparent 57px 72px,#8650d90c 73px 74px,transparent 75px),radial-gradient(circle at 86% 72%,#0000 0 45px,#0009 78px,transparent 130px);opacity:.9}
+html[data-theme="void"] .glass{border-radius:16px;border-color:#ffffff12;background:linear-gradient(180deg,#171322b5,#0d0c14d9);backdrop-filter:blur(5px);box-shadow:inset 0 1px #ffffff0c,0 14px 34px #0005}
+html[data-theme="void"] .section-title{background:linear-gradient(90deg,#a766ff0d,transparent 52%)}
+html[data-theme="void"] .section-title::after{content:"";width:42px;height:1px;background:linear-gradient(90deg,#a968ff66,transparent);margin-left:auto}
+html[data-theme="void"] .kpi{border-radius:13px;background:radial-gradient(circle at 100% 0,#9d34ed0c,transparent 55%),var(--card)}
+
+/* CITADEL — armored bulkheads and structural brackets */
+html[data-theme="citadel"] .glass{clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,12px 100%,0 calc(100% - 12px));border-radius:0;background-image:linear-gradient(135deg,#58d5ff0a 0 18px,transparent 18px),linear-gradient(315deg,#58d5ff08 0 18px,transparent 18px)}
+html[data-theme="citadel"] .section-title{border-bottom:2px solid #1d6f89;background:linear-gradient(90deg,#25bce116,transparent 38%)}
+html[data-theme="citadel"] .section-title::before{content:"";width:6px;height:14px;border-left:2px solid #4ed5fa;border-top:2px solid #4ed5fa;border-bottom:2px solid #4ed5fa;opacity:.75}
+html[data-theme="citadel"] .kpi{border-left:3px solid color-mix(in srgb,var(--theme-accent) 48%,var(--line));border-radius:2px}
+html[data-theme="citadel"] .nav-dropdown-bar{border-top:2px solid #2caed0}
+
+/* INDUSTRIAL — bolted machinery and warning rails */
+html[data-theme="industrial"] .glass{background-image:radial-gradient(circle at 8px 8px,#ffc26866 0 1px,#3b2514 1.5px 2.5px,transparent 3px),radial-gradient(circle at calc(100% - 8px) 8px,#ffc26866 0 1px,#3b2514 1.5px 2.5px,transparent 3px),linear-gradient(180deg,var(--theme-panel-hi),var(--theme-panel-lo));box-shadow:inset 5px 0 #8b501b42,inset -1px 0 #ffc36b12,0 7px 18px #0005}
+html[data-theme="industrial"] .section-title{font-family:"Share Tech Mono",monospace;background:repeating-linear-gradient(135deg,#e28a1914 0 8px,transparent 8px 16px)}
+html[data-theme="industrial"] .section-title::after{content:"";width:54px;height:7px;margin-left:auto;background:repeating-linear-gradient(135deg,#f1a035 0 7px,#1b120b 7px 14px);opacity:.65}
+html[data-theme="industrial"] .kpi,html[data-theme="industrial"] .system-node{border-radius:2px;box-shadow:inset 0 -2px #0005}
+html[data-theme="industrial"] .topbar{border-bottom:1px dashed #8b5a2b66;padding-bottom:5px}
+
+/* SERPENTIS — active bio-scanner */
+html[data-theme="serpentis"] body::before{animation:jlr-serpentis-scan 5.5s linear infinite;background-size:100% 7px}
+html[data-theme="serpentis"] body::after{background:radial-gradient(circle at 50% 44%,transparent 0 22%,#1de5870b 22.3% 22.8%,transparent 23% 42%,#0ac66b08 42.3% 42.7%,transparent 43% 68%,#001a0d88 93%),linear-gradient(100deg,transparent 46%,#57ffad0b 49%,#57ffad18 50%,transparent 54%);opacity:.95}
+html[data-theme="serpentis"] .glass{border-radius:22px 5px 22px 5px;border-color:#22573e;box-shadow:inset 0 0 24px #0b6d3c16,0 0 16px #00783a0c}
+html[data-theme="serpentis"] .section-title::before{content:"";width:7px;height:7px;border-radius:50%;background:#42e89a;box-shadow:0 0 0 4px #31d78618,0 0 12px #39ff9b99;animation:jlr-serpentis-pulse 2s ease-in-out infinite}
+html[data-theme="serpentis"] .nav-menu-trigger{border-radius:18px 5px 18px 5px}
+html[data-theme="serpentis"] .kpi{border-radius:15px 4px 15px 4px}
+
+/* BLOOD — cathedral terminals get pointed relic geometry */
+html[data-theme="blood"] .kpi{border-radius:0 12px 0 12px;border-color:#4c101e;background:linear-gradient(145deg,#26071355,transparent 44%),var(--card)}
+html[data-theme="blood"] .kpi span,html[data-theme="blood"] .section-title strong{font-family:Rajdhani,Segoe UI,sans-serif;letter-spacing:.14em}
+html[data-theme="blood"] .nav-dropdown-bar{border-bottom:2px solid #5b1023;box-shadow:0 12px 32px #000a,inset 0 -1px #a31e3b33}
+html[data-theme="blood"] .brand-mark{clip-path:polygon(50% 0,100% 28%,82% 100%,18% 100%,0 28%);border-radius:0}
+
+/* ANGEL — analog flight-deck / worn brass instrumentation */
+html[data-theme="angel"] body::after{background:repeating-linear-gradient(90deg,transparent 0 139px,#f0bd4d0b 140px 141px),linear-gradient(115deg,transparent 0 64%,#d4962510 64.2% 64.7%,transparent 65%);opacity:.8}
+html[data-theme="angel"] .glass{border:1px solid #665c42;border-radius:6px;background-image:linear-gradient(180deg,#fff8d607,transparent 24%),repeating-linear-gradient(0deg,#ffffff02 0 1px,transparent 1px 4px);box-shadow:inset 0 0 0 1px #d3a64c0b,inset 0 -3px #0005,0 5px 14px #0005}
+html[data-theme="angel"] .section-title{font-family:"Share Tech Mono",monospace;border-bottom-style:dashed}
+html[data-theme="angel"] .section-title::after{content:"//";margin-left:auto;color:#d4a44588;font-size:11px;letter-spacing:-2px}
+html[data-theme="angel"] .kpi{border-radius:6px;box-shadow:inset 0 0 0 1px #d8a94a0b}
+html[data-theme="angel"] .orb{border-radius:6px}
+
+/* EDENCOM — tactical radar and target brackets */
+html[data-theme="edencom"] body::after{background:radial-gradient(circle at 82% 18%,transparent 0 56px,#68b6ff18 57px 58px,transparent 59px 88px,#68b6ff10 89px 90px,transparent 91px 120px),conic-gradient(from 210deg at 82% 18%,transparent 0 20deg,#5cb2ff12 21deg 28deg,transparent 29deg 360deg);opacity:.9;animation:jlr-edencom-radar 4.2s ease-in-out infinite alternate}
+html[data-theme="edencom"] .glass{border-radius:1px;border-color:#315982;box-shadow:inset 3px 0 #3e8dff38,inset -1px 0 #7fc4ff13,0 7px 22px #0005}
+html[data-theme="edencom"] .section-title{background:linear-gradient(90deg,#2d83e31a,transparent 34%)}
+html[data-theme="edencom"] .section-title::before{content:"";width:9px;height:9px;border:2px solid #68b6ff;box-shadow:inset 0 0 0 2px #0a1422}
+html[data-theme="edencom"] .kpi{border-radius:1px;box-shadow:inset 2px 0 #3289ee2b}
+html[data-theme="edencom"] .nav-menu-trigger{border-radius:1px}
+
+/* AURORA — floating luminous glass, soft motion */
+html[data-theme="aurora"] body::after{background:radial-gradient(circle at 18% 78%,#6ef5df17 0 8%,transparent 27%),radial-gradient(circle at 83% 32%,#ff75e51c 0 10%,transparent 31%);filter:blur(26px);animation:jlr-aurora-orbs 12s ease-in-out infinite alternate;opacity:.9}
+html[data-theme="aurora"] .glass{border-radius:22px;background:linear-gradient(145deg,#ffffff0b,color-mix(in srgb,var(--theme-panel-hi) 72%,transparent) 28%,color-mix(in srgb,var(--theme-panel-lo) 88%,transparent));backdrop-filter:blur(12px) saturate(1.25);box-shadow:inset 0 1px #ffffff24,0 14px 36px #0004}
+html[data-theme="aurora"] .kpi{border-radius:18px;background:linear-gradient(135deg,#ff8ce80a,#6ff5de08),var(--card);transition:transform .18s ease,box-shadow .18s ease}
+html[data-theme="aurora"] .kpi:hover{transform:translateY(-2px);box-shadow:0 8px 18px #0004,inset 0 1px #ffffff18}
+html[data-theme="aurora"] .orb{border-radius:18px}
+html[data-theme="aurora"] .section-title strong{font-family:Oxanium,Segoe UI,sans-serif}
+
+/* NEON GRID — active HUD scanline and reactive modules */
+html[data-theme="neon"] .nav-dropdown-bar::after{content:"";position:absolute;left:8px;right:8px;bottom:1px;height:1px;background:linear-gradient(90deg,transparent,#f149ff,#5ff7ff,transparent);animation:jlr-neon-scan 3.8s ease-in-out infinite;opacity:.75;pointer-events:none}
+html[data-theme="neon"] .section-title{background-image:linear-gradient(90deg,#e044ff10,transparent 38%,#42ecff0b)}
+html[data-theme="neon"] .section-title::before{content:">";color:#61f6ff;font-family:"Share Tech Mono",monospace;text-shadow:0 0 7px #61f6ff}
+html[data-theme="neon"] .kpi{transition:box-shadow .13s ease,filter .13s ease}
+html[data-theme="neon"] .kpi:hover{box-shadow:inset 2px 0 #e044ff66,inset -2px 0 #42ecff55,0 0 18px #9b28cc2e;filter:brightness(1.1)}
+html[data-theme="neon"] .brand-mark{clip-path:polygon(0 0,82% 0,100% 30%,100% 100%,18% 100%,0 70%);border-radius:0}
+
+/* GLACIER — fractured crystal facets rather than HUD cuts */
+html[data-theme="glacier"] .glass{background-image:linear-gradient(127deg,transparent 0 32%,#e1faff0a 32.2% 32.6%,transparent 32.8%),linear-gradient(43deg,transparent 0 71%,#bdeeff0b 71.2% 71.6%,transparent 71.8%),linear-gradient(145deg,#dff7ff0d,color-mix(in srgb,var(--theme-panel-lo) 84%,transparent))}
+html[data-theme="glacier"] .section-title::after{content:"◇";margin-left:auto;color:#baf0ff99;font-size:15px;text-shadow:0 0 10px #8cdeff55}
+html[data-theme="glacier"] .kpi{border-radius:16px 4px 16px 4px;border-color:#75a9c64d;background:linear-gradient(145deg,#e7fbff0d,transparent 40%),var(--card)}
+html[data-theme="glacier"] .kpi strong{text-shadow:0 1px 8px #8edfff18}
+html[data-theme="glacier"] .nav-menu-trigger{border-radius:16px 5px 16px 5px}
+
+/* SOLAR FLARE — orbital rings and radiant instrumentation */
+html[data-theme="solar"] .topbar{border-bottom:1px solid #fff1a93f;box-shadow:0 8px 18px -16px #ffe66a}
+html[data-theme="solar"] .section-title strong{text-shadow:0 0 12px #ffd84a38}
+html[data-theme="solar"] .section-title::after{content:"";margin-left:auto;width:38px;height:6px;border-top:1px solid #ffe87688;border-bottom:1px solid #ffe87633;border-radius:50%}
+html[data-theme="solar"] .status-pill{border-color:#fff0a970;box-shadow:inset 0 1px #fffbd63d,0 0 12px #ffd84a12}
+html[data-theme="solar"] .brand-mark{border-radius:50%;box-shadow:0 0 16px #ffd84a4f}
+html[data-theme="solar"] .nav-menu-trigger{border-radius:14px}
+
 @keyframes jlr-neon-grid{to{background-position:34px 34px,34px 34px}}
 @keyframes jlr-aurora-drift{0%{transform:translate3d(-3%,-2%,0) scale(1.15) rotate(-2deg)}100%{transform:translate3d(4%,2%,0) scale(1.22) rotate(2deg)}}
 @keyframes jlr-solar-pulse{0%{transform:scale(.98);filter:brightness(.94)}100%{transform:scale(1.08);filter:brightness(1.12)}}
 @keyframes jlr-solar-rays{to{transform:rotate(360deg)}}
-@media(prefers-reduced-motion:reduce){html[data-theme] body::before{animation:none!important}}
+@keyframes jlr-serpentis-scan{to{background-position:0 56px}}
+@keyframes jlr-serpentis-pulse{0%,100%{opacity:.55;transform:scale(.85)}50%{opacity:1;transform:scale(1.08)}}
+@keyframes jlr-edencom-radar{0%{filter:brightness(.85)}100%{filter:brightness(1.25)}}
+@keyframes jlr-aurora-orbs{0%{transform:translate3d(-3%,2%,0) scale(1)}100%{transform:translate3d(4%,-3%,0) scale(1.08)}}
+@keyframes jlr-neon-scan{0%,100%{transform:scaleX(.25);opacity:.25}50%{transform:scaleX(1);opacity:.9}}
+@media(prefers-reduced-motion:reduce){
+  html[data-theme] body::before,html[data-theme] body::after,
+  html[data-theme] .nav-dropdown-bar::after,html[data-theme] .section-title::before{animation:none!important}
+}
 
 
 /* Field board personalization: favorites, drag ordering, and tile density. */
