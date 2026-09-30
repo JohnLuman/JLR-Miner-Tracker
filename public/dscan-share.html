@@ -8,7 +8,7 @@
   <meta property="og:description" content="Shared EVE Online D-scan and Local intel hosted by JLR Miner Tracker.">
   <meta name="description" content="Shared EVE Online D-scan and Local intel hosted by JLR Miner Tracker.">
   <title>JLR Shared Intel</title>
-  <link rel="stylesheet" href="/dscan-share.css?v=2">
+  <link rel="stylesheet" href="/dscan-share.css?v=3">
 </head>
 <body>
   <main class="page">
@@ -33,48 +33,6 @@
         <article><span>LOCAL PILOTS</span><strong id="localPilotCount">0</strong></article>
         <article><span>MANUAL RECONS</span><strong id="reconCount">0</strong></article>
       </div>
-
-      <section id="ownerPanel" class="panel owner-panel hidden">
-        <div class="panel-head">
-          <div><span class="kicker">OWNER CONTROLS</span><h2>UPDATE THIS SAME LINK</h2></div>
-          <span id="ownerStatus" class="muted">Only you can edit this share.</span>
-        </div>
-
-        <label class="owner-field">
-          <span>SYSTEM</span>
-          <input id="editSystem" maxlength="80" autocomplete="off" placeholder="Example: C-N4OD">
-        </label>
-
-        <div class="owner-grid">
-          <label class="owner-field">
-            <span>D-SCAN</span>
-            <textarea id="editDscan" rows="10" maxlength="75000" spellcheck="false" placeholder="Paste a new directional scan here. Saving replaces only the D-scan layer."></textarea>
-          </label>
-          <label class="owner-field">
-            <span>LOCAL</span>
-            <textarea id="editLocal" rows="10" maxlength="75000" spellcheck="false" placeholder="Paste Local names here. Saving replaces only the Local layer."></textarea>
-          </label>
-        </div>
-
-        <div class="recon-editor">
-          <div class="recon-editor-head">
-            <div><span class="kicker">MANUAL RECON</span><strong>Add ships not visible on the scan</strong></div>
-            <div class="recon-presets">
-              <button type="button" data-recon-preset="Huginn">+ HUGINN</button>
-              <button type="button" data-recon-preset="Lachesis">+ LACHESIS</button>
-              <button type="button" data-recon-preset="Rook">+ ROOK</button>
-              <button type="button" data-recon-preset="Curse">+ CURSE</button>
-              <button id="addReconRow" type="button" class="secondary">+ OTHER</button>
-            </div>
-          </div>
-          <div id="reconEditorRows" class="recon-editor-rows"></div>
-        </div>
-
-        <div class="owner-actions">
-          <button id="saveShare" type="button">SAVE UPDATE</button>
-          <span>Updates D-scan, Local, system, and recon notes without changing the URL.</span>
-        </div>
-      </section>
 
       <section id="manualReconPanel" class="panel hidden">
         <div class="panel-head">
@@ -125,10 +83,10 @@
       <section id="emptyPanel" class="panel hidden">
         <span class="kicker">NO ACTIVE LAYERS</span>
         <h2>THIS SHARE IS EMPTY</h2>
-        <p class="muted">The owner can add a D-scan, Local list, or manual recon notes to this same link.</p>
+        <p class="muted">No scan data is currently attached to this shared link.</p>
       </section>
     </section>
   </main>
-  <script src="/dscan-share.js?v=2"></script>
+  <script src="/dscan-share.js?v=3"></script>
 </body>
 </html>
