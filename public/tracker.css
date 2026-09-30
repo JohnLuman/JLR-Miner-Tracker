@@ -153,6 +153,9 @@
 .tracker-intel-system{min-width:0}
 .tracker-intel-system strong,.tracker-intel-system small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tracker-intel-system strong{font-size:10px}
+.tracker-intel-system-link{display:inline-block;max-width:100%;color:inherit;text-decoration:none}
+.tracker-intel-system-link:hover strong,.tracker-intel-system-link:focus-visible strong{color:#ff7885;text-decoration:underline;text-underline-offset:2px}
+.tracker-intel-system-link:focus-visible{outline:1px solid #ff7885;outline-offset:2px;border-radius:2px}
 .tracker-intel-system small{margin-top:2px;font-size:7px;color:var(--muted)}
 .tracker-intel-stat{min-width:0;border-left:1px solid #2b2e36;padding-left:9px}
 .tracker-intel-stat span{display:block;color:#707681;font:900 6px/1 "Share Tech Mono",monospace;letter-spacing:.12em}
