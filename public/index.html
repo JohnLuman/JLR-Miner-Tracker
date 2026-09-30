@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700&family=Rajdhani:wght@600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=2.10.6">
+  <link rel="stylesheet" href="/styles.css?v=2.10.7">
   <link rel="stylesheet" href="/appraisal-enhance.css?v=5">
   <link rel="stylesheet" href="/tracker.css?v=2.9.147-closest-init1">
 </head>
@@ -32,26 +32,26 @@
     <header class="topbar">
       <div class="brand">
         <div class="brand-kicker">JLR INDUSTRIAL NETWORK // FOUNTAIN</div>
-        <div class="brand-line"><span class="brand-mark">JLR</span><h1>MINER TRACKER</h1><span class="brand-status-stack"><small id="appVersion" class="app-version">v2.10.6</small><span id="liveBadge" class="status-pill" title="Latest EVE data sync status">● DATA LOADING</span></span></div>
+        <div class="brand-line"><span class="brand-mark">JLR</span><h1>MINER TRACKER</h1><span class="brand-status-stack"><small id="appVersion" class="app-version">v2.10.7</small><span id="liveBadge" class="status-pill" title="Latest EVE data sync status">● DATA LOADING</span></span></div>
       </div>
       <div class="top-actions">
         <button id="compactMode" class="orb purple active" type="button" title="Condensed operations view with smaller cards and fewer detail panels">COMPACT</button>
         <button id="expandedMode" class="orb silver" type="button" title="Full command view with larger layouts and additional T3 economics and timer panels">EXPANDED</button>
         <label class="theme-control" title="Choose the dashboard visual theme">
           <span>THEME</span>
-          <img id="themeSelectIcon" class="theme-select-icon" src="https://images.evetech.net/types/32880/render?size=64" alt="" aria-hidden="true">
+          <span id="themeSelectIcon" class="theme-select-icon theme-glyph" aria-hidden="true"></span>
           <select id="themeSelect" aria-label="App theme">
-            <option value="void" data-theme-image="https://images.evetech.net/types/32880/render?size=64" data-theme-note="Deep-space minimal">VOID</option>
-            <option value="citadel" data-theme-image="https://images.evetech.net/types/35833/render?size=64" data-theme-note="Fortified command UI">CITADEL</option>
-            <option value="industrial" data-theme-image="https://images.evetech.net/types/28352/render?size=64" data-theme-note="Rugged ORE machinery">INDUSTRIAL</option>
-            <option value="serpentis" data-theme-image="https://images.evetech.net/types/17740/render?size=64" data-theme-note="Toxic tactical scanner">SERPENTIS</option>
-            <option value="blood" data-theme-image="https://images.evetech.net/types/17920/render?size=64" data-theme-note="Blood Raider ritual tech">BLOOD</option>
-            <option value="angel" data-theme-image="https://images.evetech.net/types/17738/render?size=64" data-theme-note="Brass raider cockpit">ANGEL</option>
-            <option value="edencom" data-theme-image="https://images.evetech.net/types/54733/render?size=64" data-theme-note="Military response grid">EDENCOM</option>
-            <option value="aurora" data-theme-image="https://images.evetech.net/types/37135/render?size=64" data-theme-note="Soft polar glow">AURORA</option>
-            <option value="neon" data-theme-image="https://images.evetech.net/types/22544/render?size=64" data-theme-note="Animated cyber mining grid">NEON GRID</option>
-            <option value="glacier" data-theme-image="https://images.evetech.net/types/22548/render?size=64" data-theme-note="Frosted crystalline glass">GLACIER</option>
-            <option value="solar" data-theme-image="https://images.evetech.net/types/22/icon?size=64" data-theme-note="Radiant ore-field heat">SOLAR FLARE</option>
+            <option value="void" data-theme-icon="void" data-theme-note="Deep-space singularity">VOID</option>
+            <option value="citadel" data-theme-icon="citadel" data-theme-note="Fortress shield command UI">CITADEL</option>
+            <option value="industrial" data-theme-icon="industrial" data-theme-note="Gear-and-drill machinery">INDUSTRIAL</option>
+            <option value="serpentis" data-theme-icon="serpentis" data-theme-note="Toxic scanner coil">SERPENTIS</option>
+            <option value="blood" data-theme-icon="blood" data-theme-note="Dark cathedral sigil">BLOOD</option>
+            <option value="angel" data-theme-icon="angel" data-theme-note="Winged raider chevrons">ANGEL</option>
+            <option value="edencom" data-theme-icon="edencom" data-theme-note="Tactical shield bolt">EDENCOM</option>
+            <option value="aurora" data-theme-icon="aurora" data-theme-note="Flowing polar ribbons">AURORA</option>
+            <option value="neon" data-theme-icon="neon" data-theme-note="Cyber grid cube">NEON GRID</option>
+            <option value="glacier" data-theme-icon="glacier" data-theme-note="Faceted crystal shard">GLACIER</option>
+            <option value="solar" data-theme-icon="solar" data-theme-note="White-hot stellar corona">SOLAR FLARE</option>
           </select>
         </label>
         <a id="donateTop" class="donate-top-link" href="https://www.paypal.com/ncp/payment/J7UYHR2RJFS6N" target="_blank" rel="noopener noreferrer" aria-label="Donate to help keep JLR online and mining">
@@ -543,7 +543,7 @@
   </main>
   <script src="/yield-math.js?v=2.9.37" defer></script>
   <script src="/vendor/vosk/vosk-0.0.8.js?v=1" defer></script>
-  <script src="/app.js?v=2.10.6" defer></script>
+  <script src="/app.js?v=2.10.7" defer></script>
   <script src="/appraisal-enhance.js?v=5" defer></script>
   <script src="/tracker.js?v=2.9.147-closest-init1" defer></script>
 </body>
