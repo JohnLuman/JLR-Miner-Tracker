@@ -1031,9 +1031,9 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .fleet-command-title strong{font-size:12px;letter-spacing:.07em}
 .fleet-history-controls{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap}
 .fleet-control-group{display:flex;padding:2px;border:1px solid color-mix(in srgb,var(--theme-accent,#9d34ed) 30%,var(--line));border-radius:7px;background:#090b10}
-.fleet-range,.fleet-metric{min-width:38px;height:25px;border:0;border-radius:5px;background:transparent;color:var(--muted);padding:3px 7px;font:inherit;font-size:7px;font-weight:1000;letter-spacing:.06em;cursor:pointer}
-.fleet-range:hover,.fleet-metric:hover{color:var(--text);background:#ffffff0b}
-.fleet-range.active,.fleet-metric.active{background:linear-gradient(180deg,var(--theme-tab-hi,#4d236a),var(--theme-tab-lo,#2b173d));color:#fff;box-shadow:inset 0 1px #ffffff20}
+.fleet-range,.fleet-metric,.fleet-rate-metric{min-width:38px;height:25px;border:0;border-radius:5px;background:transparent;color:var(--muted);padding:3px 7px;font:inherit;font-size:7px;font-weight:1000;letter-spacing:.06em;cursor:pointer}
+.fleet-range:hover,.fleet-metric:hover,.fleet-rate-metric:hover{color:var(--text);background:#ffffff0b}
+.fleet-range.active,.fleet-metric.active,.fleet-rate-metric.active{background:linear-gradient(180deg,var(--theme-tab-hi,#4d236a),var(--theme-tab-lo,#2b173d));color:#fff;box-shadow:inset 0 1px #ffffff20}
 .fleet-history-controls .status-pill{min-height:29px;display:flex;align-items:center}
 .fleet-history-controls .status-pill.stale{border-color:#715f2f;color:#ffd56a;background:#1c180e}
 .fleet-command-kpis{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;padding:6px}
@@ -1079,6 +1079,19 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .fleet-chart-tooltip small{margin-top:2px;color:#b3bec9;font-size:6.5px}
 .fleet-chart-tooltip em{margin-top:4px;color:var(--theme-accent-hi,#ce68ff);font-size:6px;font-style:normal;letter-spacing:.03em}
 .fleet-chart-tooltip.pinned{border-color:var(--theme-accent-hi,#ce68ff);box-shadow:0 8px 22px #000a,0 0 16px color-mix(in srgb,var(--theme-accent,#9d34ed) 35%,transparent)}
+.fleet-chart-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.fleet-chart-head>div:first-child{display:grid;gap:2px;min-width:0}
+.fleet-rate-switch{flex:0 0 auto}
+.fleet-rate-metric{min-width:52px}
+.fleet-day-progress-chart{position:relative;min-height:205px;border:1px solid #1d2731;border-radius:7px;background:radial-gradient(circle at 50% 25%,#111c28,#070a0e 70%);overflow:hidden}
+.fleet-progress-card{grid-column:1/-1}
+.fleet-progress-today{fill:none;stroke:#4eb4ff;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 3px #2e9ee988)}
+.fleet-progress-yesterday{fill:none;stroke:#8f98a5;stroke-width:1.6;stroke-dasharray:5 4;stroke-linecap:round;stroke-linejoin:round;opacity:.82}
+.fleet-progress-label{font-size:7px;font-family:inherit;font-weight:900;letter-spacing:.035em}
+.fleet-progress-today-label{fill:#8bd3ff}
+.fleet-progress-yesterday-label{fill:#aab2bd}
+.fleet-progress-hit{cursor:crosshair}
+@media(max-width:680px){.fleet-chart-head{align-items:flex-start;flex-direction:column}.fleet-rate-switch{width:max-content}.fleet-day-progress-chart{min-height:0}}
 .fleet-ore-mix{display:grid;gap:8px;min-height:220px;align-content:start;padding:7px}
 .ore-mix-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
 .ore-mix-kpis>div{min-width:0;padding:7px 8px;border:1px solid color-mix(in srgb,var(--line) 80%,transparent);border-radius:7px;background:color-mix(in srgb,var(--theme-soft,#111119) 80%,black 20%)}

@@ -63,6 +63,15 @@ assert.match(app,/bindFleetChartInteractions/,'both fleet graphs expose interact
 assert.match(app,/data-fleet-chart-date/,'fleet graphs link matching dates across charts');
 assert.match(styles,/\.fleet-chart-tooltip/,'fleet graph hover/click details use a dedicated tooltip');
 assert.match(styles,/\.fleet-chart-linked/,'linked dates are visually emphasized across both graphs');
+assert.match(index,/data-rate-metric="efficiency"/,'sampled-rate graph can switch to efficiency percent');
+assert.match(app,/fleetRateMetric/,'fleet efficiency graph mode is persisted');
+assert.match(app,/% OF TARGET/,'efficiency mode normalizes sampled output against the fitted fleet target');
+assert.match(index,/id="fleetDayProgressChart"/,'Fleet Performance includes cumulative EVE-day progress');
+assert.match(app,/function fleetDayProgressSeries/,'EVE-day progress is derived from retained interval m3 samples');
+assert.match(app,/fleet-progress-today/,'day-progress chart renders today');
+assert.match(app,/fleet-progress-yesterday/,'day-progress chart renders yesterday');
+assert.match(styles,/\.fleet-progress-today/,'today progress series has dedicated chart styling');
+assert.match(styles,/\.fleet-progress-yesterday/,'yesterday progress series has dedicated chart styling');
 
 assert.doesNotMatch(app,/class="ore-mix-bar"/,'Ore Mix no longer uses ambiguous top-relative bars');
 assert.match(app,/ore-mix-composition/,'Ore Mix uses one proportional composition strip');
