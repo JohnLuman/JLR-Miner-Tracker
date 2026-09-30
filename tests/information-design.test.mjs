@@ -60,19 +60,20 @@ assert.match(app,/outside tracked fields/,'ledger diagnostics distinguish payout
 assert.match(app,/fleetUptimeMeter/,'fleet target exposes the uptime assumption visually');
 
 assert.equal(pkg.version,'2.10.0');
-assert.ok(index.includes('/styles.css?v=2.10.3-navdropdown2'),'main information-design CSS is cache-busted');
+assert.ok(index.includes('/styles.css?v=2.10.4-fleetpolish1'),'main information-design CSS is cache-busted');
 assert.ok(index.includes('/tracker.css?v=2.9.147-closest-init1'),'Tracker information-design CSS is cache-busted');
-assert.ok(index.includes('/app.js?v=2.10.2-navdropdown1'),'dashboard JS is cache-busted');
+assert.ok(index.includes('/app.js?v=2.10.4-fleetpolish1'),'dashboard JS is cache-busted');
 assert.ok(index.includes('/tracker.js?v=2.9.147-closest-init1'),'Tracker loader is cache-busted');
 assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.147-closest-init1/,'Tracker core is cache-busted');
 
 assert.match(styles,/\.app\.compact\{width:min\(1120px,calc\(100vw - 12px\)\);max-width:1120px\}/,'Compact app keeps a bounded design width');
 assert.match(styles,/\.app\.expanded\{width:min\(1600px,calc\(100vw - 12px\)\);max-width:1600px\}/,'Expanded app keeps a bounded design width');
 assert.match(styles,/grid-template-columns:repeat\(auto-fill,minmax\(250px,340px\)\)/,'Compact target cards are capped instead of stretched');
-assert.match(styles,/\.fleet-live-card,\.fleet-trend-card\{grid-column:auto;width:100%;max-width:none/,'Live Activity and Ore Value Trend share the same two-column workspace');
+assert.match(styles,/\.fleet-miner-card,\.fleet-ore-card\{grid-column:1\/-1;width:100%;max-width:none/,'Miner comparison and ore mix get full-width review space');
 assert.match(styles,/\.fleet-perf-list\.compact\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/,'Fleet Performance uses a compact two-column miner list');
 assert.match(styles,/\.fleet-performance-summary-line/,'Fleet Performance uses a compact numeric actual-vs-target summary');
-assert.match(index,/class="fleet-command-card fleet-trend-card"/,'Ore Value Trend is next to Live Activity Rate');
+assert.match(index,/class="fleet-command-card fleet-miner-card"/,'Miner comparison lives inside the main Fleet Performance review');
+assert.match(index,/ORE VALUE ANALYTICS/,'Ore market context is separated from fleet execution review');
 assert.match(app,/class="fleet-perf-row compact"/,'per-miner performance no longer uses giant progress bars');
 assert.doesNotMatch(app,/fleet-share-track/,'per-miner performance removes decorative share bars');
 assert.match(index,/id="adamQuickToggle"/,'Ask Adam is available outside the Adam tab');

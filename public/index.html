@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700&family=Rajdhani:wght@600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=2.10.3-navdropdown2">
+  <link rel="stylesheet" href="/styles.css?v=2.10.4-fleetpolish1">
   <link rel="stylesheet" href="/appraisal-enhance.css?v=5">
   <link rel="stylesheet" href="/tracker.css?v=2.9.147-closest-init1">
 </head>
@@ -278,7 +278,7 @@
 
     <section class="glass fleet-command-panel">
       <div class="section-title fleet-command-title">
-        <div><span class="eyebrow">ESI FLEET REVIEW</span><strong>FLEET PERFORMANCE</strong></div>
+        <div><span class="eyebrow">MINING LEDGER REVIEW</span><strong>FLEET PERFORMANCE</strong></div>
         <div class="fleet-history-controls" aria-label="Fleet performance history controls">
           <div class="fleet-control-block">
             <span class="fleet-control-caption">HISTORY</span>
@@ -299,11 +299,11 @@
         </div>
       </div>
       <div id="fleetInsight" class="fleet-insight" aria-live="polite">
-        <div><span>SESSION REVIEW</span><strong id="fleetInsightText">Waiting for a mining ledger sample</strong><small id="fleetInsightDetail">JLR will compare recent mining samples with your selected fleet target.</small><small id="fleetInsightReason" class="fleet-insight-reason">Contribution and rate variance will appear here.</small></div>
+        <div><span>LATEST SAMPLE</span><strong id="fleetInsightText">Waiting for a mining ledger sample</strong><small id="fleetInsightDetail">JLR will compare sampled ledger output with your selected fleet target.</small><small id="fleetInsightReason" class="fleet-insight-reason">Contribution and rate variance will appear here.</small></div>
         <div class="fleet-insight-meter" title="Recent activity rate versus selected fleet target"><i id="fleetInsightMeter"></i><b id="fleetInsightPct">—</b></div>
       </div>
       <div class="fleet-command-kpis information-fleet-kpis">
-        <article class="fleet-kpi-primary"><span>RECENT LEDGER RATE</span><strong id="fleetLiveRate">—</strong><small id="fleetLiveRateSub">waiting for a mining interval</small></article>
+        <article class="fleet-kpi-primary"><span>LATEST SAMPLED RATE</span><strong id="fleetLiveRate">—</strong><small id="fleetLiveRateSub">waiting for a mining ledger change</small></article>
         <article class="fleet-kpi-primary"><span>EVE DAY T3 PAYOUT</span><strong id="fleetTodayPayout">—</strong><small id="fleetTodayPayoutSub">current UTC/EVE day • exact T3 ledger</small></article>
         <article class="fleet-kpi-primary"><span>EVE DAY T3 MINED</span><strong id="fleetTodayM3">—</strong><small>current UTC/EVE day • selected fleet</small></article>
         <article class="fleet-kpi-secondary"><span>CONTRIBUTING TOONS</span><strong id="fleetActiveToons">—</strong><small id="fleetActiveToonsSub">detected in latest sample</small></article>
@@ -312,7 +312,7 @@
       </div>
       <div class="fleet-command-grid">
         <article class="fleet-command-card fleet-live-card">
-          <div class="visual-card-head"><strong>RATE OVER TIME</strong><small>How did fleet output change? • 15-minute ESI samples</small></div>
+          <div class="visual-card-head"><strong>SAMPLED RATE OVER TIME</strong><small>ESI mining-ledger deltas • sampled about every 15 minutes</small></div>
           <div id="fleetActivityChart" class="fleet-activity-chart"></div>
         </article>
         <article class="fleet-command-card fleet-history-card">
@@ -323,28 +323,28 @@
           </div>
           <div id="fleetHistoryChart" class="fleet-history-chart"></div>
         </article>
+        <article class="fleet-command-card fleet-miner-card">
+          <div class="visual-card-head"><strong>MINER COMPARISON</strong><small>tracked active-time average vs fitted target • selected fleet</small></div>
+          <div id="fleetOutputChart" class="fleet-performance"></div>
+        </article>
         <article class="fleet-command-card fleet-ore-card">
           <div class="visual-card-head"><strong>MINED ORE MIX</strong><small id="fleetOreMixSubtitle">What made up the mined volume? • last 7 days</small></div>
           <div id="fleetOreMix" class="fleet-ore-mix"></div>
-        </article>
-        <article class="fleet-command-card fleet-trend-card">
-          <div class="visual-card-head trend-head">
-            <div><strong>MARKET VALUE TREND</strong><small>How did the selected ore value move? • Jita vs C-N • 30 days</small></div>
-            <select id="oreTrendSelect" aria-label="Ore value trend"></select>
-          </div>
-          <div class="visual-legend"><span class="legend-jita">JITA</span><span class="legend-cn">C-N</span></div>
-          <div id="oreValueChart" class="market-line-chart"></div>
         </article>
       </div>
       <div class="fleet-collection-note"><strong>AUTOMATIC DATA COLLECTION</strong><span>Activity samples are retained for 7 days. Daily mining and ore-mix history retain up to 90 days and refill from linked EVE mining ledgers after sync.</span></div>
     </section>
 
     <section class="glass mining-visuals-panel">
-      <div class="section-title"><div><strong>ORE VALUE & FIT ANALYTICS</strong></div><span class="muted tiny">Jita/C-N history • fit projection • ledger actuals</span></div>
+      <div class="section-title"><div><strong>ORE VALUE ANALYTICS</strong></div><span class="muted tiny">market context kept separate from fleet execution</span></div>
       <div class="mining-visual-grid mining-visual-grid-single">
-        <article class="mining-visual-card">
-          <div class="visual-card-head"><strong>FLEET PERFORMANCE</strong><small>compact miner comparison • actual vs target</small></div>
-          <div id="fleetOutputChart" class="fleet-performance"></div>
+        <article class="mining-visual-card fleet-trend-card">
+          <div class="visual-card-head trend-head">
+            <div><strong>MARKET VALUE TREND</strong><small>selected ore • Jita vs C-N • 30 days</small></div>
+            <select id="oreTrendSelect" aria-label="Ore value trend"></select>
+          </div>
+          <div class="visual-legend"><span class="legend-jita">JITA</span><span class="legend-cn">C-N</span></div>
+          <div id="oreValueChart" class="market-line-chart"></div>
         </article>
       </div>
     </section>
@@ -539,7 +539,7 @@
   </main>
   <script src="/yield-math.js?v=2.9.37" defer></script>
   <script src="/vendor/vosk/vosk-0.0.8.js?v=1" defer></script>
-  <script src="/app.js?v=2.10.2-navdropdown1" defer></script>
+  <script src="/app.js?v=2.10.4-fleetpolish1" defer></script>
   <script src="/appraisal-enhance.js?v=5" defer></script>
   <script src="/tracker.js?v=2.9.147-closest-init1" defer></script>
 </body>

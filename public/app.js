@@ -5602,7 +5602,7 @@
     const latestLabel='<text x="'+(W-R+7)+'" y="'+Math.max(T+8,Math.min(T+ph-2,y(latestValue)+3)).toFixed(1)+'" class="fleet-latest-label">'+esc(latestLabelText)+'</text>';
     const labelIndexes=[0,Math.floor((rows.length-1)/2),rows.length-1];
     const labels=[...new Set(labelIndexes)].map(i=>'<text x="'+x(i).toFixed(1)+'" y="'+(H-8)+'" text-anchor="middle" class="fleet-chart-axis">'+esc(new Date(rows[i].at).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}))+'</text>').join('');
-    el.innerHTML='<svg class="fleet-chart-svg" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Live fleet mining rate from recent ESI ledger samples">'+
+    el.innerHTML='<svg class="fleet-chart-svg" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Sampled fleet mining rate from recent ESI ledger changes">'+
       grid+'<path d="'+line+'" class="fleet-activity-line"/>'+targetLine+hover+latestDot+latestLabel+labels+
       '<text x="'+L+'" y="'+(T-7)+'" class="fleet-chart-unit">M³/HR</text></svg>';
   }
@@ -5720,11 +5720,11 @@
       fleetDataReason='Some selected miners are missing cached ledger data, so totals may be incomplete.';
     }else if(staleSample){
       fleetDataState='stale';
-      fleetDataLabel='● STALE • '+ago(latest.at).toUpperCase();
+      fleetDataLabel='● STALE • SAMPLE '+ago(latest.at).toUpperCase();
       fleetDataReason='The most recent mining sample is older than 45 minutes.';
     }else if(latest){
       fleetDataState='ready';
-      fleetDataLabel='● READY • '+ago(latest.at).toUpperCase();
+      fleetDataLabel='● READY • SAMPLE '+ago(latest.at).toUpperCase();
       fleetDataReason='Recent mining sample available for review.';
     }else if(assignedCount<=0){
       fleetDataState='empty';
@@ -5750,16 +5750,16 @@
       if(liveTargetPct!=null&&liveRate>0){
         const pct=Math.max(0,liveTargetPct);
         if(missingToons>0){
-          $('fleetInsightText').textContent=missingToons+' MINER'+(missingToons===1?'':'S')+' HAD NO NEW LEDGER ENTRY IN THE LATEST SAMPLE';
-          $('fleetInsightDetail').textContent=activeToons+'/'+sampledToons+' miners contributed • latest fleet rate '+pct.toFixed(0)+'% of fitted target';
+          $('fleetInsightText').textContent=missingToons+' MINER'+(missingToons===1?'':'S')+' SHOWED NO NEW MINING LEDGER VOLUME IN THE LATEST SAMPLE';
+          $('fleetInsightDetail').textContent=activeToons+'/'+sampledToons+' miners showed new ledger volume • sampled fleet rate '+pct.toFixed(0)+'% of fitted target';
           if(reason)reason.textContent=sampleDropPct!=null&&sampleDropPct>=5
             ?'Rate dropped '+sampleDropPct.toFixed(0)+'% from the previous sample • a missed ledger interval can also be caused by reds/hostiles, movement, hauling, or another interruption.'
             :'A missed ledger interval does not prove a miner was idle • interruptions such as reds/hostiles or movement can also cause it.';
         }else{
-          $('fleetInsightText').textContent=(sampledToons||activeToons)+'/'+(sampledToons||activeToons)+' MINERS CONTRIBUTED IN THE LATEST SAMPLE';
+          $('fleetInsightText').textContent=(sampledToons||activeToons)+'/'+(sampledToons||activeToons)+' MINERS SHOWED NEW LEDGER VOLUME IN THE LATEST SAMPLE';
           $('fleetInsightDetail').textContent=pct>=100
-            ?'Fleet rate met the fitted target • no miners were missing from the latest interval'
-            :'Fleet rate was ~'+Math.max(0,100-pct).toFixed(0)+'% below fitted target • all sampled miners still contributed';
+            ?'Sampled rate met the fitted target • every sampled miner showed new volume'
+            :'Sampled rate was ~'+Math.max(0,100-pct).toFixed(0)+'% below fitted target • all sampled miners showed new volume';
           if(reason)reason.textContent=pct>=100
             ?'Review the history and miner comparison below for the completed mining session.'
             :'Ledger data cannot identify the cause by itself • reds/hostiles, travel, compression, hauling, pauses, or mining efficiency can all reduce the measured rate.';
@@ -5786,9 +5786,9 @@
       }
     }
     $('fleetLiveRate').textContent=latest?`${fmt(liveRate,'m3')} m³/hr`:'—';
-    $('fleetLiveRateSub').textContent=latest?(liveRate>0?'most recent detected mining interval':'no increase in latest interval'):'waiting for a mining interval';
+    $('fleetLiveRateSub').textContent=latest?(liveRate>0?'latest ESI ledger delta • sampled':'no new mining volume in latest sample'):'waiting for a mining ledger change';
     $('fleetActiveToons').textContent=latest?`${Number(latest.activeToons||0)} / ${Number(latest.sampledToons||0)}`:'—';
-    $('fleetActiveToonsSub').textContent=latest?'miners contributing / sampled in latest interval':'miners in latest sample';
+    $('fleetActiveToonsSub').textContent=latest?'miners with new volume / sampled':'miners in latest sample';
     const eveDayM3=Math.max(0,Number(performance.actual?.today?.m3)||0);
     const eveDayJbv=Math.max(0,Number(performance.actual?.today?.jbv)||0);
     const fleetValueState=fleetPerformanceError?'ERROR':(partialCoverage?'PARTIAL':(state.esi?.syncing||fleetPerformanceSnapshotPromise?'SYNCING':''));
@@ -5833,7 +5833,7 @@
     const fleet=fleetStats();
     const entries=fleet.entries.filter(x=>x.result);
     if(!entries.length){
-      $('fleetOutputChart').innerHTML='<div class="visual-empty">Select miners in Fleet Setup to see fleet performance.</div>';
+      $('fleetOutputChart').innerHTML='<div class="visual-empty">Select miners in Fleet & Fits to see fleet performance.</div>';
       return;
     }
 
@@ -5865,7 +5865,7 @@
           <small>${esc(entry.fit?.shipName||'Ship')} • ${share.toFixed(1)}% fleet target share</small>
         </div>
         <div class="fleet-perf-cell"><span>TARGET</span><strong>${fmt(output,'m3')}</strong><small>m³/hr</small></div>
-        <div class="fleet-perf-cell ledger"><span>ACTUAL</span><strong>${hasActual?fmt(actual,'m3'):'—'}</strong><small>${hasActual?activeTimeLabel(ledger.activeSeconds):'no active interval'}</small></div>
+        <div class="fleet-perf-cell ledger"><span>ACTIVE AVG</span><strong>${hasActual?fmt(actual,'m3'):'—'}</strong><small>${hasActual?activeTimeLabel(ledger.activeSeconds):'no active interval'}</small></div>
         <div class="fleet-perf-cell pct"><span>OF TARGET</span><strong>${targetPct==null?'—':targetPct.toFixed(0)+'%'}</strong><small>${fmt(fullRate,'m3')} at 100%</small></div>
       </div>`;
     }).join('');
@@ -5881,18 +5881,18 @@
 
     $('fleetOutputChart').innerHTML=`
       <div class="fleet-perf-kpis">
-        <div class="ledger-kpi"><span>ACTUAL RATE</span><strong>${detectedRows.length?fmt(ledgerActual,'m3'):'—'}</strong><small>${detectedRows.length}/${entries.length} miners detected</small></div>
+        <div class="ledger-kpi"><span>ACTIVE AVG RATE</span><strong>${detectedRows.length?fmt(ledgerActual,'m3'):'—'}</strong><small>${detectedRows.length}/${entries.length} miners with tracked active time</small></div>
         <div><span>${uptime.toFixed(0)}% TARGET</span><strong>${fmt(effective,'m3')}</strong><small>selected fleet m³/hr</small></div>
         <div><span>100% RATE</span><strong>${fmt(potential,'m3')}</strong><small>full calculated m³/hr</small></div>
-        <div><span>ACTUAL / TARGET</span><strong>${actualVsTarget==null?'—':actualVsTarget.toFixed(0)+'%'}</strong><small>detected miners only</small></div>
+        <div><span>AVG / TARGET</span><strong>${actualVsTarget==null?'—':actualVsTarget.toFixed(0)+'%'}</strong><small>active-time averages only</small></div>
       </div>
       <div class="fleet-performance-summary-line">
-        <span>ACTUAL VS DETECTED TARGET</span>
+        <span>ACTIVE AVG VS DETECTED TARGET</span>
         <strong>${detectedRows.length?fmt(ledgerActual,'m3'):'—'} / ${detectedTarget>0?fmt(detectedTarget,'m3'):'—'} m³/hr</strong>
         <b class="${actualVsTarget!=null&&actualVsTarget>=90?'good':actualVsTarget!=null&&actualVsTarget<60?'low':''}">${actualVsTarget==null?'WAITING':actualVsTarget.toFixed(0)+'%'}</b>
       </div>
       <div class="fleet-perf-list compact">${contributionRows}</div>
-      <div class="fleet-perf-footer"><span>Actual rate counts only ledger intervals where mined m³ increased.</span><span>${entries.length} miner${entries.length===1?'':'s'} selected</span></div>`;
+      <div class="fleet-perf-footer"><span>Active average uses only tracked intervals where mined m³ increased. The chart above shows the latest sampled interval separately.</span><span>${entries.length} miner${entries.length===1?'':'s'} selected</span></div>`;
   }
 
 
