@@ -37,6 +37,9 @@ $script:LastNotice = @{}
 $script:ServerOfflineNoticeAt = [datetime]::MinValue
 $script:ObserverAllowed = $false
 $script:ObserverEnabled = $true
+$script:ClipboardEnabled = $true
+$script:ScanMode = "hybrid"
+$script:ObserverCharacter = "Yeda Parmala"
 $script:ObserverReady = $false
 $script:ObserverOcr = $null
 $script:ObserverAwaiter = $null
@@ -45,7 +48,6 @@ $script:ObserverCandidates = @{}
 $script:ObserverLastSent = @{}
 $script:ObserverFailureNoticeAt = [datetime]::MinValue
 $script:ObserverFramePath = Join-Path $AppRoot "observer-frame.png"
-$script:ClipboardEnabled = $true
 $script:ClipboardSequence = [uint32]0
 $script:ClipboardLastHash = ""
 $script:ClipboardFailureNoticeAt = [datetime]::MinValue
@@ -87,23 +89,69 @@ function Load-JlrConfig {
   if(Test-Path $ConfigPath) {
     try { return Get-Content -Raw -Path $ConfigPath | ConvertFrom-Json } catch {}
   }
-  return [pscustomobject]@{ server=$Server; tokenProtected=""; deviceName=$env:COMPUTERNAME; observerEnabled=$true; clipboardEnabled=$true }
+  return [pscustomobject]@{
+    server=$Server
+    tokenProtected=""
+    deviceName=$env:COMPUTERNAME
+    scanMode="hybrid"
+    observerCharacter="Yeda Parmala"
+    observerEnabled=$true
+    clipboardEnabled=$true
+  }
 }
 
-function Update-JlrClipboardUi {
-  if(-not $script:ClipboardItem){ return }
-  $script:ClipboardItem.Text = if($script:ClipboardEnabled){"EVE Clipboard Auto-Import: ON"}else{"EVE Clipboard Auto-Import: OFF"}
-}
-
-function Update-JlrObserverUi {
-  if(-not $script:ObserverItem){ return }
-  if(-not $script:ObserverAllowed){
-    $script:ObserverItem.Text = "Probe Observer: owner only"
-    $script:ObserverItem.Enabled = $false
+function Set-JlrScanMode([string]$Mode,[bool]$Persist=$true) {
+  $next = ([string]$Mode).Trim().ToLowerInvariant()
+  if($next -notin @("off","copy","screen","hybrid")){ $next = "hybrid" }
+  if(($next -eq "screen" -or $next -eq "hybrid") -and -not $script:ObserverAllowed -and $script:ScanModeItem){
+    Show-JlrBalloon "JLR Creator Scan Mode" "Screen Watch is owner-only. Pair this companion to the JLR owner account first."
     return
   }
-  $script:ObserverItem.Enabled = $true
-  $script:ObserverItem.Text = if($script:ObserverEnabled){"Probe Observer: ON"}else{"Probe Observer: OFF"}
+  $script:ScanMode = $next
+  $script:ClipboardEnabled = $next -eq "copy" -or $next -eq "hybrid"
+  $script:ObserverEnabled = $next -eq "screen" -or $next -eq "hybrid"
+  if($script:Config){
+    $script:Config.scanMode = $next
+    $script:Config.clipboardEnabled = $script:ClipboardEnabled
+    $script:Config.observerEnabled = $script:ObserverEnabled
+    if($Persist){ Save-JlrConfig }
+  }
+  Update-JlrScanModeUi
+}
+
+function Update-JlrScanModeUi {
+  if(-not $script:ScanModeItem){ return }
+  $screenAllowed = [bool]$script:ObserverAllowed
+  $script:ScanModeItem.Text = "Creator Scan Mode: " + $script:ScanMode.ToUpperInvariant()
+  if($script:ScanModeOffItem){ $script:ScanModeOffItem.Checked = $script:ScanMode -eq "off" }
+  if($script:ScanModeCopyItem){ $script:ScanModeCopyItem.Checked = $script:ScanMode -eq "copy" }
+  if($script:ScanModeScreenItem){
+    $script:ScanModeScreenItem.Checked = $script:ScanMode -eq "screen"
+    $script:ScanModeScreenItem.Enabled = $screenAllowed
+  }
+  if($script:ScanModeHybridItem){
+    $script:ScanModeHybridItem.Checked = $script:ScanMode -eq "hybrid"
+    $script:ScanModeHybridItem.Enabled = $screenAllowed
+  }
+  if($script:ObserverCharacterItem){
+    $script:ObserverCharacterItem.Enabled = $screenAllowed
+    $label = if($script:ObserverCharacter -eq "*"){"ANY FOREGROUND EVE TOON"}else{$script:ObserverCharacter}
+    $script:ObserverCharacterItem.Text = "Screen Toon: " + $label
+  }
+}
+
+function Set-JlrObserverCharacter {
+  if(-not $script:ObserverAllowed){ return }
+  $default = if([string]::IsNullOrWhiteSpace($script:ObserverCharacter)){"Yeda Parmala"}else{$script:ObserverCharacter}
+  $message = "Enter the EVE character name Screen Watch should read." + [Environment]::NewLine + [Environment]::NewLine +
+    "Default: Yeda Parmala" + [Environment]::NewLine + "Use * to allow any foreground EVE toon."
+  $value = [Microsoft.VisualBasic.Interaction]::InputBox($message,"JLR Screen Watch Toon",$default).Trim()
+  if([string]::IsNullOrWhiteSpace($value)){ return }
+  $script:ObserverCharacter = $value
+  $script:Config.observerCharacter = $value
+  Save-JlrConfig
+  Update-JlrScanModeUi
+  Show-JlrBalloon "JLR Screen Watch" ("Screen Watch target: " + $(if($value -eq "*"){"any foreground EVE toon"}else{$value}))
 }
 
 function Initialize-JlrObserverOcr {
@@ -140,9 +188,10 @@ function Update-JlrObserverPermission($Reply) {
   $wasAllowed = $script:ObserverAllowed
   $script:ObserverAllowed = [bool]$property.Value
   if($script:ObserverAllowed){ Initialize-JlrObserverOcr | Out-Null }
-  Update-JlrObserverUi
+  Update-JlrScanModeUi
   if($script:ObserverAllowed -and -not $wasAllowed){
-    Show-JlrBalloon "JLR Probe Observer" "Owner-only observer enabled. It reads only the foreground EVE window and never sends clicks or keys." 6500
+    $target = if($script:ObserverCharacter -eq "*"){"any foreground EVE toon"}else{$script:ObserverCharacter}
+    Show-JlrBalloon "JLR Probe Observer" ("Owner-only Screen Watch ready for " + $target + ". It reads only the foreground EVE window and never sends clicks or keys.") 6500
   }
 }
 
@@ -279,6 +328,8 @@ function Invoke-JlrProbeObserver {
   if(-not $script:ObserverAllowed -or -not $script:ObserverEnabled){ return }
   $capture = Get-JlrForegroundEveCapture
   if(-not $capture){ return }
+  $target = ([string]$script:ObserverCharacter).Trim()
+  if(-not [string]::IsNullOrWhiteSpace($target) -and $target -ne "*" -and ([string]$capture.characterName) -ine $target){ return }
   $snapshot = $script:LatestSnapshots[[string]$capture.characterName]
   if(-not $snapshot -or [string]::IsNullOrWhiteSpace([string]$snapshot.system)){ return }
 
@@ -622,8 +673,21 @@ if(-not $script:Config.PSObject.Properties["observerEnabled"]){
 if(-not $script:Config.PSObject.Properties["clipboardEnabled"]){
   $script:Config | Add-Member -NotePropertyName clipboardEnabled -NotePropertyValue $true
 }
-$script:ObserverEnabled = [bool]$script:Config.observerEnabled
-$script:ClipboardEnabled = [bool]$script:Config.clipboardEnabled
+if(-not $script:Config.PSObject.Properties["scanMode"]){
+  $legacyObserver = [bool]$script:Config.observerEnabled
+  $legacyClipboard = [bool]$script:Config.clipboardEnabled
+  $legacyMode = if($legacyObserver -and $legacyClipboard){"hybrid"}elseif($legacyObserver){"screen"}elseif($legacyClipboard){"copy"}else{"off"}
+  $script:Config | Add-Member -NotePropertyName scanMode -NotePropertyValue $legacyMode
+}
+if(-not $script:Config.PSObject.Properties["observerCharacter"]){
+  $script:Config | Add-Member -NotePropertyName observerCharacter -NotePropertyValue "Yeda Parmala"
+}
+$script:ScanMode = ([string]$script:Config.scanMode).Trim().ToLowerInvariant()
+if($script:ScanMode -notin @("off","copy","screen","hybrid")){ $script:ScanMode = "hybrid" }
+$script:ObserverCharacter = ([string]$script:Config.observerCharacter).Trim()
+if([string]::IsNullOrWhiteSpace($script:ObserverCharacter)){ $script:ObserverCharacter = "Yeda Parmala" }
+$script:ObserverEnabled = $script:ScanMode -eq "screen" -or $script:ScanMode -eq "hybrid"
+$script:ClipboardEnabled = $script:ScanMode -eq "copy" -or $script:ScanMode -eq "hybrid"
 $script:ClipboardSequence = [JlrObserverWindow]::GetClipboardSequenceNumber()
 $script:AuthToken = Unprotect-JlrToken ([string]$script:Config.tokenProtected)
 
@@ -639,38 +703,35 @@ $script:StatusItem.Enabled = $false
 $menu.Items.Add($script:StatusItem) | Out-Null
 $openItem = $menu.Items.Add("Open JLR Miner Tracker")
 $pairItem = $menu.Items.Add("Pair / Re-pair")
-$script:ClipboardItem = $menu.Items.Add("EVE Clipboard Auto-Import: checking")
-$script:ObserverItem = $menu.Items.Add("Probe Observer: checking")
+$script:ScanModeItem = New-Object System.Windows.Forms.ToolStripMenuItem
+$script:ScanModeItem.Text = "Creator Scan Mode: checking"
+$script:ScanModeOffItem = $script:ScanModeItem.DropDownItems.Add("OFF")
+$script:ScanModeCopyItem = $script:ScanModeItem.DropDownItems.Add("COPY AUTO-IMPORT")
+$script:ScanModeScreenItem = $script:ScanModeItem.DropDownItems.Add("SCREEN WATCH")
+$script:ScanModeHybridItem = $script:ScanModeItem.DropDownItems.Add("HYBRID (COPY + SCREEN)")
+$menu.Items.Add($script:ScanModeItem) | Out-Null
+$script:ObserverCharacterItem = $menu.Items.Add("Screen Toon: Yeda Parmala")
 $folderItem = $menu.Items.Add("Open Companion Folder")
 $exitItem = $menu.Items.Add("Exit Companion")
 $script:Tray.ContextMenuStrip = $menu
 
 $openItem.add_Click({ Start-Process $script:Config.server })
 $pairItem.add_Click({ Pair-JlrCompanion | Out-Null })
-$script:ClipboardItem.add_Click({
-  $script:ClipboardEnabled = -not $script:ClipboardEnabled
-  $script:Config.clipboardEnabled = $script:ClipboardEnabled
-  Save-JlrConfig
-  Update-JlrClipboardUi
-})
-$script:ObserverItem.add_Click({
-  if(-not $script:ObserverAllowed){ return }
-  $script:ObserverEnabled = -not $script:ObserverEnabled
-  $script:Config.observerEnabled = $script:ObserverEnabled
-  Save-JlrConfig
-  Update-JlrObserverUi
-})
+$script:ScanModeOffItem.add_Click({ Set-JlrScanMode "off" })
+$script:ScanModeCopyItem.add_Click({ Set-JlrScanMode "copy" })
+$script:ScanModeScreenItem.add_Click({ Set-JlrScanMode "screen" })
+$script:ScanModeHybridItem.add_Click({ Set-JlrScanMode "hybrid" })
+$script:ObserverCharacterItem.add_Click({ Set-JlrObserverCharacter })
 $folderItem.add_Click({ Start-Process explorer.exe $AppRoot })
 $exitItem.add_Click({ $script:ExitRequested = $true })
 $script:Tray.add_DoubleClick({ Start-Process $script:Config.server })
-Update-JlrClipboardUi
-Update-JlrObserverUi
+Update-JlrScanModeUi
 
 if([string]::IsNullOrWhiteSpace($script:AuthToken)){
   Pair-JlrCompanion | Out-Null
 }
 
-Show-JlrBalloon "JLR Tracker Companion" "Running in the Windows tray. Watching EVE movement and EVE-only clipboard copies for Adam."
+Show-JlrBalloon "JLR Tracker Companion" "Running in the Windows tray. Creator Scan Mode supports OFF, COPY, SCREEN and HYBRID. Screen Watch is owner-only and passive."
 
 try {
   while(-not $script:ExitRequested){
