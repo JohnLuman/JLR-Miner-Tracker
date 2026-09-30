@@ -1,7 +1,7 @@
 'use strict';
 (function(){
   const ALARM_VERSION='2.9.147';
-  const CORE_URL='/tracker-core.js?v=2.9.147-closest-init1';
+  const CORE_URL='/tracker-core.js?v=2.10.11';
 
   let alarmContext=null;
   let alarmNodes=[];
@@ -12,7 +12,7 @@
   let alarmLeaseKey='';
 
   function claimAlarmLease(){
-    const account=String(window.jlrVoiceAccountId||'global').trim()||'global';
+    const account=String(window.jlrAlarmAccountId||'global').trim()||'global';
     const key='jlrHeavyFighterAlarmOwner:'+account;
     const now=Date.now();
     try{
@@ -211,23 +211,11 @@
     relabel();
   }
 
-  // Alarm-only compatibility surface. Spoken voice output is intentionally
-  // unavailable and cannot fall back to browser speech or a remote TTS worker.
-  window.jlrVoiceMode='disabled';
-  window.jlrVoiceProfile='disabled';
-  window.jlrVoiceTransport='none';
-  window.jlrVoiceLastError='';
+  // A local oscillator is the only audio path for Heavy Fighter alerts.
   window.jlrPlayFighterAlarm=playFighterAlarm;
   window.jlrStopFighterAlarm=stopFighterAlarm;
-  window.jlrStopVoice=stopFighterAlarm;
   window.jlrUnlockFighterAlarm=unlockAlarm;
-  window.jlrSpeakEvent=async function(){return false};
-  window.jlrVoiceIsActive=function(){return false};
-  window.jlrAutoVoiceAllowed=function(){return false};
-  window.jlrReleaseAutoVoice=releaseAlarmLease;
-  window.jlrWarmVoice=unlockAlarm;
-  window.jlrRecoverVoice=async function(){return true};
-  window.jlrVoiceRuntimeStatus=alarmRuntimeStatus;
+  window.jlrAlarmRuntimeStatus=alarmRuntimeStatus;
 
   watchTrackerUi();
 

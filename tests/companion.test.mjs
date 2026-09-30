@@ -24,7 +24,6 @@ assert.match(server,/function companionActiveForUser/,'paired companion health i
 assert.match(server,/COMPANION_WAITING/,'healthy companion suppresses ESI location fallback');
 assert.match(app,/WAITING FOR COMPANION/,'Auto Follow shows companion wait state instead of an ESI error');
 assert.match(app,/EVE LOCATION CHECKS ACTIVE/,'Adam shows when ESI location checks are active');
-assert.match(app,/NOISE_SUPPRESS/);
 assert.match(ps,/Encoding\]::Unicode/,'EVE chat logs are read as UTF-16LE/Unicode');
 assert.match(ps,/Channel changed to Local/);
 assert.match(ps,/Listener:/);

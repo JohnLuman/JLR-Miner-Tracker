@@ -2,3 +2,5 @@
 data/state.json
 data/token.key
 *.log
+artifacts/theme-screenshots/
+__pycache__/

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 
 const index=fs.readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
 const styles=fs.readFileSync(new URL('../public/styles.css',import.meta.url),'utf8');
+const themes=fs.readFileSync(new URL('../public/themes.css',import.meta.url),'utf8');
 const app=fs.readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
 const tracker=fs.readFileSync(new URL('../public/tracker-core.js',import.meta.url),'utf8');
 const trackerCss=fs.readFileSync(new URL('../public/tracker.css',import.meta.url),'utf8');
@@ -37,49 +38,19 @@ assert.match(styles,/\.nav-menu\[open\]\{z-index:120\}/,'open dropdown is raised
 assert.match(index,/id="themeSelectIcon"/,'theme selector shows the selected EVE image');
 assert.match(index,/data-theme-icon="neon"/,'theme choices use original JLR glyph identifiers');
 assert.match(styles,/\.theme-menu-image/,'theme picker renders original glyph thumbnails');
-assert.match(styles,/html\[data-theme="neon"\] body::before/,'Neon Grid has its own animated grid treatment');
-assert.match(styles,/html\[data-theme="glacier"\] \.glass/,'Glacier has frosted glass surfaces');
-assert.match(styles,/html\[data-theme="solar"\] body::before/,'Solar Flare has its own radiant treatment');
-assert.match(styles,/html\[data-theme="industrial"\] body::after/,'Industrial has hazard-rail styling');
 assert.match(app,/function themeIconMarkup/,'theme selector glyphs are generated locally');
-assert.doesNotMatch(index,/images\.evetech\.net\/types\//,'theme selector no longer depends on EVE ship or ore art');
-assert.match(styles,/gothic cathedral \/ ritual terminal/,'Blood has a dark gothic identity');
-assert.match(styles,/white-hot star \/ orbital heat shield/,'Solar Flare has a bright stellar identity');
-assert.match(styles,/jlr-solar-rays/,'Solar Flare has rotating corona rays distinct from Blood');
-assert.match(styles,/event-horizon observatory/,'Void has event-horizon personality');
-assert.match(styles,/armored bulkheads and structural brackets/,'Citadel has armored structural personality');
-assert.match(styles,/bolted machinery and warning rails/,'Industrial has bolted machinery personality');
-assert.match(styles,/active bio-scanner/,'Serpentis has live scanner personality');
-assert.match(styles,/analog flight-deck \/ worn brass instrumentation/,'Angel has analog flight-deck personality');
-assert.match(styles,/tactical radar and target brackets/,'EDENCOM has tactical radar personality');
-assert.match(styles,/floating luminous glass, soft motion/,'Aurora has floating-glass personality');
-assert.match(styles,/active HUD scanline and reactive modules/,'Neon has reactive HUD personality');
-assert.match(styles,/fractured crystal facets rather than HUD cuts/,'Glacier has fractured-crystal personality');
-assert.match(styles,/orbital rings and radiant instrumentation/,'Solar has orbital instrumentation personality');
-assert.match(styles,/FINAL THEME ART DIRECTION/,'final art-direction layer is present');
-assert.match(styles,/VOID — event horizon \/ silent deep-space observatory/,'Void final identity is present');
-assert.match(styles,/CITADEL — armored station bulkhead \/ command bridge/,'Citadel final identity is present');
-assert.match(styles,/INDUSTRIAL — heavy machinery \/ service bay/,'Industrial final identity is present');
-assert.match(styles,/SERPENTIS — biotech scan console/,'Serpentis final identity is present');
-assert.match(styles,/BLOOD — ritual cathedral \/ reliquary/,'Blood final identity is present');
-assert.match(styles,/ANGEL — rugged retro flight deck \/ analog avionics/,'Angel final identity is present');
-assert.match(styles,/EDENCOM — clean military tactical display/,'EDENCOM final identity is present');
-assert.match(styles,/AURORA — floating liquid glass \/ luminous atmosphere/,'Aurora final identity is present');
-assert.match(styles,/NEON GRID — aggressive cyberpunk HUD/,'Neon final identity is present');
-assert.match(styles,/GLACIER — faceted ice crystal \/ frozen observatory/,'Glacier final identity is present');
-assert.match(styles,/SOLAR FLARE — heliostat \/ orbital solar instrumentation/,'Solar final identity is present');
-assert.match(styles,/jlr-glyph-solar/,'selected theme glyphs have theme-specific behavior');
-assert.match(styles,/THEME QA CONSISTENCY PASS/,'theme QA consistency layer is present');
-assert.match(styles,/\.orb\.active\{\s*outline-color:var\(--theme-accent-hi/,'active controls no longer leak hard-coded purple');
-assert.match(styles,/\.system-node\.selected\{\s*outline-color:var\(--theme-accent-hi/,'selected field outline follows the active theme');
-assert.match(styles,/INDUSTRIAL — stamped service-bay material/,'Industrial has a dedicated QA material pass');
-assert.match(styles,/quiet orbital glow/,'Void status colors preserve its material');
-assert.match(styles,/armored status rail/,'Citadel status colors preserve its material');
-assert.match(styles,/status becomes bioluminescence/,'Serpentis status colors preserve its material');
-assert.match(styles,/status softly refracts through the glass/,'Aurora status colors preserve its material');
-assert.match(styles,/semantic status is a third signal channel/,'Neon status colors preserve its material');
-assert.match(styles,/state color becomes a refracted facet edge/,'Glacier status colors preserve its material');
-assert.match(styles,/semantic state appears as an instrument ring/,'Solar status colors preserve its material');
+assert.doesNotMatch(index,/images\.evetech\.net\/types\//,'theme selector does not depend on EVE ship or ore art');
+assert.match(index,/themes\.css\?v=2\.10\.11/,'dedicated consolidated theme stylesheet is cache-busted');
+for(const theme of ['void','citadel','industrial','serpentis','blood','angel','edencom','aurora','neon','glacier','solar']){
+  assert.equal((themes.match(new RegExp('^html\\[data-theme="'+theme+'"\\]\\{','gm'))||[]).length,1,theme+' has one palette definition');
+}
+assert.match(themes,/html\[data-theme="industrial"\] \.section-title::after\{[^}]*repeating-linear-gradient/s,'Industrial retains the hazard stripe');
+assert.match(themes,/html\[data-theme="aurora"\] body::before/,'Aurora has its luminous atmosphere');
+assert.match(themes,/html\[data-theme="glacier"\] \.glass/,'Glacier has its crystal panels');
+assert.match(themes,/html\[data-theme="solar"\] body::before/,'Solar has its radiant treatment');
+assert.match(themes,/--semantic-status:var\(--green\)/,'semantic status color remains independent of the theme');
+assert.doesNotMatch(themes,/animation:jlr-(aurora-drift|aurora-orbs|solar-rays|serpentis-sweep|edencom-sweep|neon-vertical-scan)/,'full-screen theme layers remain static');
+assert.doesNotMatch(themes,/html\[data-theme="(aurora|glacier)"\] \.glass\{[^}]*backdrop-filter/s,'repeated glass cards avoid backdrop blur');
 
 assert.match(index,/id="fleetInsight"/,'Fleet Performance has a decision-first live insight');
 assert.match(app,/Sampled rate met the fitted target/,'Fleet insight interprets sampled rate versus target');
@@ -110,12 +81,12 @@ assert.match(app,/myLedgerCoverageBadge/,'personal ledger sync state is rendered
 assert.match(app,/outside tracked fields/,'ledger diagnostics distinguish payout rows from field attribution');
 assert.match(app,/fleetUptimeMeter/,'fleet target exposes the uptime assumption visually');
 
-assert.equal(pkg.version,'2.10.10');
-assert.ok(index.includes('/styles.css?v=2.10.10'),'main information-design CSS is cache-busted');
-assert.ok(index.includes('/tracker.css?v=2.9.147-closest-init1'),'Tracker information-design CSS is cache-busted');
-assert.ok(index.includes('/app.js?v=2.10.10'),'dashboard JS is cache-busted');
-assert.ok(index.includes('/tracker.js?v=2.9.147-closest-init1'),'Tracker loader is cache-busted');
-assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.147-closest-init1/,'Tracker core is cache-busted');
+assert.equal(pkg.version,'2.10.11');
+assert.ok(index.includes('/styles.css?v=2.10.11'),'main information-design CSS is cache-busted');
+assert.ok(index.includes('/tracker.css?v=2.10.11'),'Tracker information-design CSS is cache-busted');
+assert.ok(index.includes('/app.js?v=2.10.11'),'dashboard JS is cache-busted');
+assert.ok(index.includes('/tracker.js?v=2.10.11'),'Tracker loader is cache-busted');
+assert.match(trackerLoader,/tracker-core\.js\?v=2\.10\.11/,'Tracker core is cache-busted');
 
 assert.match(styles,/\.app\.compact\{width:min\(1120px,calc\(100vw - 12px\)\);max-width:1120px\}/,'Compact app keeps a bounded design width');
 assert.match(styles,/\.app\.expanded\{width:min\(1600px,calc\(100vw - 12px\)\);max-width:1600px\}/,'Expanded app keeps a bounded design width');
