@@ -7644,6 +7644,25 @@ async function withThreatRemoteSlot(worker){
     threatRemoteWaiters.shift()?.();
   }
 }
+async function threatCharacterProfile(characterId){
+  // Do not let the general ESI retry/backoff queue make a Local scan wait for
+  // minutes. If ESI is already protecting its error budget, return partial
+  // intel now and let a later scan fill age/security details.
+  if(Date.now()<esiBackoffUntil)throw new Error('ESI public profile lookup is temporarily backing off.');
+  const response=await fetch(`https://esi.evetech.net/latest/characters/${Number(characterId)}/?datasource=tranquility`,{
+    headers:{'Accept':'application/json','User-Agent':ESI_USER_AGENT,'X-Compatibility-Date':ESI_COMPAT_DATE},
+    signal:AbortSignal.timeout(3_500),
+  });
+  observeEsiErrorLimit(response.headers);
+  if(response.status===420||response.status===429){
+    const reset=Number(response.headers.get('x-esi-error-limit-reset'));
+    const retry=clamp(response.headers.get('retry-after'),1,15*60,Number.isFinite(reset)&&reset>0?reset:5);
+    extendEsiBackoff(retry*1000);
+    throw new Error(`ESI ${response.status}: profile lookup rate limited`);
+  }
+  if(!response.ok)throw new Error(`ESI ${response.status}: character profile unavailable`);
+  return response.json();
+}
 async function threatZkillStats(characterId){
   const url=`https://zkillboard.com/api/stats/characterID/${Number(characterId)}/kills/`;
   let lastError=null;
@@ -7674,10 +7693,12 @@ async function threatZkillStats(characterId){
       }
     }catch(err){
       lastError=err;
-      if(attempt===0){
+      const timedOut=/timeout|abort/i.test(String(err?.name||'')+' '+String(err?.message||''));
+      if(attempt===0&&!timedOut){
         await sleep(250);
         continue;
       }
+      break;
     }
   }
   throw lastError||new Error('zKillboard threat stats timed out');
@@ -7693,10 +7714,10 @@ async function getThreatCharacterIntel(character){
   const pending=withThreatRemoteSlot(async()=>{
     let profile=null,rawStats=null,statsError=null;
     const [profileResult,statsResult]=await Promise.allSettled([
-      esiGet(`https://esi.evetech.net/latest/characters/${id}/?datasource=tranquility`),
+      threatCharacterProfile(id),
       threatZkillStats(id),
     ]);
-    if(profileResult.status==='fulfilled')profile=profileResult.value?.data||null;
+    if(profileResult.status==='fulfilled')profile=profileResult.value||null;
     if(statsResult.status==='fulfilled')rawStats=statsResult.value||null;
     else statsError=String(statsResult.reason?.message||statsResult.reason||'zKill stats unavailable');
 
@@ -9845,8 +9866,12 @@ async function routeApi(req,res,url) {
       // local standings snapshot immediately when available and refresh it in
       // parallel. The full background pass applies the authoritative result.
       const cachedStandings=ignorePositive?cachedPositiveStandingContactsForUser(user):null;
-      const standingsPromise=ignorePositive?positiveStandingContactsForUser(user):Promise.resolve(null);
-      standingsPromise.catch(err=>console.warn('Threat standings refresh failed',String(err?.message||err)));
+      const standingsPromise=ignorePositive
+        ?positiveStandingContactsForUser(user).catch(err=>{
+          console.warn('Threat standings refresh failed',String(err?.message||err));
+          return cachedStandings||null;
+        })
+        :Promise.resolve(null);
 
       const partial=await buildThreatIntel(scanText,{
         ignoreOwnIds:ignoreOwn?user.characterIds:[],
