@@ -638,6 +638,8 @@ function freshState() {
       scopes: [],
       authorizedAt: null,
       lastError: null,
+      financeJournal: {},
+      financeUpdatedAt: null,
     },
     trackerIntel: {
       regionCatalog: [],
@@ -692,6 +694,7 @@ async function loadState() {
     parsed.appraisals.legacyBuildShares = migrateLegacyBuildShares(parsed);
     parsed.ceoAdmin = { ...base.ceoAdmin, ...(parsed.ceoAdmin || {}) };
     if(!Array.isArray(parsed.ceoAdmin.scopes))parsed.ceoAdmin.scopes=[];
+    if(!parsed.ceoAdmin.financeJournal||typeof parsed.ceoAdmin.financeJournal!=='object'||Array.isArray(parsed.ceoAdmin.financeJournal))parsed.ceoAdmin.financeJournal={};
     delete parsed.forge;
     parsed.trackerIntel = { ...base.trackerIntel, ...(parsed.trackerIntel || {}) };
     if(!Array.isArray(parsed.trackerIntel.regionCatalog))parsed.trackerIntel.regionCatalog=[];
@@ -960,6 +963,182 @@ function ceoStatusForUser(user){
     },
   };
 }
+
+const CEO_FINANCE_CACHE_MS=5*60*1000;
+let ceoFinanceCache={at:0,data:null,promise:null};
+
+async function ceoAccessToken(){
+  const admin=state.ceoAdmin||{};
+  if(!admin.refreshTokenEnc||!admin.characterId){
+    const error=new Error('Renius has not authorized CEO ESI yet.');
+    error.code='CEO_ESI_NOT_AUTHORIZED';
+    throw error;
+  }
+  const tokens=await refreshToken(decrypt(admin.refreshTokenEnc));
+  const identity=await verifyJwt(tokens.access_token,false);
+  if(String(identity.characterId)!==String(admin.characterId))throw new Error('CEO refresh token changed character');
+  if(String(identity.characterName||'').trim().toLowerCase()!==CEO_CHARACTER_NAME.toLowerCase())throw new Error('CEO token is not Renius');
+  for(const scope of CEO_SCOPES)if(!identity.scopes.includes(scope)){
+    const error=new Error('CEO scope missing: '+scope);
+    error.code='CEO_SCOPE_MISSING';
+    throw error;
+  }
+  if(tokens.refresh_token)admin.refreshTokenEnc=encrypt(tokens.refresh_token);
+  admin.scopes=identity.scopes;
+  admin.characterName=identity.characterName;
+  return{access:tokens.access_token,identity,admin};
+}
+function ceoPageUrl(url,page){
+  const u=new URL(url);
+  u.searchParams.set('page',String(page));
+  return u.toString();
+}
+async function ceoPagedGet(url,access,{maxPages=20}={}){
+  const first=await esiGet(ceoPageUrl(url,1),access);
+  const rows=Array.isArray(first.data)?[...first.data]:[];
+  const reported=Math.max(1,Number(first.headers?.get?.('x-pages')||1));
+  const pages=Math.min(reported,Math.max(1,maxPages));
+  for(let page=2;page<=pages;page++){
+    const next=await esiGet(ceoPageUrl(url,page),access);
+    if(Array.isArray(next.data))rows.push(...next.data);
+  }
+  return{rows,reportedPages:reported,pagesFetched:pages,truncated:reported>pages};
+}
+async function ceoTry(label,work,errors,fallback){
+  try{return await work()}
+  catch(error){
+    errors.push({section:label,message:String(error?.message||error).slice(0,220)});
+    return fallback;
+  }
+}
+function ceoRememberFinanceJournal(rows){
+  const store=state.ceoAdmin.financeJournal ||= {};
+  for(const row of rows||[]){
+    const refId=String(row?.ref_id??'');
+    const date=String(row?.date||'');
+    if(!refId||!date)continue;
+    store[refId]={
+      refId,
+      date,
+      division:Number(row?._division)||null,
+      amount:Number.isFinite(Number(row?.amount))?Number(row.amount):0,
+      balance:Number.isFinite(Number(row?.balance))?Number(row.balance):null,
+      refType:String(row?.ref_type||'unknown'),
+      description:String(row?.description||'').slice(0,240),
+      reason:String(row?.reason||'').slice(0,240),
+      firstPartyId:Number(row?.first_party_id)||null,
+      secondPartyId:Number(row?.second_party_id)||null,
+    };
+  }
+  const cutoff=Date.now()-400*24*60*60*1000;
+  const ordered=Object.entries(store).sort((a,b)=>Date.parse(b[1]?.date||0)-Date.parse(a[1]?.date||0));
+  for(const [id,row] of ordered){
+    const stamp=Date.parse(row?.date||'');
+    if((Number.isFinite(stamp)&&stamp<cutoff)||ordered.indexOf([id,row])>=50000)delete store[id];
+  }
+  if(ordered.length>50000)for(const [id] of ordered.slice(50000))delete store[id];
+}
+function ceoFinanceSummary(wallets,divisions,journal){
+  const walletNames=new Map((Array.isArray(divisions?.wallet)?divisions.wallet:[]).map(row=>[Number(row.division),String(row.name||'Division '+row.division)]));
+  const walletRows=(Array.isArray(wallets)?wallets:[]).map(row=>({
+    division:Number(row.division),
+    name:walletNames.get(Number(row.division))||'Division '+String(row.division),
+    balance:Number(row.balance)||0,
+  })).sort((a,b)=>a.division-b.division);
+  const months=new Map();
+  for(const row of journal||[]){
+    const stamp=Date.parse(row?.date||'');
+    if(!Number.isFinite(stamp))continue;
+    const month=String(row.date).slice(0,7);
+    if(!/^\d{4}-\d{2}$/.test(month))continue;
+    let m=months.get(month);
+    if(!m){m={month,income:0,expenses:0,net:0,sources:new Map(),entries:0};months.set(month,m)}
+    const amount=Number(row.amount)||0;
+    m.entries++;
+    m.net+=amount;
+    if(amount>0){
+      m.income+=amount;
+      const source=String(row.refType||'unknown').replaceAll('_',' ');
+      m.sources.set(source,(m.sources.get(source)||0)+amount);
+    }else if(amount<0)m.expenses+=Math.abs(amount);
+  }
+  const monthRows=[...months.values()].sort((a,b)=>b.month.localeCompare(a.month)).map(m=>({
+    month:m.month,
+    income:m.income,
+    expenses:m.expenses,
+    net:m.net,
+    entries:m.entries,
+    sources:[...m.sources.entries()].map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value),
+  }));
+  return{
+    wallets:walletRows,
+    totalBalance:walletRows.reduce((sum,row)=>sum+row.balance,0),
+    months:monthRows,
+  };
+}
+async function ceoFinanceSnapshot({force=false}={}){
+  const cached=ceoFinanceCache.data&&Date.now()-ceoFinanceCache.at<CEO_FINANCE_CACHE_MS;
+  if(!force&&cached)return ceoFinanceCache.data;
+  if(ceoFinanceCache.promise)return ceoFinanceCache.promise;
+  const pending=(async()=>{
+    const {access,admin}=await ceoAccessToken();
+    const corporationId=Number(admin.corporationId);
+    if(!corporationId)throw new Error('CEO corporation is not configured.');
+    const errors=[];
+    const base='https://esi.evetech.net/latest/corporations/'+corporationId;
+    const [wallets,divisions,members,memberTracking]=await Promise.all([
+      ceoTry('wallets',async()=>(await esiGet(base+'/wallets/?datasource=tranquility',access)).data,errors,[]),
+      ceoTry('divisions',async()=>(await esiGet(base+'/divisions/?datasource=tranquility',access)).data,errors,{wallet:[],hangar:[]}),
+      ceoTry('members',async()=>(await esiGet(base+'/members/?datasource=tranquility',access)).data,errors,[]),
+      ceoTry('membertracking',async()=>(await esiGet(base+'/membertracking/?datasource=tranquility',access)).data,errors,[]),
+    ]);
+    const journalParts=await Promise.all(Array.from({length:7},(_,index)=>index+1).map(async division=>{
+      const result=await ceoTry('wallet-journal-'+division,()=>ceoPagedGet(base+'/wallets/'+division+'/journal/?datasource=tranquility',access,{maxPages:20}),errors,{rows:[],truncated:false});
+      return(result.rows||[]).map(row=>({...row,_division:division}));
+    }));
+    const latestJournal=journalParts.flat();
+    ceoRememberFinanceJournal(latestJournal);
+    state.ceoAdmin.financeUpdatedAt=now();
+    state.ceoAdmin.lastError=errors.length?errors.map(row=>row.section+': '+row.message).join(' | '):null;
+    await save();
+    const remembered=Object.values(state.ceoAdmin.financeJournal||{});
+    const names=await resolveUniverseNames(Array.isArray(members)?members:[]);
+    const trackingRows=(Array.isArray(memberTracking)?memberTracking:[]).map(row=>({
+      characterId:Number(row.character_id)||null,
+      name:names.get(Number(row.character_id))||String(row.character_id||'Unknown'),
+      locationId:Number(row.location_id)||null,
+      logoffDate:row.logoff_date||null,
+      logonDate:row.logon_date||null,
+      shipTypeId:Number(row.ship_type_id)||null,
+      startDate:row.start_date||null,
+    }));
+    const data={
+      generatedAt:now(),
+      corporationId,
+      corporationName:admin.corporationName||null,
+      finance:ceoFinanceSummary(wallets,divisions,remembered),
+      members:{
+        count:Array.isArray(members)?members.length:0,
+        tracking:trackingRows.sort((a,b)=>a.name.localeCompare(b.name)),
+      },
+      history:{
+        source:'ESI wallet journal',
+        liveWindowDays:30,
+        retainedByJlr:true,
+        note:'ESI wallet journals provide roughly the recent 30-day window. JLR retains observed entries so month history grows after CEO authorization; older TMP Admin workbook history can be layered in as a baseline.',
+      },
+      errors,
+    };
+    ceoFinanceCache={at:Date.now(),data,promise:null};
+    return data;
+  })().catch(error=>{
+    state.ceoAdmin.lastError=String(error?.message||error);
+    throw error;
+  }).finally(()=>{if(ceoFinanceCache.promise===pending)ceoFinanceCache.promise=null});
+  ceoFinanceCache.promise=pending;
+  return pending;
+}
+
 function sameOrigin(req) {
   const origin = req.headers.origin; if (!origin) return true;
   try { return new URL(origin).origin === new URL(requestBaseUrl(req)).origin; } catch { return false; }
@@ -1369,7 +1548,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.10.12',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
+    app:{name:'JLR Miner Tracker',version:'2.10.13',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}])),wormholes:{reports:wormholeGasPublicReports(),reportHours:WORMHOLE_GAS_REPORT_TTL/3600000}},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans,
@@ -1569,6 +1748,7 @@ async function handleCallback(req,res,url) {
       if(Number(corporationInfo?.ceo_id)!==Number(charId))throw new Error('Renius is not the current corporation CEO');
 
       state.ceoAdmin={
+        ...(state.ceoAdmin||{}),
         characterId:charId,
         characterName:identity.characterName,
         corporationId,
@@ -1577,6 +1757,8 @@ async function handleCallback(req,res,url) {
         scopes:identity.scopes,
         authorizedAt:now(),
         lastError:null,
+        financeJournal:state.ceoAdmin?.financeJournal||{},
+        financeUpdatedAt:state.ceoAdmin?.financeUpdatedAt||null,
       };
       await save();
       setSessionCookie(res,user.id,req);
@@ -9508,6 +9690,13 @@ async function routeApi(req,res,url) {
     const viewer=requireCeoViewer(req,res);
     if(!viewer)return;
     return json(res,200,ceoStatusForUser(viewer.user));
+  }
+  if(req.method==='GET'&&url.pathname==='/api/ceo/finance'){
+    const viewer=requireCeoViewer(req,res);
+    if(!viewer)return;
+    if(!state.ceoAdmin?.refreshTokenEnc)return json(res,409,{error:'CEO_ESI_NOT_AUTHORIZED',message:'Renius must authorize CEO ESI first.'});
+    try{return json(res,200,await ceoFinanceSnapshot({force:url.searchParams.get('force')==='1'}))}
+    catch(error){return json(res,502,{error:error?.code||'CEO_FINANCE_FAILED',message:String(error?.message||error)})}
   }
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
