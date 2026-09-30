@@ -104,6 +104,8 @@ const index=fs.readFileSync(new URL('../public/index.html',import.meta.url),'utf
 assert.match(server,/const THREAT_FETCH_CONCURRENCY = 8/,'threat enrichment uses higher per-scan concurrency');
 assert.match(server,/const THREAT_REMOTE_CONCURRENCY = 12/,'global threat enrichment is bounded across users');
 assert.match(server,/const THREAT_ZKILL_TIMEOUT_MS = 5_500/,'zKill threat lookups have a hard latency budget');
+assert.match(server,/async function threatUniverseIds/,'cold Local name resolution has a dedicated bounded fast path');
+assert.match(server,/AbortSignal\.timeout\(4_500\)/,'cold Local name resolution cannot hold the first result indefinitely');
 assert.match(server,/async function resolveThreatEntities/,'pilot and ship names share one cached resolver');
 assert.match(server,/resolveThreatEntities\(parsed\.names,\(parsed\.shipNames\|\|\[\]\)\.map/,'one combined entity lookup serves Local and D-scan names');
 assert.match(server,/const threatCharacterPromises = new Map\(\)/,'overlapping users dedupe per-pilot enrichment');
@@ -114,6 +116,9 @@ assert.match(server,/void savePvpDb\(\)\.catch/,'disk persistence no longer bloc
 assert.match(server,/performance:\{mode:fast\?'quick':'full'/,'threat responses expose server timing');
 assert.match(app,/QUICK RESULTS READY/,'client labels the fast provisional result');
 assert.match(app,/threatScanRenderSignature/,'identical background polls do not rebuild the full threat table');
+assert.match(server,/Date\.now\(\)-Number\(running\.lastPartialAt\|\|0\)>=800/,'running scans periodically rebuild cheap partial results');
+assert.match(server,/progress:\{[\s\S]*enriched:/,'background threat enrichment exposes progressive completion');
+assert.match(app,/PROFILES READY/,'client shows progressive profile completion');
 assert.match(app,/threatScanPollCount<=8\?700/,'client checks quickly for early enrichment completion');
 assert.match(app,/threatScanPollCount<60/,'client keeps following long enrichments without the old 30-second cutoff');
 assert.ok(index.includes('/app.js?v=2.10.11-threat-fast1'),'browser receives the optimized threat client');
