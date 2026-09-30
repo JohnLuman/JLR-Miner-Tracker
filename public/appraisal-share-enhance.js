@@ -21,7 +21,8 @@
     if(n>=1e3)return(n/1e3).toFixed(1)+'K m³';
     return n.toLocaleString(undefined,{maximumFractionDigits:2})+' m³';
   };
-  const pct=clamp(Number(new URLSearchParams(location.search).get('p'))||100,0,200);
+  const payoutParam=new URLSearchParams(location.search).get('p');
+  const pct=clamp(payoutParam===null?100:Number(payoutParam)||0,0,200);
   const ageText=ms=>{
     const value=Math.max(0,Number(ms)||0);
     if(value<60_000)return Math.max(1,Math.round(value/1000))+'s';
