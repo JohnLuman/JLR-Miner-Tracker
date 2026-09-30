@@ -3616,6 +3616,11 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .appraisal-controls{grid-template-columns:minmax(240px,1.35fr) minmax(150px,.8fr) 130px 170px}
 .appraisal-summary{grid-template-columns:repeat(6,minmax(0,1fr))}
 .appraisal-summary .appraisal-primary{border-color:color-mix(in srgb,var(--theme-accent,#9d34ed) 65%,var(--line));background:color-mix(in srgb,var(--theme-accent,#9d34ed) 12%,var(--theme-panel-lo,var(--panel)))}
+.appraisal-copy-card{position:relative;cursor:copy;transition:border-color .14s ease,background .14s ease,transform .14s ease,box-shadow .14s ease}
+.appraisal-copy-card:after{content:"COPY";position:absolute;top:5px;right:6px;padding:1px 4px;border:1px solid color-mix(in srgb,var(--theme-accent,#9d34ed) 34%,var(--line));border-radius:999px;color:var(--theme-accent-hi,#ce68ff);font-size:5.5px;font-weight:900;letter-spacing:.08em;opacity:.72}
+.appraisal-copy-card:hover,.appraisal-copy-card:focus-visible{border-color:color-mix(in srgb,var(--theme-accent,#9d34ed) 68%,var(--line));background:color-mix(in srgb,var(--theme-accent,#9d34ed) 10%,var(--theme-panel-lo,var(--panel)));box-shadow:0 0 0 1px color-mix(in srgb,var(--theme-accent,#9d34ed) 20%,transparent);transform:translateY(-1px);outline:0}
+.appraisal-copy-cell{cursor:copy;transition:background .12s ease,color .12s ease}
+.appraisal-copy-cell:hover,.appraisal-copy-cell:focus-visible{background:color-mix(in srgb,var(--theme-accent,#9d34ed) 14%,transparent);color:var(--theme-accent-hi,#ce68ff);outline:1px solid color-mix(in srgb,var(--theme-accent,#9d34ed) 35%,transparent);outline-offset:-1px}
 .appraisal-results{min-width:0;border:1px solid var(--line);border-radius:10px;padding:9px;background:color-mix(in srgb,var(--theme-panel-lo,var(--panel)) 86%,transparent)}
 .appraisal-list{display:block;max-height:none;overflow:visible;padding:0}
 .appraisal-table-wrap{max-height:620px;overflow:auto;border:1px solid color-mix(in srgb,var(--line) 78%,transparent);border-radius:8px;background:var(--theme-panel-lo,var(--panel));scrollbar-gutter:stable}
