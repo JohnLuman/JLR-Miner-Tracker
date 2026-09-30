@@ -3152,18 +3152,18 @@
   async function saveThreatShareEditor(){
     const token=threatShareToken();
     if(!token||threatShareSaving)return;
+    const draft={
+      system:$('threatShareSystem')?.value||'',
+      dscanText:$('threatShareDscan')?.value||'',
+      localText:$('threatShareLocal')?.value||'',
+      manualRecons:threatShareReconRows($('threatShareRecon')?.value||''),
+    };
     threatShareSaving=true;
     threatShareEditError='';
-    renderThreatScan();
     try{
       const result=await api('/api/dscan-share/'+encodeURIComponent(token)+'/update',{
         method:'POST',
-        body:JSON.stringify({
-          system:$('threatShareSystem')?.value||'',
-          dscanText:$('threatShareDscan')?.value||'',
-          localText:$('threatShareLocal')?.value||'',
-          manualRecons:threatShareReconRows($('threatShareRecon')?.value||''),
-        }),
+        body:JSON.stringify(draft),
       });
       threatShareRecord=result?.share||threatShareRecord;
       toast('Shared intel updated on the same JLR link.');
