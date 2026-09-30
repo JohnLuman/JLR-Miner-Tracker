@@ -3,7 +3,6 @@
   const $=id=>document.getElementById(id);
   let share=null;
   let dscanRows=[];
-  let saving=false;
 
   function tokenFromPath(){
     return location.pathname.split('/').filter(Boolean).at(-1)||'';
@@ -198,53 +197,6 @@
     const unresolved=Array.isArray(local.unresolved)?local.unresolved:[];
     $('localShownCount').textContent=(q?filtered.length+' of ':'')+source.length+' pilots'+(unresolved.length?' • '+unresolved.length+' unresolved':'');
   }
-  function reconRowsFromEditor(){
-    return [...document.querySelectorAll('.recon-edit-row')].map(row=>({
-      name:String(row.querySelector('[data-recon-name]')?.value||'').trim(),
-      count:Math.max(0,Math.min(9999,Math.floor(Number(row.querySelector('[data-recon-count]')?.value)||0))),
-    })).filter(row=>row.name&&row.count);
-  }
-  function addReconEditorRow(name='',count=1){
-    const row=document.createElement('div');
-    row.className='recon-edit-row';
-    const nameInput=document.createElement('input');
-    nameInput.dataset.reconName='1';
-    nameInput.maxLength=80;
-    nameInput.placeholder='Ship / recon type';
-    nameInput.value=name;
-    const countInput=document.createElement('input');
-    countInput.dataset.reconCount='1';
-    countInput.type='number';
-    countInput.min='1'; countInput.max='9999'; countInput.step='1';
-    countInput.value=String(Math.max(1,Number(count)||1));
-    const remove=document.createElement('button');
-    remove.type='button'; remove.className='secondary recon-remove'; remove.textContent='REMOVE';
-    remove.addEventListener('click',()=>row.remove());
-    row.append(nameInput,countInput,remove);
-    $('reconEditorRows').append(row);
-    return row;
-  }
-  function addPreset(name){
-    const rows=[...document.querySelectorAll('.recon-edit-row')];
-    const existing=rows.find(row=>String(row.querySelector('[data-recon-name]')?.value||'').trim().toLowerCase()===name.toLowerCase());
-    if(existing){
-      const count=existing.querySelector('[data-recon-count]');
-      count.value=String(Math.min(9999,(Number(count.value)||0)+1));
-      count.focus();
-    }else addReconEditorRow(name,1).querySelector('[data-recon-count]')?.focus();
-  }
-  function renderOwnerEditor(){
-    const canEdit=Boolean(share?.canEdit);
-    $('ownerPanel').classList.toggle('hidden',!canEdit);
-    if(!canEdit)return;
-    $('editSystem').value=share?.system||'';
-    $('editDscan').value=share?.dscanText||'';
-    $('editLocal').value=share?.localText||'';
-    $('reconEditorRows').replaceChildren();
-    const rows=Array.isArray(share?.manualRecons)?share.manualRecons:[];
-    rows.forEach(row=>addReconEditorRow(row.name,row.count));
-    $('ownerStatus').textContent='Only you can edit this share • saving keeps the same URL.';
-  }
   function render(){
     dscanRows=parseDscan(share?.dscanText||'');
     renderHeader();
@@ -252,7 +204,6 @@
     renderRecons();
     renderDscan();
     renderLocal();
-    renderOwnerEditor();
     const hasAny=Boolean(share?.dscanText||share?.localText||(share?.manualRecons||[]).length);
     $('emptyPanel').classList.toggle('hidden',hasAny);
     $('content').classList.remove('hidden');
@@ -272,34 +223,6 @@
       }
     }catch{}
   }
-  async function save(){
-    if(saving||!share?.canEdit)return;
-    saving=true;
-    $('saveShare').disabled=true;
-    $('ownerStatus').textContent='Saving update…';
-    try{
-      const response=await fetch('/api/dscan-share/'+encodeURIComponent(tokenFromPath())+'/update',{
-        method:'POST',
-        headers:{'Content-Type':'application/json','Accept':'application/json'},
-        body:JSON.stringify({
-          system:$('editSystem').value,
-          dscanText:$('editDscan').value,
-          localText:$('editLocal').value,
-          manualRecons:reconRowsFromEditor(),
-        }),
-      });
-      const payload=await response.json().catch(()=>({}));
-      if(!response.ok)throw new Error(payload?.message||payload?.error||('HTTP '+response.status));
-      share=payload.share;
-      render();
-      $('ownerStatus').textContent='Saved • this same link is now updated.';
-    }catch(error){
-      $('ownerStatus').textContent='Update failed: '+String(error?.message||error);
-    }finally{
-      saving=false;
-      $('saveShare').disabled=false;
-    }
-  }
   async function load(){
     const token=tokenFromPath();
     if(!/^[A-Za-z0-9_-]{8,}$/.test(token))return fail('Invalid JLR shared-intel link.');
@@ -316,8 +239,5 @@
   $('copyDscan').addEventListener('click',()=>copyText(share?.dscanText||'',$('copyDscan'),'D-SCAN COPIED'));
   $('dscanFilter').addEventListener('input',renderDscan);
   $('localFilter').addEventListener('input',renderLocal);
-  $('saveShare').addEventListener('click',save);
-  $('addReconRow').addEventListener('click',()=>addReconEditorRow('',1).querySelector('[data-recon-name]')?.focus());
-  document.querySelectorAll('[data-recon-preset]').forEach(button=>button.addEventListener('click',()=>addPreset(button.dataset.reconPreset||'')));
   load();
 })();
