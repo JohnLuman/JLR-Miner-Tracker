@@ -47,9 +47,14 @@ const justUpdated={
 assert.equal(actionableLedgerScanWarning(justUpdated),false,'the new scan answers earlier ledger warnings');
 assert.deepEqual(eligibleTrackedSystems(names,{'C-N4OD':justUpdated,'H-S80W':{due:true}},true),['H-S80W','Griemeer']);
 const newMining={...justUpdated,ledger:{needsScan:true,lastActivityAt:'2026-09-25T02:21:00.000Z'}};
-assert.equal(actionableLedgerScanWarning(newMining),true,'mining observed after the scan can request another update');
+const withinHour=Date.parse('2026-09-25T03:00:00.000Z');
+const afterHour=Date.parse('2026-09-25T03:20:01.000Z');
+assert.equal(actionableLedgerScanWarning(newMining,{at:withinHour}),false,'mining after a scan does not request another scan inside the one-hour cooldown');
+assert.equal(actionableLedgerScanWarning(newMining,{at:afterHour}),true,'mining observed after the scan can request another update after one hour');
 assert.deepEqual(eligibleTrackedSystems(['C-N4OD'],{'C-N4OD':newMining},true),['C-N4OD']);
-assert.equal(actionableLedgerScanWarning({...justUpdated,ledger:{needsScan:true,respawnCompletedAt:'2026-09-25T02:21:00.000Z',lastActivityAt:'2026-09-25T02:19:00.000Z'}}),true,'a completed respawn needs a new scan even when older mining activity has been answered');
+const respawnAfterScan={...justUpdated,ledger:{needsScan:true,respawnCompletedAt:'2026-09-25T02:21:00.000Z',lastActivityAt:'2026-09-25T02:19:00.000Z'}};
+assert.equal(actionableLedgerScanWarning(respawnAfterScan,{at:withinHour}),false,'a respawn does not bypass the one-hour repeat-scan cooldown');
+assert.equal(actionableLedgerScanWarning(respawnAfterScan,{at:afterHour}),true,'a completed respawn can request a new scan after the cooldown');
 
 const now=Date.parse('2026-09-25T02:20:10.000Z');
 const actions=[{kind:'scan-updated',system:'C-N4OD',at:Date.parse(scanAt)}];
