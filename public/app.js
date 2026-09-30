@@ -591,7 +591,11 @@
   }
   function appraisalModeLabel(value){
     const key=String(value||'split');
-    return key==='buy'?'BUY':key==='sell'?'SELL':'SPLIT';
+    if(key==='buy')return'BUY';
+    if(key==='sell')return'SELL';
+    if(key==='refine-buy')return'REFINE BUY';
+    if(key==='refine-sell')return'REFINE SELL';
+    return'SPLIT';
   }
   function appraisalVariantLabel(value){
     return String(value||'immediate')==='top5percent'?'TOP 5% AVG':'IMMEDIATE';
@@ -602,6 +606,18 @@
     const input=$('appraisalRefineRate');
     const raw=Number(input?.value);
     return Math.max(0,Math.min(100,Number.isFinite(raw)?raw:fallback));
+  }
+  function syncAppraisalSelectedRefineValue(){
+    const mode=String(appraisalData?.pricing||'');
+    if(!appraisalData?.summary||!['refine-buy','refine-sell'].includes(mode))return;
+    const refine=appraisalData.refine||{};
+    const rate=appraisalRefineRatePct()/100;
+    const refineBuy=Math.max(0,Number(refine.buyAt100)||0)*rate;
+    const refineSell=Math.max(0,Number(refine.sellAt100)||0)*rate;
+    appraisalData.summary.refineBuy=refineBuy;
+    appraisalData.summary.refineSell=refineSell;
+    appraisalData.summary.value=mode==='refine-sell'?refineSell:refineBuy;
+    refine.selectedRate=rate;
   }
   function renderAppraisalRefine(){
     const section=$('appraisalRefineSection');
@@ -1832,7 +1848,7 @@
           <div class="appraisal-controls">
             <label class="appraisal-field appraisal-title-field"><span>APPRAISAL NAME</span><input id="appraisalTitle" maxlength="120" placeholder="Example: Fleet loot split"></label>
             <label class="appraisal-field"><span>MARKET</span><select id="appraisalMarket"><option value="2">Jita 4-4</option></select></label>
-            <label class="appraisal-field"><span>PRICE</span><select id="appraisalPricing"><option value="split" selected>SPLIT</option><option value="buy">BUY</option><option value="sell">SELL</option></select></label>
+            <label class="appraisal-field"><span>PRICE</span><select id="appraisalPricing"><option value="split" selected>SPLIT</option><option value="buy">BUY</option><option value="sell">SELL</option><option value="refine-buy">REFINE BUY</option><option value="refine-sell">REFINE SELL</option></select></label>
             <label class="appraisal-field"><span>PRICING BASIS</span><select id="appraisalVariant"><option value="immediate" selected>IMMEDIATE</option><option value="top5percent">TOP 5% AVERAGE</option></select></label>
           </div>
           <div class="appraisal-quick-entry">
@@ -1888,7 +1904,8 @@
     });
     $('appraisalRefineRate')?.addEventListener('input',()=>{
       appraisalRefineRateTouched=true;
-      renderAppraisalRefine();
+      syncAppraisalSelectedRefineValue();
+      renderAppraisal();
     });
     $('appraisalPasteClipboard')?.addEventListener('click',async()=>{
       try{
