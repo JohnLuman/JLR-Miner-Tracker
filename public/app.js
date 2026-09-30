@@ -10,8 +10,11 @@
   let audioUnlocked = false;
   let audioResumePending = false;
   let soundEnabled = localStorage.getItem('jlrSoundEnabled') !== 'false';
-  const THEME_IDS = new Set(['void','citadel','forge','serpentis','blood','angel','edencom','aurora']);
-  let activeTheme = THEME_IDS.has(localStorage.getItem('jlrTheme')) ? localStorage.getItem('jlrTheme') : 'void';
+  const THEME_IDS = new Set(['void','citadel','industrial','serpentis','blood','angel','edencom','aurora','neon','glacier','solar']);
+  const savedThemeRaw=localStorage.getItem('jlrTheme');
+  const savedTheme=savedThemeRaw==='forge'?'industrial':savedThemeRaw;
+  if(savedThemeRaw==='forge')localStorage.setItem('jlrTheme','industrial');
+  let activeTheme = THEME_IDS.has(savedTheme) ? savedTheme : 'void';
   document.documentElement.dataset.theme=activeTheme;
   let toastTimer = null;
   let eventSource = null;
@@ -446,7 +449,7 @@
     if(tab==='toons')return'Ask Adam about a toon, ESI access, location readiness, or sync state…';
     if(tab==='threat')return'Ask Adam about this threat view or what the current data means…';
     if(tab==='doctrine')return'Ask Adam which item has the best ROI, how much to buy, or what stock and sales show…';
-    if(tab==='forge')return'Ask Adam about this appraisal, Jita buy/split/sell, volume, or what the numbers mean…';
+    if(tab==='appraisal')return'Ask Adam about this appraisal, Jita buy/split/sell, volume, or what the numbers mean…';
     if(context.workflow==='scout-routing'||tab==='brain')return'Ask Adam where to go, what is closest, or what needs attention…';
     return'Ask Adam naturally about whatever you are looking at…';
   }
@@ -850,7 +853,7 @@
     }
   }
   function renderAppraisal(){
-    if(!$('forgePanel'))return;
+    if(!$('appraisalPanel'))return;
     const summary=$('appraisalSummary'),items=$('appraisalItems'),share=$('appraisalShare');
     if(!appraisalData){
       if(summary)summary.innerHTML='';
@@ -2726,6 +2729,10 @@
   function showLogin(){$('app').classList.add('hidden');$('loginView').classList.remove('hidden');}
   function showApp(){$('loginView').classList.add('hidden');$('app').classList.remove('hidden');}
   let activeTab=localStorage.getItem('jlrTab')||'fields';
+  if(activeTab==='forge'){
+    activeTab='appraisal';
+    localStorage.setItem('jlrTab',activeTab);
+  }
   let feedbackOpenedFrom=activeTab;
   let feedbackHistory=[];
   let feedbackHistoryLoading=false;
@@ -2763,7 +2770,7 @@
       localStorage.setItem('jlrTab',activeTab);
     }
   }
-  const NAV_TAB_LABELS={fields:'FIELDS',fleet:'FLEET',performance:'PERFORMANCE',tracker:'TRACKER',ice:'ICE',gas:'GAS',forge:'APPRAISAL',doctrine:'DOCTRINE',pvp:'INIT PVP',threat:'THREAT',mer:'MER',brain:'ADAM',toons:'TOONS',feedback:'FEEDBACK'};
+  const NAV_TAB_LABELS={fields:'FIELDS',fleet:'FLEET',performance:'PERFORMANCE',tracker:'TRACKER',ice:'ICE',gas:'GAS',appraisal:'APPRAISAL',doctrine:'DOCTRINE',pvp:'INIT PVP',threat:'THREAT',mer:'MER',brain:'ADAM',toons:'TOONS',feedback:'FEEDBACK'};
   function closeNavDropdowns(except=null){
     document.querySelectorAll('.nav-menu[open]').forEach(menu=>{if(menu!==except)menu.open=false});
   }
@@ -2787,7 +2794,7 @@
   }
 
   function applyTab(tab){
-    const valid=['fields','brain','fleet','performance','ice','gas','forge','pvp','threat','mer','toons','feedback'];
+    const valid=['fields','brain','fleet','performance','ice','gas','appraisal','pvp','threat','mer','toons','feedback'];
     if(doctrineAllowed())valid.splice(5,0,'doctrine');
     if(trackerAllowed()){
       const pvpIndex=valid.indexOf('pvp');
@@ -2815,11 +2822,9 @@
     }
     if(activeTab==='doctrine'&&!doctrineMarket&&!doctrineMarketLoading)loadDoctrineMarket();
     if(activeTab==='performance')refreshFleetPerformanceData(false);
-    if(activeTab==='forge'){
+    if(activeTab==='appraisal'){
       renderAppraisal();
-      renderForgeBuildPlans();
       void loadAppraisalMarkets();
-      void loadForgeBuildPlans(false);
     }
     if(activeTab==='brain'){
       renderAdamContext();
@@ -2852,8 +2857,8 @@
     const performance=makePanel('performance');
     const ice=makePanel('ice');
     const gas=makePanel('gas');
-    const forge=makePanel('forge');
-    forge.id='forgePanel';
+    const appraisal=makePanel('appraisal');
+    appraisal.id='appraisalPanel';
     const doctrine=makePanel('doctrine');
     doctrine.id='doctrineMarketPanel';
     const pvp=makePanel('pvp');
@@ -2868,10 +2873,10 @@
     const feedback=makePanel('feedback');
     feedback.id='feedbackPanel';
 
-    forge.innerHTML=`
-      <section class="forge-shell appraisal-shell">
-        <section class="glass forge-planner appraisal-panel">
-          <div class="forge-head">
+    appraisal.innerHTML=`
+      <section class="appraisal-shell">
+        <section class="glass appraisal-panel">
+          <div class="appraisal-head">
             <div>
               <span class="eyebrow">JLR MARKET NETWORK // APPRAISAL</span>
               <h2>JLR APPRAISAL</h2>
@@ -2879,27 +2884,27 @@
             </div>
             <span class="status-pill">● LIVE MARKET DATA</span>
           </div>
-          <div class="forge-controls appraisal-controls">
-            <label class="forge-field appraisal-title-field"><span>APPRAISAL NAME</span><input id="appraisalTitle" maxlength="120" placeholder="Example: Fleet loot split"></label>
-            <label class="forge-field"><span>MARKET</span><select id="appraisalMarket"><option value="2">Jita 4-4</option></select></label>
-            <label class="forge-field"><span>PRICE</span><select id="appraisalPricing"><option value="split" selected>SPLIT</option><option value="buy">BUY</option><option value="sell">SELL</option></select></label>
-            <label class="forge-field"><span>PRICING BASIS</span><select id="appraisalVariant"><option value="immediate" selected>IMMEDIATE</option><option value="top5percent">TOP 5% AVERAGE</option></select></label>
+          <div class="appraisal-controls">
+            <label class="appraisal-field appraisal-title-field"><span>APPRAISAL NAME</span><input id="appraisalTitle" maxlength="120" placeholder="Example: Fleet loot split"></label>
+            <label class="appraisal-field"><span>MARKET</span><select id="appraisalMarket"><option value="2">Jita 4-4</option></select></label>
+            <label class="appraisal-field"><span>PRICE</span><select id="appraisalPricing"><option value="split" selected>SPLIT</option><option value="buy">BUY</option><option value="sell">SELL</option></select></label>
+            <label class="appraisal-field"><span>PRICING BASIS</span><select id="appraisalVariant"><option value="immediate" selected>IMMEDIATE</option><option value="top5percent">TOP 5% AVERAGE</option></select></label>
           </div>
           <div class="appraisal-quick-entry">
-            <label class="forge-field"><span>TYPE ITEM / QTY</span><input id="appraisalQuickEntry" autocomplete="off" placeholder="10 Hulk — press Enter"></label>
+            <label class="appraisal-field"><span>TYPE ITEM / QTY</span><input id="appraisalQuickEntry" autocomplete="off" placeholder="10 Hulk — press Enter"></label>
             <button id="appraisalQuickAdd" class="orb purple" type="button">ADD ↵</button>
           </div>
-          <textarea id="appraisalPaste" class="forge-paste appraisal-paste" rows="10" maxlength="100000" placeholder="Paste a full EVE list here, or use TYPE ITEM / QTY above…&#10;10 Hulk&#10;Tritanium 1000000&#10;Compressed Arkonor&#9;27512&#10;&#10;Ctrl+Enter = Appraise pasted list"></textarea>
-          <div class="forge-actions">
+          <textarea id="appraisalPaste" class="appraisal-paste" rows="10" maxlength="100000" placeholder="Paste a full EVE list here, or use TYPE ITEM / QTY above…&#10;10 Hulk&#10;Tritanium 1000000&#10;Compressed Arkonor&#9;27512&#10;&#10;Ctrl+Enter = Appraise pasted list"></textarea>
+          <div class="appraisal-actions">
             <button id="appraisalPasteClipboard" class="orb silver" type="button">PASTE CLIPBOARD</button>
             <button id="appraisalCalculate" class="orb purple" type="button">APPRAISE</button>
             <button id="appraisalShare" class="orb silver" type="button" disabled>CREATE SHARE LINK</button>
           </div>
-          <div id="appraisalStatus" class="forge-status">Ready. Buy = current buy-side value, Sell = sell-side value, Split = midpoint.</div>
-          <div id="appraisalSummary" class="forge-summary appraisal-summary"></div>
+          <div id="appraisalStatus" class="appraisal-status">Ready. Buy = current buy-side value, Sell = sell-side value, Split = midpoint.</div>
+          <div id="appraisalSummary" class="appraisal-summary"></div>
           <section class="appraisal-results">
             <div class="brain-card-head"><strong>APPRAISAL ITEMS</strong><small>Market values shown per item and for the full pasted quantity</small></div>
-            <div id="appraisalItems" class="forge-list appraisal-list"><div class="visual-empty">Paste an EVE item list and click APPRAISE.</div></div>
+            <div id="appraisalItems" class="appraisal-list"><div class="visual-empty">Paste an EVE item list and click APPRAISE.</div></div>
           </section>
           <section id="appraisalRefineSection" class="appraisal-refine">
             <div class="appraisal-refine-head">
@@ -2925,11 +2930,11 @@
       void calculateAppraisal();
     });
     $('appraisalShare')?.addEventListener('click',()=>void shareAppraisal());
-    $('forgePanel')?.addEventListener('click',event=>{
+    $('appraisalPanel')?.addEventListener('click',event=>{
       const target=event.target instanceof Element?event.target.closest('[data-appraisal-copy]'):null;
       if(target)void copyAppraisalValue(target);
     });
-    $('forgePanel')?.addEventListener('keydown',event=>{
+    $('appraisalPanel')?.addEventListener('keydown',event=>{
       if(event.key!=='Enter'&&event.key!==' ')return;
       const target=event.target instanceof Element?event.target.closest('[data-appraisal-copy]'):null;
       if(!target)return;
