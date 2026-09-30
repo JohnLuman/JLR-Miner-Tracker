@@ -76,6 +76,8 @@ assert.match(app,/CREATE SHARE LINK/);
 assert.match(app,/TOP 5% AVERAGE/);
 assert.match(app,/JLR Native • CCP ESI Jita buy/);
 assert.match(index,/APPRAISAL<\/button>/);
+assert.match(index,/data-tab="appraisal"[^>]*>APPRAISAL<\/button>/,'Appraisal uses its own tab key');
+assert.doesNotMatch(index,/data-tab="forge"/,'legacy Forge tab key is removed from the UI');
 assert.match(shareClient,/\/api\/appraisal\/share\//);
 assert.match(server,/function appraisalRefinePreview\(items,sdeMaterialRows=\[\]\)/,'server calculates an SDE-aware ore refine preview for appraisals');
 assert.match(server,/replace\(\/\^compressed\\s\+\//,'compressed ore maps to the same reprocessing recipe');
