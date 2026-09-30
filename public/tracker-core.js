@@ -170,9 +170,14 @@
       const current=location&&String(row.systemId)===String(location.systemId);
       const metric=trackerIntelMetric(row,trackerHotMode);
       const danger=metric>0&&['pvp','dreads','blobs'].includes(trackerHotMode);
+      const systemName=String(row.system||row.systemId||'Unknown system');
+      const systemId=Number(row.systemId)||0;
+      const systemLabel=systemId
+        ?'<a class="tracker-intel-system-link" href="https://zkillboard.com/system/'+encodeURIComponent(systemId)+'/" target="_blank" rel="noopener noreferrer" title="Open '+esc(systemName)+' on zKillboard"><strong>'+esc(systemName)+'</strong></a>'
+        :'<strong>'+esc(systemName)+'</strong>';
       return '<div class="tracker-intel-row information-hot-row '+(current?'current ':'')+(danger?'danger':'')+'">'+
         '<b>#'+(index+1)+'</b>'+
-        '<div class="tracker-intel-system"><strong>'+esc(row.system||row.systemId)+'</strong><small>'+fmt(row.npcKills)+' NPC kills/h</small></div>'+
+        '<div class="tracker-intel-system">'+systemLabel+'<small>'+fmt(row.npcKills)+' NPC kills/h</small></div>'+
         '<div class="tracker-intel-stat tracker-intel-hunt"><span>HUNT</span><strong>'+fmt(row.huntScore)+'/100</strong></div>'+
         '<div class="tracker-intel-stat tracker-intel-selected"><span>'+esc(metricName)+'</span><strong>'+esc(trackerIntelMetricLabel(row,trackerHotMode))+'</strong></div>'+
         '<em>'+esc(trackerIntelJumpLabel(row.jumps))+'</em>'+
