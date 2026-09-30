@@ -78,8 +78,13 @@
   let threatIgnorePositive=localStorage.getItem('jlrThreatIgnorePositive')!=='false';
   let threatIgnoreOwn=localStorage.getItem('jlrThreatIgnoreOwn')!=='false';
   let threatShareLoading=false;
-  let threatShareUrl='';
+  let threatShareUrl=localStorage.getItem('jlrThreatShareUrl')||'';
   let threatShareError='';
+  let threatShareEditOpen=false;
+  let threatShareEditLoading=false;
+  let threatShareSaving=false;
+  let threatShareRecord=null;
+  let threatShareEditError='';
   let ledgerAuditLoading=false;
   let myLedgerSummary=null;
   let brainLastSystem='';
@@ -2999,7 +3004,31 @@
               <button id="threatClearScan" class="threat-clear-text" type="button" ${threatScanText?'':'disabled'}>CLEAR TEXT</button>
             </div>
           </div>
-          ${threatShareUrl?`<div class="threat-share-ready"><span>JLR SHARE LINK READY</span><a href="${esc(threatShareUrl)}" target="_blank" rel="noopener noreferrer">${esc(threatShareUrl)}</a></div>`:''}
+          ${threatShareUrl?`<div class="threat-share-ready">
+            <span>JLR SHARE LINK READY</span>
+            <a href="${esc(threatShareUrl)}" target="_blank" rel="noopener noreferrer">${esc(threatShareUrl)}</a>
+            <div class="threat-share-ready-actions">
+              <button id="threatEditShare" type="button">${threatShareEditOpen?'CLOSE EDIT':'EDIT SHARED LINK'}</button>
+              <button id="threatNewShare" type="button">NEW SHARE</button>
+            </div>
+          </div>`:''}
+          ${threatShareEditOpen?`<section class="threat-share-editor">
+            <div class="threat-share-editor-head">
+              <div><strong>EDIT SHARED LINK</strong><span>Changes save to the same public URL.</span></div>
+              ${threatShareEditLoading?'<small>Loading…</small>':''}
+            </div>
+            ${threatShareEditError?`<div class="threat-share-editor-error">${esc(threatShareEditError)}</div>`:''}
+            ${threatShareRecord?`
+              <label><span>SYSTEM</span><input id="threatShareSystem" maxlength="80" value="${esc(threatShareRecord.system||'')}" placeholder="Example: C-N4OD"></label>
+              <div class="threat-share-editor-grid">
+                <label><span>D-SCAN</span><textarea id="threatShareDscan" spellcheck="false" placeholder="Paste D-scan here…">${esc(threatShareRecord.dscanText||'')}</textarea></label>
+                <label><span>LOCAL</span><textarea id="threatShareLocal" spellcheck="false" placeholder="Paste Local names here…">${esc(threatShareRecord.localText||'')}</textarea></label>
+              </div>
+              <label><span>MANUAL RECON <small>one per line, e.g. Huginn x2</small></span><textarea id="threatShareRecon" class="threat-share-recon" spellcheck="false" placeholder="Huginn x1&#10;Lachesis x2">${esc((threatShareRecord.manualRecons||[]).map(row=>row.name+' x'+row.count).join('\n'))}</textarea></label>
+              <div class="threat-share-editor-actions">
+                <button id="threatSaveShareEdit" class="orb purple" type="button" ${threatShareSaving?'disabled':''}>${threatShareSaving?'SAVING…':'SAVE SAME LINK'}</button>
+              </div>`:''}
+          </section>`:''}
         </section>
 
         ${data?`
@@ -3030,7 +3059,6 @@
 
     const input=$('threatScanInput');
     input?.addEventListener('input',()=>{
-      if(threatShareUrl&&input.value!==threatScanText)threatShareUrl='';
       threatShareError='';
       threatScanText=input.value;
       const clearButton=$('threatClearScan');
@@ -3058,17 +3086,30 @@
       threatScanText='';
       threatScanData=null;
       threatScanError='';
-      threatShareUrl='';
       threatShareError='';
       renderThreatScan();
     });
+    $('threatEditShare')?.addEventListener('click',async()=>{
+      threatShareEditOpen=!threatShareEditOpen;
+      threatShareEditError='';
+      renderThreatScan();
+      if(threatShareEditOpen&&!threatShareRecord)await loadThreatShareEditor();
+    });
+    $('threatNewShare')?.addEventListener('click',()=>{
+      threatShareUrl='';
+      threatShareRecord=null;
+      threatShareEditOpen=false;
+      threatShareEditError='';
+      localStorage.removeItem('jlrThreatShareUrl');
+      renderThreatScan();
+    });
+    $('threatSaveShareEdit')?.addEventListener('click',()=>saveThreatShareEditor());
     $('threatRunScan')?.addEventListener('click',()=>runThreatScan(input?.value||''));
     $('threatShareScan')?.addEventListener('click',()=>shareThreatScan(input?.value||''));
     $('threatPasteScan')?.addEventListener('click',async()=>{
       try{
         if(!navigator.clipboard?.readText)throw new Error('Clipboard access is unavailable in this browser. Paste into the box instead.');
         const text=await navigator.clipboard.readText();
-        if(text!==threatScanText)threatShareUrl='';
         threatShareError='';
         threatScanText=text;
         await runThreatScan(text);
@@ -3078,6 +3119,60 @@
         setTimeout(()=>$('threatScanInput')?.focus(),0);
       }
     });
+  }
+  function threatShareToken(){
+    try{return new URL(threatShareUrl,location.origin).pathname.split('/').filter(Boolean).at(-1)||''}
+    catch{return''}
+  }
+  function threatShareReconRows(text){
+    return String(text||'').replace(/\r/g,'').split('\n').map(line=>line.trim()).filter(Boolean).map(line=>{
+      const match=line.match(/^(.*?)(?:\s+[x×*]\s*(\d+)|\s+(\d+))$/i);
+      const name=String(match?.[1]||line).trim();
+      const count=Math.max(1,Math.min(9999,Number(match?.[2]||match?.[3]||1)));
+      return{name,count};
+    }).filter(row=>row.name).slice(0,24);
+  }
+  async function loadThreatShareEditor(){
+    const token=threatShareToken();
+    if(!token)return;
+    threatShareEditLoading=true;
+    threatShareEditError='';
+    renderThreatScan();
+    try{
+      const result=await api('/api/dscan-share/'+encodeURIComponent(token));
+      if(!result?.share?.canEdit)throw new Error('This share is not editable by the current JLR account.');
+      threatShareRecord=result.share;
+    }catch(error){
+      threatShareEditError=String(error?.message||error||'Could not load the shared link.');
+    }finally{
+      threatShareEditLoading=false;
+      renderThreatScan();
+    }
+  }
+  async function saveThreatShareEditor(){
+    const token=threatShareToken();
+    if(!token||threatShareSaving)return;
+    threatShareSaving=true;
+    threatShareEditError='';
+    renderThreatScan();
+    try{
+      const result=await api('/api/dscan-share/'+encodeURIComponent(token)+'/update',{
+        method:'POST',
+        body:JSON.stringify({
+          system:$('threatShareSystem')?.value||'',
+          dscanText:$('threatShareDscan')?.value||'',
+          localText:$('threatShareLocal')?.value||'',
+          manualRecons:threatShareReconRows($('threatShareRecon')?.value||''),
+        }),
+      });
+      threatShareRecord=result?.share||threatShareRecord;
+      toast('Shared intel updated on the same JLR link.');
+    }catch(error){
+      threatShareEditError=String(error?.message||error||'Could not update the shared link.');
+    }finally{
+      threatShareSaving=false;
+      renderThreatScan();
+    }
   }
   async function copyThreatShareUrl(){
     if(!threatShareUrl)return false;
@@ -3128,6 +3223,8 @@
       const result=await api('/api/threat-share',{method:'POST',body:JSON.stringify({text:value})});
       threatShareUrl=String(result?.url||'');
       if(!threatShareUrl)throw new Error('JLR did not return a shared scan link.');
+      threatShareRecord=result?.share||null;
+      localStorage.setItem('jlrThreatShareUrl',threatShareUrl);
       renderThreatScan();
       await copyThreatShareUrl();
     }catch(error){
