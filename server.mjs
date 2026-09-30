@@ -7380,7 +7380,9 @@ function threatEntityCacheValue(name){
   if(cached&&Date.now()-cached.at<THREAT_ENTITY_CACHE_MS)return cached;
   const persisted=threatCharacterNameIndex.get(key);
   if(persisted){
-    const value={at:Date.now(),character:persisted,type:null};
+    // Persisted PvP intel proves the character mapping only. Leave the type
+    // field unresolved because an EVE character can share a name with an item.
+    const value={at:Date.now(),character:persisted};
     threatEntityCache.set(key,value);
     return value;
   }
@@ -7397,8 +7399,8 @@ async function resolveThreatEntities(characterNames=[],shipNames=[]){
     if(cached){
       if(wantedCharacters.has(key)&&cached.character)characters.set(key,cached.character);
       if(wantedTypes.has(key)&&cached.type)types.set(key,cached.type);
-      const characterDone=!wantedCharacters.has(key)||Boolean(cached.character)||cached.character===null;
-      const typeDone=!wantedTypes.has(key)||Boolean(cached.type)||cached.type===null;
+      const characterDone=!wantedCharacters.has(key)||Object.prototype.hasOwnProperty.call(cached,'character');
+      const typeDone=!wantedTypes.has(key)||Object.prototype.hasOwnProperty.call(cached,'type');
       if(characterDone&&typeDone)continue;
     }
     missing.push(key);
@@ -7706,7 +7708,9 @@ async function getThreatCharacterIntel(character){
 
     const fallbackCharacter=cached?.character||{};
     const entry={
-      updatedAt:now(),
+      // Failed zKill enrichment stays stale so the next scan can retry instead
+      // of caching an empty/old combat profile for another six hours.
+      updatedAt:rawStats?now():(cached?.updatedAt||new Date(Date.now()-THREAT_CHARACTER_CACHE_MS).toISOString()),
       character:{
         id,
         name:String(profile?.name||fallbackCharacter.name||character?.name||id),
@@ -7716,7 +7720,7 @@ async function getThreatCharacterIntel(character){
         alliance_id:Number(profile?.alliance_id)||Number(fallbackCharacter.alliance_id)||null,
         faction_id:Number(profile?.faction_id)||Number(fallbackCharacter.faction_id)||null,
       },
-      stats:rawStats?compactThreatStats(rawStats):compactThreatStats(cached?.stats||{}),
+      stats:rawStats?compactThreatStats(rawStats):(cached?.stats||compactThreatStats({})),
       statsError,
     };
     pvpDb.threat ||= {characters:{}};
