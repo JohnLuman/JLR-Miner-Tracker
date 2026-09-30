@@ -5724,7 +5724,7 @@ async function resolveAppraisalHub(value){
 }
 async function appraisalResolveItems(rows){
   const inputs=Array.isArray(rows)?rows:[];
-  const names=[...new Set(inputs.map(row=>String(row?.name||'').trim()).filter(name=>name.length>=2))];
+  const names=[...new Set(inputs.map(row=>String(row?.name||'').trim()).filter(name=>name.length>=2&&name.length<=100))];
   const resolvedByKey=new Map();
   let sdeMeta=null;
   let sdeResolved=0;
