@@ -56,6 +56,19 @@ assert.match(styles,/floating luminous glass, soft motion/,'Aurora has floating-
 assert.match(styles,/active HUD scanline and reactive modules/,'Neon has reactive HUD personality');
 assert.match(styles,/fractured crystal facets rather than HUD cuts/,'Glacier has fractured-crystal personality');
 assert.match(styles,/orbital rings and radiant instrumentation/,'Solar has orbital instrumentation personality');
+assert.match(styles,/FINAL THEME ART DIRECTION/,'final art-direction layer is present');
+assert.match(styles,/VOID — event horizon \/ silent deep-space observatory/,'Void final identity is present');
+assert.match(styles,/CITADEL — armored station bulkhead \/ command bridge/,'Citadel final identity is present');
+assert.match(styles,/INDUSTRIAL — heavy machinery \/ service bay/,'Industrial final identity is present');
+assert.match(styles,/SERPENTIS — biotech scan console/,'Serpentis final identity is present');
+assert.match(styles,/BLOOD — ritual cathedral \/ reliquary/,'Blood final identity is present');
+assert.match(styles,/ANGEL — rugged retro flight deck \/ analog avionics/,'Angel final identity is present');
+assert.match(styles,/EDENCOM — clean military tactical display/,'EDENCOM final identity is present');
+assert.match(styles,/AURORA — floating liquid glass \/ luminous atmosphere/,'Aurora final identity is present');
+assert.match(styles,/NEON GRID — aggressive cyberpunk HUD/,'Neon final identity is present');
+assert.match(styles,/GLACIER — faceted ice crystal \/ frozen observatory/,'Glacier final identity is present');
+assert.match(styles,/SOLAR FLARE — heliostat \/ orbital solar instrumentation/,'Solar final identity is present');
+assert.match(styles,/jlr-glyph-solar/,'selected theme glyphs have theme-specific behavior');
 
 assert.match(index,/id="fleetInsight"/,'Fleet Performance has a decision-first live insight');
 assert.match(app,/Sampled rate met the fitted target/,'Fleet insight interprets sampled rate versus target');
@@ -86,10 +99,10 @@ assert.match(app,/myLedgerCoverageBadge/,'personal ledger sync state is rendered
 assert.match(app,/outside tracked fields/,'ledger diagnostics distinguish payout rows from field attribution');
 assert.match(app,/fleetUptimeMeter/,'fleet target exposes the uptime assumption visually');
 
-assert.equal(pkg.version,'2.10.8');
-assert.ok(index.includes('/styles.css?v=2.10.8'),'main information-design CSS is cache-busted');
+assert.equal(pkg.version,'2.10.9');
+assert.ok(index.includes('/styles.css?v=2.10.9'),'main information-design CSS is cache-busted');
 assert.ok(index.includes('/tracker.css?v=2.9.147-closest-init1'),'Tracker information-design CSS is cache-busted');
-assert.ok(index.includes('/app.js?v=2.10.8'),'dashboard JS is cache-busted');
+assert.ok(index.includes('/app.js?v=2.10.9'),'dashboard JS is cache-busted');
 assert.ok(index.includes('/tracker.js?v=2.9.147-closest-init1'),'Tracker loader is cache-busted');
 assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.147-closest-init1/,'Tracker core is cache-busted');
 
