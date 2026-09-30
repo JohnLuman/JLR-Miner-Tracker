@@ -3883,3 +3883,54 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
   .threat-input-foot{align-items:flex-start;flex-direction:column}
   .threat-input-foot-actions{width:100%;justify-content:space-between}
 }
+
+
+/* Shared-intel editing belongs inside JLR, never on the public result page. */
+.threat-share-ready-actions{display:flex;gap:6px;flex:0 0 auto}
+.threat-share-ready-actions button{
+  min-height:26px;
+  padding:4px 8px;
+  border:1px solid var(--line);
+  border-radius:6px;
+  background:color-mix(in srgb,var(--theme-panel-hi,#14141e) 88%,black);
+  color:var(--text);
+  font:inherit;
+  font-size:7.5px;
+  font-weight:950;
+  cursor:pointer;
+}
+.threat-share-ready-actions button:hover{border-color:var(--theme-accent-line,#9f4dff);color:var(--theme-accent-hi,#ce68ff)}
+.threat-share-editor{
+  margin-top:8px;
+  padding:12px;
+  border:1px solid color-mix(in srgb,var(--theme-accent,#9d34ed) 35%,var(--line));
+  border-radius:9px;
+  background:color-mix(in srgb,var(--theme-panel-lo,#101018) 95%,black);
+}
+.threat-share-editor-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.threat-share-editor-head>div{display:flex;flex-direction:column;gap:2px}
+.threat-share-editor-head strong{font-size:10px;letter-spacing:.08em}
+.threat-share-editor-head span,.threat-share-editor-head small{color:var(--muted);font-size:8px}
+.threat-share-editor>label,.threat-share-editor-grid>label{display:flex;flex-direction:column;gap:5px}
+.threat-share-editor label>span{color:var(--muted);font-size:8px;font-weight:900;letter-spacing:.07em}
+.threat-share-editor label>span small{font-size:7px;font-weight:600;letter-spacing:0}
+.threat-share-editor input,.threat-share-editor textarea{
+  width:100%;
+  border:1px solid var(--line);
+  border-radius:7px;
+  background:color-mix(in srgb,var(--theme-panel-lo,#101018) 96%,black);
+  color:var(--text);
+  outline:none;
+}
+.threat-share-editor input{padding:8px 9px;font-size:9px}
+.threat-share-editor textarea{min-height:125px;max-height:300px;resize:vertical;padding:9px;font:10px/1.45 "Share Tech Mono","Consolas",monospace}
+.threat-share-editor textarea.threat-share-recon{min-height:76px}
+.threat-share-editor input:focus,.threat-share-editor textarea:focus{border-color:var(--theme-accent-line,#9f4dff)}
+.threat-share-editor-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:9px 0}
+.threat-share-editor-actions{display:flex;justify-content:flex-end;margin-top:9px}
+.threat-share-editor-error{margin-bottom:9px;padding:7px 9px;border:1px solid rgba(255,95,95,.35);border-radius:7px;background:rgba(160,35,35,.12);color:#ff9a9a;font-size:8.5px}
+@media(max-width:800px){
+  .threat-share-ready{align-items:flex-start;flex-wrap:wrap}
+  .threat-share-ready a{flex:1 1 100%}
+  .threat-share-editor-grid{grid-template-columns:1fr}
+}
