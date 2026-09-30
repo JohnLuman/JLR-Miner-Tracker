@@ -4,22 +4,23 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#070b12">
-  <meta property="og:title" content="JLR Shared Scan">
-  <meta property="og:description" content="Shared EVE Online Local or directional scan hosted by JLR Miner Tracker.">
-  <meta name="description" content="Shared EVE Online Local or directional scan hosted by JLR Miner Tracker.">
-  <title>JLR Shared Scan</title>
-  <link rel="stylesheet" href="/dscan-share.css">
+  <meta property="og:title" content="JLR Shared Intel">
+  <meta property="og:description" content="Shared EVE Online D-scan and Local intel hosted by JLR Miner Tracker.">
+  <meta name="description" content="Shared EVE Online D-scan and Local intel hosted by JLR Miner Tracker.">
+  <title>JLR Shared Intel</title>
+  <link rel="stylesheet" href="/dscan-share.css?v=2">
 </head>
 <body>
   <main class="page">
     <header class="hero">
       <div>
         <span class="eyebrow">JLR MINER TRACKER • SHARED INTEL</span>
-        <h1 id="shareTitle">SCAN SHARE</h1>
+        <h1 id="shareTitle">SHARED INTEL</h1>
         <p id="scanMeta">Loading shared scan…</p>
       </div>
       <div class="hero-actions">
-        <button id="copyScan" type="button" disabled>COPY SCAN</button>
+        <button id="copyLink" type="button">COPY LINK</button>
+        <button id="copyDscan" type="button" disabled>COPY D-SCAN</button>
         <a href="/" class="secondary">OPEN JLR</a>
       </div>
     </header>
@@ -28,38 +29,106 @@
 
     <section id="content" class="hidden">
       <div class="stats">
-        <article><span id="stat1Label">ROWS</span><strong id="stat1Value">0</strong></article>
-        <article><span id="stat2Label">GROUPS</span><strong id="stat2Value">0</strong></article>
-        <article><span id="stat3Label">RAW LINES</span><strong id="stat3Value">0</strong></article>
+        <article><span>D-SCAN OBJECTS</span><strong id="dscanObjectCount">0</strong></article>
+        <article><span>LOCAL PILOTS</span><strong id="localPilotCount">0</strong></article>
+        <article><span>MANUAL RECONS</span><strong id="reconCount">0</strong></article>
       </div>
 
-      <section class="panel">
+      <section id="ownerPanel" class="panel owner-panel hidden">
         <div class="panel-head">
-          <div><span class="kicker">COMPOSITION</span><h2 id="summaryTitle">SCAN BREAKDOWN</h2></div>
-          <input id="filter" type="search" autocomplete="off" placeholder="Filter scan…">
+          <div><span class="kicker">OWNER CONTROLS</span><h2>UPDATE THIS SAME LINK</h2></div>
+          <span id="ownerStatus" class="muted">Only you can edit this share.</span>
         </div>
-        <div id="summaryHost"></div>
+
+        <label class="owner-field">
+          <span>SYSTEM</span>
+          <input id="editSystem" maxlength="80" autocomplete="off" placeholder="Example: C-N4OD">
+        </label>
+
+        <div class="owner-grid">
+          <label class="owner-field">
+            <span>D-SCAN</span>
+            <textarea id="editDscan" rows="10" maxlength="75000" spellcheck="false" placeholder="Paste a new directional scan here. Saving replaces only the D-scan layer."></textarea>
+          </label>
+          <label class="owner-field">
+            <span>LOCAL</span>
+            <textarea id="editLocal" rows="10" maxlength="75000" spellcheck="false" placeholder="Paste Local names here. Saving replaces only the Local layer."></textarea>
+          </label>
+        </div>
+
+        <div class="recon-editor">
+          <div class="recon-editor-head">
+            <div><span class="kicker">MANUAL RECON</span><strong>Add ships not visible on the scan</strong></div>
+            <div class="recon-presets">
+              <button type="button" data-recon-preset="Huginn">+ HUGINN</button>
+              <button type="button" data-recon-preset="Lachesis">+ LACHESIS</button>
+              <button type="button" data-recon-preset="Rook">+ ROOK</button>
+              <button type="button" data-recon-preset="Curse">+ CURSE</button>
+              <button id="addReconRow" type="button" class="secondary">+ OTHER</button>
+            </div>
+          </div>
+          <div id="reconEditorRows" class="recon-editor-rows"></div>
+        </div>
+
+        <div class="owner-actions">
+          <button id="saveShare" type="button">SAVE UPDATE</button>
+          <span>Updates D-scan, Local, system, and recon notes without changing the URL.</span>
+        </div>
       </section>
 
-      <section class="panel">
+      <section id="manualReconPanel" class="panel hidden">
         <div class="panel-head">
-          <div><span class="kicker">DETAIL</span><h2 id="detailTitle">SCAN DETAILS</h2></div>
-          <span id="shownCount" class="muted"></span>
+          <div><span class="kicker">MANUAL INTEL</span><h2>RECON WATCH</h2></div>
+          <span class="muted">Added by the share owner • not directly visible on D-scan</span>
         </div>
+        <div id="manualReconList" class="recon-list"></div>
+      </section>
+
+      <section id="dscanPanel" class="panel hidden">
+        <div class="panel-head">
+          <div><span class="kicker">DIRECTIONAL SCAN</span><h2>D-SCAN COMPOSITION</h2></div>
+          <input id="dscanFilter" type="search" autocomplete="off" placeholder="Filter type, object, or distance…">
+        </div>
+        <div id="dscanSummary" class="groups"></div>
+        <div class="table-section-head"><strong>INDIVIDUAL OBJECTS</strong><span id="dscanShownCount" class="muted"></span></div>
         <div class="table-wrap">
           <table>
-            <thead id="detailHead"></thead>
-            <tbody id="detailRows"></tbody>
+            <thead><tr><th>#</th><th>NAME</th><th>TYPE</th><th>DISTANCE</th></tr></thead>
+            <tbody id="dscanRows"></tbody>
           </table>
         </div>
+        <details class="raw">
+          <summary>RAW D-SCAN TEXT</summary>
+          <pre id="rawDscan"></pre>
+        </details>
       </section>
 
-      <details class="panel raw">
-        <summary id="rawSummary">RAW SCAN TEXT</summary>
-        <pre id="rawText"></pre>
-      </details>
+      <section id="localPanel" class="panel hidden">
+        <div class="panel-head">
+          <div><span class="kicker">LOCAL</span><h2>LOCAL COMPOSITION</h2></div>
+          <input id="localFilter" type="search" autocomplete="off" placeholder="Filter pilot, corporation, or alliance…">
+        </div>
+        <div id="localSummary"></div>
+        <div class="table-section-head"><strong>CHARACTER LIST</strong><span id="localShownCount" class="muted"></span></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>CHARACTER</th><th>CORPORATION</th><th>ALLIANCE</th></tr></thead>
+            <tbody id="localRows"></tbody>
+          </table>
+        </div>
+        <details class="raw">
+          <summary>RAW LOCAL TEXT</summary>
+          <pre id="rawLocal"></pre>
+        </details>
+      </section>
+
+      <section id="emptyPanel" class="panel hidden">
+        <span class="kicker">NO ACTIVE LAYERS</span>
+        <h2>THIS SHARE IS EMPTY</h2>
+        <p class="muted">The owner can add a D-scan, Local list, or manual recon notes to this same link.</p>
+      </section>
     </section>
   </main>
-  <script src="/dscan-share.js"></script>
+  <script src="/dscan-share.js?v=2"></script>
 </body>
 </html>
