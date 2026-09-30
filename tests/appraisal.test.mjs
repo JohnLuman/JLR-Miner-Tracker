@@ -58,6 +58,7 @@ assert.equal(share.appraisal.refine.selectedRate,.88);
 assert.equal(share.appraisal.refine.buyAt100,1500);
 assert.equal(share.appraisal.refine.minerals[0].mineral,'Pyerite');
 
+assert.equal(appraisalSharePreview(share).payoutPercent,100,'legacy share links without ?p default to 100%');
 const preview=appraisalSharePreview(share,{payoutPercent:95});
 assert.equal(preview.payoutPercent,95);
 assert.equal(preview.selectedValue,22);
