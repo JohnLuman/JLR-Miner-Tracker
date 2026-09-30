@@ -421,7 +421,13 @@
     const pctInput=document.getElementById('appraisalRefineRate');
     const pct=clamp(Number(pctInput&&pctInput.value)||num(refine.selectedRate??refine.defaultRate)*100,0,100);
     const factor=pct/100;
-    const cards=[num(refine.buyAt100)*factor,num(refine.eligibleBuy),num(refine.buyAt100)*factor-num(refine.eligibleBuy),num(refine.recognizedLines)];
+    const cards=[
+      num(refine.buyAt100)*factor,
+      num(refine.sellAt100)*factor,
+      num(refine.eligibleBuy),
+      num(refine.buyAt100)*factor-num(refine.eligibleBuy),
+      num(refine.recognizedLines)
+    ];
     document.querySelectorAll('#appraisalRefineSummary article strong').forEach((node,index)=>{
       if(index>=cards.length)return;
       node.dataset.jlrCopy=exact(cards[index]);
