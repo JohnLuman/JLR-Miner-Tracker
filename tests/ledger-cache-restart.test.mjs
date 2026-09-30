@@ -22,7 +22,7 @@ assert.match(server,/if\(miningLedgerDebug\(\)\.cacheHealthy\)rebuildDailyFleetF
 assert.match(server,/Mining ledger cache below 80%:/,'sub-80% coverage preserves the previous fleet payout');
 assert.match(server,/const LEDGER_HEALTH_RATIO = 0\.80/,'80% coverage is the healthy threshold');
 
-assert.equal(pkg.version,'2.10.0','ledger restart protection is versioned');
-assert.match(index,/\/app\.js\?v=2\.10\.2-navdropdown1/,'browser loads the ledger restart fix');
+assert.match(pkg.version,/^2\.10\.\d+$/,'ledger restart protection stays on the current JLR version line');
+assert.ok(index.includes('/app.js?v='+pkg.version),'browser app cache key matches package version');
 
 console.log('Ledger restart cache regression tests passed.');
