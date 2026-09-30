@@ -48,7 +48,7 @@ const PUBLIC_URL = String(process.env.PUBLIC_URL || '').trim().replace(/\/$/, ''
 const JLR_SHARE_ORIGIN = String(process.env.JLR_SHARE_ORIGIN || '').trim().replace(/\/$/, '');
 const EVE_CLIENT_ID = String(process.env.EVE_CLIENT_ID || '').trim();
 const EVE_CLIENT_SECRET = String(process.env.EVE_CLIENT_SECRET || '').trim();
-const ESI_USER_AGENT = String(process.env.ESI_USER_AGENT || 'JLR-Miner-Tracker/2.10.12').trim();
+const ESI_USER_AGENT = String(process.env.ESI_USER_AGENT || 'JLR-Miner-Tracker/2.10.13').trim();
 const ESI_COMPAT_DATE = String(process.env.ESI_COMPATIBILITY_DATE || '2026-09-16').trim();
 const TRACKER_SUPPORT_SHARED_SECRET = String(process.env.TRACKER_SUPPORT_SHARED_SECRET || '').trim();
 const trackerSupport = createTrackerSupportClient({
@@ -76,6 +76,20 @@ const ESI_SCOPES = [MINING_SCOPE, SKILLS_SCOPE, FITTINGS_SCOPE, ASSETS_SCOPE, LO
 const MARKET_SCOPES = [MARKET_STRUCTURE_SCOPE, SEARCH_STRUCTURES_SCOPE, READ_STRUCTURES_SCOPE];
 const MARKET_CHARACTER_NAME = String(process.env.MARKET_CHARACTER_NAME || 'John Leman Raholan').trim();
 const JLR_OWNER_CHARACTER_NAME = String(process.env.JLR_OWNER_CHARACTER_NAME || 'John Leman Raholan').trim();
+const CEO_CHARACTER_NAME = String(process.env.CEO_CHARACTER_NAME || 'Renius').trim();
+const CEO_SCOPES = Object.freeze([
+  'esi-characters.read_corporation_roles.v1',
+  'esi-corporations.read_corporation_membership.v1',
+  'esi-corporations.track_members.v1',
+  'esi-industry.read_corporation_mining.v1',
+  'esi-wallet.read_corporation_wallets.v1',
+  'esi-corporations.read_divisions.v1',
+  'esi-assets.read_corporation_assets.v1',
+  'esi-corporations.read_structures.v1',
+  'esi-industry.read_corporation_jobs.v1',
+  'esi-contracts.read_corporation_contracts.v1',
+  'esi-markets.read_corporation_orders.v1',
+]);
 const DEFAULT_TRACKER_CORPORATION_ID = 1831383486; // TEMPLAR. [TMP.]
 const TRACKER_CORPORATION_ID_ENV = Number(process.env.TRACKER_CORPORATION_ID)||DEFAULT_TRACKER_CORPORATION_ID;
 const TRACKER_ACCESS_CACHE_MS = 5 * 60 * 1000;
@@ -615,6 +629,16 @@ function freshState() {
     dscanShares: {},
     pvpLifetimeDamage: {},
     appraisals: { shares: {}, legacyBuildShares: {} },
+    ceoAdmin: {
+      characterId: null,
+      characterName: null,
+      corporationId: null,
+      corporationName: null,
+      refreshTokenEnc: null,
+      scopes: [],
+      authorizedAt: null,
+      lastError: null,
+    },
     trackerIntel: {
       regionCatalog: [],
       regionCatalogUpdatedAt: null,
@@ -666,6 +690,8 @@ async function loadState() {
     parsed.appraisals = { ...base.appraisals, ...(parsed.appraisals || {}) };
     parsed.appraisals.shares ||= {};
     parsed.appraisals.legacyBuildShares = migrateLegacyBuildShares(parsed);
+    parsed.ceoAdmin = { ...base.ceoAdmin, ...(parsed.ceoAdmin || {}) };
+    if(!Array.isArray(parsed.ceoAdmin.scopes))parsed.ceoAdmin.scopes=[];
     delete parsed.forge;
     parsed.trackerIntel = { ...base.trackerIntel, ...(parsed.trackerIntel || {}) };
     if(!Array.isArray(parsed.trackerIntel.regionCatalog))parsed.trackerIntel.regionCatalog=[];
@@ -875,6 +901,64 @@ function userHasLinkedCharacterName(user,name){
 }
 function jlrOwnerAccess(user){
   return userHasLinkedCharacterName(user,JLR_OWNER_CHARACTER_NAME);
+}
+function ceoLinkedCharacter(user){
+  return (user?.characterIds||[]).map(String)
+    .map(id=>state.characters?.[id])
+    .find(ch=>String(ch?.name||'').trim().toLowerCase()===CEO_CHARACTER_NAME.toLowerCase())||null;
+}
+function ceoAccessForUser(user){
+  const owner=jlrOwnerAccess(user);
+  const ceoCharacter=ceoLinkedCharacter(user);
+  const allowed=Boolean(owner||ceoCharacter);
+  return {
+    allowed,
+    role:owner?(ceoCharacter?'OWNER_AND_CEO':'OWNER'):(ceoCharacter?'CEO':null),
+    ownerCharacterName:JLR_OWNER_CHARACTER_NAME,
+    ceoCharacterName:CEO_CHARACTER_NAME,
+    canAuthorize:Boolean(ceoCharacter),
+    authorizeCharacterId:ceoCharacter?String(ceoCharacter.characterId):null,
+  };
+}
+function requireCeoViewer(req,res){
+  const user=requireUser(req,res);
+  if(!user)return null;
+  const access=ceoAccessForUser(user);
+  if(!access.allowed){
+    json(res,403,{error:'CEO_COMMAND_FORBIDDEN',message:'CEO Command is restricted to the JLR owner and Renius.'});
+    return null;
+  }
+  return{user,access};
+}
+function ceoStatusForUser(user){
+  const access=ceoAccessForUser(user);
+  const admin=state.ceoAdmin||{};
+  const granted=Array.isArray(admin.scopes)?admin.scopes:[];
+  const missingScopes=CEO_SCOPES.filter(scope=>!granted.includes(scope));
+  const connected=Boolean(admin.refreshTokenEnc&&admin.characterId&&String(admin.characterName||'').toLowerCase()===CEO_CHARACTER_NAME.toLowerCase());
+  return {
+    ...access,
+    backendReady:true,
+    connected,
+    authorizedAt:admin.authorizedAt||null,
+    authorizedCharacterId:admin.characterId||null,
+    authorizedCharacterName:admin.characterName||null,
+    corporationId:admin.corporationId||null,
+    corporationName:admin.corporationName||null,
+    requestedScopes:[...CEO_SCOPES],
+    grantedScopes:granted,
+    missingScopes,
+    authorizeUrl:access.canAuthorize?'/auth/eve/ceo/start?character='+encodeURIComponent(String(access.authorizeCharacterId||'')):null,
+    features:{
+      monthlyIncome:true,
+      walletBreakdown:true,
+      corpFinance:true,
+      loyaltyPoints:true,
+      moonStructures:true,
+      industryMarket:true,
+      discordActivity:'BOT_CONNECTION_REQUIRED',
+    },
+  };
 }
 function sameOrigin(req) {
   const origin = req.headers.origin; if (!origin) return true;
@@ -1346,6 +1430,45 @@ async function startMarketSso(req,res,url) {
   redirect(res,u.toString());
 }
 
+async function startCeoSso(req,res,url){
+  if(!EVE_CLIENT_ID)return redirect(res,'/?error=sso-not-configured');
+  const user=readSession(req);
+  if(!user)return redirect(res,'/?error=login-required');
+  const access=ceoAccessForUser(user);
+  if(!access.allowed||!access.canAuthorize)return redirect(res,'/?error=ceo-renius-required');
+  const requestedId=String(url.searchParams.get('character')||access.authorizeCharacterId||'');
+  const character=state.characters[requestedId];
+  if(!requestedId||!user.characterIds.includes(requestedId)||!character)return redirect(res,'/?error=ceo-character-not-linked');
+  if(String(character.name||'').trim().toLowerCase()!==CEO_CHARACTER_NAME.toLowerCase())return redirect(res,'/?error=ceo-renius-required');
+
+  const meta=await getSsoMetadata();
+  const stateId=randomId();
+  const verifier=EVE_CLIENT_SECRET?'':randomId(32);
+  const redirectUri=callbackUrl(req);
+  oauthStates.set(stateId,{
+    intent:'ceo',
+    userId:user.id,
+    expectedCharacterId:requestedId,
+    verifier,
+    redirectUri,
+    createdAt:Date.now(),
+  });
+  for(const [k,v] of oauthStates)if(Date.now()-v.createdAt>15*60_000)oauthStates.delete(k);
+
+  const u=new URL(meta.authorization_endpoint||'https://login.eveonline.com/v2/oauth/authorize');
+  u.searchParams.set('response_type','code');
+  u.searchParams.set('client_id',EVE_CLIENT_ID);
+  u.searchParams.set('redirect_uri',redirectUri);
+  u.searchParams.set('scope',CEO_SCOPES.join(' '));
+  u.searchParams.set('state',stateId);
+  if(!EVE_CLIENT_SECRET){
+    const challenge=crypto.createHash('sha256').update(verifier).digest('base64url');
+    u.searchParams.set('code_challenge',challenge);
+    u.searchParams.set('code_challenge_method','S256');
+  }
+  redirect(res,u.toString());
+}
+
 async function startSso(req,res,url) {
   if (!EVE_CLIENT_ID) return redirect(res,'/?error=sso-not-configured');
   const user=readSession(req); const intent=url.searchParams.get('intent')==='link'?'link':'login';
@@ -1427,8 +1550,38 @@ async function handleCallback(req,res,url) {
   if(!pending||!code)return redirect(res,'/?error=sso-state'); oauthStates.delete(stateId);
   try{
     const tokens=await exchangeCode(code,pending);
-    const identity=await verifyJwt(tokens.access_token,pending.intent!=='market');
+    const identity=await verifyJwt(tokens.access_token,!['market','ceo'].includes(pending.intent));
     const charId=String(identity.characterId);
+
+    if(pending.intent==='ceo'){
+      const user=state.users[pending.userId];
+      if(!user)throw new Error('CEO authorization session expired');
+      if(charId!==String(pending.expectedCharacterId||''))throw new Error('Authorize Renius only for CEO Command');
+      const linked=state.characters[charId];
+      if(!linked||linked.ownerUserId!==user.id||String(linked.name||'').trim().toLowerCase()!==CEO_CHARACTER_NAME.toLowerCase())throw new Error('This character is not the configured CEO character');
+      for(const scope of CEO_SCOPES)if(!identity.scopes.includes(scope))throw new Error('CEO scope missing: '+scope);
+
+      const characterInfo=(await esiGet('https://esi.evetech.net/latest/characters/'+charId+'/?datasource=tranquility')).data;
+      const corporationId=Number(characterInfo?.corporation_id)||0;
+      if(!corporationId)throw new Error('Could not verify Renius corporation');
+      if(TRACKER_CORPORATION_ID_ENV&&corporationId!==Number(TRACKER_CORPORATION_ID_ENV))throw new Error('Renius is not in the configured JLR corporation');
+      const corporationInfo=(await esiGet('https://esi.evetech.net/latest/corporations/'+corporationId+'/?datasource=tranquility')).data;
+      if(Number(corporationInfo?.ceo_id)!==Number(charId))throw new Error('Renius is not the current corporation CEO');
+
+      state.ceoAdmin={
+        characterId:charId,
+        characterName:identity.characterName,
+        corporationId,
+        corporationName:String(corporationInfo?.name||corporationId),
+        refreshTokenEnc:encrypt(tokens.refresh_token),
+        scopes:identity.scopes,
+        authorizedAt:now(),
+        lastError:null,
+      };
+      await save();
+      setSessionCookie(res,user.id,req);
+      return redirect(res,'/?ceo=authorized');
+    }
 
     if(pending.intent==='market'){
       const user=state.users[pending.userId];
@@ -9344,7 +9497,12 @@ async function routeApi(req,res,url) {
       return json(res,502,{error:'SUPPORT_APPRAISAL_FAILED',message:String(err.message||err)});
     }
   }
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.10.12',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.10.13',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME,ceoCharacterName:CEO_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/ceo/status'){
+    const viewer=requireCeoViewer(req,res);
+    if(!viewer)return;
+    return json(res,200,ceoStatusForUser(viewer.user));
+  }
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -9358,6 +9516,7 @@ async function routeApi(req,res,url) {
     profile.doctrineMarketAccess=await doctrineAccessForUser(u).catch(err=>({
       allowed:false,reason:'ACCESS_CHECK_FAILED',message:String(err.message||err),checkedAt:now(),
     }));
+    profile.ceoAccess=ceoAccessForUser(u);
     return json(res,200,{authenticated:true,user:profile});
   }
 
@@ -10370,6 +10529,7 @@ async function routeApi(req,res,url) {
 
 const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const url=new URL(req.url,requestBaseUrl(req));
   if(req.method==='GET'&&url.pathname==='/auth/eve/market/start')return await startMarketSso(req,res,url);
+  if(req.method==='GET'&&url.pathname==='/auth/eve/ceo/start')return await startCeoSso(req,res,url);
   if(req.method==='GET'&&url.pathname==='/auth/eve/start')return await startSso(req,res,url);
   if(req.method==='GET'&&url.pathname==='/auth/eve/callback')return await handleCallback(req,res,url);
   if(req.method==='POST'&&url.pathname==='/auth/logout'){clearSessionCookie(res,req);return json(res,200,{ok:true})}
@@ -10405,7 +10565,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.10.12 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.10.13 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
 setInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': tracker-heartbeat\n\n')}catch{trackerLiveClients.delete(res)}}},20_000).unref();
 setInterval(()=>resetExpired(true),15_000).unref();
