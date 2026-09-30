@@ -2970,6 +2970,23 @@
             <button id="threatPasteScan" class="orb blue" type="button">📋 PASTE & SCAN</button>
             <button id="threatRunScan" class="orb silver" type="button">SCAN TEXT</button>
             <button id="threatShareScan" class="orb purple" type="button" title="Publish this pasted Local or D-scan as a JLR-hosted share link and automatically copy the URL" ${threatShareLoading?'disabled':''}>${threatShareLoading?'CREATING…':threatShareUrl?'📋 COPY INTEL LINK':'🔗 CREATE + COPY LINK'}</button>
+            <details class="threat-settings">
+              <summary>⚙ SETTINGS</summary>
+              <div class="threat-settings-menu">
+                <strong>SCAN FILTERS</strong>
+                <label class="threat-check${hasContactsAccess?'':' disabled'}">
+                  <input id="threatIgnorePositive" type="checkbox" ${threatIgnorePositive&&hasContactsAccess?'checked':''} ${hasContactsAccess?'':'disabled'}>
+                  <span>Ignore positive standings</span>
+                </label>
+                <label class="threat-check">
+                  <input id="threatIgnoreOwn" type="checkbox" ${threatIgnoreOwn?'checked':''}>
+                  <span>Ignore your linked characters</span>
+                </label>
+                ${hasContactsAccess
+                  ?`<small>Positive standings use ${esc(data?.standingsSource?.name||'an authorized linked toon')}.</small>`
+                  :'<small>Positive standings need EVE contacts access. <button id="threatUpdateAccess" type="button">UPDATE ACCESS</button></small>'}
+              </div>
+            </details>
           </div>
         </section>
 
@@ -2977,24 +2994,12 @@
           <textarea id="threatScanInput" spellcheck="false" placeholder="Paste Local names or copied D-scan rows here…">${esc(threatScanText)}</textarea>
           <div class="threat-input-foot">
             <span>${threatStatus}${threatShareError?` • ${esc(threatShareError)}`:''}</span>
-            ${data?.scannedAt?`<small>updated ${ago(data.scannedAt)}</small>`:''}
+            <div class="threat-input-foot-actions">
+              ${data?.scannedAt?`<small>updated ${ago(data.scannedAt)}</small>`:''}
+              <button id="threatClearScan" class="threat-clear-text" type="button" ${threatScanText?'':'disabled'}>CLEAR TEXT</button>
+            </div>
           </div>
           ${threatShareUrl?`<div class="threat-share-ready"><span>JLR SHARE LINK READY</span><a href="${esc(threatShareUrl)}" target="_blank" rel="noopener noreferrer">${esc(threatShareUrl)}</a></div>`:''}
-        </section>
-
-        <section class="glass threat-ignore-card">
-          <strong>IGNORED CHARACTERS</strong>
-          <label class="threat-check${hasContactsAccess?'':' disabled'}">
-            <input id="threatIgnorePositive" type="checkbox" ${threatIgnorePositive&&hasContactsAccess?'checked':''} ${hasContactsAccess?'':'disabled'}>
-            <span>Ignore characters with positive standings</span>
-          </label>
-          <label class="threat-check">
-            <input id="threatIgnoreOwn" type="checkbox" ${threatIgnoreOwn?'checked':''}>
-            <span>Ignore your own linked characters</span>
-          </label>
-          ${hasContactsAccess
-            ?`<small>Positive standings are read from ${esc(data?.standingsSource?.name||'an authorized linked toon')} and are never shown or stored.</small>`
-            :'<small>Positive-standings filtering needs EVE contacts access. <button id="threatUpdateAccess" type="button">UPDATE ACCESS</button></small>'}
         </section>
 
         ${data?`
@@ -3047,6 +3052,14 @@
       renderThreatScan();
     });
     $('threatUpdateAccess')?.addEventListener('click',()=>{location.href='/auth/eve/start?intent=link'});
+    $('threatClearScan')?.addEventListener('click',()=>{
+      threatScanText='';
+      threatScanData=null;
+      threatScanError='';
+      threatShareUrl='';
+      threatShareError='';
+      renderThreatScan();
+    });
     $('threatRunScan')?.addEventListener('click',()=>runThreatScan(input?.value||''));
     $('threatShareScan')?.addEventListener('click',()=>shareThreatScan(input?.value||''));
     $('threatPasteScan')?.addEventListener('click',async()=>{
