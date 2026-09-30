@@ -3934,3 +3934,26 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
   .threat-share-ready a{flex:1 1 100%}
   .threat-share-editor-grid{grid-template-columns:1fr}
 }
+
+
+/* v2.10.13 — private CEO Command */
+.ceo-command-shell{display:grid;gap:8px}
+.ceo-command-hero{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 16px;background:linear-gradient(135deg,color-mix(in srgb,var(--theme-panel-hi,#171923) 86%,#251233 14%),#0d0f15)}
+.ceo-command-hero h2{margin:3px 0 5px;font:900 22px/1 Oxanium,Segoe UI,sans-serif;letter-spacing:.03em}
+.ceo-command-hero p{margin:0;color:var(--muted);font-size:10px;line-height:1.45}
+.ceo-command-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+#ceoConnectionBadge.connected{border-color:#216f3b;color:#82ffa7;background:#0d2114}
+.ceo-command-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.ceo-command-card{padding:12px;min-height:150px}
+.ceo-command-card h3{margin:5px 0 7px;font:900 13px/1.1 Oxanium,Segoe UI,sans-serif;letter-spacing:.03em}
+.ceo-command-card p{margin:0;color:#a9aeba;font-size:9px;line-height:1.5}
+.ceo-placeholder{margin-top:13px;padding:9px;border:1px dashed #3a3e49;border-radius:7px;background:#0d0f15;color:#777e8d;font:900 8px/1 "Share Tech Mono",monospace;letter-spacing:.08em;text-align:center}
+.ceo-scope-panel{padding:11px}
+.ceo-scope-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin-top:8px}
+.ceo-scope-row{display:grid;grid-template-columns:18px minmax(0,1fr);gap:5px;align-items:center;padding:7px 8px;border:1px solid #2c303a;border-radius:7px;background:#101219}
+.ceo-scope-row span{font-weight:1000;text-align:center}
+.ceo-scope-row code{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#b8beca;font-size:8px}
+.ceo-scope-row.granted{border-color:#245d37;background:#0e1b13}.ceo-scope-row.granted span{color:#74f59a}
+.ceo-scope-row.pending span{color:#a16bff}
+@media(max-width:1050px){.ceo-command-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:680px){.ceo-command-hero{align-items:stretch;flex-direction:column}.ceo-command-actions{justify-content:flex-start}.ceo-command-grid,.ceo-scope-list{grid-template-columns:1fr}}
