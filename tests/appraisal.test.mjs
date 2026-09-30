@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import {appraisalSummary,sanitizeAppraisalShare} from '../lib/appraisal/appraisal.mjs';
+import {appraisalSharePreview,renderAppraisalShareHtml} from '../lib/appraisal/share-preview.mjs';
 
 const items=[
   {
@@ -57,6 +58,28 @@ assert.equal(share.appraisal.refine.selectedRate,.88);
 assert.equal(share.appraisal.refine.buyAt100,1500);
 assert.equal(share.appraisal.refine.minerals[0].mineral,'Pyerite');
 
+assert.equal(appraisalSharePreview(share).payoutPercent,100,'legacy share links without ?p default to 100%');
+const preview=appraisalSharePreview(share,{payoutPercent:95});
+assert.equal(preview.payoutPercent,95);
+assert.equal(preview.selectedValue,22);
+assert.equal(preview.payoutValue,20.9);
+assert.match(preview.title,/Fleet Loot .* 20\.9 ISK @ 95%/);
+assert.match(preview.description,/Jita 4-4 .* SPLIT 22 ISK/);
+assert.match(preview.description,/Payout 95% = 20\.9 ISK/);
+assert.match(preview.description,/Top items:/);
+
+const previewHtml=renderAppraisalShareHtml(
+  '<!doctype html><html><head><title>JLR Appraisal</title></head><body></body></html>',
+  {...share,title:'Fleet <Loot>'},
+  {payoutPercent:95,canonicalUrl:'https://example.test/appraisal/token?p=95',imageUrl:'https://example.test/assets/jlr-appraisal-preview.png'}
+);
+assert.match(previewHtml,/property="og:title"/);
+assert.match(previewHtml,/property="og:description"/);
+assert.match(previewHtml,/property="og:image"/);
+assert.match(previewHtml,/twitter:card" content="summary_large_image"/);
+assert.match(previewHtml,/Fleet &lt;Loot&gt;/);
+assert.doesNotMatch(previewHtml,/<Loot>/,'preview metadata escapes user-controlled titles');
+
 const server=fs.readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
 const app=fs.readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
 const index=fs.readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
@@ -67,6 +90,8 @@ assert.match(server,/\/api\/appraisal\/intel/,'main app exposes Support appraisa
 assert.match(server,/\/api\/internal\/support\/appraisal/,'Support can request alternate native appraisal pricing');
 assert.match(server,/\/api\/appraisal\/share/);
 assert.match(server,/\/appraisal\\\//);
+assert.match(server,/renderAppraisalShareHtml/,'shared appraisal HTML is server-rendered for Discord/Open Graph previews');
+assert.match(server,/jlr-appraisal-preview\.png/,'shared appraisal preview advertises the JLR preview image');
 assert.match(server,/source:'jlr-native-esi'/,'native Appraisal identifies JLR as the pricing provider');
 assert.match(server,/nativeAppraisalPriceSet/,'native Appraisal owns Buy\/Split\/Sell pricing math');
 assert.match(server,/universe\/ids\/\?datasource=tranquility/,'native Appraisal resolves inventory types through CCP ESI');

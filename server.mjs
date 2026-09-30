@@ -18,6 +18,7 @@ import { chooseRapidResponseRoutes, wandererRiskPenalty, wandererWarnings } from
 import { parseThreatPaste, compactThreatStats, threatActivityLabels, fountainThreatTags, jlrThreatScore, threatIgnoreReason } from './lib/threat-scan.mjs';
 import { archivedBuildSharePublic, migrateLegacyBuildShares } from './lib/appraisal/legacy-share.mjs';
 import { appraisalSummary, sanitizeAppraisalShare, APPRAISAL_PRICING, APPRAISAL_VARIANTS } from './lib/appraisal/appraisal.mjs';
+import { normalizePreviewPayoutPercent, renderAppraisalShareHtml } from './lib/appraisal/share-preview.mjs';
 import { parseAppraisalPaste } from './lib/appraisal/paste.mjs';
 import { nativeAppraisalPriceSet } from './lib/appraisal/native-market.mjs';
 import {
@@ -9757,6 +9758,25 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
     if(await serveStatic(req,res,'/appraisal-legacy-share.html'))return;
   }
   if(req.method==='GET'&&/^\/appraisal\/[A-Za-z0-9_-]{8,}$/.test(url.pathname)){
+    const token=String(url.pathname.split('/').pop()||'');
+    const row=Object.values(state.appraisals?.shares||{}).find(entry=>String(entry?.token||'')===token);
+    if(row){
+      const payoutPercent=normalizePreviewPayoutPercent(url.searchParams.get('p'));
+      const payoutQuery=url.searchParams.has('p')?'?p='+encodeURIComponent(String(payoutPercent)):'';
+      const baseUrl=requestBaseUrl(req);
+      const template=await fsp.readFile(path.join(PUBLIC_DIR,'appraisal-share.html'),'utf8');
+      const html=renderAppraisalShareHtml(template,appraisalSharePublic(row),{
+        payoutPercent,
+        canonicalUrl:baseUrl+url.pathname+payoutQuery,
+        imageUrl:baseUrl+'/assets/jlr-appraisal-preview.png?v=1',
+      });
+      res.writeHead(200,{
+        'Content-Type':'text/html; charset=utf-8',
+        'Cache-Control':'no-cache, no-store, must-revalidate',
+      });
+      res.end(html);
+      return;
+    }
     if(await serveStatic(req,res,'/appraisal-share.html'))return;
   }
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
