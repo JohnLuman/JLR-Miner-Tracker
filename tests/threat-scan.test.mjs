@@ -1,5 +1,5 @@
-import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import assert from 'node:assert/strict';
 import { parseThreatPaste, compactThreatStats, threatActivityLabels, fountainThreatTags, jlrThreatScore, threatIgnoreReason } from '../lib/threat-scan.mjs';
 
 const local = parseThreatPaste([
@@ -123,4 +123,12 @@ assert.match(app,/threatScanPollCount<=8\?700/,'client checks quickly for early 
 assert.match(app,/threatScanPollCount<60/,'client keeps following long enrichments without the old 30-second cutoff');
 assert.match(index,/\/app\.js\?v=2\.10\.\d+-threat-fast1/,'browser receives the optimized threat client');
 
+const threatStyles=fs.readFileSync(new URL('../public/styles.css',import.meta.url),'utf8');
+assert.match(app,/class="threat-settings"/,'Threat Scan filters live in a compact settings control');
+assert.doesNotMatch(app,/class="glass threat-ignore-card"/,'large ignored-characters panel is removed from the main flow');
+assert.match(app,/id="threatClearScan"/,'Threat Scan has a one-click clear text control');
+assert.match(app,/threatScanText=''/,'clear text resets the pasted scan state');
+assert.match(threatStyles,/\.threat-input-card textarea\{[\s\S]*?min-height:138px/,'Threat Scan paste box is materially taller');
+assert.match(threatStyles,/\.threat-input-card textarea\{[\s\S]*?font-size:11px/,'Threat Scan paste text is readable');
+assert.match(threatStyles,/\.threat-table-v2\{font-size:10px\}/,'Threat Scan result rows use a larger readable baseline');
 console.log('Threat scanner regression passed');
