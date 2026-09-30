@@ -3,6 +3,7 @@
   const GROUP_ID=1653;
   const INIT_ALLIANCE_ID=1900696668;
   const DEFAULT_POLL_SECONDS=30;
+  const ALERT_FALLBACK_POLL_SECONDS=20;
   const ALERT_PREF='jlrHeavyFighterAlerts';
   const ALERT_MAX_AGE_MS=60*1000;
 
@@ -404,7 +405,11 @@
       trackerPoll=null;
     }
     if(!trackerArmed&&!isActive())return;
-    const seconds=Math.max(15,Number(trackerData&&trackerData.pollSeconds)||DEFAULT_POLL_SECONDS);
+    const serverSeconds=Math.max(15,Number(trackerData&&trackerData.pollSeconds)||DEFAULT_POLL_SECONDS);
+    // SSE is the primary alert path. While armed, keep a 20-second polling
+    // safety net so a recycled/proxied stream still catches a fresh row well
+    // inside JLR's 60-second alarm window.
+    const seconds=trackerArmed?Math.min(serverSeconds,ALERT_FALLBACK_POLL_SECONDS):serverSeconds;
     trackerPoll=setTimeout(function(){loadTracker(false,true);},delayMs==null?seconds*1000:Math.max(5000,Number(delayMs)||seconds*1000));
   }
   async function loadTracker(force,background){
@@ -639,11 +644,11 @@
       ?(live.caughtUp?'LIVE':'CATCHING UP')
       :(trackerStreamState==='reconnecting'?'ALERT LINK RETRYING':(serverRecentlyLive?'SERVER LIVE':'OFFLINE'));
     const liveDetail=trackerStreamState==='reconnecting'&&serverRecentlyLive
-      ?'R2Z2 server live • browser alert stream reconnecting'
+      ?'R2Z2 server live • browser alert stream reconnecting • 20s polling fallback active'
       :trackerStreamState==='reconnecting'
-      ?'Browser alert stream reconnecting • live ingest status unconfirmed'
+      ?'Browser alert stream reconnecting • 20s polling fallback active'
       :serverRecentlyLive
-      ?'R2Z2 at live edge • '+fmt(live.edgeWaitSeconds||6)+'s edge checks'
+      ?'R2Z2 at live edge • '+fmt(live.edgeWaitSeconds||6)+'s edge checks • 20s armed fallback'
       :(live.lastError?String(live.lastError).slice(0,90):'connecting to R2Z2 live sequence');
     const status=trackerError
       ?trackerError
@@ -676,7 +681,7 @@
           '</div>'+
         '</section>'+
         '<section class="tracker-kpis">'+
-          '<article class="glass '+(trackerArmed?'armed':'')+'"><span>ALERT STATUS</span><strong>'+(trackerArmed?'ARMED':'OFF')+'</strong><small>'+(trackerArmed?'background checks while JLR is open':'open Tracker to check manually')+'</small></article>'+
+          '<article class="glass '+(trackerArmed?'armed':'')+'"><span>ALERT STATUS</span><strong>'+(trackerArmed?'ARMED':'OFF')+'</strong><small>'+(trackerArmed?((typeof window.jlrAlarmRuntimeStatus==='function'&&window.jlrAlarmRuntimeStatus().audioContext==='running')?'sound ready • live + 20s fallback':'sound unlocks on first click • live + 20s fallback'):'open Tracker to check manually')+'</small></article>'+
           '<article class="glass"><span>24H FEED</span><strong>'+fmt(losses.length)+'</strong><small>hostile Heavy Fighter losses • INIT victims hidden</small></article>'+
           '<article class="glass"><span>LATEST LOSS</span><strong>'+(latest?esc(ago(latest.killmailTime).toUpperCase()):'—')+'</strong><small>'+(latest?esc(latest.systemName||'Unknown system'):'waiting for a loss')+'</small></article>'+
           '<article class="glass"><span>LIVE INGEST</span><strong>'+esc(liveLabel)+'</strong><small>'+esc(liveDetail)+'</small></article>'+
@@ -772,6 +777,18 @@
 
     syncTrackerStream();
     if(trackerArmed)setTimeout(function(){loadTracker(false,true);},1200);
+
+    window.addEventListener('online',function(){
+      if(!trackerArmed)return;
+      closeTrackerStream();
+      syncTrackerStream();
+      loadTracker(false,true);
+    });
+    document.addEventListener('visibilitychange',function(){
+      if(document.hidden||!trackerArmed)return;
+      syncTrackerStream();
+      loadTracker(false,true);
+    });
   }
 
   bind();
