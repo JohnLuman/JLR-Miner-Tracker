@@ -91,7 +91,7 @@ assert.match(server,/\/api\/internal\/support\/appraisal/,'Support can request a
 assert.match(server,/\/api\/appraisal\/share/);
 assert.match(server,/\/appraisal\\\//);
 assert.match(server,/renderAppraisalShareHtml/,'shared appraisal HTML is server-rendered for Discord/Open Graph previews');
-assert.match(server,/jlr-appraisal-preview\\.png/,'shared appraisal preview advertises the JLR preview image');
+assert.match(server,/jlr-appraisal-preview\.png/,'shared appraisal preview advertises the JLR preview image');
 assert.match(server,/source:'jlr-native-esi'/,'native Appraisal identifies JLR as the pricing provider');
 assert.match(server,/nativeAppraisalPriceSet/,'native Appraisal owns Buy\/Split\/Sell pricing math');
 assert.match(server,/universe\/ids\/\?datasource=tranquility/,'native Appraisal resolves inventory types through CCP ESI');
