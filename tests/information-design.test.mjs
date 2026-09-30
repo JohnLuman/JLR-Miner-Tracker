@@ -56,6 +56,13 @@ assert.match(index,/id="fleetInsight"/,'Fleet Performance has a decision-first l
 assert.match(app,/Sampled rate met the fitted target/,'Fleet insight interprets sampled rate versus target');
 assert.match(app,/fleetInsightMeter/,'Fleet insight uses a compact target-comparison meter');
 assert.match(styles,/\.fleet-insight-meter/,'Fleet insight meter is styled');
+assert.match(index,/id="fleetTodayAvgRate"/,'Fleet Performance exposes today’s average sampled m³/hr');
+assert.match(app,/todayRateSamples\.reduce/,'today average rate is calculated from the current EVE-day sample dataset');
+assert.match(app,/fleet-average-line/,'sampled-rate graph renders a daily average reference line');
+assert.match(app,/bindFleetChartInteractions/,'both fleet graphs expose interactive hover and click behavior');
+assert.match(app,/data-fleet-chart-date/,'fleet graphs link matching dates across charts');
+assert.match(styles,/\.fleet-chart-tooltip/,'fleet graph hover/click details use a dedicated tooltip');
+assert.match(styles,/\.fleet-chart-linked/,'linked dates are visually emphasized across both graphs');
 
 assert.doesNotMatch(app,/class="ore-mix-bar"/,'Ore Mix no longer uses ambiguous top-relative bars');
 assert.match(app,/ore-mix-composition/,'Ore Mix uses one proportional composition strip');
