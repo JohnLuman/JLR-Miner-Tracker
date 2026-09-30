@@ -5630,7 +5630,7 @@ function myProfile(user) {
 
 async function serveStatic(req,res,pathname) {
   const rel=pathname==='/'?'index.html':pathname.slice(1);const file=path.resolve(PUBLIC_DIR,rel);if(!file.startsWith(path.resolve(PUBLIC_DIR)+path.sep)&&file!==path.join(PUBLIC_DIR,'index.html'))return false;
-  try{const st=await fsp.stat(file);if(!st.isFile())return false;const ext=path.extname(file).toLowerCase();const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.gif':'image/gif','.svg':'image/svg+xml','.ico':'image/x-icon'};securityHeaders(res);res.writeHead(200,{'Content-Type':types[ext]||'application/octet-stream','Cache-Control':ext==='.html'?'no-cache':'public, max-age=60'});fs.createReadStream(file).pipe(res);return true}catch{return false}
+  try{const st=await fsp.stat(file);if(!st.isFile())return false;const ext=path.extname(file).toLowerCase();const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.gif':'image/gif','.svg':'image/svg+xml','.ico':'image/x-icon'};securityHeaders(res);res.writeHead(200,{'Content-Type':types[ext]||'application/octet-stream','Cache-Control':ext==='.html'?'no-cache':'public, max-age=300','Content-Length':st.size});fs.createReadStream(file).pipe(res);return true}catch{return false}
 }
 
 async function appraisalMapLimit(items,limit,worker){
@@ -9768,7 +9768,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
       const html=renderAppraisalShareHtml(template,appraisalSharePublic(row),{
         payoutPercent,
         canonicalUrl:baseUrl+url.pathname+payoutQuery,
-        imageUrl:baseUrl+'/assets/jlr-appraisal-preview.png?v=1',
+        imageUrl:baseUrl+'/assets/jlr-appraisal-preview.png?v=2',
       });
       res.writeHead(200,{
         'Content-Type':'text/html; charset=utf-8',
