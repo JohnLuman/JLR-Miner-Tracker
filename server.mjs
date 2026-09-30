@@ -170,9 +170,15 @@ const TRACKER_ROUTE_ORIGIN = String(process.env.TRACKER_ROUTE_ORIGIN || 'C-N4OD'
 const ZKILL_LIFETIME_DAMAGE_CACHE_MS = 24 * 60 * 60 * 1000;
 const ZKILL_LIFETIME_PAGE_GAP_MS = 700;
 const THREAT_CHARACTER_CACHE_MS = 6 * 60 * 60 * 1000;
-const THREAT_CONTACTS_CACHE_MS = 15 * 60 * 1000;
+const THREAT_CONTACTS_CACHE_MS = 60 * 60 * 1000;
+const THREAT_CONTACTS_STALE_MS = 6 * 60 * 60 * 1000;
+const THREAT_ENTITY_CACHE_MS = 24 * 60 * 60 * 1000;
+const THREAT_AFFILIATION_CACHE_MS = 30 * 60 * 1000;
+const THREAT_SCAN_RESULT_CACHE_MS = 10 * 60 * 1000;
+const THREAT_ZKILL_TIMEOUT_MS = 5_500;
 const THREAT_MAX_CHARACTERS = 1000;
-const THREAT_FETCH_CONCURRENCY = 4;
+const THREAT_FETCH_CONCURRENCY = 8;
+const THREAT_REMOTE_CONCURRENCY = 12;
 const FOUNTAIN_THREAT_CACHE_MS = 60 * 60 * 1000;
 const FOUNTAIN_THREAT_MAX_PAGES = 15;
 // Perfect null-sec refine: T2 rigged Tatara + max skills + RX-804 implant.
@@ -449,6 +455,16 @@ const threatScanCache = new Map();
 const threatScanJobs = new Map();
 const threatContactsCache = new Map();
 const threatContactsPromises = new Map();
+const threatEntityCache = new Map();
+const threatAffiliationCache = new Map();
+const threatCharacterPromises = new Map();
+const threatCharacterNameIndex = new Map(
+  Object.values(pvpDb.threat?.characters||{})
+    .filter(entry=>Number(entry?.character?.id)>0&&String(entry?.character?.name||'').trim())
+    .map(entry=>[String(entry.character.name).trim().toLowerCase(),{id:Number(entry.character.id),name:String(entry.character.name)}])
+);
+let threatRemoteActive = 0;
+const threatRemoteWaiters = [];
 const threatShareCache = new Map();
 let fountainThreatCache = {
   updatedAt:pvpDbTimestamp(pvpDb.threat?.fountain7d?.updatedAt),
@@ -7357,41 +7373,122 @@ function refreshCorporationWeeklyStatsInBackground(corporationIds,force=false){
   return pending;
 }
 
-async function resolveThreatCharacterNames(names){
-  const unique=[...new Map((names||[]).map(name=>[String(name).trim().toLowerCase(),String(name).trim()])).values()].filter(Boolean);
-  const characters=new Map();
-  for(let i=0;i<unique.length;i+=500){
-    const batch=unique.slice(i,i+500);
+function threatEntityCacheValue(name){
+  const key=String(name||'').trim().toLowerCase();
+  if(!key)return null;
+  const cached=threatEntityCache.get(key);
+  if(cached&&Date.now()-cached.at<THREAT_ENTITY_CACHE_MS)return cached;
+  const persisted=threatCharacterNameIndex.get(key);
+  if(persisted){
+    const value={at:Date.now(),character:persisted,type:null};
+    threatEntityCache.set(key,value);
+    return value;
+  }
+  return null;
+}
+async function resolveThreatEntities(characterNames=[],shipNames=[]){
+  const wantedCharacters=new Map((characterNames||[]).map(name=>[String(name).trim().toLowerCase(),String(name).trim()]).filter(([key])=>key));
+  const wantedTypes=new Map((shipNames||[]).map(name=>[String(name).trim().toLowerCase(),String(name).trim()]).filter(([key])=>key));
+  const allKeys=[...new Set([...wantedCharacters.keys(),...wantedTypes.keys()])];
+  const characters=new Map(),types=new Map(),missing=[];
+
+  for(const key of allKeys){
+    const cached=threatEntityCacheValue(key);
+    if(cached){
+      if(wantedCharacters.has(key)&&cached.character)characters.set(key,cached.character);
+      if(wantedTypes.has(key)&&cached.type)types.set(key,cached.type);
+      const characterDone=!wantedCharacters.has(key)||Boolean(cached.character)||cached.character===null;
+      const typeDone=!wantedTypes.has(key)||Boolean(cached.type)||cached.type===null;
+      if(characterDone&&typeDone)continue;
+    }
+    missing.push(key);
+  }
+
+  for(let i=0;i<missing.length;i+=1000){
+    const keys=missing.slice(i,i+1000);
+    const batch=keys.map(key=>wantedCharacters.get(key)||wantedTypes.get(key)||key);
     if(!batch.length)continue;
     try{
       const {data}=await esiPost('https://esi.evetech.net/latest/universe/ids/?datasource=tranquility',batch);
+      const charByKey=new Map();
+      const typeByKey=new Map();
       for(const row of Array.isArray(data?.characters)?data.characters:[]){
-        const id=Number(row?.id);
-        const name=String(row?.name||'').trim();
-        if(id&&name)characters.set(name.toLowerCase(),{id,name});
+        const id=Number(row?.id),name=String(row?.name||'').trim();
+        if(id&&name)charByKey.set(name.toLowerCase(),{id,name});
+      }
+      for(const row of Array.isArray(data?.inventory_types)?data.inventory_types:[]){
+        const id=Number(row?.id),name=String(row?.name||'').trim();
+        if(id&&name){
+          typeByKey.set(name.toLowerCase(),{id,name});
+          universeNameCache.set(id,name);
+        }
+      }
+      for(const key of keys){
+        const previous=threatEntityCache.get(key)||{};
+        const character=charByKey.get(key)||previous.character||null;
+        const type=typeByKey.get(key)||previous.type||null;
+        threatEntityCache.set(key,{at:Date.now(),character,type});
+        if(character){
+          characters.set(key,character);
+          threatCharacterNameIndex.set(key,character);
+        }
+        if(type)types.set(key,type);
       }
     }catch(err){
-      console.warn('Threat character name lookup failed',String(err.message||err));
+      console.warn('Threat entity name lookup failed',String(err.message||err));
     }
   }
-  return characters;
+
+  // Fill from any cache entries created by another overlapping scan.
+  for(const key of allKeys){
+    const cached=threatEntityCacheValue(key);
+    if(wantedCharacters.has(key)&&cached?.character)characters.set(key,cached.character);
+    if(wantedTypes.has(key)&&cached?.type)types.set(key,cached.type);
+  }
+  return{characters,types};
 }
-async function resolveThreatAffiliations(characters){
+async function resolveThreatCharacterNames(names){
+  return (await resolveThreatEntities(names,[])).characters;
+}
+async function resolveThreatAffiliations(characters,{cacheOnly=false}={}){
   const ids=[...new Set((characters||[]).map(row=>Number(row?.id)).filter(id=>id>0))];
-  const affiliations=new Map();
-  for(let i=0;i<ids.length;i+=1000){
-    const batch=ids.slice(i,i+1000);
+  const affiliations=new Map(),missing=[];
+  for(const id of ids){
+    const cached=threatAffiliationCache.get(id);
+    if(cached&&Date.now()-cached.at<THREAT_AFFILIATION_CACHE_MS){
+      affiliations.set(id,cached.data);
+      continue;
+    }
+    const stored=pvpDb.threat?.characters?.[String(id)]||null;
+    const storedAge=stored?.updatedAt?Date.now()-pvpDbTimestamp(stored.updatedAt):Infinity;
+    const c=stored?.character||null;
+    if(c&&storedAge<THREAT_CHARACTER_CACHE_MS){
+      const data={
+        corporation_id:Number(c.corporation_id)||null,
+        alliance_id:Number(c.alliance_id)||null,
+        faction_id:Number(c.faction_id)||null,
+      };
+      affiliations.set(id,data);
+      threatAffiliationCache.set(id,{at:Date.now(),data});
+      continue;
+    }
+    if(!cacheOnly)missing.push(id);
+  }
+  for(let i=0;i<missing.length;i+=1000){
+    const batch=missing.slice(i,i+1000);
     if(!batch.length)continue;
     try{
       const {data}=await esiPost('https://esi.evetech.net/latest/characters/affiliation/?datasource=tranquility',batch);
       for(const row of Array.isArray(data)?data:[]){
         const id=Number(row?.character_id);
         if(!id)continue;
-        affiliations.set(id,{
+        const affiliation={
           corporation_id:Number(row?.corporation_id)||null,
           alliance_id:Number(row?.alliance_id)||null,
           faction_id:Number(row?.faction_id)||null,
-        });
+        };
+        affiliations.set(id,affiliation);
+        threatAffiliationCache.set(id,{at:Date.now(),data:affiliation});
       }
     }catch(err){
       console.warn('Threat affiliation lookup failed',String(err.message||err));
@@ -7400,23 +7497,7 @@ async function resolveThreatAffiliations(characters){
   return affiliations;
 }
 async function resolveThreatShipNames(names){
-  const unique=[...new Map((names||[]).map(name=>[String(name).trim().toLowerCase(),String(name).trim()])).values()].filter(Boolean);
-  const types=new Map();
-  for(let i=0;i<unique.length;i+=500){
-    const batch=unique.slice(i,i+500);
-    if(!batch.length)continue;
-    try{
-      const {data}=await esiPost('https://esi.evetech.net/latest/universe/ids/?datasource=tranquility',batch);
-      for(const row of Array.isArray(data?.inventory_types)?data.inventory_types:[]){
-        const id=Number(row?.id);
-        const name=String(row?.name||'').trim();
-        if(id&&name)types.set(name.toLowerCase(),{id,name});
-      }
-    }catch(err){
-      console.warn('Threat ship name lookup failed',String(err.message||err));
-    }
-  }
-  return types;
+  return (await resolveThreatEntities([],names)).types;
 }
 async function esiContactRows(base,access){
   const first=await esiGet(`${base}${base.includes('?')?'&':'?'}page=1`,access);
@@ -7428,10 +7509,22 @@ async function esiContactRows(base,access){
   }
   return rows;
 }
-async function positiveStandingContactsForUser(user){
+function threatContactSourceForUser(user){
   const linked=(user?.characterIds||[]).map(id=>state.characters[String(id)]).filter(Boolean);
-  const source=linked.find(ch=>String(ch.characterId)===String(user?.primaryCharacterId)&&hasThreatContactAccess(ch.scopes))
-    ||linked.find(ch=>hasThreatContactAccess(ch.scopes));
+  return linked.find(ch=>String(ch.characterId)===String(user?.primaryCharacterId)&&hasThreatContactAccess(ch.scopes))
+    ||linked.find(ch=>hasThreatContactAccess(ch.scopes))
+    ||null;
+}
+function cachedPositiveStandingContactsForUser(user){
+  const source=threatContactSourceForUser(user);
+  if(!source)return null;
+  const key=String(source.characterId);
+  const cached=threatContactsCache.get(key);
+  if(!cached||Date.now()-cached.at>=THREAT_CONTACTS_STALE_MS)return null;
+  return{...cached.data,cacheAgeMs:Math.max(0,Date.now()-cached.at),stale:Date.now()-cached.at>=THREAT_CONTACTS_CACHE_MS};
+}
+async function positiveStandingContactsForUser(user){
+  const source=threatContactSourceForUser(user);
   if(!source){
     const error=new Error('Update EVE access on a linked toon to enable personal, corporation, and alliance standings.');
     error.code='CONTACT_SCOPE_REQUIRED';
@@ -7538,54 +7631,122 @@ async function threatMapLimit(items,limit,worker){
   await Promise.all(runners);
   return output;
 }
+async function withThreatRemoteSlot(worker){
+  if(threatRemoteActive>=THREAT_REMOTE_CONCURRENCY){
+    await new Promise(resolve=>threatRemoteWaiters.push(resolve));
+  }
+  threatRemoteActive++;
+  try{return await worker()}
+  finally{
+    threatRemoteActive=Math.max(0,threatRemoteActive-1);
+    threatRemoteWaiters.shift()?.();
+  }
+}
+async function threatZkillStats(characterId){
+  const url=`https://zkillboard.com/api/stats/characterID/${Number(characterId)}/kills/`;
+  let lastError=null;
+  for(let attempt=0;attempt<2;attempt++){
+    try{
+      const response=await fetch(url,{
+        headers:{
+          'Accept':'application/json',
+          'Accept-Encoding':'gzip, deflate, br',
+          'User-Agent':`${ESI_USER_AGENT} | JLR Threat Scan`,
+        },
+        signal:AbortSignal.timeout(THREAT_ZKILL_TIMEOUT_MS),
+      });
+      if(response.ok){
+        const payload=await response.json();
+        const apiError=payload&&!Array.isArray(payload)&&typeof payload==='object'&&(payload.error||payload.message);
+        if(!apiError)return payload;
+        lastError=new Error(`zKillboard API error: ${String(payload.error||payload.message).slice(0,160)}`);
+      }else if(response.status===429||[502,503,504].includes(response.status)){
+        lastError=new Error(`zKillboard ${response.status}: temporary API failure`);
+        if(attempt===0){
+          const retry=Math.min(1500,Math.max(250,Number(response.headers.get('retry-after')||0)*1000||750));
+          await sleep(retry);
+          continue;
+        }
+      }else{
+        throw new Error(`zKillboard ${response.status}: ${(await response.text().catch(()=>'' )).slice(0,120)}`);
+      }
+    }catch(err){
+      lastError=err;
+      if(attempt===0){
+        await sleep(250);
+        continue;
+      }
+    }
+  }
+  throw lastError||new Error('zKillboard threat stats timed out');
+}
 async function getThreatCharacterIntel(character){
   const id=Number(character?.id);
   const key=String(id);
   const cached=pvpDb.threat?.characters?.[key];
   const cacheAge=cached?.updatedAt?Date.now()-pvpDbTimestamp(cached.updatedAt):Infinity;
   if(cached&&cacheAge<THREAT_CHARACTER_CACHE_MS)return{...cached,cacheHit:true};
+  if(threatCharacterPromises.has(key))return threatCharacterPromises.get(key);
 
-  let profile=null,rawStats=null,statsError=null;
-  const [profileResult,statsResult]=await Promise.allSettled([
-    esiGet(`https://esi.evetech.net/latest/characters/${id}/?datasource=tranquility`),
-    zkillJson(`https://zkillboard.com/api/stats/characterID/${id}/kills/`),
-  ]);
-  if(profileResult.status==='fulfilled')profile=profileResult.value?.data||null;
-  if(statsResult.status==='fulfilled')rawStats=statsResult.value||null;
-  else statsError=String(statsResult.reason?.message||statsResult.reason||'zKill stats unavailable');
+  const pending=withThreatRemoteSlot(async()=>{
+    let profile=null,rawStats=null,statsError=null;
+    const [profileResult,statsResult]=await Promise.allSettled([
+      esiGet(`https://esi.evetech.net/latest/characters/${id}/?datasource=tranquility`),
+      threatZkillStats(id),
+    ]);
+    if(profileResult.status==='fulfilled')profile=profileResult.value?.data||null;
+    if(statsResult.status==='fulfilled')rawStats=statsResult.value||null;
+    else statsError=String(statsResult.reason?.message||statsResult.reason||'zKill stats unavailable');
 
-  const entry={
-    updatedAt:now(),
-    character:{
-      id,
-      name:String(profile?.name||character?.name||id),
-      birthday:profile?.birthday||null,
-      security_status:Number.isFinite(Number(profile?.security_status))?Number(profile.security_status):null,
-      corporation_id:Number(profile?.corporation_id)||null,
-      alliance_id:Number(profile?.alliance_id)||null,
-      faction_id:Number(profile?.faction_id)||null,
-    },
-    stats:compactThreatStats(rawStats||{}),
-    statsError,
-  };
-  pvpDb.threat ||= {characters:{}};
-  pvpDb.threat.characters ||= {};
-  pvpDb.threat.characters[key]=entry;
-  return{...entry,cacheHit:false};
+    // If a refresh fails, stale intel is more useful than replacing a known
+    // pilot with an empty card. Keep it visible and retry on a later scan.
+    if(cached&&!rawStats&&profileResult.status!=='fulfilled'){
+      return{...cached,cacheHit:true,stale:true,statsError:statsError||cached.statsError||null};
+    }
+
+    const fallbackCharacter=cached?.character||{};
+    const entry={
+      updatedAt:now(),
+      character:{
+        id,
+        name:String(profile?.name||fallbackCharacter.name||character?.name||id),
+        birthday:profile?.birthday||fallbackCharacter.birthday||null,
+        security_status:Number.isFinite(Number(profile?.security_status))?Number(profile.security_status):(Number.isFinite(Number(fallbackCharacter.security_status))?Number(fallbackCharacter.security_status):null),
+        corporation_id:Number(profile?.corporation_id)||Number(fallbackCharacter.corporation_id)||null,
+        alliance_id:Number(profile?.alliance_id)||Number(fallbackCharacter.alliance_id)||null,
+        faction_id:Number(profile?.faction_id)||Number(fallbackCharacter.faction_id)||null,
+      },
+      stats:rawStats?compactThreatStats(rawStats):compactThreatStats(cached?.stats||{}),
+      statsError,
+    };
+    pvpDb.threat ||= {characters:{}};
+    pvpDb.threat.characters ||= {};
+    pvpDb.threat.characters[key]=entry;
+    threatCharacterNameIndex.set(entry.character.name.toLowerCase(),{id,name:entry.character.name});
+    threatAffiliationCache.set(id,{at:Date.now(),data:{
+      corporation_id:Number(entry.character.corporation_id)||null,
+      alliance_id:Number(entry.character.alliance_id)||null,
+      faction_id:Number(entry.character.faction_id)||null,
+    }});
+    return{...entry,cacheHit:false};
+  }).finally(()=>threatCharacterPromises.delete(key));
+  threatCharacterPromises.set(key,pending);
+  return pending;
 }
-async function buildThreatIntel(scanText,{ignoreOwnIds=[],positiveStandings=null,positiveStandingsPromise=null,fast=false}={}){
+async function buildThreatIntel(scanText,{ignoreOwnIds=[],positiveStandings=null,positiveStandingsPromise=null,fast=false,standingsPending=false}={}){
+  const buildStartedAt=Date.now();
   const parsed=parseThreatPaste(scanText);
   if(!fountainThreatCache.data||Date.now()-fountainThreatCache.updatedAt>=FOUNTAIN_THREAT_CACHE_MS){
     refreshFountainThreatActivity(false).catch(err=>console.warn('Fountain threat warmup failed',String(err.message||err)));
   }
   const fountainSnapshot=fountainThreatCache.data;
-  // Resolve the paste and load standings concurrently. Previously contacts had
-  // to finish before either name lookup could start, adding several seconds.
-  const [resolved,resolvedShipNames,resolvedStandings]=await Promise.all([
-    resolveThreatCharacterNames(parsed.names),
-    resolveThreatShipNames((parsed.shipNames||[]).map(row=>row.name)),
-    positiveStandingsPromise||Promise.resolve(positiveStandings),
-  ]);
+  // Characters and ship types share the same ESI universe/ids endpoint. One
+  // combined cached lookup removes a full network round-trip from every scan.
+  const entityPromise=resolveThreatEntities(parsed.names,(parsed.shipNames||[]).map(row=>row.name));
+  const standingsPromise=positiveStandingsPromise||Promise.resolve(positiveStandings);
+  const [entities,resolvedStandings]=await Promise.all([entityPromise,standingsPromise]);
+  const resolved=entities.characters;
+  const resolvedShipNames=entities.types;
   positiveStandings=resolvedStandings;
   const ordered=[],unresolved=[];
   for(const name of parsed.names){
@@ -7596,7 +7757,8 @@ async function buildThreatIntel(scanText,{ignoreOwnIds=[],positiveStandings=null
   const unique=[...new Map(ordered.map(row=>[Number(row.id),row])).values()];
   const ownIds=new Set((ignoreOwnIds||[]).map(Number).filter(Number.isFinite));
   const standingData=positiveStandings?.standingData||null;
-  const affiliations=standingData?await resolveThreatAffiliations(unique):new Map();
+  const affiliations=standingData?await resolveThreatAffiliations(unique,{cacheOnly:fast}):new Map();
+  const affiliationPending=Boolean(fast&&standingData&&unique.some(row=>!affiliations.has(Number(row.id))));
   let ignoredOwn=0,ignoredPositive=0;
   const candidates=unique.filter(row=>{
     const affiliation=affiliations.get(Number(row.id))||{};
@@ -7670,7 +7832,7 @@ async function buildThreatIntel(scanText,{ignoreOwnIds=[],positiveStandings=null
         };
       }
     });
-    if(refreshed)await savePvpDb();
+    if(refreshed)void savePvpDb().catch(err=>console.warn('Threat cache persistence failed',String(err?.message||err)));
   }
 
   const visibleEntries=entries.filter(entry=>{
@@ -7699,7 +7861,10 @@ async function buildThreatIntel(scanText,{ignoreOwnIds=[],positiveStandings=null
     else unresolvedShipNames.push(row.name);
   }
   for(const typeId of shipCounts.keys())typeIds.push(typeId);
-  const names=await resolveUniverseNames([...corpIds,...allianceIds,...typeIds,...partnerIds]);
+  const nameIds=[...corpIds,...allianceIds,...typeIds,...partnerIds];
+  const names=fast
+    ?new Map([...new Set(nameIds.map(Number).filter(Number.isFinite))].map(id=>[id,universeNameCache.get(id)||String(id)]))
+    :await resolveUniverseNames(nameIds);
 
   const chars=visibleEntries.map(entry=>{
     const c=entry.character||{},s=entry.stats||{};
@@ -7789,10 +7954,12 @@ async function buildThreatIntel(scanText,{ignoreOwnIds=[],positiveStandings=null
     standingsSource:positiveStandings?{characterId:positiveStandings.sourceCharacterId,name:positiveStandings.sourceCharacterName}:null,
     unresolvedNames:unresolved.slice(0,100),
     unresolvedShipNames:unresolvedShipNames.slice(0,30),
-    refreshing:Boolean(fast&&pendingIntel>0),
+    refreshing:Boolean(fast&&(pendingIntel>0||standingsPending||affiliationPending)),
     pendingIntel,
     staleIntel,
+    standingsPending:Boolean(standingsPending||affiliationPending),
     cache:{hits:cacheHits,refreshed},
+    performance:{mode:fast?'quick':'full',totalMs:Date.now()-buildStartedAt},
     regionalIntel:fountainSnapshot?{
       ready:true,regionId:FOUNTAIN_REGION_ID,regionName:'Fountain',generatedAt:fountainSnapshot.generatedAt||null,
       pagesFetched:Number(fountainSnapshot.pagesFetched)||0,truncated:Boolean(fountainSnapshot.truncated),killmailsProcessed:Number(fountainSnapshot.killmailsProcessed)||0,
@@ -9643,6 +9810,7 @@ async function routeApi(req,res,url) {
     }
   }
   if(req.method==='POST'&&url.pathname==='/api/threat-scan'){
+    const requestStartedAt=Date.now();
     let body;
     try{body=await readBody(req,300_000)}
     catch(err){return json(res,400,{error:'BAD_SCAN',message:String(err.message||err)})}
@@ -9655,34 +9823,62 @@ async function routeApi(req,res,url) {
     try{
       const cacheKey=crypto.createHash('sha256').update(`${user.id}|${ignoreOwn?'1':'0'}|${ignorePositive?'1':'0'}|${fountainThreatCache.updatedAt||0}|${scanText}`).digest('hex');
       const cached=threatScanCache.get(cacheKey);
-      if(cached&&Date.now()-cached.at<2*60*1000)return json(res,200,{...cached.data,cached:true,refreshing:false});
+      if(cached&&Date.now()-cached.at<THREAT_SCAN_RESULT_CACHE_MS){
+        return json(res,200,{...cached.data,cached:true,refreshing:false,performance:{...(cached.data.performance||{}),responseMs:Date.now()-requestStartedAt}});
+      }
 
       const running=threatScanJobs.get(cacheKey);
-      if(running)return json(res,200,{...running.partial,refreshing:true});
+      if(running){
+        return json(res,200,{
+          ...running.partial,
+          refreshing:true,
+          enrichmentAgeMs:Math.max(0,Date.now()-running.startedAt),
+          performance:{...(running.partial.performance||{}),responseMs:Date.now()-requestStartedAt},
+        });
+      }
 
-      const scanOptions={
+      // Cold contacts used to block the first visible result. Use a fresh/stale
+      // local standings snapshot immediately when available and refresh it in
+      // parallel. The full background pass applies the authoritative result.
+      const cachedStandings=ignorePositive?cachedPositiveStandingContactsForUser(user):null;
+      const standingsPromise=ignorePositive?positiveStandingContactsForUser(user):Promise.resolve(null);
+      standingsPromise.catch(err=>console.warn('Threat standings refresh failed',String(err?.message||err)));
+
+      const partial=await buildThreatIntel(scanText,{
         ignoreOwnIds:ignoreOwn?user.characterIds:[],
-        positiveStandingsPromise:ignorePositive?positiveStandingContactsForUser(user):Promise.resolve(null),
-      };
-      const partial=await buildThreatIntel(scanText,{...scanOptions,fast:true});
+        positiveStandings:cachedStandings,
+        fast:true,
+        standingsPending:Boolean(ignorePositive&&!cachedStandings),
+      });
+      partial.performance={...(partial.performance||{}),responseMs:Date.now()-requestStartedAt};
       if(!partial.refreshing){
         const complete={...partial,refreshing:false};
         threatScanCache.set(cacheKey,{at:Date.now(),data:complete});
         return json(res,200,complete);
       }
 
-      const job={partial:{...partial,refreshing:true},promise:null};
-      const promise=buildThreatIntel(scanText,{...scanOptions,fast:false})
+      const job={partial:{...partial,refreshing:true},promise:null,startedAt:Date.now()};
+      const promise=buildThreatIntel(scanText,{
+        ignoreOwnIds:ignoreOwn?user.characterIds:[],
+        positiveStandingsPromise:standingsPromise,
+        fast:false,
+      })
         .then(data=>{
-          const complete={...data,refreshing:false};
+          const complete={
+            ...data,
+            refreshing:false,
+            performance:{...(data.performance||{}),backgroundMs:Date.now()-job.startedAt},
+          };
+          job.partial=complete;
           threatScanCache.set(cacheKey,{at:Date.now(),data:complete});
-          if(threatScanCache.size>40){
-            const oldest=[...threatScanCache.entries()].sort((a,b)=>a[1].at-b[1].at).slice(0,10);
+          if(threatScanCache.size>80){
+            const oldest=[...threatScanCache.entries()].sort((a,b)=>a[1].at-b[1].at).slice(0,20);
             for(const [key] of oldest)threatScanCache.delete(key);
           }
           return complete;
         })
         .catch(err=>{
+          job.partial={...job.partial,refreshing:false,enrichmentError:String(err?.message||err).slice(0,180)};
           console.warn('Background threat enrichment failed',String(err.message||err));
           throw err;
         })
