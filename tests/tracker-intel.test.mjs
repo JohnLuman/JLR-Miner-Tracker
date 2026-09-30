@@ -45,14 +45,20 @@ assert.match(trackerCss,/tracker-region-picker/,'region selector is styled');
 
 assert.match(pkg.version,/^2\.10\.\d+$/,'Tracker integration stays on the current JLR version line');
 assert.ok(index.includes('/tracker.css?v=2.10.11'),'browser loads Tracker intel CSS');
-assert.ok(index.includes('/tracker.js?v=2.10.11'),'browser loads Tracker loader');
+assert.ok(index.includes('/tracker.js?v=2.10.11-alarm2'),'browser loads the cache-busted Tracker alarm loader');
 assert.ok(index.includes('/app.js?v='+pkg.version),'browser app cache key matches package version');
-assert.match(trackerLoader,/tracker-core\.js\?v=2\.10\.11/,'Tracker core cache is busted');
+assert.match(trackerLoader,/tracker-core\.js\?v=2\.10\.11-alarm2/,'Tracker core alarm cache is busted');
 
 assert.match(tracker,/TEST LOSS ALARM/,'Heavy Fighter Tracker exposes the redesigned local loss alarm test');
 assert.doesNotMatch(tracker,/TEST JLR CUSTOM VOICE/,'Heavy Fighter alarm no longer depends on custom voice');
 assert.match(trackerLoader,/Dedicated local two-tone alarm/,'loss alarm stays local without TTS latency');
 assert.match(trackerLoader,/ACKNOWLEDGE \/ STOP/,'loss alarm requires an explicit acknowledge/stop action');
 assert.match(trackerLoader,/playAlarmCycle\(context,generation\)/,'loss alarm repeats until acknowledged');
+assert.match(server,/const TRACKER_ALERT_REPLAY_MS = 60 \* 1000/,'server replay window matches the one-minute alarm freshness rule');
+assert.match(server,/function freshTrackerLiveLosses/,'server can identify fresh live losses for reconnect replay');
+assert.match(server,/for\(const loss of freshTrackerLiveLosses\(\)\)sendTrackerEventTo\(res,'loss',loss\)/,'each SSE reconnect receives fresh loss rows');
+assert.match(server,/for\(const loss of freshTrackerLiveLosses\(\)\)sendTrackerEvent\('loss',loss\)/,'R2Z2 catch-up flushes fresh losses that arrived during reseed');
+assert.match(tracker,/ALERT_FALLBACK_POLL_SECONDS=20/,'armed clients maintain a fast polling fallback');
+assert.match(trackerLoader,/expiresAt:now\+20_000/,'dead alarm-owner tabs stop blocking sound within twenty seconds');
 
 console.log('Tracker regional intel and loss-alarm tests passed.');
