@@ -353,15 +353,11 @@
     const ages=rows.map(itemMarketAge);
     const maxAge=ages.length?Math.max(...ages):num(appraisal.marketData?.maxAgeMs);
     const sources=[...new Set(rows.map(row=>marketSourceLabel(row.marketDataSource)).filter(Boolean))];
-    const staticData=appraisal.staticData&&typeof appraisal.staticData==='object'?appraisal.staticData:{};
-    const staticLabel=Number(staticData.buildNumber)>0
-      ?'CCP SDE '+Number(staticData.buildNumber).toLocaleString()
-      :(staticData.provider==='ccp-esi'?'ESI STATIC FALLBACK':'STATIC CATALOG WARMING');
     host.classList.toggle('jlr-stale',stale.length>0);
     host.innerHTML=
       '<span class="status-pill">'+(stale.length?'● STALE FALLBACK':'● JLR NATIVE')+'</span>'+
       '<strong>'+esc(appraisal.market?.name||'MARKET')+' • '+esc(variantLabel(appraisal.pricingVariant))+'</strong>'+
-      '<small>'+esc(staticLabel)+' • '+esc(sources.join(' + ')||'CCP ESI')+' • oldest price '+esc(ageText(maxAge))+' ago • '+stale.length+' stale / '+rows.length+' priced</small>';
+      '<small>'+esc(sources.join(' + ')||'CCP ESI')+' • oldest price '+esc(ageText(maxAge))+' ago • '+stale.length+' stale / '+rows.length+' priced</small>';
   }
 
   function renderSummary(force){
