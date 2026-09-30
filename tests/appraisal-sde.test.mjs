@@ -45,6 +45,6 @@ assert.doesNotMatch(server,/async function appraisalResolveItem\(/,'legacy singl
 assert.match(appraisal,/staticData:/,'shared Appraisals preserve SDE provenance');
 assert.match(appraisal,/recipeSource:/,'shared Appraisals preserve refine recipe provenance');
 assert.match(live,/CCP SDE/);
-assert.match(share,/STATIC DATA/);
+assert.doesNotMatch(share,/STATIC DATA|ESI FALLBACK/,'public share UI hides internal static-data fallback status while backend provenance is preserved');
 
 console.log('JLR local SDE architecture tests passed.');
