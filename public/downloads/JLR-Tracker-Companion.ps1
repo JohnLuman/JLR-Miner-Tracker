@@ -15,6 +15,8 @@ public static class JlrObserverWindow {
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+  [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, uint nFlags);
+  [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern uint GetClipboardSequenceNumber();
 }
 '@
@@ -43,9 +45,11 @@ $script:ObserverCharacter = "Yeda Parmala"
 $script:ObserverReady = $false
 $script:ObserverOcr = $null
 $script:ObserverAwaiter = $null
+$script:ObserverLastOcrError = ""
 $script:ObserverNextAt = [datetime]::MinValue
 $script:ObserverCandidates = @{}
 $script:ObserverLastSent = @{}
+$script:ObserverLastSentAt = @{}
 $script:ObserverFailureNoticeAt = [datetime]::MinValue
 $script:ObserverFramePath = Join-Path $AppRoot "observer-frame.png"
 $script:ClipboardSequence = [uint32]0
@@ -164,7 +168,7 @@ function Initialize-JlrObserverOcr {
     if(-not $runtimeAssembly){ throw "Windows Runtime support is unavailable." }
     $extensions = $runtimeAssembly.GetType("System.WindowsRuntimeSystemExtensions")
     $script:ObserverAwaiter = $extensions.GetMember("GetAwaiter","Method","Public,Static") |
-      Where-Object { $_.GetParameters()[0].ParameterType.Name -eq "IAsyncOperation`1" } |
+      Where-Object { $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' } |
       Select-Object -First 1
     if(-not $script:ObserverAwaiter){ throw "Windows Runtime async helper is unavailable." }
     $script:ObserverOcr = [Windows.Media.Ocr.OcrEngine,Windows.Foundation,ContentType=WindowsRuntime]::TryCreateFromUserProfileLanguages()
@@ -172,6 +176,7 @@ function Initialize-JlrObserverOcr {
     $script:ObserverReady = $true
     return $true
   } catch {
+    $script:ObserverLastOcrError = $_.Exception.ToString()
     $script:ObserverReady = $false
     return $false
   }
@@ -191,7 +196,7 @@ function Update-JlrObserverPermission($Reply) {
   Update-JlrScanModeUi
   if($script:ObserverAllowed -and -not $wasAllowed){
     $target = if($script:ObserverCharacter -eq "*"){"any foreground EVE toon"}else{$script:ObserverCharacter}
-    Show-JlrBalloon "JLR Probe Observer" ("Owner-only Screen Watch ready for " + $target + ". It reads only the foreground EVE window and never sends clicks or keys.") 6500
+    Show-JlrBalloon "JLR Probe Observer" ("Owner-only Screen Watch ready for " + $target + ". It locks to that EVE window and never sends clicks or keys.") 6500
   }
 }
 
@@ -209,11 +214,27 @@ function Get-JlrForegroundEveIdentity {
   return [pscustomobject]@{ handle=$handle; processId=$processId; characterName=$characterName }
 }
 
+function Get-JlrObserverEveIdentity {
+  $target = ([string]$script:ObserverCharacter).Trim()
+  if([string]::IsNullOrWhiteSpace($target) -or $target -eq "*"){ return Get-JlrForegroundEveIdentity }
+  foreach($process in @(Get-Process -Name exefile -ErrorAction SilentlyContinue)){
+    $title = [string]$process.MainWindowTitle
+    if($title -notmatch "^EVE\s*-\s*(.+)$"){ continue }
+    $characterName = $Matches[1].Trim()
+    if($characterName -ine $target){ continue }
+    $handle = [IntPtr]$process.MainWindowHandle
+    if($handle -eq [IntPtr]::Zero){ continue }
+    return [pscustomobject]@{ handle=$handle; processId=[uint32]$process.Id; characterName=$characterName }
+  }
+  return $null
+}
+
 function Get-JlrForegroundEveCapture {
-  $identity = Get-JlrForegroundEveIdentity
+  $identity = Get-JlrObserverEveIdentity
   if(-not $identity){ return $null }
   $handle = $identity.handle
   $characterName = [string]$identity.characterName
+  if([JlrObserverWindow]::IsIconic($handle)){ return $null }
 
   $rect = New-Object JlrObserverWindow+RECT
   if(-not [JlrObserverWindow]::GetWindowRect($handle,[ref]$rect)){ return $null }
@@ -223,8 +244,14 @@ function Get-JlrForegroundEveCapture {
 
   $source = New-Object System.Drawing.Bitmap $width,$height
   $graphics = [System.Drawing.Graphics]::FromImage($source)
+  $printed = $false
   try {
-    $graphics.CopyFromScreen($rect.Left,$rect.Top,0,0,$source.Size)
+    $hdc = $graphics.GetHdc()
+    try { $printed = [JlrObserverWindow]::PrintWindow($handle,$hdc,2) } finally { $graphics.ReleaseHdc($hdc) }
+    if(-not $printed){
+      if([JlrObserverWindow]::GetForegroundWindow() -ne $handle){ $source.Dispose(); return $null }
+      $graphics.CopyFromScreen($rect.Left,$rect.Top,0,0,$source.Size)
+    }
   } finally {
     $graphics.Dispose()
   }
@@ -263,6 +290,7 @@ function Read-JlrObserverText($Capture) {
     $result = Invoke-JlrObserverAsync ($script:ObserverOcr.RecognizeAsync($bitmap)) ([Windows.Media.Ocr.OcrResult])
     return (@($result.Lines | ForEach-Object { ([string]$_.Text).Trim() } | Where-Object { $_ }) -join [Environment]::NewLine)
   } catch {
+    $script:ObserverLastOcrError = $_.Exception.ToString()
     return ""
   } finally {
     if($bitmap){ try{$bitmap.Dispose()}catch{} }
@@ -272,22 +300,20 @@ function Read-JlrObserverText($Capture) {
 
 function Get-JlrProbeObserverPayload([string]$Text) {
   if([string]::IsNullOrWhiteSpace($Text)){ return "" }
-  $rows = @($Text -split "\r?\n" | ForEach-Object { $_.Trim() } | Where-Object {
-    $_ -and (
-      $_ -match "(?i)probe\s*scanner" -or
-      $_ -match "(?i)cosmic\s+(?:anomaly|signature)" -or
-      $_ -match "(?i)ore\s+site" -or
-      $_ -match "(?i)deposit|reservoir|rare\s+asteroids|ice\s+(?:field|belt|site)" -or
-      $_ -match "\b\d+(?:\.\d+)?\s*%" -or
-      $_ -match "(?i)\b\d+(?:\.\d+)?\s*(?:m|km|au)\b" -or
-      $_ -match "(?i)^[a-z0-9]{3}-\d{3}\b"
-    )
-  })
-  if($rows.Count -lt 3){ return "" }
+  $rows = @($Text -split "\r?\n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+  if($rows.Count -lt 5){ return "" }
   $joined = $rows -join [Environment]::NewLine
-  $hasScannerIdentity = $joined -match "(?i)probe\s*scanner|cosmic\s+(?:anomaly|signature)|ore\s+site"
-  $hasMeasurement = $joined -match "\b\d+(?:\.\d+)?\s*%" -or $joined -match "(?i)\b\d+(?:\.\d+)?\s*(?:m|km|au)\b"
-  if(-not $hasScannerIdentity -or -not $hasMeasurement){ return "" }
+
+  # Windows OCR often splits one Probe Scanner row across several text lines
+  # (for example "Small Arkonor" and "Ore Site"). Keep the recognized frame
+  # text intact so the server can match ore/site names across those lines.
+  $hasScannerIdentity = $joined -match "(?i)probe\s*scanner|cosmic\s*(?:anomaly|signat)|ore\s+site|gas\s+site|signal\s+strength"
+  $hasScannerEvidence = $joined -match "(?i)\b\d+(?:\.\d+)?\s*(?:m|km|au)\b" -or
+                        $joined -match "\b\d+(?:\.\d+)?\s*%" -or
+                        ([regex]::Matches($joined,"(?i)ore\s+site").Count -ge 2)
+  if(-not $hasScannerIdentity -or -not $hasScannerEvidence){ return "" }
+
+  if($joined.Length -gt 60000){ return $joined.Substring(0,60000) }
   return $joined
 }
 
@@ -333,25 +359,24 @@ function Invoke-JlrProbeObserver {
   $snapshot = $script:LatestSnapshots[[string]$capture.characterName]
   if(-not $snapshot -or [string]::IsNullOrWhiteSpace([string]$snapshot.system)){ return }
 
+  $system = [string]$snapshot.system
+  $key = ([string]$capture.characterName) + "|" + $system
+
+  # One successful scan is enough for this system for one hour. This stops
+  # passive OCR from repeatedly hitting JLR while the pilot remains in place.
+  $lastSentAt = $script:ObserverLastSentAt[$key]
+  if($lastSentAt -and ((Get-Date) - [datetime]$lastSentAt).TotalHours -lt 1){ return }
+
   $ocrText = Read-JlrObserverText $capture
   $payload = Get-JlrProbeObserverPayload $ocrText
   if([string]::IsNullOrWhiteSpace($payload)){ return }
 
-  $system = [string]$snapshot.system
-  $key = ([string]$capture.characterName) + "|" + $system
   $hash = Get-JlrObserverHash $payload
   if($script:ObserverLastSent[$key] -eq $hash){ return }
 
-  $candidate = $script:ObserverCandidates[$key]
-  if(-not $candidate -or [string]$candidate.hash -ne $hash){
-    $script:ObserverCandidates[$key] = [pscustomobject]@{ hash=$hash; count=1 }
-    return
-  }
-  $candidate.count = [int]$candidate.count + 1
-  if($candidate.count -lt 2){ return }
-
   if(Send-JlrObservedProbeScan ([string]$capture.characterName) $system $payload){
     $script:ObserverLastSent[$key] = $hash
+    $script:ObserverLastSentAt[$key] = Get-Date
     $script:ObserverCandidates.Remove($key)
   }
 }
