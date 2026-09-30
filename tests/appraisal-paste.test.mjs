@@ -26,7 +26,8 @@ assert.deepEqual(multiple.rows.map(row=>row.name),[
 ]);
 
 const header=parseAppraisalPaste('Item Name\tGroup\tSlot\tVolume\tValue');
-assert.equal(header.rows[0]?.name,'Item Name','header-like single row falls through without poisoning tabular parsing');
+assert.equal(header.valid,false);
+assert.equal(header.rejected.length,1,'tabular headers are ignored instead of sent to ESI');
 
 const server=fs.readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
 assert.match(server,/name\.length>=2&&name\.length<=100/,'Appraisal ESI fallback rejects overlong names before universe/ids');
