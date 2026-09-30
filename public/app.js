@@ -217,13 +217,24 @@
   let boardSuppressClickUntil=0;
   const statusText = {ready:'GREEN • MINEABLE',picked:'YELLOW • PICKED',cleared:'RED • RESPAWN'};
 
+  function syncThemeControl(theme=activeTheme){
+    const select=$('themeSelect');
+    const icon=$('themeSelectIcon');
+    if(!select)return;
+    if(select.value!==theme)select.value=theme;
+    const option=select.options[select.selectedIndex];
+    if(icon){
+      const src=String(option?.dataset?.themeImage||'');
+      if(src&&icon.src!==src)icon.src=src;
+      icon.title=String(option?.textContent||'Theme').trim();
+    }
+  }
   function applyTheme(theme){
     const next=THEME_IDS.has(theme)?theme:'void';
     activeTheme=next;
     document.documentElement.dataset.theme=next;
     localStorage.setItem('jlrTheme',next);
-    const select=$('themeSelect');
-    if(select&&select.value!==next)select.value=next;
+    syncThemeControl(next);
   }
 
   function fmt(v, kind='num') {
@@ -264,7 +275,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.10.5');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.10.6');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -642,7 +653,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR ADAM MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.10.5'),
+      'Version: '+String(state?.app?.version||'2.10.6'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -2650,8 +2661,26 @@
       button.type='button';button.className='sound-menu-option';button.id=`${id}-option-${index}`;
       button.dataset.index=String(index);button.setAttribute('role','option');
       button.setAttribute('aria-selected',String(index===select.selectedIndex));
-      button.textContent=option.textContent;button.disabled=option.disabled;
-      if(select.id==='themeSelect')button.dataset.themeValue=String(option.value||'');
+      button.disabled=option.disabled;
+      if(select.id==='themeSelect'){
+        button.dataset.themeValue=String(option.value||'');
+        button.classList.add('theme-menu-option');
+        const image=document.createElement('img');
+        image.className='theme-menu-image';
+        image.src=String(option.dataset.themeImage||'');
+        image.alt='';
+        image.loading='lazy';
+        const copy=document.createElement('span');
+        copy.className='theme-menu-copy';
+        const name=document.createElement('strong');
+        name.textContent=option.textContent;
+        const note=document.createElement('small');
+        note.textContent=String(option.dataset.themeNote||'');
+        copy.append(name,note);
+        button.append(image,copy);
+      }else{
+        button.textContent=option.textContent;
+      }
       popup.appendChild(button);
     });
     document.body.appendChild(popup);
@@ -2659,7 +2688,7 @@
     select.setAttribute('aria-expanded','true');select.setAttribute('aria-controls',id);
     select.focus({preventScroll:true});
     const rect=select.getBoundingClientRect();
-    const width=Math.min(window.innerWidth-16,select.id==='themeSelect'?Math.max(rect.width,170):Math.max(rect.width,270));
+    const width=Math.min(window.innerWidth-16,select.id==='themeSelect'?Math.max(rect.width,390):Math.max(rect.width,270));
     popup.style.width=`${width}px`;
     popup.style.left=`${Math.max(8,Math.min(rect.left,window.innerWidth-width-8))}px`;
     const height=popup.offsetHeight,spaceBelow=window.innerHeight-rect.bottom-8,spaceAbove=rect.top-8;
@@ -6804,7 +6833,7 @@
       try{
         const ledger=state?.esi?.ledgerDebug||{};
         const context={
-          version:state?.app?.version||'2.10.5',
+          version:state?.app?.version||'2.10.6',
           sourceTab,
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           displayMode:$('app')?.classList.contains('expanded')?'expanded':'compact',
@@ -6896,6 +6925,7 @@
   $('logout').addEventListener('click',async()=>{window.jlrReleaseAutoVoice?.();try{await api('/auth/logout',{method:'POST',body:'{}'})}catch{}location.href='/' });
   $('compactMode').addEventListener('click',()=>applyMode('compact'));$('expandedMode').addEventListener('click',()=>applyMode('expanded'));
   $('themeSelect').value=activeTheme;
+  syncThemeControl(activeTheme);
   $('themeSelect').addEventListener('change',()=>applyTheme($('themeSelect').value));
   $('targetOreSelect').addEventListener('change',()=>{
     targetOre=$('targetOreSelect').value||'auto';
