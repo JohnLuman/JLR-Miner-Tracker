@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
-import {appraisalSummary,sanitizeAppraisalShare} from '../lib/appraisal/appraisal.mjs';\nimport {appraisalSharePreview,renderAppraisalShareHtml} from '../lib/appraisal/share-preview.mjs';
+import {appraisalSummary,sanitizeAppraisalShare} from '../lib/appraisal/appraisal.mjs';
+import {appraisalSharePreview,renderAppraisalShareHtml} from '../lib/appraisal/share-preview.mjs';
 
 const items=[
   {
@@ -87,7 +88,9 @@ assert.match(server,/\/api\/appraisal\/markets/);
 assert.match(server,/\/api\/appraisal\/intel/,'main app exposes Support appraisal intel');
 assert.match(server,/\/api\/internal\/support\/appraisal/,'Support can request alternate native appraisal pricing');
 assert.match(server,/\/api\/appraisal\/share/);
-assert.match(server,/\/appraisal\\\//);\nassert.match(server,/renderAppraisalShareHtml/,'shared appraisal HTML is server-rendered for Discord/Open Graph previews');\nassert.match(server,/jlr-appraisal-preview\\.png/,'shared appraisal preview advertises the JLR preview image');
+assert.match(server,/\/appraisal\\\//);
+assert.match(server,/renderAppraisalShareHtml/,'shared appraisal HTML is server-rendered for Discord/Open Graph previews');
+assert.match(server,/jlr-appraisal-preview\\.png/,'shared appraisal preview advertises the JLR preview image');
 assert.match(server,/source:'jlr-native-esi'/,'native Appraisal identifies JLR as the pricing provider');
 assert.match(server,/nativeAppraisalPriceSet/,'native Appraisal owns Buy\/Split\/Sell pricing math');
 assert.match(server,/universe\/ids\/\?datasource=tranquility/,'native Appraisal resolves inventory types through CCP ESI');
