@@ -318,7 +318,13 @@
       </div>
       <div class="fleet-command-grid">
         <article class="fleet-command-card fleet-live-card">
-          <div class="visual-card-head"><strong>SAMPLED RATE OVER TIME</strong><small>ESI mining-ledger deltas • hover for exact interval • click to pin/link the day</small></div>
+          <div class="visual-card-head fleet-chart-head">
+            <div><strong id="fleetRateChartTitle">SAMPLED RATE OVER TIME</strong><small>ESI mining-ledger deltas • hover for exact interval • click to pin/link the day</small></div>
+            <div class="fleet-control-group fleet-rate-switch" aria-label="Choose sampled-rate graph metric">
+              <button class="fleet-rate-metric active" data-rate-metric="rate" type="button">M³/HR</button>
+              <button class="fleet-rate-metric" data-rate-metric="efficiency" type="button">EFFICIENCY %</button>
+            </div>
+          </div>
           <div id="fleetActivityChart" class="fleet-activity-chart"></div>
         </article>
         <article class="fleet-command-card fleet-history-card">
@@ -328,6 +334,10 @@
             <div><span id="fleetHistoryValueLabel">7D PAYOUT</span><strong id="fleetHistoryValue">—</strong><small id="fleetHistoryValueSub">tracked T3 value × payout</small></div>
           </div>
           <div id="fleetHistoryChart" class="fleet-history-chart"></div>
+        </article>
+        <article class="fleet-command-card fleet-progress-card">
+          <div class="visual-card-head"><strong>EVE DAY PROGRESS</strong><small>cumulative selected-fleet m³ by UTC time • today vs yesterday</small></div>
+          <div id="fleetDayProgressChart" class="fleet-day-progress-chart"></div>
         </article>
         <article class="fleet-command-card fleet-miner-card">
           <div class="visual-card-head"><strong>MINER COMPARISON</strong><small>tracked active-time average vs fitted target • selected fleet</small></div>
