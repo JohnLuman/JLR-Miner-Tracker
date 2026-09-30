@@ -44,6 +44,7 @@ loadEnv(ENV_FILE);
 
 const PORT = num(process.env.PORT, 3187);
 const PUBLIC_URL = String(process.env.PUBLIC_URL || '').trim().replace(/\/$/, '');
+const JLR_SHARE_ORIGIN = String(process.env.JLR_SHARE_ORIGIN || '').trim().replace(/\/$/, '');
 const EVE_CLIENT_ID = String(process.env.EVE_CLIENT_ID || '').trim();
 const EVE_CLIENT_SECRET = String(process.env.EVE_CLIENT_SECRET || '').trim();
 const ESI_USER_AGENT = String(process.env.ESI_USER_AGENT || 'JLR-Miner-Tracker/2.10.11').trim();
@@ -812,6 +813,10 @@ function requestBaseUrl(req) {
   const proto = String(req.headers['x-forwarded-proto'] || 'http').split(',')[0].trim();
   const host = String(req.headers['x-forwarded-host'] || req.headers.host || `localhost:${PORT}`).split(',')[0].trim();
   return `${proto}://${host}`;
+}
+function appraisalShareUrl(req,token){
+  const origin=JLR_SHARE_ORIGIN||requestBaseUrl(req);
+  return origin+'/a/'+encodeURIComponent(String(token||''));
 }
 function callbackUrl(req) { return `${requestBaseUrl(req)}/auth/eve/callback`; }
 function parseCookies(req) {
@@ -9227,13 +9232,20 @@ async function routeApi(req,res,url) {
       if(!base.appraisal.items.some(row=>row.resolved!==false))return json(res,400,{error:'EMPTY_APPRAISAL_SHARE',message:'No EVE items could be resolved.'});
       state.appraisals ||= {shares:{}};
       state.appraisals.shares ||= {};
-      const id='appraisal_'+randomId(10),token=randomId(18);
+      const id='appraisal_'+randomId(10);
+      const usedTokens=new Set(Object.values(state.appraisals.shares).map(entry=>String(entry?.token||'')));
+      let token='';
+      do token=randomId(6); while(usedTokens.has(token));
       const row={id,token,...base,createdAt:now()};
       state.appraisals.shares[id]=row;
       const ordered=Object.values(state.appraisals.shares).sort((a,b)=>Date.parse(b.createdAt||0)-Date.parse(a.createdAt||0));
       for(const stale of ordered.slice(500))delete state.appraisals.shares[stale.id];
       await save();
-      return json(res,200,{share:appraisalSharePublic(row),shareUrl:requestBaseUrl(req)+'/appraisal/'+token});
+      return json(res,200,{
+        share:appraisalSharePublic(row),
+        shareUrl:appraisalShareUrl(req,token),
+        directShareUrl:requestBaseUrl(req)+'/a/'+token,
+      });
     }catch(err){
       return json(res,502,{error:'APPRAISAL_SHARE_FAILED',message:String(err.message||err)});
     }
@@ -9775,7 +9787,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&/^\/forge\/[A-Za-z0-9_-]{8,}$/.test(url.pathname)){
     if(await serveStatic(req,res,'/appraisal-legacy-share.html'))return;
   }
-  if(req.method==='GET'&&/^\/appraisal\/[A-Za-z0-9_-]{8,}$/.test(url.pathname)){
+  if(req.method==='GET'&&/^\/(?:a|appraisal)\/[A-Za-z0-9_-]{8,}$/.test(url.pathname)){
     const token=String(url.pathname.split('/').pop()||'');
     const row=Object.values(state.appraisals?.shares||{}).find(entry=>String(entry?.token||'')===token);
     if(row){
