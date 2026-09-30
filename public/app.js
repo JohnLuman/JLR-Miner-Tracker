@@ -2970,14 +2970,17 @@
     const cacheText=data?`${fmt(parsedPilots)} parsed • ${fmt(resolvedPilots)} resolved • ${fmt(ignored)} filtered • ${fmt(displayedPilots)} displayed • ${fmt(data.cache?.hits||0)} local hits • ${fmt(data.cache?.refreshed||0)} refreshed${unresolved.length?' • '+fmt(unresolved.length)+' pilots unresolved':''}${unresolvedShips.length?' • '+fmt(unresolvedShips.length)+' ship types unresolved':''}${truncatedPilots?' • '+fmt(truncatedPilots)+' over 1,000-pilot safety limit':''}`:'';
     const quickMs=Math.max(0,Number(data?.performance?.responseMs??data?.performance?.totalMs)||0);
     const pendingIntel=Math.max(0,Number(data?.pendingIntel)||0);
+    const progressTotal=Math.max(0,Number(data?.progress?.total)||0);
+    const progressDone=Math.max(0,Number(data?.progress?.enriched)||0);
+    const progressText=progressTotal?(' • '+fmt(progressDone)+'/'+fmt(progressTotal)+' PROFILES READY'):'';
     const threatStatus=threatScanLoading
       ?'RESOLVING PILOTS…'
       :threatScanError
         ?esc(threatScanError)
         :data?.refreshing
-          ?`QUICK RESULTS READY${quickMs?' IN '+fmt(quickMs)+' MS':''} • ${fmt(pendingIntel)} PILOT PROFILE${pendingIntel===1?'':'S'} ENRICHING${data?.standingsPending?' • STANDINGS FILTER FINISHING':''}`
+          ?`QUICK RESULTS READY${quickMs?' IN '+Math.round(quickMs)+' MS':''}${progressText} • ${fmt(pendingIntel)} PROFILE${pendingIntel===1?'':'S'} ENRICHING${data?.standingsPending?' • STANDINGS FILTER FINISHING':''}`
           :data
-            ?`JLR threat engine • ${cacheText}${quickMs?' • response '+fmt(quickMs)+' ms':''}`
+            ?`JLR threat engine • ${cacheText}${quickMs?' • response '+Math.round(quickMs)+' ms':''}`
             :'Paste names or D-scan, then scan.';
 
     host.innerHTML=`
