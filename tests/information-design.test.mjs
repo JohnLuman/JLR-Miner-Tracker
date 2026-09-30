@@ -46,6 +46,16 @@ assert.doesNotMatch(index,/images\.evetech\.net\/types\//,'theme selector no lon
 assert.match(styles,/gothic cathedral \/ ritual terminal/,'Blood has a dark gothic identity');
 assert.match(styles,/white-hot star \/ orbital heat shield/,'Solar Flare has a bright stellar identity');
 assert.match(styles,/jlr-solar-rays/,'Solar Flare has rotating corona rays distinct from Blood');
+assert.match(styles,/event-horizon observatory/,'Void has event-horizon personality');
+assert.match(styles,/armored bulkheads and structural brackets/,'Citadel has armored structural personality');
+assert.match(styles,/bolted machinery and warning rails/,'Industrial has bolted machinery personality');
+assert.match(styles,/active bio-scanner/,'Serpentis has live scanner personality');
+assert.match(styles,/analog flight-deck \/ worn brass instrumentation/,'Angel has analog flight-deck personality');
+assert.match(styles,/tactical radar and target brackets/,'EDENCOM has tactical radar personality');
+assert.match(styles,/floating luminous glass, soft motion/,'Aurora has floating-glass personality');
+assert.match(styles,/active HUD scanline and reactive modules/,'Neon has reactive HUD personality');
+assert.match(styles,/fractured crystal facets rather than HUD cuts/,'Glacier has fractured-crystal personality');
+assert.match(styles,/orbital rings and radiant instrumentation/,'Solar has orbital instrumentation personality');
 
 assert.match(index,/id="fleetInsight"/,'Fleet Performance has a decision-first live insight');
 assert.match(app,/Sampled rate met the fitted target/,'Fleet insight interprets sampled rate versus target');
@@ -76,10 +86,10 @@ assert.match(app,/myLedgerCoverageBadge/,'personal ledger sync state is rendered
 assert.match(app,/outside tracked fields/,'ledger diagnostics distinguish payout rows from field attribution');
 assert.match(app,/fleetUptimeMeter/,'fleet target exposes the uptime assumption visually');
 
-assert.equal(pkg.version,'2.10.7');
-assert.ok(index.includes('/styles.css?v=2.10.7'),'main information-design CSS is cache-busted');
+assert.equal(pkg.version,'2.10.8');
+assert.ok(index.includes('/styles.css?v=2.10.8'),'main information-design CSS is cache-busted');
 assert.ok(index.includes('/tracker.css?v=2.9.147-closest-init1'),'Tracker information-design CSS is cache-busted');
-assert.ok(index.includes('/app.js?v=2.10.7'),'dashboard JS is cache-busted');
+assert.ok(index.includes('/app.js?v=2.10.8'),'dashboard JS is cache-busted');
 assert.ok(index.includes('/tracker.js?v=2.9.147-closest-init1'),'Tracker loader is cache-busted');
 assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.147-closest-init1/,'Tracker core is cache-busted');
 
