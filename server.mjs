@@ -7619,16 +7619,70 @@ async function positiveStandingContactsForUser(user){
   threatContactsPromises.set(key,pending);
   return pending;
 }
-function dscanSharePublic(row){
-  const kind=String(row?.kind||sharedScanKind(row?.text||''));
+function sharedScanReconRows(value){
+  const input=Array.isArray(value)?value:[];
+  const merged=new Map();
+  for(const raw of input.slice(0,40)){
+    const name=String(raw?.name||raw?.type||'').replace(/[\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim().slice(0,80);
+    if(!name)continue;
+    const count=Math.max(0,Math.min(9999,Math.floor(Number(raw?.count)||0)));
+    if(!count)continue;
+    const key=name.toLowerCase();
+    const prior=merged.get(key);
+    if(prior)prior.count=Math.min(9999,prior.count+count);
+    else merged.set(key,{name,count});
+  }
+  return [...merged.values()].slice(0,24);
+}
+function normalizeJlrSharedScan(row){
+  if(!row)return false;
+  let changed=false;
+  const legacyText=String(row.text||'').trim();
+  if(row.dscanText===undefined&&row.localText===undefined){
+    const kind=String(row.kind||sharedScanKind(legacyText));
+    row.dscanText=kind==='dscan'?legacyText:'';
+    row.localText=kind==='local'?legacyText:'';
+    changed=true;
+  }
+  const dscanText=String(row.dscanText||'').trim();
+  const localText=String(row.localText||'').trim();
+  if(row.dscanText!==dscanText){row.dscanText=dscanText;changed=true}
+  if(row.localText!==localText){row.localText=localText;changed=true}
+  const manualRecons=sharedScanReconRows(row.manualRecons);
+  if(JSON.stringify(manualRecons)!==JSON.stringify(row.manualRecons||[])){row.manualRecons=manualRecons;changed=true}
+  const system=String(row.system||'').replace(/[\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim().slice(0,80);
+  if(String(row.system||'')!==system){row.system=system;changed=true}
+  const primary=dscanText||localText||legacyText;
+  const kind=dscanText?'dscan':(localText?'local':sharedScanKind(primary));
+  const lineCount=sharedScanLines(primary).length;
+  if(String(row.text||'')!==primary){row.text=primary;changed=true}
+  if(String(row.kind||'')!==kind){row.kind=kind;changed=true}
+  if(Number(row.lineCount||0)!==lineCount){row.lineCount=lineCount;changed=true}
+  if(!row.updatedAt){row.updatedAt=row.createdAt||now();changed=true}
+  if(!Array.isArray(row.manualRecons)){row.manualRecons=[];changed=true}
+  return changed;
+}
+function dscanSharePublic(row,viewerUser=null){
+  normalizeJlrSharedScan(row);
+  const dscanText=String(row?.dscanText||'');
+  const localText=String(row?.localText||'');
+  const primary=dscanText||localText||String(row?.text||'');
   return{
     token:String(row?.token||''),
     createdAt:row?.createdAt||null,
-    text:String(row?.text||''),
-    lineCount:Number(row?.lineCount)||sharedScanLines(row?.text||'').length,
-    kind,
-    local:kind==='local'&&row?.local?row.local:null,
+    updatedAt:row?.updatedAt||row?.createdAt||null,
+    system:String(row?.system||''),
+    text:primary,
+    dscanText,
+    localText,
+    lineCount:sharedScanLines(primary).length,
+    dscanLineCount:sharedScanLines(dscanText).length,
+    localLineCount:sharedScanLines(localText).length,
+    kind:dscanText?'dscan':(localText?'local':sharedScanKind(primary)),
+    local:localText&&row?.local?row.local:null,
+    manualRecons:sharedScanReconRows(row?.manualRecons),
     enrichedAt:row?.enrichedAt||null,
+    canEdit:Boolean(viewerUser&&String(row?.ownerId||'')===String(viewerUser?.id||'')),
   };
 }
 async function sharedPublicEntityProfile(kind,id){
@@ -7637,7 +7691,7 @@ async function sharedPublicEntityProfile(kind,id){
   const segment=kind==='corporation'?'corporations':'alliances';
   try{
     if(Date.now()<esiBackoffUntil)return null;
-    const response=await fetch(`https://esi.evetech.net/latest/${segment}/${numericId}/?datasource=tranquility`,{
+    const response=await fetch(\`https://esi.evetech.net/latest/\${segment}/\${numericId}/?datasource=tranquility\`,{
       headers:{'Accept':'application/json','User-Agent':ESI_USER_AGENT,'X-Compatibility-Date':ESI_COMPAT_DATE},
       signal:AbortSignal.timeout(3_000),
     });
@@ -7728,17 +7782,17 @@ async function buildSharedLocalIntel(scanText){
 }
 async function enrichJlrDscanShare(row,{force=false}={}){
   if(!row)return false;
-  const kind=sharedScanKind(row.text||'');
-  let changed=String(row.kind||'')!==kind;
-  row.kind=kind;
-  if(kind==='local'){
-    const sameDigest=String(row?.local?.sourceDigest||'')===String(row?.digest||'');
+  let changed=normalizeJlrSharedScan(row);
+  const localText=String(row.localText||'');
+  if(localText){
+    const localDigest=crypto.createHash('sha256').update(localText).digest('hex');
+    const sameDigest=String(row?.local?.sourceDigest||'')===localDigest;
     const retryable=Boolean(row?.local?.enrichmentError)&&Date.now()-Date.parse(row?.enrichedAt||0)>10*60*1000;
     if(force||!row.local||!sameDigest||retryable){
       try{
-        row.local={...(await buildSharedLocalIntel(row.text||'')),sourceDigest:String(row?.digest||'')};
+        row.local={...(await buildSharedLocalIntel(localText)),sourceDigest:localDigest};
       }catch(error){
-        const names=sharedLocalNames(row.text||'');
+        const names=sharedLocalNames(localText);
         row.local={
           pilotCount:names.length,
           resolvedCount:0,
@@ -7746,7 +7800,7 @@ async function enrichJlrDscanShare(row,{force=false}={}){
           corporations:[],
           alliances:[],
           pilots:[],
-          sourceDigest:String(row?.digest||''),
+          sourceDigest:localDigest,
           enrichmentError:String(error?.message||error||'Local affiliation lookup failed').slice(0,220),
         };
       }
@@ -7767,35 +7821,80 @@ async function createJlrDscanShare(req,user,scanText){
     String(row?.digest||'')===digest&&String(row?.ownerId||'')===String(user?.id||'')
   );
   if(existing){
+    normalizeJlrSharedScan(existing);
     if(await enrichJlrDscanShare(existing))await save();
-    return{url:dscanShareUrl(req,existing.token),share:dscanSharePublic(existing),cached:true};
+    return{url:dscanShareUrl(req,existing.token),share:dscanSharePublic(existing,user),cached:true};
   }
 
+  const kind=sharedScanKind(scanText);
   const usedTokens=new Set(Object.values(state.dscanShares).map(row=>String(row?.token||'')));
   let token='';
   do token=randomId(6); while(usedTokens.has(token));
   const id='dscan_'+randomId(10);
+  const timestamp=now();
   const row={
     id,
     token,
     ownerId:String(user?.id||''),
     digest,
     text:scanText,
+    dscanText:kind==='dscan'?scanText:'',
+    localText:kind==='local'?scanText:'',
     lineCount:sharedScanLines(scanText).length,
-    kind:sharedScanKind(scanText),
-    createdAt:now(),
+    kind,
+    system:'',
+    manualRecons:[],
+    createdAt:timestamp,
+    updatedAt:timestamp,
   };
   state.dscanShares[id]=row;
   await enrichJlrDscanShare(row);
 
-  // Shared scans are snapshots, not permanent app data. Keep a generous recent
-  // history while preventing pasted Local/D-scans from growing state.json forever.
+  // Shared intel links keep a generous recent history while preventing pasted
+  // Local/D-scans from growing state.json forever.
   const ordered=Object.values(state.dscanShares)
-    .sort((a,b)=>Date.parse(b?.createdAt||0)-Date.parse(a?.createdAt||0));
+    .sort((a,b)=>Date.parse(b?.updatedAt||b?.createdAt||0)-Date.parse(a?.updatedAt||a?.createdAt||0));
   for(const stale of ordered.slice(750))delete state.dscanShares[stale.id];
 
   await save();
-  return{url:dscanShareUrl(req,token),share:dscanSharePublic(row),cached:false};
+  return{url:dscanShareUrl(req,token),share:dscanSharePublic(row,user),cached:false};
+}
+async function updateJlrDscanShare(req,user,row,body){
+  if(String(row?.ownerId||'')!==String(user?.id||'')){
+    const error=new Error('Only the creator of this shared scan can update it.');
+    error.code='NOT_SCAN_OWNER';
+    throw error;
+  }
+  normalizeJlrSharedScan(row);
+  let localChanged=false;
+  if(Object.prototype.hasOwnProperty.call(body||{},'dscanText')){
+    const value=String(body?.dscanText||'').trim();
+    if(value.length>75_000)throw new Error('D-scan is too large. Keep it under 75,000 characters.');
+    if(value&&sharedScanKind(value)==='local')throw new Error('That looks like Local, not a directional scan. Paste it into the Local box.');
+    row.dscanText=value;
+  }
+  if(Object.prototype.hasOwnProperty.call(body||{},'localText')){
+    const value=String(body?.localText||'').trim();
+    if(value.length>75_000)throw new Error('Local list is too large. Keep it under 75,000 characters.');
+    if(value&&sharedScanKind(value)==='dscan')throw new Error('That looks like D-scan data. Paste it into the D-scan box.');
+    row.localText=value;
+    localChanged=true;
+  }
+  if(Object.prototype.hasOwnProperty.call(body||{},'system')){
+    row.system=String(body?.system||'').replace(/[\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim().slice(0,80);
+  }
+  if(Object.prototype.hasOwnProperty.call(body||{},'manualRecons')){
+    row.manualRecons=sharedScanReconRows(body?.manualRecons);
+  }
+  const primary=String(row.dscanText||row.localText||'');
+  row.text=primary;
+  row.kind=row.dscanText?'dscan':(row.localText?'local':'text');
+  row.lineCount=sharedScanLines(primary).length;
+  row.digest=crypto.createHash('sha256').update(primary).digest('hex');
+  row.updatedAt=now();
+  await enrichJlrDscanShare(row,{force:localChanged});
+  await save();
+  return{url:dscanShareUrl(req,row.token),share:dscanSharePublic(row,user)};
 }
 async function threatMapLimit(items,limit,worker){
   const input=[...(items||[])];
@@ -9515,7 +9614,7 @@ async function routeApi(req,res,url) {
     if(!row)return json(res,404,{error:'APPRAISAL_NOT_FOUND'});
     return json(res,200,{share:appraisalSharePublic(row)});
   }
-  if(req.method==='GET'&&url.pathname.startsWith('/api/dscan-share/')){
+  if(req.method==='GET'&&/^\/api\/dscan-share\/[^/]+$/.test(url.pathname)){
     const token=String(url.pathname.split('/').pop()||'');
     const row=Object.values(state.dscanShares||{}).find(entry=>String(entry?.token||'')===token);
     if(!row)return json(res,404,{error:'DSCAN_SHARE_NOT_FOUND',message:'That JLR shared scan link was not found.'});
@@ -9524,7 +9623,7 @@ async function routeApi(req,res,url) {
     }catch(error){
       console.warn('Shared scan enrichment failed',String(error?.message||error));
     }
-    return json(res,200,{share:dscanSharePublic(row)});
+    return json(res,200,{share:dscanSharePublic(row,readSession(req))});
   }
 
   const user=requireUser(req,res);if(!user)return;
@@ -10009,6 +10108,20 @@ async function routeApi(req,res,url) {
     doctrineRequested=true;
     refreshDoctrineMarket({forceCn:true}).catch(console.error);
     return json(res,202,await doctrineMarketSnapshot());
+  }
+  const sharedScanUpdateMatch=req.method==='POST'&&url.pathname.match(/^\/api\/dscan-share\/([^/]+)\/update$/);
+  if(sharedScanUpdateMatch){
+    let body;
+    try{body=await readBody(req,170_000)}
+    catch(err){return json(res,400,{error:'BAD_SHARED_SCAN_UPDATE',message:String(err.message||err)})}
+    const token=String(sharedScanUpdateMatch[1]||'');
+    const row=Object.values(state.dscanShares||{}).find(entry=>String(entry?.token||'')===token);
+    if(!row)return json(res,404,{error:'DSCAN_SHARE_NOT_FOUND',message:'That JLR shared scan link was not found.'});
+    try{return json(res,200,await updateJlrDscanShare(req,user,row,body||{}))}
+    catch(err){
+      const status=err?.code==='NOT_SCAN_OWNER'?403:400;
+      return json(res,status,{error:err?.code||'BAD_SHARED_SCAN_UPDATE',message:String(err.message||err)});
+    }
   }
   if(req.method==='POST'&&url.pathname==='/api/threat-share'){
     let body;
