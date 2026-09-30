@@ -74,7 +74,26 @@ assert.equal(preview.payoutPercent,95);
 assert.equal(preview.selectedValue,22);
 assert.equal(preview.payoutValue,20.9);
 assert.match(preview.title,/Fleet Loot .* SPLIT 22 ISK/);
-assert.match(preview.description,/1\. Tritanium ×2 .* 2\. Pyerite ×1/,'Discord preview lists appraisal items in original order');
+assert.match(preview.description,/1\. Tritanium ×2\n2\. Pyerite ×1/,'Discord preview lists appraisal items one per line in original order');
+
+const longPreview=appraisalSharePreview({
+  ...share,
+  appraisal:{
+    ...share.appraisal,
+    items:Array.from({length:10},(_,index)=>({
+      resolved:true,
+      typeId:1000+index,
+      name:'Item '+(index+1),
+      amount:index+1,
+      buyTotal:10,
+      splitTotal:11,
+      sellTotal:12,
+    })),
+  },
+});
+assert.equal(longPreview.description.split('\n').length,9,'Discord preview caps the item list at nine lines');
+assert.match(longPreview.description,/9\. Item 9 ×9 …$/,'when more items exist, the ninth line ends with an ellipsis');
+assert.doesNotMatch(longPreview.description,/Item 10/,'items after line nine are omitted from the Discord preview');
 
 const previewHtml=renderAppraisalShareHtml(
   '<!doctype html><html><head><title>JLR Appraisal</title></head><body></body></html>',
@@ -83,6 +102,7 @@ const previewHtml=renderAppraisalShareHtml(
 );
 assert.match(previewHtml,/property="og:title"/);
 assert.match(previewHtml,/property="og:description"/);
+assert.match(previewHtml,/&#10;/,'Open Graph description preserves item line breaks for Discord');
 assert.match(previewHtml,/property="og:image"/);
 assert.match(previewHtml,/property="og:image:secure_url"/);
 assert.match(previewHtml,/property="og:image:type" content="image\/png"/);
