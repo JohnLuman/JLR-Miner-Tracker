@@ -35,12 +35,17 @@ assert.match(index,/value="solar"[^>]*>SOLAR FLARE<\/option>/,'Solar Flare theme
 assert.match(index,/value="industrial"[^>]*>INDUSTRIAL<\/option>/,'legacy Forge theme is renamed Industrial');
 assert.match(styles,/\.nav-menu\[open\]\{z-index:120\}/,'open dropdown is raised above neighboring nav groups');
 assert.match(index,/id="themeSelectIcon"/,'theme selector shows the selected EVE image');
-assert.match(index,/data-theme-image="https:\/\/images\.evetech\.net\/types\//,'theme choices carry EVE image references');
-assert.match(styles,/\.theme-menu-image/,'theme picker renders image thumbnails');
+assert.match(index,/data-theme-icon="neon"/,'theme choices use original JLR glyph identifiers');
+assert.match(styles,/\.theme-menu-image/,'theme picker renders original glyph thumbnails');
 assert.match(styles,/html\[data-theme="neon"\] body::before/,'Neon Grid has its own animated grid treatment');
 assert.match(styles,/html\[data-theme="glacier"\] \.glass/,'Glacier has frosted glass surfaces');
 assert.match(styles,/html\[data-theme="solar"\] body::before/,'Solar Flare has its own radiant treatment');
 assert.match(styles,/html\[data-theme="industrial"\] body::after/,'Industrial has hazard-rail styling');
+assert.match(app,/function themeIconMarkup/,'theme selector glyphs are generated locally');
+assert.doesNotMatch(index,/images\.evetech\.net\/types\//,'theme selector no longer depends on EVE ship or ore art');
+assert.match(styles,/gothic cathedral \/ ritual terminal/,'Blood has a dark gothic identity');
+assert.match(styles,/white-hot star \/ orbital heat shield/,'Solar Flare has a bright stellar identity');
+assert.match(styles,/jlr-solar-rays/,'Solar Flare has rotating corona rays distinct from Blood');
 
 assert.match(index,/id="fleetInsight"/,'Fleet Performance has a decision-first live insight');
 assert.match(app,/Sampled rate met the fitted target/,'Fleet insight interprets sampled rate versus target');
@@ -71,10 +76,10 @@ assert.match(app,/myLedgerCoverageBadge/,'personal ledger sync state is rendered
 assert.match(app,/outside tracked fields/,'ledger diagnostics distinguish payout rows from field attribution');
 assert.match(app,/fleetUptimeMeter/,'fleet target exposes the uptime assumption visually');
 
-assert.equal(pkg.version,'2.10.6');
-assert.ok(index.includes('/styles.css?v=2.10.6'),'main information-design CSS is cache-busted');
+assert.equal(pkg.version,'2.10.7');
+assert.ok(index.includes('/styles.css?v=2.10.7'),'main information-design CSS is cache-busted');
 assert.ok(index.includes('/tracker.css?v=2.9.147-closest-init1'),'Tracker information-design CSS is cache-busted');
-assert.ok(index.includes('/app.js?v=2.10.6'),'dashboard JS is cache-busted');
+assert.ok(index.includes('/app.js?v=2.10.7'),'dashboard JS is cache-busted');
 assert.ok(index.includes('/tracker.js?v=2.9.147-closest-init1'),'Tracker loader is cache-busted');
 assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.147-closest-init1/,'Tracker core is cache-busted');
 
