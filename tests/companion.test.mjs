@@ -33,7 +33,12 @@ assert.match(ps,/Windows\.Media\.Ocr\.OcrEngine/,'observer uses Windows built-in
 assert.match(ps,/GetForegroundWindow/,'observer reads only the foreground EVE client');
 assert.match(ps,/\/api\/companion\/scan/,'observer submits recognized scanner text through companion auth');
 assert.match(ps,/GetClipboardSequenceNumber/,'companion watches clipboard changes without polling clipboard contents blindly');
-assert.match(ps,/EVE Clipboard Auto-Import: ON/,'clipboard watcher has a tray toggle');
+assert.match(ps,/Creator Scan Mode:/,'companion exposes creator scan modes in the tray');
+assert.match(ps,/COPY AUTO-IMPORT/,'creator can choose clipboard-only scanning');
+assert.match(ps,/SCREEN WATCH/,'creator can choose passive screen OCR');
+assert.match(ps,/HYBRID \(COPY \+ SCREEN\)/,'creator can run clipboard and screen watch together');
+assert.match(ps,/Yeda Parmala/,'screen watch defaults to the creator scouting toon');
+assert.match(ps,/observerCharacter/,'screen watch can be targeted to a chosen EVE toon');
 assert.match(ps,/\/api\/companion\/clipboard/,'EVE clipboard copies are sent through companion auth');
 assert.match(ps,/Get-JlrForegroundEveIdentity/,'clipboard imports are gated to the foreground EVE client');
 assert.match(server,/\/api\/companion\/clipboard/,'server accepts paired clipboard imports');
