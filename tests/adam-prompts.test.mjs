@@ -22,7 +22,7 @@ const begin=server.indexOf('function trackerBrainAnswer(');
 const end=server.indexOf('\nasync function a0CandidateForScan(',begin);
 assert.ok(begin>0&&end>begin,'Adam fallback is available for integration checks');
 const runtime={
-  trackerSpeechSafe:value=>String(value||''),
+  trackerCleanText:value=>String(value||''),
   trackerBrainContext:value=>value||{},
   trackerBrainSnapshot:()=>({issues:[],attentionCount:0}),
   trackerBrainPrimaryName:()=> 'Pilot',

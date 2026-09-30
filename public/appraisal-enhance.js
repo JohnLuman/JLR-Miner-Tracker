@@ -116,7 +116,7 @@
   }
 
   function ensureUi(){
-    const panel=document.querySelector('#forgePanel .appraisal-panel');
+    const panel=document.querySelector('#appraisalPanel .appraisal-panel');
     if(!panel)return null;
     if(!document.getElementById('jlrAppraisalPayoutBar')){
       const controls=panel.querySelector('.appraisal-controls');
@@ -157,7 +157,7 @@
       if(refine)refine.insertAdjacentElement('afterend',section);
       else panel.appendChild(section);
     }
-    const actions=panel.querySelector('.forge-actions');
+    const actions=panel.querySelector('.appraisal-actions');
     if(actions&&!document.getElementById('jlrAppraisalCopySummary')){
       const summary=document.createElement('button');
       summary.id='jlrAppraisalCopySummary';

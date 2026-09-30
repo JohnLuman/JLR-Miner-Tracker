@@ -198,7 +198,6 @@ export class TrackerSessionStore{
           handled:true,
           topic:'support-context-system',
           text:'That was '+focus.system+'.',
-          voiceText:'That was '+focus.system+'.',
           focusSystem:focus.system,
         };
       }else if(/\b(?:how far|how many jumps|distance)\b/.test(lower)&&/\b(?:it|that|there|system)\b/.test(lower)){
@@ -210,7 +209,6 @@ export class TrackerSessionStore{
           handled:true,
           topic:'support-context-distance',
           text:focus.system+' is '+jumpText+origin+'.',
-          voiceText:focus.system+' is '+jumpText+origin+'.',
           focusSystem:focus.system,
           jumps:Number.isFinite(focus.jumps)?focus.jumps:null,
           originSystem:focus.originSystem||'',
@@ -221,7 +219,6 @@ export class TrackerSessionStore{
           handled:true,
           topic:'support-context-why',
           text:focus.answerText,
-          voiceText:focus.voiceText||focus.answerText,
           focusSystem:focus.system,
         };
       }else if(/\bthat system\b/.test(lower)){
@@ -258,7 +255,6 @@ export class TrackerSessionStore{
     const tab=clean(currentTab,40);
     const topic=clean(answer?.topic,80);
     const text=clean(answer?.text,1000);
-    const voiceText=clean(answer?.voiceText,600);
     const focus=focusFromAnswer(answer);
     const focusItem=clean(answer?.focusItem,120);
 
@@ -273,7 +269,6 @@ export class TrackerSessionStore{
         jumps:Number.isFinite(focus.jumps)?focus.jumps:null,
         originSystem:focus.originSystem||'',
         answerText:text,
-        voiceText,
         at:t,
       };
     }
@@ -320,7 +315,6 @@ export function trackerSupportAnswerContext(answer){
   return{
     topic:clean(answer.topic,80),
     text:clean(answer.text,1000),
-    voiceText:clean(answer.voiceText,600),
     focusSystem:focus.system||'',
     jumps:Number.isFinite(focus.jumps)?focus.jumps:null,
     originSystem:focus.originSystem||'',

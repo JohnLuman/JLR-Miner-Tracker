@@ -17,6 +17,23 @@ jobs:
           node-version: '22'
       - run: npm test
 
+  theme-visual:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save playwright@1.62.1
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:visual
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: theme-screenshots
+          path: artifacts/theme-screenshots/
+          if-no-files-found: ignore
+
   companion-windows:
     runs-on: windows-latest
     steps:

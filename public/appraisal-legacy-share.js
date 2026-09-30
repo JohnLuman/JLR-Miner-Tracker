@@ -23,7 +23,7 @@
       const plan=share.plan||{},summary=plan.summary||{};
       const items=Array.isArray(plan.items)?plan.items:[];
       const materials=Array.isArray(plan.materials)?plan.materials:[];
-      document.title=(share.title||'JLR Forge Build')+' • JLR';
+      document.title=(share.title||'JLR Archived Build')+' • JLR';
       root.innerHTML=`
         <div class="head">
           <div><h1>${esc(share.title||'JLR Build')}</h1><p class="sub">Posted by ${esc(share.owner?.name||'JLR Pilot')} • ME ${Number(plan.me||0)} / TE ${Number(plan.te||0)}</p></div>
@@ -40,7 +40,7 @@
           <section><h2>MATERIAL SHOPPING LIST</h2><div class="list">${materials.length?materials.map(row=>`<div class="row"><div><strong>${esc(row.name)}</strong><small>MATERIAL</small></div><span>${Number(row.quantity||0).toLocaleString()} • ${isk(row.cost)} ISK</span></div>`).join(''):'<div class="row">No manufacturing materials.</div>'}</div></section>
         </div>
         ${share.notes?`<div class="notes">${esc(share.notes)}</div>`:''}
-        <div class="footer">JLR Forge • blueprint math from current EVE industry data • ore values use the JLR 95% payout basis.</div>
+        <div class="footer">Archived JLR build snapshot • values were calculated when this link was created. <a href="/">Open JLR Appraisal</a> for current prices.</div>
       `;
     }catch(error){
       root.innerHTML='<h1>Build unavailable</h1><p class="error">'+esc(error.message||error)+'</p>';

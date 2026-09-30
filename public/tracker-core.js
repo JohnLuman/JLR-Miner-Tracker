@@ -25,10 +25,6 @@
   let trackerStreamConnected=false;
   let trackerStreamState='offline';
   let trackerStreamStatus=null;
-  let trackerVoiceStatus={configured:false,reachable:false,checkedAt:null,latencyMs:null,message:'Checking custom voice…'};
-  let trackerVoiceChecking=false;
-  let trackerVoiceTimer=null;
-  let trackerVoiceLastMode=String(window.jlrVoiceMode||'unknown');
   let trackerIntel=null;
   let trackerIntelLoading=false;
   let trackerIntelError='';
@@ -237,26 +233,6 @@
       await loadTrackerIntel(false);
       scheduleTrackerIntel(60_000);
     },delayMs==null?60_000:Math.max(15_000,Number(delayMs)||60_000));
-  }
-  async function loadVoiceStatus(){
-    if(trackerVoiceChecking)return;
-    trackerVoiceChecking=true;
-    try{
-      trackerVoiceStatus=await api('/api/tracker/heavy-fighters/voice/status');
-    }catch(error){
-      trackerVoiceStatus={configured:true,reachable:false,checkedAt:new Date().toISOString(),latencyMs:null,message:String(error&&error.message||error||'Custom voice unavailable.')};
-    }finally{
-      trackerVoiceChecking=false;
-      render();
-    }
-  }
-  function scheduleVoiceStatus(delayMs){
-    if(trackerVoiceTimer){clearTimeout(trackerVoiceTimer);trackerVoiceTimer=null;}
-    if(!trackerArmed&&!isActive())return;
-    trackerVoiceTimer=setTimeout(async function(){
-      await loadVoiceStatus();
-      scheduleVoiceStatus(30000);
-    },delayMs==null?30000:Math.max(1000,Number(delayMs)||30000));
   }
   function mergeClientLosses(rows){
     const merged=new Map();
@@ -787,26 +763,14 @@
         setBadge();
         if(!trackerData&&!trackerLoading)loadTracker(false,false);
         if(!trackerIntel&&!trackerIntelLoading)loadTrackerIntel(false);
-        loadVoiceStatus();
       }
       syncTrackerStream();
       schedule();
       scheduleTrackerIntel(60_000);
-      scheduleVoiceStatus(30000);
     });
     observer.observe(trackerPanel,{attributes:true,attributeFilter:['class']});
 
-    window.addEventListener('jlr-voice-mode',function(event){
-      trackerVoiceLastMode=String(event&&event.detail&&event.detail.mode||'unknown');
-      if(trackerVoiceLastMode==='custom')trackerVoiceStatus={...trackerVoiceStatus,configured:true,reachable:true,checkedAt:new Date().toISOString(),message:'Custom GPT-SoVITS voice played successfully.'};
-      render();
-    });
-
     syncTrackerStream();
-    if(trackerArmed||isActive()){
-      setTimeout(function(){loadVoiceStatus();},500);
-      scheduleVoiceStatus(30000);
-    }
     if(trackerArmed)setTimeout(function(){loadTracker(false,true);},1200);
   }
 

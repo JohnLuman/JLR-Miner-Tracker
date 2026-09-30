@@ -72,7 +72,7 @@ Actuals on the dashboard come from EVE mining-ledger API data. Projected values 
 
 Clipboard access requires a user click. If the browser blocks direct clipboard reading, JLR opens a paste box instead. JLR does not control the EVE client, scrape its cache, or store copied scanner rows.
 
-Accepted scans refresh Adam's closest scan updates. Asking for the next system skips the field just scanned; an older ledger warning cannot make a fresh scan due again, but later mining activity can. With Sound On, JLR speaks a scan confirmation. Sound Off mutes and stops Tracker speech.
+Accepted scans refresh Adam's closest scan updates. Asking for the next system skips the field just scanned; an older ledger warning cannot make a fresh scan due again, but later mining activity can. Adam answers typed questions. The local Heavy Fighter alarm remains available.
 
 Adam gives feature overviews when asked about a feature. If he cannot verify an operational answer from JLR data, he says so directly instead of listing his capabilities.
 
