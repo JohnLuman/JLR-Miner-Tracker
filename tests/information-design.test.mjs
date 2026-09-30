@@ -31,7 +31,7 @@ assert.match(styles,/\.jlr-donate-banner\{--donate-accent:var\(--theme-accent/,'
 assert.match(styles,/\.donate-top-link/,'global Donate control has a compact themed treatment');
 
 assert.match(index,/id="fleetInsight"/,'Fleet Performance has a decision-first live insight');
-assert.match(app,/Fleet rate met the fitted target/,'Fleet insight interprets live rate versus target');
+assert.match(app,/Sampled rate met the fitted target/,'Fleet insight interprets sampled rate versus target');
 assert.match(app,/fleetInsightMeter/,'Fleet insight uses a compact target-comparison meter');
 assert.match(styles,/\.fleet-insight-meter/,'Fleet insight meter is styled');
 
@@ -59,10 +59,10 @@ assert.match(app,/myLedgerCoverageBadge/,'personal ledger sync state is rendered
 assert.match(app,/outside tracked fields/,'ledger diagnostics distinguish payout rows from field attribution');
 assert.match(app,/fleetUptimeMeter/,'fleet target exposes the uptime assumption visually');
 
-assert.equal(pkg.version,'2.10.0');
-assert.ok(index.includes('/styles.css?v=2.10.4-fleetpolish1'),'main information-design CSS is cache-busted');
+assert.equal(pkg.version,'2.10.4');
+assert.ok(index.includes('/styles.css?v=2.10.4'),'main information-design CSS is cache-busted');
 assert.ok(index.includes('/tracker.css?v=2.9.147-closest-init1'),'Tracker information-design CSS is cache-busted');
-assert.ok(index.includes('/app.js?v=2.10.4-fleetpolish1'),'dashboard JS is cache-busted');
+assert.ok(index.includes('/app.js?v=2.10.4'),'dashboard JS is cache-busted');
 assert.ok(index.includes('/tracker.js?v=2.9.147-closest-init1'),'Tracker loader is cache-busted');
 assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.147-closest-init1/,'Tracker core is cache-busted');
 
