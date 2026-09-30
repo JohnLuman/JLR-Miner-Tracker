@@ -100,7 +100,7 @@ assert.match(app,/outside tracked fields/,'ledger diagnostics distinguish payout
 assert.match(app,/fleetUptimeMeter/,'fleet target exposes the uptime assumption visually');
 
 assert.match(pkg.version,/^2\.10\.\d+$/,'information-design release remains on the current 2.10 version line');
-assert.ok(index.includes('/styles.css?v=2.10.11'),'main information-design CSS is cache-busted');
+assert.ok(index.includes('/styles.css?v='+pkg.version),'main information-design CSS follows the package version');
 assert.ok(index.includes('/tracker.css?v=2.10.12-hotzones1'),'Tracker information-design CSS is cache-busted');
 assert.ok(index.includes('/app.js?v='+pkg.version+'-threat-fast1'),'dashboard JS cache key follows the package version and keeps the threat speed suffix');
 assert.ok(index.includes('/tracker.js?v=2.10.12-hotzones1'),'Tracker alarm loader is cache-busted');
