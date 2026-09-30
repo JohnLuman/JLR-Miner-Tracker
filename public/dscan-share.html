@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#070b12">
+  <meta property="og:title" content="JLR D-Scan Share">
+  <meta property="og:description" content="Shared EVE Online directional scan hosted by JLR Miner Tracker.">
+  <meta name="description" content="Shared EVE Online directional scan hosted by JLR Miner Tracker.">
+  <title>JLR D-Scan Share</title>
+  <link rel="stylesheet" href="/dscan-share.css">
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <div>
+        <span class="eyebrow">JLR MINER TRACKER • SHARED INTEL</span>
+        <h1>D-SCAN SHARE</h1>
+        <p id="scanMeta">Loading shared scan…</p>
+      </div>
+      <div class="hero-actions">
+        <button id="copyScan" type="button" disabled>COPY D-SCAN</button>
+        <a href="/" class="secondary">OPEN JLR</a>
+      </div>
+    </header>
+
+    <section id="errorPanel" class="panel error hidden"></section>
+
+    <section id="content" class="hidden">
+      <div class="stats">
+        <article><span>OBJECTS</span><strong id="objectCount">0</strong></article>
+        <article><span>UNIQUE TYPES</span><strong id="typeCount">0</strong></article>
+        <article><span>RAW LINES</span><strong id="lineCount">0</strong></article>
+      </div>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div><span class="kicker">COMPOSITION</span><h2>SCAN BREAKDOWN</h2></div>
+          <input id="filter" type="search" autocomplete="off" placeholder="Filter type or object name…">
+        </div>
+        <div id="groups" class="groups"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div><span class="kicker">DETAIL</span><h2>INDIVIDUAL OBJECTS</h2></div>
+          <span id="shownCount" class="muted"></span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>#</th><th>NAME</th><th>TYPE</th><th>DISTANCE</th></tr></thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <details class="panel raw">
+        <summary>RAW D-SCAN TEXT</summary>
+        <pre id="rawText"></pre>
+      </details>
+    </section>
+  </main>
+  <script src="/dscan-share.js"></script>
+</body>
+</html>

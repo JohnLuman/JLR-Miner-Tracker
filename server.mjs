@@ -611,6 +611,7 @@ function freshState() {
     companions: {},
     characters: {},
     scans: {},
+    dscanShares: {},
     pvpLifetimeDamage: {},
     appraisals: { shares: {}, legacyBuildShares: {} },
     trackerIntel: {
@@ -659,6 +660,7 @@ async function loadState() {
       delete ch.trackerLocationCache;
     }
     parsed.scans ||= {};
+    parsed.dscanShares ||= {};
     parsed.pvpLifetimeDamage ||= {};
     parsed.appraisals = { ...base.appraisals, ...(parsed.appraisals || {}) };
     parsed.appraisals.shares ||= {};
@@ -834,6 +836,10 @@ function requestBaseUrl(req) {
 function appraisalShareUrl(req,token){
   const origin=JLR_SHARE_ORIGIN||requestBaseUrl(req);
   return origin+'/a/'+encodeURIComponent(String(token||''));
+}
+function dscanShareUrl(req,token){
+  const origin=JLR_SHARE_ORIGIN||requestBaseUrl(req);
+  return origin+'/d/'+encodeURIComponent(String(token||''));
 }
 function callbackUrl(req) { return `${requestBaseUrl(req)}/auth/eve/callback`; }
 function parseCookies(req) {
@@ -7612,35 +7618,47 @@ async function positiveStandingContactsForUser(user){
   threatContactsPromises.set(key,pending);
   return pending;
 }
-async function createDscanInfoShare(scanText){
-  const cacheKey=crypto.createHash('sha256').update(scanText).digest('hex');
-  const cached=threatShareCache.get(cacheKey);
-  if(cached&&Date.now()-cached.at<60*60*1000)return{url:cached.url,cached:true};
-  const body=new URLSearchParams({paste:scanText});
-  const response=await fetch(`https://dscan.info/?_=${Math.floor(Date.now()/1000)}`,{
-    method:'POST',
-    headers:{
-      'Accept':'text/plain,*/*;q=0.8',
-      'Content-Type':'application/x-www-form-urlencoded; charset=UTF-8',
-      'User-Agent':`${ESI_USER_AGENT} | dscan.info share link`,
-    },
-    body,
-    signal:AbortSignal.timeout(20_000),
-  });
-  const raw=(await response.text()).trim();
-  if(!response.ok)throw new Error(`dscan.info ${response.status}: ${raw.slice(0,160)}`);
-  const match=raw.match(/^OK;([A-Za-z0-9_-]+)$/);
-  if(!match){
-    const message=raw.match(/^ERROR;(.*)$/)?.[1]||'dscan.info returned an unexpected response.';
-    throw new Error(String(message).slice(0,200));
+function dscanSharePublic(row){
+  return{
+    token:String(row?.token||''),
+    createdAt:row?.createdAt||null,
+    text:String(row?.text||''),
+    lineCount:Number(row?.lineCount)||String(row?.text||'').split(/\r?\n/).filter(Boolean).length,
+  };
+}
+async function createJlrDscanShare(req,user,scanText){
+  state.dscanShares ||= {};
+  const digest=crypto.createHash('sha256').update(scanText).digest('hex');
+  const existing=Object.values(state.dscanShares).find(row=>
+    String(row?.digest||'')===digest&&String(row?.ownerId||'')===String(user?.id||'')
+  );
+  if(existing){
+    return{url:dscanShareUrl(req,existing.token),share:dscanSharePublic(existing),cached:true};
   }
-  const url=`https://dscan.info/v/${match[1]}`;
-  threatShareCache.set(cacheKey,{at:Date.now(),url});
-  if(threatShareCache.size>40){
-    const oldest=[...threatShareCache.entries()].sort((a,b)=>a[1].at-b[1].at).slice(0,10);
-    for(const [key] of oldest)threatShareCache.delete(key);
-  }
-  return{url,cached:false};
+
+  const usedTokens=new Set(Object.values(state.dscanShares).map(row=>String(row?.token||'')));
+  let token='';
+  do token=randomId(6); while(usedTokens.has(token));
+  const id='dscan_'+randomId(10);
+  const row={
+    id,
+    token,
+    ownerId:String(user?.id||''),
+    digest,
+    text:scanText,
+    lineCount:scanText.split(/\r?\n/).filter(line=>String(line||'').trim()).length,
+    createdAt:now(),
+  };
+  state.dscanShares[id]=row;
+
+  // Shared scans are snapshots, not permanent app data. Keep a generous recent
+  // history while preventing pasted D-scans from growing state.json forever.
+  const ordered=Object.values(state.dscanShares)
+    .sort((a,b)=>Date.parse(b?.createdAt||0)-Date.parse(a?.createdAt||0));
+  for(const stale of ordered.slice(750))delete state.dscanShares[stale.id];
+
+  await save();
+  return{url:dscanShareUrl(req,token),share:dscanSharePublic(row),cached:false};
 }
 async function threatMapLimit(items,limit,worker){
   const input=[...(items||[])];
@@ -9360,6 +9378,12 @@ async function routeApi(req,res,url) {
     if(!row)return json(res,404,{error:'APPRAISAL_NOT_FOUND'});
     return json(res,200,{share:appraisalSharePublic(row)});
   }
+  if(req.method==='GET'&&url.pathname.startsWith('/api/dscan-share/')){
+    const token=String(url.pathname.split('/').pop()||'');
+    const row=Object.values(state.dscanShares||{}).find(entry=>String(entry?.token||'')===token);
+    if(!row)return json(res,404,{error:'DSCAN_SHARE_NOT_FOUND',message:'That JLR D-scan share link was not found.'});
+    return json(res,200,{share:dscanSharePublic(row)});
+  }
 
   const user=requireUser(req,res);if(!user)return;
   if(url.pathname.startsWith('/api/voice/')||/^\/api\/tracker\/heavy-fighters\/voice(?:\/|$)/.test(url.pathname)){
@@ -9851,10 +9875,10 @@ async function routeApi(req,res,url) {
     const scanText=String(body?.text||'').trim();
     if(scanText.length<2)return json(res,400,{error:'EMPTY_SCAN',message:'Paste a D-scan, Local list, or fleet scan first.'});
     if(scanText.length>50_000)return json(res,413,{error:'SCAN_TOO_LARGE',message:'The scan is too large to share. Keep it under 50,000 characters.'});
-    try{return json(res,200,await createDscanInfoShare(scanText))}
+    try{return json(res,200,await createJlrDscanShare(req,user,scanText))}
     catch(err){
-      console.warn('dscan.info share failed',String(err.message||err));
-      return json(res,502,{error:'DSCAN_SHARE_FAILED',message:`Could not create the dscan.info link: ${String(err.message||err)}`});
+      console.warn('JLR D-scan share failed',String(err.message||err));
+      return json(res,502,{error:'DSCAN_SHARE_FAILED',message:`Could not create the JLR D-scan link: ${String(err.message||err)}`});
     }
   }
   if(req.method==='POST'&&url.pathname==='/api/threat-scan'){
@@ -10097,6 +10121,9 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(url.pathname.startsWith('/api/'))return await routeApi(req,res,url);
   if(req.method==='GET'&&/^\/forge\/[A-Za-z0-9_-]{8,}$/.test(url.pathname)){
     if(await serveStatic(req,res,'/appraisal-legacy-share.html'))return;
+  }
+  if(req.method==='GET'&&/^\/d\/[A-Za-z0-9_-]{8,}$/.test(url.pathname)){
+    if(await serveStatic(req,res,'/dscan-share.html'))return;
   }
   if(req.method==='GET'&&/^\/(?:a|appraisal)\/[A-Za-z0-9_-]{8,}$/.test(url.pathname)){
     const token=String(url.pathname.split('/').pop()||'');
