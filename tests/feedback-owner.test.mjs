@@ -23,7 +23,7 @@ assert.match(app,/feedbackOwner\?100:15/,'owner can browse more submissions than
 assert.match(app,/feedback-owner-full/,'owner feedback list gets a full-text display mode');
 assert.match(styles,/feedback-recent\.feedback-owner-full \.feedback-history-row>p\{display:block;/,'owner feedback text is not line-clamped');
 
-assert.equal(pkg.version,'2.10.0','owner feedback release is versioned');
-assert.match(index,/\/app\.js\?v=2\.10\.2-navdropdown1/,'browser loads the current operations-fix app build');
+assert.match(pkg.version,/^2\.10\.\d+$/,'owner feedback release uses the current JLR version line');
+assert.ok(index.includes('/app.js?v='+pkg.version),'browser app cache key matches package version');
 
 console.log('Owner feedback ESI access tests passed.');
