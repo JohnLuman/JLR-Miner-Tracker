@@ -64,9 +64,7 @@ assert.equal(preview.payoutPercent,95);
 assert.equal(preview.selectedValue,22);
 assert.equal(preview.payoutValue,20.9);
 assert.match(preview.title,/Fleet Loot .* SPLIT 22 ISK/);
-assert.match(preview.description,/SPLIT 22 ISK/);
-assert.match(preview.description,/Payout 95% = 20\.9 ISK/);
-assert.doesNotMatch(preview.description,/Buy 18|Sell 26|types|units|m³|Top items|Jita 4-4|IMMEDIATE/,'Discord preview stays focused on the selected appraisal value');
+assert.equal(preview.description,'','Discord preview keeps the title as the only visible text block');
 
 const previewHtml=renderAppraisalShareHtml(
   '<!doctype html><html><head><title>JLR Appraisal</title></head><body></body></html>',
@@ -74,11 +72,13 @@ const previewHtml=renderAppraisalShareHtml(
   {payoutPercent:95,canonicalUrl:'https://example.test/appraisal/token?p=95',imageUrl:'https://example.test/assets/jlr-appraisal-preview.png'}
 );
 assert.match(previewHtml,/property="og:title"/);
-assert.match(previewHtml,/property="og:description"/);
+assert.doesNotMatch(previewHtml,/property="og:description"/);
 assert.match(previewHtml,/property="og:image"/);
 assert.match(previewHtml,/property="og:image:secure_url"/);
 assert.match(previewHtml,/property="og:image:type" content="image\/png"/);
-assert.match(previewHtml,/twitter:card" content="summary_large_image"/);
+assert.match(previewHtml,/twitter:card" content="summary"/);
+assert.match(previewHtml,/property="og:image:width" content="256"/);
+assert.match(previewHtml,/property="og:image:height" content="256"/);
 assert.match(previewHtml,/Fleet &lt;Loot&gt;/);
 assert.doesNotMatch(previewHtml,/<Loot>/,'preview metadata escapes user-controlled titles');
 
@@ -93,7 +93,7 @@ assert.match(server,/\/api\/internal\/support\/appraisal/,'Support can request a
 assert.match(server,/\/api\/appraisal\/share/);
 assert.match(server,/\/appraisal\\\//);
 assert.match(server,/renderAppraisalShareHtml/,'shared appraisal HTML is server-rendered for Discord/Open Graph previews');
-assert.match(server,/jlr-appraisal-preview\.png\?v=3/,'shared appraisal preview advertises the repaired cache-busted JLR preview image');
+assert.match(server,/jlr-appraisal-preview\.png\?v=4/,'shared appraisal preview advertises the compact cache-busted JLR preview image');
 assert.match(server,/Content-Length':st\.size/,'static image responses include a content length for Discord fetch reliability');
 assert.match(server,/source:'jlr-native-esi'/,'native Appraisal identifies JLR as the pricing provider');
 assert.match(server,/nativeAppraisalPriceSet/,'native Appraisal owns Buy\/Split\/Sell pricing math');
