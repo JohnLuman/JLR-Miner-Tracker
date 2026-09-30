@@ -758,19 +758,14 @@
     return Math.round(n).toLocaleString();
   }
   function appraisalDiscordItemLines(){
-    const rows=(Array.isArray(appraisalData?.items)?appraisalData.items:[])
-      .filter(row=>row?.resolved!==false&&String(row?.name||'').trim())
-      .slice(0,9);
-    const lines=[];
-    for(let i=0;i<rows.length;i+=3){
-      lines.push(rows.slice(i,i+3).map((row,offset)=>{
-        const index=i+offset+1;
-        const qty=appraisalShareCompactNumber(row.amount);
-        return index+'. '+String(row.name||'').trim()+(qty&&qty!=='0'?' ×'+qty:'');
-      }).join('  •  '));
-    }
-    const total=(Array.isArray(appraisalData?.items)?appraisalData.items:[]).filter(row=>row?.resolved!==false).length;
-    if(total>rows.length)lines.push('+'+(total-rows.length)+' more item type'+(total-rows.length===1?'':'s'));
+    const allRows=(Array.isArray(appraisalData?.items)?appraisalData.items:[])
+      .filter(row=>row?.resolved!==false&&String(row?.name||'').trim());
+    const rows=allRows.slice(0,9);
+    const lines=rows.map((row,index)=>{
+      const qty=appraisalShareCompactNumber(row.amount);
+      return (index+1)+'. '+String(row.name||'').trim()+(qty&&qty!=='0'?' ×'+qty:'');
+    });
+    if(allRows.length>rows.length&&lines.length)lines[lines.length-1]+=' …';
     return lines;
   }
   async function shareAppraisal(){
@@ -788,7 +783,7 @@
         pricingVariant:String($('appraisalVariant')?.value||'immediate'),
         refineRate:appraisalRefineRatePct(),
       })});
-      const url=String(payload?.shareUrl||'');
+      const url=String(payload?.shareUrl||payload?.directShareUrl||'');
       if(url){
         const mode=appraisalModeLabel(appraisalData?.pricing);
         const value=appraisalIsk(appraisalData?.summary?.value||0);
