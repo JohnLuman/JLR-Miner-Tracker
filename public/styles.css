@@ -4130,3 +4130,979 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
     overflow:visible;
   }
 }
+
+
+/* ========================================================================
+   v2.10.9 FINAL THEME ART DIRECTION
+   Each theme changes geometry, typography, controls, tables and interaction.
+   ======================================================================== */
+
+/* Shared final-pass hooks */
+html[data-theme] .kpi,
+html[data-theme] .system-node,
+html[data-theme] .fleet-member,
+html[data-theme] .target-card,
+html[data-theme] .appraisal-summary article,
+html[data-theme] .appraisal-refine-summary article,
+html[data-theme] .appraisal-results,
+html[data-theme] .appraisal-table-wrap,
+html[data-theme] .field-selected-detail{
+  transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease,background .16s ease,filter .16s ease;
+}
+html[data-theme] .appraisal-field input,
+html[data-theme] .appraisal-field select,
+html[data-theme] .appraisal-paste,
+html[data-theme] .calc-grid input,
+html[data-theme] .calc-grid select,
+html[data-theme] .fleet-fit-select{
+  transition:border-color .14s ease,box-shadow .14s ease,background .14s ease,border-radius .14s ease;
+}
+
+/* ------------------------------------------------------------------------
+   VOID — event horizon / silent deep-space observatory
+   Nearly borderless, floating, circular/orbital details, huge negative space.
+   ------------------------------------------------------------------------ */
+html[data-theme="void"] body{
+  background:
+    radial-gradient(circle at 84% 74%,#25143f 0 1%,#0f0b18 7%,#08070d 16%,transparent 28%),
+    radial-gradient(circle at 21% -8%,#2e164815 0,transparent 34%),
+    #060609;
+}
+html[data-theme="void"] body::before{
+  background-image:
+    radial-gradient(circle,#fff 0 1px,transparent 1.3px),
+    radial-gradient(circle,#b58cff 0 1px,transparent 1.35px),
+    radial-gradient(circle,#fff 0 .7px,transparent 1px);
+  background-size:237px 221px,331px 289px,153px 167px;
+  background-position:17px 23px,91px 41px,32px 109px;
+  opacity:.15;
+}
+html[data-theme="void"] body::after{
+  background:
+    radial-gradient(circle at 84% 74%,transparent 0 52px,#b37bff22 53px 54px,transparent 55px 73px,#8f5fe012 74px 75px,transparent 76px 105px,#7f52cf08 106px 107px,transparent 108px),
+    radial-gradient(circle at 84% 74%,#000 0 35px,#010102 48px,#000a 75px,transparent 145px);
+  opacity:1;
+}
+html[data-theme="void"] .topbar{
+  background:linear-gradient(180deg,#0a0910cc,#07070b99);
+  border-bottom:1px solid #ffffff0b;
+  backdrop-filter:blur(14px);
+}
+html[data-theme="void"] .glass{
+  border:1px solid #ffffff10;
+  border-radius:24px;
+  background:linear-gradient(165deg,#17131ebd,#0a0910d9 72%);
+  backdrop-filter:blur(10px);
+  box-shadow:inset 0 1px #ffffff0b,0 22px 46px #0007;
+}
+html[data-theme="void"] .kpi,
+html[data-theme="void"] .system-node,
+html[data-theme="void"] .appraisal-summary article{
+  border-color:#ffffff0d;
+  border-radius:18px;
+  background:
+    radial-gradient(circle at 100% 0,#a765ff0c,transparent 48%),
+    #0d0c13cc;
+  box-shadow:none;
+}
+html[data-theme="void"] .kpi:hover,
+html[data-theme="void"] .system-node:hover{
+  transform:translateY(-2px);
+  border-color:#ab75ff35;
+  box-shadow:0 12px 28px #0005;
+}
+html[data-theme="void"] .section-title{
+  min-height:32px;
+  border:0;
+  background:transparent;
+}
+html[data-theme="void"] .section-title::before{
+  content:"○";
+  color:#b17eff;
+  font-size:10px;
+  text-shadow:0 0 10px #9e62ff66;
+}
+html[data-theme="void"] .section-title::after{
+  content:"";
+  width:96px;
+  height:1px;
+  margin-left:auto;
+  background:linear-gradient(90deg,#9f68ff55,transparent);
+}
+html[data-theme="void"] .nav-dropdown-bar{
+  border:1px solid #ffffff0c;
+  border-radius:18px;
+  background:#09080ed9;
+  backdrop-filter:blur(14px);
+  box-shadow:0 14px 34px #0007;
+}
+html[data-theme="void"] .nav-menu-trigger{
+  border-color:#ffffff0d;
+  border-radius:14px;
+  background:#0c0b12aa;
+}
+html[data-theme="void"] .nav-menu-panel{
+  border-radius:18px;
+  border-color:#ffffff12;
+  background:#0a0910f5;
+  backdrop-filter:blur(18px);
+}
+html[data-theme="void"] .orb{
+  border-radius:999px;
+  box-shadow:inset 0 1px #ffffff18;
+}
+html[data-theme="void"] .appraisal-table th{
+  background:#0b0a11f2;
+}
+html[data-theme="void"] .appraisal-table td{
+  border-bottom-color:#ffffff08;
+}
+html[data-theme="void"] .theme-select-icon{
+  border-radius:50%;
+}
+
+/* ------------------------------------------------------------------------
+   CITADEL — armored station bulkhead / command bridge
+   Thick frame rails, chamfered corners, structural segmentation.
+   ------------------------------------------------------------------------ */
+html[data-theme="citadel"] body{
+  background:
+    linear-gradient(90deg,#0b1b23 0 2px,transparent 2px calc(100% - 2px),#0b1b23 calc(100% - 2px)),
+    radial-gradient(circle at 50% -10%,#12384a,#061017 42%,#03080c 100%);
+}
+html[data-theme="citadel"] body::before{
+  background:
+    linear-gradient(30deg,#5ad9ff0c 12%,transparent 12.5%,transparent 87%,#5ad9ff0c 87.5%),
+    linear-gradient(150deg,#5ad9ff0c 12%,transparent 12.5%,transparent 87%,#5ad9ff0c 87.5%);
+  background-size:72px 126px;
+  opacity:.5;
+}
+html[data-theme="citadel"] .topbar{
+  border:1px solid #244856;
+  border-left:5px solid #38b8db;
+  border-right:5px solid #38b8db;
+  border-radius:0;
+  background:linear-gradient(180deg,#132c36,#08171e);
+  box-shadow:inset 0 1px #75e7ff20,0 9px 20px #0007;
+}
+html[data-theme="citadel"] .glass,
+html[data-theme="citadel"] .kpi,
+html[data-theme="citadel"] .system-node,
+html[data-theme="citadel"] .appraisal-summary article{
+  clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,14px 100%,0 calc(100% - 14px));
+  border-radius:0;
+}
+html[data-theme="citadel"] .glass{
+  border:1px solid #2f5c6b;
+  background:
+    linear-gradient(135deg,#51d9ff0c 0 20px,transparent 20px),
+    linear-gradient(315deg,#51d9ff08 0 20px,transparent 20px),
+    linear-gradient(180deg,#122832,#07171e);
+  box-shadow:inset 4px 0 #2fb6d73b,inset -4px 0 #0c60753a,inset 0 1px #77e5ff16;
+}
+html[data-theme="citadel"] .section-title{
+  border:1px solid #2b5666;
+  border-left:5px solid #42c9ef;
+  border-radius:0;
+  background:linear-gradient(90deg,#17627b33,#0b2028 42%,transparent);
+  padding:7px 10px;
+}
+html[data-theme="citadel"] .section-title::before{
+  content:"▰";
+  color:#59dafd;
+  font-size:8px;
+}
+html[data-theme="citadel"] .kpi{
+  border:1px solid #315563;
+  border-left:4px solid #2d9fbd;
+  background:linear-gradient(180deg,#102833,#0a1b23);
+}
+html[data-theme="citadel"] .kpi:hover{
+  transform:none;
+  border-left-color:#6fe2ff;
+  box-shadow:inset 5px 0 #46cae93a;
+}
+html[data-theme="citadel"] .nav-dropdown-bar{
+  border:2px solid #274e5c;
+  border-radius:0;
+  background:#081820;
+  box-shadow:inset 0 3px #38b8db25,inset 0 -3px #0008;
+}
+html[data-theme="citadel"] .nav-menu-trigger,
+html[data-theme="citadel"] .nav-menu-panel .app-tab{
+  clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,8px 100%,0 calc(100% - 8px));
+  border-radius:0;
+}
+html[data-theme="citadel"] .orb,
+html[data-theme="citadel"] input,
+html[data-theme="citadel"] select,
+html[data-theme="citadel"] textarea{
+  border-radius:2px!important;
+}
+html[data-theme="citadel"] .appraisal-table th{
+  border-bottom:2px solid #2b6578;
+  background:#0f2731;
+}
+html[data-theme="citadel"] .appraisal-table tbody tr:hover{
+  background:#1e789414;
+}
+
+/* ------------------------------------------------------------------------
+   INDUSTRIAL — heavy machinery / service bay
+   Physical buttons, bolts, hazard rails, stamped labels.
+   ------------------------------------------------------------------------ */
+html[data-theme="industrial"] body{
+  background:
+    repeating-linear-gradient(135deg,#0000 0 88px,#d9881807 89px 96px,#0000 97px 184px),
+    radial-gradient(circle at 50% -10%,#402611,#120c08 42%,#090604 100%);
+}
+html[data-theme="industrial"] body::after{
+  inset:0 auto 0 0;
+  width:10px;
+  background:repeating-linear-gradient(180deg,#e39a2f 0 16px,#20150c 16px 32px);
+  opacity:.8;
+}
+html[data-theme="industrial"] .topbar{
+  border:2px solid #59402b;
+  border-radius:4px;
+  background:
+    radial-gradient(circle at 9px 9px,#ffc971 0 1px,#4b2d15 2px 3px,transparent 3.5px),
+    radial-gradient(circle at calc(100% - 9px) 9px,#ffc971 0 1px,#4b2d15 2px 3px,transparent 3.5px),
+    linear-gradient(180deg,#2b1d12,#171009);
+  box-shadow:inset 0 2px #ffffff08,inset 0 -4px #0006;
+}
+html[data-theme="industrial"] .glass,
+html[data-theme="industrial"] .kpi,
+html[data-theme="industrial"] .system-node{
+  border:2px solid #513a27;
+  border-radius:3px;
+  background:
+    radial-gradient(circle at 8px 8px,#e4a64a7a 0 1px,#5b391d 1.5px 3px,transparent 3.5px),
+    radial-gradient(circle at calc(100% - 8px) 8px,#e4a64a7a 0 1px,#5b391d 1.5px 3px,transparent 3.5px),
+    linear-gradient(180deg,#2a1d13,#17100b);
+  box-shadow:inset 0 2px #ffffff07,inset 0 -4px #0006,4px 5px 0 #07050355;
+}
+html[data-theme="industrial"] .section-title{
+  border:1px dashed #7d5832;
+  border-radius:2px;
+  background:repeating-linear-gradient(135deg,#f09a2818 0 8px,#1b120b 8px 16px);
+  font-family:"Share Tech Mono",monospace;
+}
+html[data-theme="industrial"] .section-title strong::before{
+  content:"MAINT // ";
+  color:#b47c37;
+  font-size:.72em;
+}
+html[data-theme="industrial"] .nav-dropdown-bar{
+  border:2px solid #59402b;
+  border-radius:3px;
+  background:#171009;
+}
+html[data-theme="industrial"] .nav-menu-trigger{
+  border-radius:2px;
+  border:1px solid #60462f;
+  background:linear-gradient(180deg,#2a1d13,#17100b);
+  box-shadow:inset 0 2px #ffffff08,inset 0 -3px #0007;
+}
+html[data-theme="industrial"] .orb,
+html[data-theme="industrial"] .board-tool{
+  border-radius:3px;
+  border-width:2px;
+  box-shadow:inset 0 2px #ffffff18,inset 0 -4px #0007,2px 2px 0 #0006;
+  transform:translateY(0);
+}
+html[data-theme="industrial"] .orb:active,
+html[data-theme="industrial"] .board-tool:active{
+  transform:translateY(2px);
+  box-shadow:inset 0 1px #ffffff0d,inset 0 -2px #0006;
+}
+html[data-theme="industrial"] input,
+html[data-theme="industrial"] select,
+html[data-theme="industrial"] textarea{
+  border-radius:2px!important;
+  border-width:2px!important;
+}
+html[data-theme="industrial"] .appraisal-table th{
+  font-family:"Share Tech Mono",monospace;
+  background:repeating-linear-gradient(135deg,#332114 0 12px,#291a10 12px 24px);
+}
+html[data-theme="industrial"] .theme-select-icon{
+  border-radius:3px;
+}
+
+/* ------------------------------------------------------------------------
+   SERPENTIS — biotech scan console
+   Organic capsule forms, moving scan field, toxic diagnostic glow.
+   ------------------------------------------------------------------------ */
+html[data-theme="serpentis"] body{
+  background:
+    radial-gradient(ellipse at 50% 42%,#103927 0,#081b12 34%,#030b07 76%),
+    #020705;
+}
+html[data-theme="serpentis"] body::before{
+  background:
+    repeating-linear-gradient(180deg,transparent 0 7px,#44ed9809 7px 8px),
+    linear-gradient(180deg,transparent 0 45%,#59ffae18 49%,#59ffae36 50%,#59ffae18 51%,transparent 55%);
+  background-size:100% 8px,100% 180%;
+  animation:jlr-serpentis-sweep 4.8s linear infinite;
+  opacity:.9;
+}
+html[data-theme="serpentis"] body::after{
+  background:
+    radial-gradient(circle at 50% 44%,transparent 0 18%,#2aff9d10 18.4% 18.9%,transparent 19.3% 37%,#25ea8b0a 37.4% 37.8%,transparent 38.2% 61%,#1ed27a07 61.4% 61.8%,transparent 62.2%),
+    radial-gradient(ellipse at center,transparent 0 55%,#001108aa 100%);
+}
+html[data-theme="serpentis"] .topbar,
+html[data-theme="serpentis"] .glass{
+  border:1px solid #25573f;
+  border-radius:28px 7px 28px 7px;
+  background:linear-gradient(145deg,#133123dd,#07160fef);
+  box-shadow:inset 0 0 28px #0f7c4618,0 0 20px #007a3a0c;
+}
+html[data-theme="serpentis"] .kpi,
+html[data-theme="serpentis"] .system-node,
+html[data-theme="serpentis"] .appraisal-summary article{
+  border-radius:22px 5px 22px 5px;
+  border-color:#285840;
+  background:
+    radial-gradient(circle at 10% 20%,#4affad0c,transparent 20%),
+    #0b1e15;
+}
+html[data-theme="serpentis"] .kpi:hover,
+html[data-theme="serpentis"] .system-node:hover{
+  transform:translateY(-1px) scale(1.01);
+  box-shadow:0 0 22px #21d87d1c,inset 0 0 18px #35ea8d0c;
+}
+html[data-theme="serpentis"] .section-title{
+  border:0;
+  border-radius:999px;
+  background:linear-gradient(90deg,#1b704a2e,transparent 70%);
+}
+html[data-theme="serpentis"] .section-title::before{
+  content:"";
+  width:9px;height:9px;border-radius:50%;
+  background:#60fbb2;
+  box-shadow:0 0 0 5px #37da8b18,0 0 13px #47f7a0;
+  animation:jlr-serpentis-pulse 2s ease-in-out infinite;
+}
+html[data-theme="serpentis"] .nav-dropdown-bar{
+  border-radius:24px 7px 24px 7px;
+  border-color:#27593f;
+  background:#081a11e8;
+}
+html[data-theme="serpentis"] .nav-menu-trigger,
+html[data-theme="serpentis"] .nav-menu-panel .app-tab{
+  border-radius:18px 5px 18px 5px;
+}
+html[data-theme="serpentis"] input,
+html[data-theme="serpentis"] select,
+html[data-theme="serpentis"] textarea{
+  border-radius:18px 5px 18px 5px!important;
+}
+html[data-theme="serpentis"] .orb{
+  border-radius:999px;
+}
+html[data-theme="serpentis"] .appraisal-table tbody tr:hover{
+  background:#37df8a0c;
+}
+
+/* ------------------------------------------------------------------------
+   BLOOD — ritual cathedral / reliquary
+   Pointed arches, black crimson stone, sigils, vertical hierarchy.
+   ------------------------------------------------------------------------ */
+html[data-theme="blood"] body{
+  background:
+    linear-gradient(90deg,transparent calc(50% - 1px),#6c0b2012 calc(50% - 1px) calc(50% + 1px),transparent calc(50% + 1px)),
+    radial-gradient(ellipse at 50% -12%,#290009,#080205 40%,#010101 84%);
+}
+html[data-theme="blood"] body::before{
+  background:
+    repeating-linear-gradient(118deg,transparent 0 112px,#5f071716 113px 115px,transparent 116px 228px),
+    repeating-linear-gradient(62deg,transparent 0 112px,#5f07170d 113px 115px,transparent 116px 228px);
+  opacity:.7;
+}
+html[data-theme="blood"] .topbar{
+  border:1px solid #4d0e1d;
+  border-top:3px solid #72142b;
+  border-radius:0 18px 0 18px;
+  background:linear-gradient(180deg,#15050a,#050103);
+  box-shadow:0 12px 34px #000a,inset 0 1px #9c26411c;
+}
+html[data-theme="blood"] .glass{
+  border:1px solid #48101d;
+  border-radius:0 20px 0 20px;
+  background:
+    linear-gradient(135deg,#6f0c2010,transparent 27%),
+    linear-gradient(315deg,#6f0c2009,transparent 24%),
+    linear-gradient(180deg,#13050a,#050103);
+  box-shadow:inset 0 0 34px #44000e30,0 14px 34px #0009;
+}
+html[data-theme="blood"] .kpi,
+html[data-theme="blood"] .system-node,
+html[data-theme="blood"] .appraisal-summary article{
+  clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);
+  border-radius:0;
+  border-color:#4b1020;
+  background:linear-gradient(145deg,#2c071455,transparent 48%),#0d0307;
+}
+html[data-theme="blood"] .section-title{
+  position:relative;
+  border:0;
+  border-bottom:1px solid #68172b;
+  border-radius:0;
+  background:linear-gradient(90deg,#500b1c2c,transparent 58%);
+  font-family:Rajdhani,Segoe UI,sans-serif;
+  letter-spacing:.14em;
+}
+html[data-theme="blood"] .section-title::before{
+  content:"◆";
+  color:#9f2441;
+  font-size:9px;
+}
+html[data-theme="blood"] .section-title::after{
+  content:"◆";
+  margin-left:auto;
+  color:#64152a;
+  font-size:8px;
+}
+html[data-theme="blood"] .nav-dropdown-bar{
+  border:1px solid #4a0e1d;
+  border-radius:0 16px 0 16px;
+  background:#070103ef;
+  box-shadow:0 15px 42px #000c;
+}
+html[data-theme="blood"] .nav-menu-trigger{
+  clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);
+  border-radius:0;
+}
+html[data-theme="blood"] .orb{
+  border-radius:0 12px 0 12px;
+  font-family:Rajdhani,Segoe UI,sans-serif;
+  letter-spacing:.1em;
+}
+html[data-theme="blood"] input,
+html[data-theme="blood"] select,
+html[data-theme="blood"] textarea{
+  border-radius:0 10px 0 10px!important;
+}
+html[data-theme="blood"] .appraisal-table th{
+  font-family:Rajdhani,Segoe UI,sans-serif;
+  letter-spacing:.14em;
+  background:#14040a;
+}
+html[data-theme="blood"] .theme-select-icon{
+  border-radius:0 9px 0 9px;
+}
+
+/* ------------------------------------------------------------------------
+   ANGEL — rugged retro flight deck / analog avionics
+   Brass, worn meters, dashed labels, mechanical toggles.
+   ------------------------------------------------------------------------ */
+html[data-theme="angel"] body{
+  background:
+    repeating-linear-gradient(0deg,#ffffff02 0 1px,transparent 1px 5px),
+    linear-gradient(145deg,#282316,#12110c 48%,#090907 100%);
+}
+html[data-theme="angel"] body::before{
+  background:
+    linear-gradient(90deg,transparent 0 13%,#c69a3e0b 13.1% 13.25%,transparent 13.4% 86%,#c69a3e0b 86.1% 86.25%,transparent 86.4%),
+    repeating-linear-gradient(90deg,transparent 0 118px,#d6a74008 119px 120px);
+  opacity:.8;
+}
+html[data-theme="angel"] .topbar,
+html[data-theme="angel"] .glass{
+  border:1px solid #625942;
+  border-radius:7px;
+  background:
+    linear-gradient(180deg,#ffffff05,transparent 28%),
+    repeating-linear-gradient(0deg,#ffffff018 0 1px,transparent 1px 4px),
+    linear-gradient(180deg,#28261d,#16150f);
+  box-shadow:inset 0 1px #f8dd9a1f,inset 0 -3px #0007,0 6px 18px #0005;
+}
+html[data-theme="angel"] .kpi,
+html[data-theme="angel"] .system-node{
+  border:1px solid #5d5541;
+  border-radius:7px;
+  background:
+    linear-gradient(180deg,#fff2bd05,transparent 22%),
+    #201e17;
+  box-shadow:inset 0 0 0 1px #dbad4e08,inset 0 -2px #0004;
+}
+html[data-theme="angel"] .section-title{
+  border:0;
+  border-bottom:1px dashed #846b37;
+  border-radius:0;
+  background:transparent;
+  font-family:"Share Tech Mono",monospace;
+}
+html[data-theme="angel"] .section-title::before{
+  content:"//";
+  color:#d3aa51;
+  letter-spacing:-2px;
+}
+html[data-theme="angel"] .section-title::after{
+  content:"CH";
+  margin-left:auto;
+  padding:1px 4px;
+  border:1px solid #5c4d2b;
+  border-radius:2px;
+  color:#9c814a;
+  font:700 6px "Share Tech Mono",monospace;
+}
+html[data-theme="angel"] .nav-dropdown-bar{
+  border:1px solid #625943;
+  border-radius:7px;
+  background:#17160ff0;
+}
+html[data-theme="angel"] .nav-menu-trigger{
+  border-radius:5px;
+  background:linear-gradient(180deg,#28261d,#17160f);
+  box-shadow:inset 0 1px #f7dfa517,inset 0 -2px #0005;
+}
+html[data-theme="angel"] .orb,
+html[data-theme="angel"] .board-tool{
+  border-radius:5px;
+  box-shadow:inset 0 2px #ffffff20,inset 0 -5px 9px #0008,0 2px 4px #0007;
+}
+html[data-theme="angel"] input,
+html[data-theme="angel"] select,
+html[data-theme="angel"] textarea{
+  border-radius:4px!important;
+  font-family:"Share Tech Mono",monospace;
+}
+html[data-theme="angel"] .appraisal-table th,
+html[data-theme="angel"] .appraisal-table td{
+  font-family:"Share Tech Mono",monospace;
+}
+html[data-theme="angel"] .theme-select-icon{
+  border-radius:4px;
+}
+
+/* ------------------------------------------------------------------------
+   EDENCOM — clean military tactical display
+   Grid discipline, target brackets, radar sweep, squared controls.
+   ------------------------------------------------------------------------ */
+html[data-theme="edencom"] body{
+  background:
+    linear-gradient(#398dff08 1px,transparent 1px),
+    linear-gradient(90deg,#398dff08 1px,transparent 1px),
+    radial-gradient(circle at 82% 18%,#153d6a 0,#07172b 28%,#030812 76%);
+  background-size:44px 44px,44px 44px,auto;
+}
+html[data-theme="edencom"] body::after{
+  background:
+    radial-gradient(circle at 82% 18%,transparent 0 55px,#6ab9ff1c 56px 57px,transparent 58px 87px,#6ab9ff12 88px 89px,transparent 90px 122px),
+    conic-gradient(from 210deg at 82% 18%,transparent 0 22deg,#65b5ff18 23deg 29deg,transparent 30deg 360deg);
+  animation:jlr-edencom-sweep 4s linear infinite;
+}
+html[data-theme="edencom"] .topbar,
+html[data-theme="edencom"] .glass{
+  border:1px solid #315a83;
+  border-radius:1px;
+  background:linear-gradient(180deg,#112946e8,#071525f4);
+  box-shadow:inset 3px 0 #4b9eff32,inset -1px 0 #9fd3ff0b,0 8px 24px #0006;
+}
+html[data-theme="edencom"] .kpi,
+html[data-theme="edencom"] .system-node{
+  position:relative;
+  border-radius:1px;
+  border-color:#31567d;
+  background:#0c1c31;
+}
+html[data-theme="edencom"] .kpi::before,
+html[data-theme="edencom"] .system-node::before{
+  content:"";
+  position:absolute;
+  inset:4px auto auto 4px;
+  width:8px;height:8px;
+  border-left:1px solid #71bbff;
+  border-top:1px solid #71bbff;
+  opacity:.65;
+  pointer-events:none;
+}
+html[data-theme="edencom"] .section-title{
+  border:0;
+  border-left:3px solid #4f9ff3;
+  border-radius:0;
+  background:linear-gradient(90deg,#2a7cd91c,transparent 48%);
+}
+html[data-theme="edencom"] .section-title::before{
+  content:"□";
+  color:#7bc0ff;
+}
+html[data-theme="edencom"] .nav-dropdown-bar{
+  border:1px solid #31577d;
+  border-radius:1px;
+  background:#071526f0;
+}
+html[data-theme="edencom"] .nav-menu-trigger,
+html[data-theme="edencom"] .nav-menu-panel .app-tab,
+html[data-theme="edencom"] .orb,
+html[data-theme="edencom"] input,
+html[data-theme="edencom"] select,
+html[data-theme="edencom"] textarea{
+  border-radius:1px!important;
+}
+html[data-theme="edencom"] .nav-menu-panel .app-tab.active{
+  box-shadow:inset 4px 0 #69b6ff;
+}
+html[data-theme="edencom"] .appraisal-table th{
+  background:#0c2038;
+  border-bottom:2px solid #326ca8;
+}
+
+/* ------------------------------------------------------------------------
+   AURORA — floating liquid glass / luminous atmosphere
+   Softest theme: blur, pill geometry, floating hover, color diffusion.
+   ------------------------------------------------------------------------ */
+html[data-theme="aurora"] body{
+  background:
+    radial-gradient(circle at 13% 80%,#6ff7df1b 0,transparent 27%),
+    radial-gradient(circle at 84% 19%,#ff75e521 0,transparent 33%),
+    radial-gradient(circle at 48% -10%,#744cff2a 0,transparent 38%),
+    #0a0610;
+}
+html[data-theme="aurora"] body::before,
+html[data-theme="aurora"] body::after{
+  filter:blur(30px);
+}
+html[data-theme="aurora"] .topbar,
+html[data-theme="aurora"] .glass{
+  border:1px solid #ffffff19;
+  border-radius:28px;
+  background:linear-gradient(145deg,#ffffff10,#2816329e 38%,#140b1dcc);
+  backdrop-filter:blur(18px) saturate(1.35);
+  box-shadow:inset 0 1px #ffffff2b,0 18px 42px #0004;
+}
+html[data-theme="aurora"] .kpi,
+html[data-theme="aurora"] .system-node,
+html[data-theme="aurora"] .appraisal-summary article{
+  border:1px solid #ffffff14;
+  border-radius:22px;
+  background:
+    linear-gradient(135deg,#ff89e60d,#6cf4df0a),
+    #1b1024b8;
+  backdrop-filter:blur(9px);
+}
+html[data-theme="aurora"] .kpi:hover,
+html[data-theme="aurora"] .system-node:hover{
+  transform:translateY(-4px) scale(1.012);
+  box-shadow:0 15px 28px #0004,inset 0 1px #ffffff28;
+}
+html[data-theme="aurora"] .section-title{
+  border:0;
+  border-radius:999px;
+  background:linear-gradient(90deg,#f67de71b,#7558ff15,#6ff1db0e,transparent 86%);
+  padding-inline:12px;
+}
+html[data-theme="aurora"] .section-title::before{
+  content:"✦";
+  color:#ff9dec;
+  text-shadow:0 0 12px #ff77e8;
+}
+html[data-theme="aurora"] .nav-dropdown-bar{
+  border:1px solid #ffffff17;
+  border-radius:24px;
+  background:#160d20bf;
+  backdrop-filter:blur(20px) saturate(1.35);
+}
+html[data-theme="aurora"] .nav-menu-trigger,
+html[data-theme="aurora"] .nav-menu-panel .app-tab,
+html[data-theme="aurora"] .orb,
+html[data-theme="aurora"] input,
+html[data-theme="aurora"] select,
+html[data-theme="aurora"] textarea{
+  border-radius:18px!important;
+}
+html[data-theme="aurora"] .nav-menu-panel{
+  border-radius:22px;
+  background:#160d20ec;
+  backdrop-filter:blur(22px);
+}
+html[data-theme="aurora"] .appraisal-table-wrap{
+  border-radius:18px;
+  overflow:hidden;
+}
+html[data-theme="aurora"] .theme-select-icon{
+  border-radius:50%;
+}
+
+/* ------------------------------------------------------------------------
+   NEON GRID — aggressive cyberpunk HUD
+   Glitch bars, hard cut corners, dual-channel magenta/cyan illumination.
+   ------------------------------------------------------------------------ */
+html[data-theme="neon"] body{
+  background:
+    linear-gradient(#42efff12 1px,transparent 1px),
+    linear-gradient(90deg,#e33cff0e 1px,transparent 1px),
+    radial-gradient(circle at 20% -5%,#6c0c8338,#07142a 38%,#02050b 82%);
+  background-size:34px 34px,34px 34px,auto;
+}
+html[data-theme="neon"] body::before{
+  background:
+    linear-gradient(180deg,transparent 0 48%,#5ef6ff12 49%,#5ef6ff3a 50%,#5ef6ff12 51%,transparent 52%);
+  background-size:100% 220%;
+  animation:jlr-neon-vertical-scan 5s linear infinite;
+  opacity:.75;
+}
+html[data-theme="neon"] .topbar,
+html[data-theme="neon"] .glass{
+  clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,14px 100%,0 calc(100% - 14px));
+  border-radius:0;
+  border:1px solid #4e2c61;
+  background:
+    linear-gradient(90deg,#e840ff0c,transparent 18%,transparent 78%,#4af2ff0b),
+    linear-gradient(180deg,#101829,#060b14);
+  box-shadow:inset 3px 0 #e840ff55,inset -3px 0 #4bf2ff42,0 0 22px #8f22b31c;
+}
+html[data-theme="neon"] .kpi,
+html[data-theme="neon"] .system-node,
+html[data-theme="neon"] .appraisal-summary article{
+  clip-path:polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,10px 100%,0 calc(100% - 10px));
+  border-radius:0;
+  border-color:#39465b;
+  background:linear-gradient(135deg,#e640ff0b,transparent 32%,#4cf1ff08),#0a101d;
+}
+html[data-theme="neon"] .kpi:hover,
+html[data-theme="neon"] .system-node:hover{
+  transform:translateX(2px);
+  box-shadow:inset 3px 0 #ec47ff77,inset -3px 0 #4df3ff66,0 0 24px #b22ee431;
+}
+html[data-theme="neon"] .section-title{
+  border:0;
+  clip-path:polygon(0 0,calc(100% - 16px) 0,100% 50%,calc(100% - 16px) 100%,0 100%);
+  border-radius:0;
+  background:linear-gradient(90deg,#dc42ff1d,#0c1726 48%,#42eaff10);
+}
+html[data-theme="neon"] .section-title::before{
+  content:">_";
+  color:#63f5ff;
+  font-family:"Share Tech Mono",monospace;
+  text-shadow:0 0 9px #63f5ff;
+}
+html[data-theme="neon"] .section-title::after{
+  content:"SYNC";
+  margin-left:auto;
+  color:#ef5cff;
+  font:700 6px "Share Tech Mono",monospace;
+  letter-spacing:.12em;
+  text-shadow:0 0 8px #ef5cff;
+}
+html[data-theme="neon"] .nav-dropdown-bar{
+  clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,12px 100%,0 calc(100% - 12px));
+  border-radius:0;
+  border:1px solid #374457;
+  background:#070c15ec;
+}
+html[data-theme="neon"] .nav-menu-trigger,
+html[data-theme="neon"] .nav-menu-panel .app-tab,
+html[data-theme="neon"] .orb,
+html[data-theme="neon"] input,
+html[data-theme="neon"] select,
+html[data-theme="neon"] textarea{
+  border-radius:0!important;
+}
+html[data-theme="neon"] .orb{
+  clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px);
+}
+html[data-theme="neon"] .appraisal-table th{
+  color:#78f8ff;
+  background:#0c1423;
+  border-bottom:1px solid #d94cf066;
+}
+html[data-theme="neon"] .appraisal-table tbody tr:hover{
+  background:linear-gradient(90deg,#e849ff0d,#48efff0d);
+}
+html[data-theme="neon"] .theme-select-icon{
+  border-radius:1px;
+}
+
+/* ------------------------------------------------------------------------
+   GLACIER — faceted ice crystal / frozen observatory
+   Asymmetric facets, sharp crystalline cuts, cold translucent layers.
+   ------------------------------------------------------------------------ */
+html[data-theme="glacier"] body{
+  background:
+    linear-gradient(127deg,transparent 0 28%,#c7f3ff09 28.2% 28.7%,transparent 28.9% 69%,#aee8ff08 69.2% 69.7%,transparent 69.9%),
+    radial-gradient(circle at 85% -8%,#a8e9ff4a 0,transparent 28%),
+    linear-gradient(145deg,#071d2a,#06111c 52%,#020711);
+}
+html[data-theme="glacier"] .topbar,
+html[data-theme="glacier"] .glass{
+  clip-path:polygon(12px 0,100% 0,100% calc(100% - 18px),calc(100% - 18px) 100%,0 100%,0 18px);
+  border-radius:0;
+  border:1px solid #7fb8d34a;
+  background:
+    linear-gradient(127deg,transparent 0 36%,#e9fbff0b 36.3% 36.7%,transparent 37%),
+    linear-gradient(145deg,#e9fbff10,#10293aab 34%,#071722dc);
+  backdrop-filter:blur(10px) saturate(1.25);
+  box-shadow:inset 0 1px #f2fdff55,inset 1px 0 #bdefff22,0 15px 34px #00101f55;
+}
+html[data-theme="glacier"] .kpi,
+html[data-theme="glacier"] .system-node,
+html[data-theme="glacier"] .appraisal-summary article{
+  clip-path:polygon(0 0,calc(100% - 14px) 0,100% 18px,100% 100%,18px 100%,0 calc(100% - 12px));
+  border-radius:0;
+  border-color:#75a9c65e;
+  background:
+    linear-gradient(145deg,#ebfcff10,transparent 38%),
+    #102536cc;
+}
+html[data-theme="glacier"] .kpi:hover,
+html[data-theme="glacier"] .system-node:hover{
+  transform:translateY(-2px);
+  box-shadow:inset 0 1px #fff8,0 0 24px #85dbff1e;
+}
+html[data-theme="glacier"] .section-title{
+  clip-path:polygon(0 0,calc(100% - 22px) 0,100% 50%,calc(100% - 22px) 100%,0 100%);
+  border-radius:0;
+  border:1px solid #6ba4c13f;
+  background:linear-gradient(100deg,#c7f1ff10,#102a3a 62%,transparent);
+}
+html[data-theme="glacier"] .section-title::before{
+  content:"◇";
+  color:#d7f7ff;
+  text-shadow:0 0 12px #8edfff;
+}
+html[data-theme="glacier"] .nav-dropdown-bar{
+  clip-path:polygon(12px 0,100% 0,100% calc(100% - 12px),calc(100% - 12px) 100%,0 100%,0 12px);
+  border-radius:0;
+  border-color:#6fadc951;
+  background:#081722e6;
+  backdrop-filter:blur(14px);
+}
+html[data-theme="glacier"] .nav-menu-trigger{
+  clip-path:polygon(0 0,calc(100% - 10px) 0,100% 12px,100% 100%,12px 100%,0 calc(100% - 9px));
+  border-radius:0;
+}
+html[data-theme="glacier"] .orb{
+  clip-path:polygon(9px 0,100% 0,100% calc(100% - 9px),calc(100% - 9px) 100%,0 100%,0 9px);
+  border-radius:0;
+}
+html[data-theme="glacier"] input,
+html[data-theme="glacier"] select,
+html[data-theme="glacier"] textarea{
+  border-radius:2px 12px 2px 12px!important;
+}
+html[data-theme="glacier"] .appraisal-table th{
+  background:linear-gradient(145deg,#dff8ff0c,#122d3e);
+}
+html[data-theme="glacier"] .theme-select-icon{
+  clip-path:polygon(50% 0,100% 28%,83% 100%,17% 100%,0 28%);
+  border-radius:0;
+}
+
+/* ------------------------------------------------------------------------
+   SOLAR FLARE — heliostat / orbital solar instrumentation
+   Circular, radiant, bright edge-lighting, orbital gauges.
+   ------------------------------------------------------------------------ */
+html[data-theme="solar"] body{
+  background:
+    radial-gradient(circle at 50% -9%,#fff 0 2%,#fff8b7 4%,#ffe45b 9%,#d99f12 16%,#2b3036 34%,#090c10 70%);
+}
+html[data-theme="solar"] body::after{
+  background:
+    conic-gradient(from 0deg at 50% 0,#0000 0 7deg,#fff7a617 7deg 10deg,#0000 10deg 25deg,#ffd34212 25deg 28deg,#0000 28deg 45deg);
+  animation:jlr-solar-rays 18s linear infinite;
+  opacity:.95;
+}
+html[data-theme="solar"] .topbar,
+html[data-theme="solar"] .glass{
+  border:1px solid #f6df7c3f;
+  border-radius:24px;
+  background:linear-gradient(180deg,#fff8c80d,#242a30e8 18%,#101419f3);
+  box-shadow:inset 0 1px #fffbd873,inset 0 -1px #8b731936,0 18px 40px #0006;
+}
+html[data-theme="solar"] .kpi,
+html[data-theme="solar"] .system-node,
+html[data-theme="solar"] .appraisal-summary article{
+  border:1px solid #d9c76d4a;
+  border-radius:18px;
+  background:
+    radial-gradient(circle at 100% 0,#fff1a212,transparent 42%),
+    #191f24;
+  box-shadow:inset 0 1px #fff6b730;
+}
+html[data-theme="solar"] .kpi:hover,
+html[data-theme="solar"] .system-node:hover{
+  transform:translateY(-2px);
+  border-color:#fff0a98a;
+  box-shadow:inset 0 1px #fff9cd7d,0 0 22px #ffe16b26;
+}
+html[data-theme="solar"] .section-title{
+  border:0;
+  border-radius:999px;
+  background:linear-gradient(90deg,#fff8c11a,#ffd84a09 48%,transparent);
+}
+html[data-theme="solar"] .section-title::before{
+  content:"☼";
+  color:#fff3a3;
+  font-size:12px;
+  text-shadow:0 0 12px #ffd84a;
+}
+html[data-theme="solar"] .section-title::after{
+  content:"";
+  width:46px;height:8px;margin-left:auto;
+  border-top:1px solid #fff0a977;
+  border-bottom:1px solid #ffdc4e38;
+  border-radius:50%;
+}
+html[data-theme="solar"] .nav-dropdown-bar{
+  border:1px solid #e6d0713f;
+  border-radius:22px;
+  background:#11161be8;
+}
+html[data-theme="solar"] .nav-menu-trigger,
+html[data-theme="solar"] .nav-menu-panel .app-tab,
+html[data-theme="solar"] .orb{
+  border-radius:999px;
+}
+html[data-theme="solar"] .nav-menu-panel{
+  border-radius:22px;
+  background:#11161bf2;
+}
+html[data-theme="solar"] input,
+html[data-theme="solar"] select,
+html[data-theme="solar"] textarea{
+  border-radius:14px!important;
+}
+html[data-theme="solar"] .appraisal-table-wrap{
+  border-radius:16px;
+}
+html[data-theme="solar"] .appraisal-table th{
+  background:linear-gradient(180deg,#fff2a20c,#20272d);
+  color:#f6e7a4;
+}
+html[data-theme="solar"] .theme-select-icon{
+  border-radius:50%;
+  box-shadow:0 0 14px #ffd84a42;
+}
+
+/* Per-theme selected glyph motion */
+html[data-theme="void"] .theme-select-icon svg{animation:jlr-glyph-float 5s ease-in-out infinite}
+html[data-theme="citadel"] .theme-select-icon svg{filter:drop-shadow(0 0 4px #62dcff66)}
+html[data-theme="industrial"] .theme-select-icon svg{transform:rotate(-8deg)}
+html[data-theme="serpentis"] .theme-select-icon svg{animation:jlr-glyph-breathe 2.4s ease-in-out infinite}
+html[data-theme="blood"] .theme-select-icon svg{filter:drop-shadow(0 0 5px #9e1838)}
+html[data-theme="angel"] .theme-select-icon svg{transform:scale(.92)}
+html[data-theme="edencom"] .theme-select-icon svg{animation:jlr-glyph-target 3s linear infinite}
+html[data-theme="aurora"] .theme-select-icon svg{animation:jlr-glyph-float 4s ease-in-out infinite}
+html[data-theme="neon"] .theme-select-icon svg{filter:drop-shadow(2px 0 #e744ff88) drop-shadow(-2px 0 #4af3ff88)}
+html[data-theme="glacier"] .theme-select-icon svg{filter:drop-shadow(0 0 5px #bcf3ff88)}
+html[data-theme="solar"] .theme-select-icon svg{animation:jlr-glyph-solar 2.7s ease-in-out infinite}
+
+@keyframes jlr-serpentis-sweep{to{background-position:0 0,0 200%}}
+@keyframes jlr-edencom-sweep{to{transform:rotate(360deg)}}
+@keyframes jlr-neon-vertical-scan{to{background-position:0 200%}}
+@keyframes jlr-glyph-float{0%,100%{transform:translateY(1px)}50%{transform:translateY(-2px)}}
+@keyframes jlr-glyph-breathe{0%,100%{transform:scale(.9);opacity:.72}50%{transform:scale(1.06);opacity:1}}
+@keyframes jlr-glyph-target{to{transform:rotate(360deg)}}
+@keyframes jlr-glyph-solar{0%,100%{transform:scale(.92);filter:drop-shadow(0 0 3px #ffd84a66)}50%{transform:scale(1.06);filter:drop-shadow(0 0 8px #fff2a3aa)}}
+
+@media(prefers-reduced-motion:reduce){
+  html[data-theme] .theme-select-icon svg,
+  html[data-theme="serpentis"] body::before,
+  html[data-theme="edencom"] body::after,
+  html[data-theme="neon"] body::before,
+  html[data-theme="solar"] body::after{animation:none!important}
+}
