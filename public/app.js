@@ -146,6 +146,7 @@
   const savedFleetHistoryDays=Number(localStorage.getItem('jlrFleetHistoryDays'));
   let fleetHistoryDays=[7,30,90].includes(savedFleetHistoryDays)?savedFleetHistoryDays:7;
   let fleetHistoryMetric=localStorage.getItem('jlrFleetHistoryMetric')==='value'?'value':'m3';
+  let fleetRateMetric=localStorage.getItem('jlrFleetRateMetric')==='efficiency'?'efficiency':'rate';
   let fleetChartPinnedDate='';
   let targetOre=localStorage.getItem('jlrTargetOre')||'auto';
   const BOARD_SIZES=['small','medium','large'];
@@ -4601,7 +4602,7 @@
     }
     updateFleetChartLinkedDate('');
   }
-  function renderFleetActivityChart(el,samples,target,todayAverage=null){
+  function renderFleetActivityChart(el,samples,target,todayAverage=null,metric='rate'){
     if(!el)return;
     const rows=(samples||[]).filter(row=>Number.isFinite(Date.parse(row?.at||''))).slice(-48);
     if(!rows.length){
@@ -4616,59 +4617,69 @@
       el.innerHTML='<div class="visual-empty fleet-state-empty">'+message+'</div>';
       return;
     }
+    const efficiencyMode=metric==='efficiency';
+    if(efficiencyMode&&!(Number(target)>0)){
+      el.innerHTML='<div class="visual-empty fleet-state-empty">Select fitted miners so JLR has a fleet target for efficiency %.</div>';
+      return;
+    }
     const W=760,H=205,L=52,R=118,T=20,B=28,pw=W-L-R,ph=H-T-B;
-    const values=rows.map(row=>Math.max(0,Number(row.actualM3PerHour)||0));
-    const avg=Number.isFinite(Number(todayAverage))?Math.max(0,Number(todayAverage)):null;
-    const max=Math.max(1,Number(target)||0,avg||0,...values)*1.12;
+    const rates=rows.map(row=>Math.max(0,Number(row.actualM3PerHour)||0));
+    const values=efficiencyMode?rates.map(rate=>rate/Number(target)*100):rates;
+    const avgRate=Number.isFinite(Number(todayAverage))?Math.max(0,Number(todayAverage)):null;
+    const avgValue=avgRate===null?null:(efficiencyMode?avgRate/Number(target)*100:avgRate);
+    const targetValue=efficiencyMode?100:Number(target)||0;
+    const max=Math.max(efficiencyMode?120:1,targetValue,avgValue||0,...values)*1.08;
     const x=i=>rows.length<=1?L+pw/2:L+i/(rows.length-1)*pw;
     const y=v=>T+(1-Math.min(max,Math.max(0,Number(v)||0))/max)*ph;
+    const axisValue=value=>efficiencyMode?Math.round(value)+'%':compactNumber(value);
     let grid='';
     for(let i=0;i<=3;i++){
       const yy=T+i/3*ph,value=max*(1-i/3);
       grid+='<line x1="'+L+'" y1="'+yy.toFixed(1)+'" x2="'+(W-R)+'" y2="'+yy.toFixed(1)+'" class="fleet-chart-grid"/>'+
-        '<text x="'+(L-7)+'" y="'+(yy+3).toFixed(1)+'" text-anchor="end" class="fleet-chart-axis">'+esc(compactNumber(value))+'</text>';
+        '<text x="'+(L-7)+'" y="'+(yy+3).toFixed(1)+'" text-anchor="end" class="fleet-chart-axis">'+esc(axisValue(value))+'</text>';
     }
     const line='M '+rows.map((row,i)=>x(i).toFixed(1)+' '+y(values[i]).toFixed(1)).join(' L ');
-    const targetLine=Number(target)>0
-      ?'<line x1="'+L+'" y1="'+y(target).toFixed(1)+'" x2="'+(W-R)+'" y2="'+y(target).toFixed(1)+'" class="fleet-target-line"/>'+
-       '<text x="'+(W-R+7)+'" y="'+Math.max(T+7,y(target)-4).toFixed(1)+'" class="fleet-target-label">TARGET '+esc(compactNumber(target))+'</text>'
+    const targetLine=targetValue>0
+      ?'<line x1="'+L+'" y1="'+y(targetValue).toFixed(1)+'" x2="'+(W-R)+'" y2="'+y(targetValue).toFixed(1)+'" class="fleet-target-line"/>'+
+       '<text x="'+(W-R+7)+'" y="'+Math.max(T+7,y(targetValue)-4).toFixed(1)+'" class="fleet-target-label">'+(efficiencyMode?'TARGET 100%':'TARGET '+esc(compactNumber(targetValue)))+'</text>'
       :'';
-    const averageLine=avg!==null
-      ?'<line x1="'+L+'" y1="'+y(avg).toFixed(1)+'" x2="'+(W-R)+'" y2="'+y(avg).toFixed(1)+'" class="fleet-average-line"/>'+
-       '<text x="'+(W-R+7)+'" y="'+Math.max(T+14,Math.min(T+ph-3,y(avg)+10)).toFixed(1)+'" class="fleet-average-label">TODAY AVG '+esc(compactNumber(avg))+'</text>'
+    const averageLine=avgValue!==null
+      ?'<line x1="'+L+'" y1="'+y(avgValue).toFixed(1)+'" x2="'+(W-R)+'" y2="'+y(avgValue).toFixed(1)+'" class="fleet-average-line"/>'+
+       '<text x="'+(W-R+7)+'" y="'+Math.max(T+14,Math.min(T+ph-3,y(avgValue)+10)).toFixed(1)+'" class="fleet-average-label">TODAY AVG '+esc(efficiencyMode?avgValue.toFixed(0)+'%':compactNumber(avgValue))+'</text>'
       :'';
-    const latestIndex=rows.length-1,latest=rows[latestIndex],latestValue=values[latestIndex];
+    const latestIndex=rows.length-1,latest=rows[latestIndex],latestValue=values[latestIndex],latestRate=rates[latestIndex];
     const latestTitle=new Date(latest.at).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+
-      ' • '+fmt(latestValue,'m3')+' m³/hr • '+Number(latest.activeToons||0)+' active of '+Number(latest.sampledToons||0)+' sampled';
+      ' • '+fmt(latestRate,'m3')+' m³/hr • '+(Number(target)>0?(latestRate/Number(target)*100).toFixed(0)+'% of target • ':'')+Number(latest.activeToons||0)+' active of '+Number(latest.sampledToons||0)+' sampled';
     const points=rows.map((row,i)=>{
       const date=fleetChartDate(row.at);
       return '<circle cx="'+x(i).toFixed(1)+'" cy="'+y(values[i]).toFixed(1)+'" r="2.2" class="fleet-activity-point" data-fleet-chart-date="'+esc(date)+'"></circle>';
     }).join('');
     const hover=rows.map((row,i)=>{
       const when=new Date(row.at).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
-      const title=when+' • '+fmt(values[i],'m3')+' m³/hr • '+Number(row.activeToons||0)+' active of '+Number(row.sampledToons||0)+' sampled';
+      const pct=Number(target)>0?rates[i]/Number(target)*100:null;
+      const title=when+' • '+fmt(rates[i],'m3')+' m³/hr'+(pct!=null?' • '+pct.toFixed(0)+'% of target':'');
       const date=fleetChartDate(row.at);
       return '<circle cx="'+x(i).toFixed(1)+'" cy="'+y(values[i]).toFixed(1)+'" r="8" tabindex="0" role="button" aria-label="'+esc(title)+'" class="fleet-chart-hit" data-chart-index="'+i+'" data-fleet-chart-date="'+esc(date)+'"><title>'+esc(title)+'</title></circle>';
     }).join('');
     const latestDot='<circle cx="'+x(latestIndex).toFixed(1)+'" cy="'+y(latestValue).toFixed(1)+'" r="4" class="fleet-activity-dot"><title>'+esc(latestTitle)+'</title></circle>';
-    const latestPct=Number(target)>0?latestValue/Number(target)*100:null;
-    const latestLabelText=compactNumber(latestValue)+(latestPct!=null?' • '+latestPct.toFixed(0)+'%':'');
+    const latestPct=Number(target)>0?latestRate/Number(target)*100:null;
+    const latestLabelText=efficiencyMode?(latestPct==null?'—':latestPct.toFixed(0)+'%'):(compactNumber(latestRate)+(latestPct!=null?' • '+latestPct.toFixed(0)+'%':''));
     const latestLabel='<text x="'+(W-R+7)+'" y="'+Math.max(T+8,Math.min(T+ph-2,y(latestValue)+3)).toFixed(1)+'" class="fleet-latest-label">'+esc(latestLabelText)+'</text>';
     const labelIndexes=[0,Math.floor((rows.length-1)/2),rows.length-1];
     const labels=[...new Set(labelIndexes)].map(i=>'<text x="'+x(i).toFixed(1)+'" y="'+(H-8)+'" text-anchor="middle" class="fleet-chart-axis">'+esc(new Date(rows[i].at).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}))+'</text>').join('');
-    el.innerHTML='<svg class="fleet-chart-svg" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Sampled fleet mining rate from recent ESI ledger changes">'+
+    el.innerHTML='<svg class="fleet-chart-svg" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+(efficiencyMode?'Fleet efficiency percent versus fitted target':'Sampled fleet mining rate from recent ESI ledger changes')+'">'+
       grid+'<path d="'+line+'" class="fleet-activity-line"/>'+targetLine+averageLine+points+hover+latestDot+latestLabel+labels+
-      '<text x="'+L+'" y="'+(T-7)+'" class="fleet-chart-unit">M³/HR</text></svg>';
+      '<text x="'+L+'" y="'+(T-7)+'" class="fleet-chart-unit">'+(efficiencyMode?'% OF TARGET':'M³/HR')+'</text></svg>';
     bindFleetChartInteractions(el,'.fleet-chart-hit',(index)=>{
       const row=rows[index];
       if(!row)return'';
-      const rate=values[index];
+      const rate=rates[index];
       const pct=Number(target)>0?rate/Number(target)*100:null;
       const when=new Date(row.at).toLocaleString(undefined,{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
       return '<strong>'+esc(when)+'</strong>'+
-        '<span>'+esc(fmt(rate,'m3'))+' m³/hr</span>'+
-        '<small>'+Number(row.activeToons||0)+' active / '+Number(row.sampledToons||0)+' sampled'+(pct!=null?' • '+pct.toFixed(0)+'% of fitted target':'')+'</small>'+
-        '<em>Click to '+(fleetChartPinnedDate===fleetChartDate(row.at)?'unpin':'pin')+' this day across both graphs</em>';
+        '<span>'+esc(fmt(rate,'m3'))+' m³/hr'+(pct!=null?' • '+pct.toFixed(0)+'%':'')+'</span>'+
+        '<small>'+Number(row.activeToons||0)+' active / '+Number(row.sampledToons||0)+' sampled'+(pct!=null?' • fitted target '+esc(fmt(target,'m3'))+' m³/hr':'')+'</small>'+
+        '<em>Click to '+(fleetChartPinnedDate===fleetChartDate(row.at)?'unpin':'pin')+' this day across graphs</em>';
     });
   }
   function renderFleetDailyChart(el,rows,metric){
@@ -4710,6 +4721,75 @@
         '<em>Click to '+(fleetChartPinnedDate===String(row.date||'')?'unpin':'pin')+' this day across both graphs</em>';
     });
   }
+  function fleetDayProgressSeries(samples,dateKey){
+    let total=0;
+    const rows=(samples||[])
+      .filter(row=>fleetChartDate(row?.at)===dateKey&&Number.isFinite(Date.parse(row?.at||'')))
+      .sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
+    const out=[{minute:0,total:0,at:dateKey+'T00:00:00.000Z'}];
+    for(const row of rows){
+      total+=Math.max(0,Number(row?.intervalM3)||0);
+      const d=new Date(row.at);
+      const minute=d.getUTCHours()*60+d.getUTCMinutes()+d.getUTCSeconds()/60;
+      out.push({minute,total,at:row.at});
+    }
+    return out;
+  }
+  function renderFleetDayProgressChart(el,samples){
+    if(!el)return;
+    const todayKey=String(state?.serverNow||new Date().toISOString()).slice(0,10);
+    const todayMs=Date.parse(todayKey+'T00:00:00Z');
+    const yesterdayKey=Number.isFinite(todayMs)?new Date(todayMs-86400000).toISOString().slice(0,10):'';
+    const today=fleetDayProgressSeries(samples,todayKey);
+    const yesterday=fleetDayProgressSeries(samples,yesterdayKey);
+    const todayHas=today.length>1&&today.at(-1).total>0;
+    const yesterdayHas=yesterday.length>1&&yesterday.at(-1).total>0;
+    if(!todayHas&&!yesterdayHas){
+      el.innerHTML='<div class="visual-empty fleet-state-empty">Cumulative EVE-day production will appear after selected-fleet ledger intervals are recorded.</div>';
+      return;
+    }
+    const W=760,H=205,L=52,R=112,T=20,B=28,pw=W-L-R,ph=H-T-B;
+    const all=[...(todayHas?today:[]),...(yesterdayHas?yesterday:[])];
+    const max=Math.max(1,...all.map(row=>row.total))*1.08;
+    const x=minute=>L+Math.max(0,Math.min(1440,Number(minute)||0))/1440*pw;
+    const y=value=>T+(1-Math.min(max,Math.max(0,Number(value)||0))/max)*ph;
+    let grid='';
+    for(let i=0;i<=3;i++){
+      const yy=T+i/3*ph,value=max*(1-i/3);
+      grid+='<line x1="'+L+'" y1="'+yy.toFixed(1)+'" x2="'+(W-R)+'" y2="'+yy.toFixed(1)+'" class="fleet-chart-grid"/>'+
+        '<text x="'+(L-7)+'" y="'+(yy+3).toFixed(1)+'" text-anchor="end" class="fleet-chart-axis">'+esc(compactNumber(value))+'</text>';
+    }
+    const lineFor=(rows,cls)=>rows.length
+      ?'<path d="M '+rows.map(row=>x(row.minute).toFixed(1)+' '+y(row.total).toFixed(1)).join(' L ')+'" class="'+cls+'"/>'
+      :'';
+    const series=[];
+    if(yesterdayHas)series.push({key:'yesterday',date:yesterdayKey,label:'YESTERDAY',rows:yesterday,cls:'fleet-progress-yesterday'});
+    if(todayHas)series.push({key:'today',date:todayKey,label:'TODAY',rows:today,cls:'fleet-progress-today'});
+    const paths=series.map(row=>lineFor(row.rows,row.cls)).join('');
+    const hits=series.flatMap(seriesRow=>seriesRow.rows.slice(1).map((row,index)=>{
+      const title=seriesRow.label+' • '+new Date(row.at).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit',timeZone:'UTC'})+' UTC • '+fmt(row.total,'m3')+' m³ cumulative';
+      return '<circle cx="'+x(row.minute).toFixed(1)+'" cy="'+y(row.total).toFixed(1)+'" r="8" tabindex="0" role="button" class="fleet-progress-hit fleet-chart-hit" data-progress-series="'+seriesRow.key+'" data-chart-index="'+index+'" data-fleet-chart-date="'+seriesRow.date+'" aria-label="'+esc(title)+'"><title>'+esc(title)+'</title></circle>';
+    })).join('');
+    const ends=series.map(seriesRow=>{
+      const row=seriesRow.rows.at(-1);
+      return '<text x="'+(W-R+7)+'" y="'+Math.max(T+8,Math.min(T+ph-2,y(row.total)+(seriesRow.key==='today'?-4:10))).toFixed(1)+'" class="fleet-progress-label '+seriesRow.cls+'-label">'+seriesRow.label+' '+esc(compactNumber(row.total))+'</text>';
+    }).join('');
+    const labels=[0,360,720,1080,1440].map(minute=>'<text x="'+x(minute).toFixed(1)+'" y="'+(H-8)+'" text-anchor="middle" class="fleet-chart-axis">'+String(Math.floor(minute/60)).padStart(2,'0')+':00</text>').join('');
+    el.innerHTML='<svg class="fleet-chart-svg fleet-progress-svg" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Cumulative EVE-day fleet production today versus yesterday">'+
+      grid+paths+hits+ends+labels+'<text x="'+L+'" y="'+(T-7)+'" class="fleet-chart-unit">CUMULATIVE M³ • UTC</text></svg>';
+    bindFleetChartInteractions(el,'.fleet-progress-hit',(index,node)=>{
+      const key=node?.dataset?.progressSeries;
+      const seriesRow=series.find(row=>row.key===key);
+      const row=seriesRow?.rows?.slice(1)?.[index];
+      if(!row||!seriesRow)return'';
+      const when=new Date(row.at).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit',timeZone:'UTC'});
+      return '<strong>'+seriesRow.label+' • '+esc(when)+' UTC</strong>'+
+        '<span>'+esc(fmt(row.total,'m3'))+' m³</span>'+
+        '<small>cumulative selected-fleet volume by this point in the EVE day</small>'+
+        '<em>Click to '+(fleetChartPinnedDate===seriesRow.date?'unpin':'pin')+' '+seriesRow.label.toLowerCase()+' across graphs</em>';
+    });
+  }
+
   function renderFleetOreMix(el,rows){
     if(!el)return;
     const totals=new Map();
@@ -4774,6 +4854,8 @@
 
     document.querySelectorAll('.fleet-range').forEach(button=>button.classList.toggle('active',Number(button.dataset.days)===fleetHistoryDays));
     document.querySelectorAll('.fleet-metric').forEach(button=>button.classList.toggle('active',button.dataset.metric===fleetHistoryMetric));
+    document.querySelectorAll('.fleet-rate-metric').forEach(button=>button.classList.toggle('active',button.dataset.rateMetric===fleetRateMetric));
+    if($('fleetRateChartTitle'))$('fleetRateChartTitle').textContent=fleetRateMetric==='efficiency'?'EFFICIENCY OVER TIME':'SAMPLED RATE OVER TIME';
     const assignedCount=Math.max(0,Number(performance.characterIds?.length)||0);
     const cachedCount=Math.max(0,Number(performance.cachedCharacters)||0);
     const partialCoverage=assignedCount>0&&cachedCount>0&&cachedCount<assignedCount;
@@ -4894,8 +4976,9 @@
       ?`How much tracked payout did the selected fleet generate each day? • last ${fleetHistoryDays} days`
       :`How much did the selected fleet mine each day? • last ${fleetHistoryDays} days`;
     $('fleetOreMixSubtitle').textContent=`What made up the mined volume? • selected fleet • last ${fleetHistoryDays} days`;
-    renderFleetActivityChart($('fleetActivityChart'),samples,target,todayAverageRate);
+    renderFleetActivityChart($('fleetActivityChart'),samples,target,todayAverageRate,fleetRateMetric);
     renderFleetDailyChart($('fleetHistoryChart'),daily,fleetHistoryMetric);
+    renderFleetDayProgressChart($('fleetDayProgressChart'),samples);
     renderFleetOreMix($('fleetOreMix'),daily);
   }
   function renderMiningVisuals(){
@@ -6255,6 +6338,11 @@
     const metric=button.dataset.metric==='value'?'value':'m3';
     fleetHistoryMetric=metric;
     localStorage.setItem('jlrFleetHistoryMetric',metric);
+    renderFleetPerformance();
+  }));
+  document.querySelectorAll('.fleet-rate-metric').forEach(button=>button.addEventListener('click',()=>{
+    fleetRateMetric=button.dataset.rateMetric==='efficiency'?'efficiency':'rate';
+    localStorage.setItem('jlrFleetRateMetric',fleetRateMetric);
     renderFleetPerformance();
   }));
 
