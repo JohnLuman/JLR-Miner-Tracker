@@ -9768,7 +9768,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
       const html=renderAppraisalShareHtml(template,appraisalSharePublic(row),{
         payoutPercent,
         canonicalUrl:baseUrl+url.pathname+payoutQuery,
-        imageUrl:baseUrl+'/assets/jlr-appraisal-preview.png?v=2',
+        imageUrl:baseUrl+'/assets/jlr-appraisal-preview.png?v=3',
       });
       res.writeHead(200,{
         'Content-Type':'text/html; charset=utf-8',
