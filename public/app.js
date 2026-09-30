@@ -2993,7 +2993,7 @@
           <div class="threat-actions">
             <button id="threatPasteScan" class="orb blue" type="button">📋 PASTE & SCAN</button>
             <button id="threatRunScan" class="orb silver" type="button">SCAN TEXT</button>
-            <button id="threatShareScan" class="orb purple" type="button" title="Publish this pasted scan to dscan.info and automatically copy its share URL" ${threatShareLoading?'disabled':''}>${threatShareLoading?'CREATING…':threatShareUrl?'📋 COPY INTEL LINK':'🔗 CREATE + COPY LINK'}</button>
+            <button id="threatShareScan" class="orb purple" type="button" title="Publish this pasted scan as a JLR-hosted D-scan link and automatically copy the URL" ${threatShareLoading?'disabled':''}>${threatShareLoading?'CREATING…':threatShareUrl?'📋 COPY INTEL LINK':'🔗 CREATE + COPY LINK'}</button>
           </div>
         </section>
 
@@ -3003,7 +3003,7 @@
             <span>${threatStatus}${threatShareError?` • ${esc(threatShareError)}`:''}</span>
             ${data?.scannedAt?`<small>updated ${ago(data.scannedAt)}</small>`:''}
           </div>
-          ${threatShareUrl?`<div class="threat-share-ready"><span>INTEL LINK READY</span><a href="${esc(threatShareUrl)}" target="_blank" rel="noopener noreferrer">${esc(threatShareUrl)}</a></div>`:''}
+          ${threatShareUrl?`<div class="threat-share-ready"><span>JLR D-SCAN LINK READY</span><a href="${esc(threatShareUrl)}" target="_blank" rel="noopener noreferrer">${esc(threatShareUrl)}</a></div>`:''}
         </section>
 
         <section class="glass threat-ignore-card">
@@ -3114,10 +3114,10 @@
       }catch{}
     }
     if(copied){
-      toast('Intel link copied. Paste it into your intel channel.');
+      toast('JLR D-scan link copied. Paste it into your intel channel.');
       return true;
     }
-    toast('Intel link is ready below. Click COPY INTEL LINK or select the link to copy.');
+    toast('JLR D-scan link is ready below. Click COPY INTEL LINK or select the link to copy.');
     return false;
   }
   async function shareThreatScan(text){
@@ -3136,7 +3136,7 @@
     try{
       const result=await api('/api/threat-share',{method:'POST',body:JSON.stringify({text:value})});
       threatShareUrl=String(result?.url||'');
-      if(!threatShareUrl)throw new Error('dscan.info did not return a share link.');
+      if(!threatShareUrl)throw new Error('JLR did not return a D-scan share link.');
       renderThreatScan();
       await copyThreatShareUrl();
     }catch(error){
