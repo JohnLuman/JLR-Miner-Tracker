@@ -81,6 +81,7 @@ assert.match(server,/function appraisalRefinePreview\(items,sdeMaterialRows=\[\]
 assert.match(server,/replace\(\/\^compressed\\s\+\//,'compressed ore maps to the same reprocessing recipe');
 assert.match(app,/ORE EFFICIENCY/,'Appraisal exposes its ore efficiency control');
 assert.match(app,/REFINE DIFFERENCE/,'Appraisal compares refined value with raw ore value');
+assert.doesNotMatch(app,/JLR BUILD PLANS|forgeBuildPlans|\/api\/forge\/board/,'Appraisal no longer loads or renders legacy Forge build plans');
 assert.match(shareClient,/REFINE ESTIMATE/,'shared appraisals render the saved refine estimate');
 assert.match(shareClient,/JLR MARKET NETWORK/,'shared appraisal carries JLR presentation');
 
