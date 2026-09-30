@@ -74,7 +74,26 @@ assert.equal(preview.payoutPercent,95);
 assert.equal(preview.selectedValue,22);
 assert.equal(preview.payoutValue,20.9);
 assert.match(preview.title,/Fleet Loot .* SPLIT 22 ISK/);
-assert.match(preview.description,/1\. Tritanium ×2 .* 2\. Pyerite ×1/,'Discord preview lists appraisal items in original order');
+assert.match(preview.description,/1\. Tritanium ×2\n2\. Pyerite ×1/,'Discord preview lists appraisal items one per line in original order');
+
+const longPreview=appraisalSharePreview({
+  ...share,
+  appraisal:{
+    ...share.appraisal,
+    items:Array.from({length:10},(_,index)=>({
+      resolved:true,
+      typeId:1000+index,
+      name:'Item '+(index+1),
+      amount:index+1,
+      buyTotal:10,
+      splitTotal:11,
+      sellTotal:12,
+    })),
+  },
+});
+assert.equal(longPreview.description.split('\n').length,9,'Discord preview caps the item list at nine lines');
+assert.match(longPreview.description,/9\. Item 9 ×9 …$/,'when more items exist, the ninth line ends with an ellipsis');
+assert.doesNotMatch(longPreview.description,/Item 10/,'items after line nine are omitted');
 
 const previewHtml=renderAppraisalShareHtml(
   '<!doctype html><html><head><title>JLR Appraisal</title></head><body></body></html>',
@@ -83,6 +102,7 @@ const previewHtml=renderAppraisalShareHtml(
 );
 assert.match(previewHtml,/property="og:title"/);
 assert.match(previewHtml,/property="og:description"/);
+assert.match(previewHtml,/&#10;/,'Open Graph description preserves item line breaks');
 assert.match(previewHtml,/property="og:image"/);
 assert.match(previewHtml,/property="og:image:secure_url"/);
 assert.match(previewHtml,/property="og:image:type" content="image\/png"/);
@@ -103,7 +123,10 @@ assert.match(server,/\/api\/appraisal\/markets/);
 assert.match(server,/\/api\/appraisal\/intel/,'main app exposes Support appraisal intel');
 assert.match(server,/\/api\/internal\/support\/appraisal/,'Support can request alternate native appraisal pricing');
 assert.match(server,/\/api\/appraisal\/share/);
-assert.match(server,/\/appraisal\\\//);
+assert.match(server,/\(\?:a\|appraisal\)/,'server accepts both short /a/ and legacy /appraisal/ public routes');
+assert.match(server,/JLR_SHARE_ORIGIN/,'share host can be swapped independently of the app/SSO origin');
+assert.match(server,/randomId\(6\)/,'new appraisal links use compact eight-character base64url tokens');
+assert.match(server,/appraisalShareUrl\(req,token\)/,'new appraisal shares return the short public URL');
 assert.match(server,/renderAppraisalShareHtml/,'shared appraisal HTML is server-rendered for Discord/Open Graph previews');
 assert.match(server,/jlr-appraisal-preview\.png\?v=4/,'shared appraisal preview advertises the compact cache-busted JLR preview image');
 assert.match(server,/Content-Length':st\.size/,'static image responses include a content length for Discord fetch reliability');
@@ -117,6 +140,7 @@ assert.match(app,/TOP 5% AVERAGE/);
 assert.match(app,/value="refine-buy">REFINE BUY/,'price selector exposes Refine Buy');
 assert.match(app,/value="refine-sell">REFINE SELL/,'price selector exposes Refine Sell');
 assert.match(app,/Discord-ready JLR appraisal copied/,'share action copies a Discord-ready masked link and compact item list');
+assert.match(app,/lines\[lines\.length-1\]\+=' …'/,'copied Discord list ends line nine with an ellipsis when more items exist');
 assert.match(app,/JLR Native • CCP ESI Jita buy/);
 assert.match(index,/APPRAISAL<\/button>/);
 assert.match(index,/data-tab="appraisal"[^>]*>APPRAISAL<\/button>/,'Appraisal uses its own tab key');
