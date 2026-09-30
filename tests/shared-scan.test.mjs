@@ -39,7 +39,7 @@ assert.match(server,/localText/,'shared links persist a Local layer');
 assert.match(server,/manualRecons/,'shared links persist manual recon intel');
 assert.match(server,/canEdit:Boolean/,'public share response exposes creator edit capability without exposing owner id');
 assert.match(server,/sharedScanUpdateMatch/,'owner update endpoint is registered');
-assert.match(viewer,/SAVE UPDATE/,'viewer includes persistent-link update controls');
+assert.match(html,/SAVE UPDATE/,'viewer includes persistent-link update controls');
 assert.match(viewer,/data-recon-preset/,'viewer includes recon quick-add controls');
 assert.match(viewer,/manualRecons:reconRowsFromEditor/,'viewer saves manual recon rows');
 assert.match(viewer,/localText:\$\('editLocal'\)\.value/,'viewer updates Local separately from D-scan');
