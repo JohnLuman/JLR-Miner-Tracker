@@ -3658,19 +3658,10 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 @media(max-width:900px){.appraisal-refine-summary{grid-template-columns:1fr 1fr}}
 @media(max-width:620px){.appraisal-refine-head{align-items:stretch;flex-direction:column}.appraisal-refine-rate{min-width:0}.appraisal-refine-summary{grid-template-columns:1fr}}
 
-/* Appraisal quick entry + build-plan manager */
+/* Appraisal quick entry */
 .appraisal-quick-entry{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end;margin:8px 0}
 .appraisal-quick-entry .forge-field{min-width:0}
-.appraisal-build-plans{margin-top:12px;border:1px solid var(--line);border-radius:10px;padding:9px;background:color-mix(in srgb,var(--theme-panel-lo,var(--panel)) 86%,transparent)}
-.forge-plan-toolbar{display:flex;justify-content:flex-end;margin:4px 0 7px}
-.forge-build-plans{display:grid;gap:6px}
-.forge-plan-row{display:flex;justify-content:space-between;gap:10px;align-items:center;border:1px solid color-mix(in srgb,var(--line) 80%,transparent);border-radius:8px;padding:8px;background:color-mix(in srgb,var(--theme-panel-hi,var(--card)) 72%,transparent)}
-.forge-plan-copy strong,.forge-plan-copy small{display:block}
-.forge-plan-copy strong{font-size:10px}.forge-plan-copy small{font-size:7px;color:var(--muted);margin-top:2px}
-.forge-plan-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-.board-tool.danger{border-color:#7a3030;color:#ffb0b0}
-.board-tool.danger:hover{background:rgba(150,40,40,.18)}
-@media(max-width:720px){.appraisal-quick-entry{grid-template-columns:1fr}.forge-plan-row{align-items:flex-start;flex-direction:column}.forge-plan-actions{width:100%}}
+@media(max-width:720px){.appraisal-quick-entry{grid-template-columns:1fr}}
 
 
 /* v2.10.2 — grouped navigation dropdowns */
