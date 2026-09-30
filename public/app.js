@@ -2894,6 +2894,18 @@
     const number=Number(value);
     return Number.isFinite(number)?number:null;
   }
+  function threatScanRenderSignature(data){
+    if(!data)return'';
+    return [
+      Boolean(data.refreshing),
+      Number(data.pendingIntel)||0,
+      Number(data.staleIntel)||0,
+      Number(data.displayedPilotCount)||0,
+      String(data.scannedAt||''),
+      Number(data.performance?.backgroundMs)||0,
+      String(data.enrichmentError||''),
+    ].join('|');
+  }
   function renderThreatScan(){
     const host=$('threatScanPanel');
     if(!host)return;
@@ -2924,13 +2936,14 @@
       const sec=threatNumber(ch?.secStatus);
       const tags=threatBadges(ch).map(tag=>`<span class="threat-tag ${esc(tag.kind||'blue')}">${esc(tag.label)}</span>`).join('');
       const partner=ch?.topPartners?.[0];
-      return `<tr class="${threatScoreClass(score)}">
+      const intelPending=Boolean(ch?.intelPending);
+      return `<tr class="${threatScoreClass(score)}${intelPending?' intel-pending':''}">
         <td class="threat-pilot-cell">
           <div class="threat-pilot">
             <img src="https://images.evetech.net/characters/${encodeURIComponent(ch.id)}/portrait?size=64" alt="">
             <div>
               <a href="https://zkillboard.com/character/${encodeURIComponent(ch.id)}/" target="_blank" rel="noopener noreferrer"><strong>${esc(ch.name)}</strong></a>
-              <small>${esc(ch.corporationName||'No corporation')}${ch.allianceName?esc(' • '+ch.allianceName):''}</small>
+              <small>${intelPending?'QUICK RESULT • COMBAT INTEL LOADING':esc(ch.corporationName||'No corporation')+(ch.allianceName?esc(' • '+ch.allianceName):'')}</small>
             </div>
           </div>
         </td>
@@ -2955,6 +2968,17 @@
     const displayedPilots=Number(data?.displayedPilotCount??chars.length)||0;
     const truncatedPilots=Number(data?.truncatedCount)||0;
     const cacheText=data?`${fmt(parsedPilots)} parsed • ${fmt(resolvedPilots)} resolved • ${fmt(ignored)} filtered • ${fmt(displayedPilots)} displayed • ${fmt(data.cache?.hits||0)} local hits • ${fmt(data.cache?.refreshed||0)} refreshed${unresolved.length?' • '+fmt(unresolved.length)+' pilots unresolved':''}${unresolvedShips.length?' • '+fmt(unresolvedShips.length)+' ship types unresolved':''}${truncatedPilots?' • '+fmt(truncatedPilots)+' over 1,000-pilot safety limit':''}`:'';
+    const quickMs=Math.max(0,Number(data?.performance?.responseMs??data?.performance?.totalMs)||0);
+    const pendingIntel=Math.max(0,Number(data?.pendingIntel)||0);
+    const threatStatus=threatScanLoading
+      ?'RESOLVING PILOTS…'
+      :threatScanError
+        ?esc(threatScanError)
+        :data?.refreshing
+          ?`QUICK RESULTS READY${quickMs?' IN '+fmt(quickMs)+' MS':''} • ${fmt(pendingIntel)} PILOT PROFILE${pendingIntel===1?'':'S'} ENRICHING${data?.standingsPending?' • STANDINGS FILTER FINISHING':''}`
+          :data
+            ?`JLR threat engine • ${cacheText}${quickMs?' • response '+fmt(quickMs)+' ms':''}`
+            :'Paste names or D-scan, then scan.';
 
     host.innerHTML=`
       <div class="threat-shell">
@@ -2973,7 +2997,7 @@
         <section class="glass threat-input-card">
           <textarea id="threatScanInput" spellcheck="false" placeholder="Paste Local names or copied D-scan rows here…">${esc(threatScanText)}</textarea>
           <div class="threat-input-foot">
-            <span>${threatScanLoading?'BUILDING THREAT INTEL…':threatScanError?esc(threatScanError):data?`JLR threat engine • ${cacheText}`:'Paste names or D-scan, then scan.'}${threatShareError?` • ${esc(threatShareError)}`:''}</span>
+            <span>${threatStatus}${threatShareError?` • ${esc(threatShareError)}`:''}</span>
             ${data?.scannedAt?`<small>updated ${ago(data.scannedAt)}</small>`:''}
           </div>
           ${threatShareUrl?`<div class="threat-share-ready"><span>INTEL LINK READY</span><a href="${esc(threatShareUrl)}" target="_blank" rel="noopener noreferrer">${esc(threatShareUrl)}</a></div>`:''}
@@ -3138,6 +3162,7 @@
       renderThreatScan();
     }
     let shouldPoll=false;
+    let renderNeeded=!backgroundPoll;
     try{
       const contactsAvailable=Boolean(me?.characters?.some(character=>character.contactsAccess));
       const result=await api('/api/threat-scan',{method:'POST',body:JSON.stringify({
@@ -3146,16 +3171,23 @@
         ignorePositive:threatIgnorePositive&&contactsAvailable,
       })});
       if(requestSeq!==threatScanRequestSeq)return;
+      const previousSignature=threatScanRenderSignature(threatScanData);
+      const nextSignature=threatScanRenderSignature(result);
       threatScanData=result;
       shouldPoll=Boolean(threatScanData?.refreshing);
+      renderNeeded=renderNeeded||previousSignature!==nextSignature;
     }catch(error){
-      if(!backgroundPoll)threatScanError=String(error?.message||error||'Threat scan failed.');
+      if(!backgroundPoll){
+        threatScanError=String(error?.message||error||'Threat scan failed.');
+        renderNeeded=true;
+      }
     }finally{
       if(!backgroundPoll)threatScanLoading=false;
-      renderThreatScan();
-      if(shouldPoll&&threatScanPollCount<20){
+      if(renderNeeded)renderThreatScan();
+      if(shouldPoll&&threatScanPollCount<60){
         threatScanPollCount++;
-        threatScanPoll=setTimeout(()=>runThreatScan(value,true,requestSeq),1500);
+        const delay=threatScanPollCount<=8?700:threatScanPollCount<=20?1400:threatScanPollCount<=40?2500:4000;
+        threatScanPoll=setTimeout(()=>runThreatScan(value,true,requestSeq),delay);
       }
     }
   }
