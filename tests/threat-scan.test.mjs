@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { parseThreatPaste, compactThreatStats, threatActivityLabels, fountainThreatTags, jlrThreatScore, threatIgnoreReason } from '../lib/threat-scan.mjs';
 
 const local = parseThreatPaste([
@@ -95,5 +96,31 @@ assert.equal(threatIgnoreReason({id:105,corporation_id:999},ignoreOptions),'posi
 // Character-target standings take priority over corporation-target standings.
 assert.equal(threatIgnoreReason({id:106,corporation_id:201},ignoreOptions),null);
 assert.equal(threatIgnoreReason({id:107,alliance_id:401},ignoreOptions),'positive');
+
+const server=fs.readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
+const app=fs.readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
+const index=fs.readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
+
+assert.match(server,/const THREAT_FETCH_CONCURRENCY = 8/,'threat enrichment uses higher per-scan concurrency');
+assert.match(server,/const THREAT_REMOTE_CONCURRENCY = 12/,'global threat enrichment is bounded across users');
+assert.match(server,/const THREAT_ZKILL_TIMEOUT_MS = 5_500/,'zKill threat lookups have a hard latency budget');
+assert.match(server,/async function threatUniverseIds/,'cold Local name resolution has a dedicated bounded fast path');
+assert.match(server,/AbortSignal\.timeout\(4_500\)/,'cold Local name resolution cannot hold the first result indefinitely');
+assert.match(server,/async function resolveThreatEntities/,'pilot and ship names share one cached resolver');
+assert.match(server,/resolveThreatEntities\(parsed\.names,\(parsed\.shipNames\|\|\[\]\)\.map/,'one combined entity lookup serves Local and D-scan names');
+assert.match(server,/const threatCharacterPromises = new Map\(\)/,'overlapping users dedupe per-pilot enrichment');
+assert.match(server,/cachedPositiveStandingContactsForUser/,'quick results can use cached standings without waiting on a cold contacts refresh');
+assert.match(server,/positiveStandings:cachedStandings,[\s\S]*fast:true/,'first threat response does not block on a fresh standings pull');
+assert.match(server,/THREAT_SCAN_RESULT_CACHE_MS = 10 \* 60 \* 1000/,'exact repeated scans reuse complete results for ten minutes');
+assert.match(server,/void savePvpDb\(\)\.catch/,'disk persistence no longer blocks full threat results');
+assert.match(server,/performance:\{mode:fast\?'quick':'full'/,'threat responses expose server timing');
+assert.match(app,/QUICK RESULTS READY/,'client labels the fast provisional result');
+assert.match(app,/threatScanRenderSignature/,'identical background polls do not rebuild the full threat table');
+assert.match(server,/Date\.now\(\)-Number\(running\.lastPartialAt\|\|0\)>=800/,'running scans periodically rebuild cheap partial results');
+assert.match(server,/progress:\{[\s\S]*enriched:/,'background threat enrichment exposes progressive completion');
+assert.match(app,/PROFILES READY/,'client shows progressive profile completion');
+assert.match(app,/threatScanPollCount<=8\?700/,'client checks quickly for early enrichment completion');
+assert.match(app,/threatScanPollCount<60/,'client keeps following long enrichments without the old 30-second cutoff');
+assert.ok(index.includes('/app.js?v=2.10.11-threat-fast1'),'browser receives the optimized threat client');
 
 console.log('Threat scanner regression passed');
