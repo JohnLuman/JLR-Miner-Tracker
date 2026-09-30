@@ -29,7 +29,9 @@ assert.match(ps,/Channel changed to Local/);
 assert.match(ps,/Listener:/);
 assert.match(ps,/\/api\/companion\/location/);
 assert.match(ps,/Windows\.Media\.Ocr\.OcrEngine/,'observer uses Windows built-in OCR');
-assert.match(ps,/GetForegroundWindow/,'observer reads only the foreground EVE client');
+assert.match(ps,/GetForegroundWindow/,'observer can safely identify the foreground EVE client for fallback and clipboard gating');
+assert.match(ps,/Get-JlrObserverEveIdentity/,'screen observer locks to the configured EVE character window');
+assert.match(ps,/PrintWindow/,'screen observer captures the selected EVE client without requiring foreground focus');
 assert.match(ps,/\/api\/companion\/scan/,'observer submits recognized scanner text through companion auth');
 assert.match(ps,/GetClipboardSequenceNumber/,'companion watches clipboard changes without polling clipboard contents blindly');
 assert.match(ps,/Creator Scan Mode:/,'companion exposes creator scan modes in the tray');
@@ -52,5 +54,6 @@ assert.match(ps,/ConvertFrom-SecureString/,'pair token is protected with Windows
 assert.match(ps,/SecureStringToBSTR/,'protected pair token can be restored for API calls');
 assert.match(ps,/LastSentAt/,'companion heartbeats unchanged locations');
 assert.match(ps,/TotalSeconds -ge 30/,'companion heartbeat interval is 30 seconds');
+assert.match(ps,/TotalHours -lt 1/,'screen observer sends at most one successful scan per system per hour');
 assert.match(cmd,/JLR-Tracker-Companion\.ps1/);
 console.log('Desktop companion integration tests passed.');
