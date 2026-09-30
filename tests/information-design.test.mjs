@@ -29,10 +29,10 @@ assert.match(index,/paypal\.com\/ncp\/payment\/J7UYHR2RJFS6N/,'global Donate con
 assert.match(app,/jlr-donate-banner-feedback/,'Feedback hub contains the full Donate banner');
 assert.match(styles,/\.jlr-donate-banner\{--donate-accent:var\(--theme-accent/,'Donate banner inherits the active dashboard theme');
 assert.match(styles,/\.donate-top-link/,'global Donate control has a compact themed treatment');
-assert.match(index,/value="neon">NEON GRID<\/option>/,'Neon Grid theme is available');
-assert.match(index,/value="glacier">GLACIER<\/option>/,'Glacier theme is available');
-assert.match(index,/value="solar">SOLAR FLARE<\/option>/,'Solar Flare theme is available');
-assert.match(index,/value="industrial">INDUSTRIAL<\/option>/,'legacy Forge theme is renamed Industrial');
+assert.match(index,/value="neon"[^>]*>NEON GRID<\/option>/,'Neon Grid theme is available');
+assert.match(index,/value="glacier"[^>]*>GLACIER<\/option>/,'Glacier theme is available');
+assert.match(index,/value="solar"[^>]*>SOLAR FLARE<\/option>/,'Solar Flare theme is available');
+assert.match(index,/value="industrial"[^>]*>INDUSTRIAL<\/option>/,'legacy Forge theme is renamed Industrial');
 assert.match(styles,/\.nav-menu\[open\]\{z-index:120\}/,'open dropdown is raised above neighboring nav groups');
 assert.match(index,/id="themeSelectIcon"/,'theme selector shows the selected EVE image');
 assert.match(index,/data-theme-image="https:\/\/images\.evetech\.net\/types\//,'theme choices carry EVE image references');
