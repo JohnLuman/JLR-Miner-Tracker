@@ -212,3 +212,92 @@
   .jlr-decision-options{grid-template-columns:1fr}
   .jlr-appraisal-freshness{align-items:flex-start}
 }
+
+
+/* JLR themed appraisal dropdowns */
+.appraisal-field{position:relative}
+.appraisal-field .jlr-select-native{
+  position:absolute!important;
+  width:1px!important;
+  height:1px!important;
+  opacity:0!important;
+  pointer-events:none!important;
+  clip-path:inset(50%)!important;
+}
+.jlr-appraisal-select{position:relative;min-width:0}
+.jlr-appraisal-select-trigger{
+  width:100%;
+  min-height:34px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  border:1px solid var(--line);
+  border-radius:8px;
+  padding:6px 34px 6px 10px;
+  background:
+    linear-gradient(180deg,color-mix(in srgb,var(--theme-panel-hi,var(--card)) 92%,white 2%),var(--theme-panel-lo,var(--panel)));
+  color:var(--text);
+  text-align:left;
+  font:inherit;
+  position:relative;
+  box-shadow:inset 0 1px color-mix(in srgb,white 7%,transparent);
+}
+.jlr-appraisal-select-trigger:after{
+  content:"";
+  position:absolute;
+  right:12px;
+  top:50%;
+  width:7px;
+  height:7px;
+  border-right:2px solid var(--theme-accent-hi,#ce68ff);
+  border-bottom:2px solid var(--theme-accent-hi,#ce68ff);
+  transform:translateY(-68%) rotate(45deg);
+  transition:transform .14s ease;
+}
+.jlr-appraisal-select.open .jlr-appraisal-select-trigger{
+  border-color:color-mix(in srgb,var(--theme-accent,#9d34ed) 78%,white 12%);
+  box-shadow:0 0 0 2px color-mix(in srgb,var(--theme-accent,#9d34ed) 22%,transparent),inset 0 1px color-mix(in srgb,white 8%,transparent);
+}
+.jlr-appraisal-select.open .jlr-appraisal-select-trigger:after{
+  transform:translateY(-30%) rotate(225deg);
+}
+.jlr-appraisal-select-menu{
+  display:none;
+  position:absolute;
+  z-index:120;
+  left:0;
+  right:0;
+  top:calc(100% + 5px);
+  padding:5px;
+  border:1px solid color-mix(in srgb,var(--theme-accent,#9d34ed) 48%,var(--line));
+  border-radius:9px;
+  background:color-mix(in srgb,var(--theme-panel-lo,var(--panel)) 94%,black 6%);
+  box-shadow:0 16px 32px #000b,0 0 0 1px #ffffff08 inset;
+  backdrop-filter:blur(12px);
+  max-height:260px;
+  overflow:auto;
+}
+.jlr-appraisal-select.open .jlr-appraisal-select-menu{display:grid;gap:3px}
+.jlr-appraisal-select-menu button{
+  width:100%;
+  border:1px solid transparent;
+  border-radius:6px;
+  background:transparent;
+  color:var(--text);
+  padding:8px 9px;
+  text-align:left;
+  font:800 10px/1.2 "Share Tech Mono",Consolas,monospace;
+  letter-spacing:.04em;
+}
+.jlr-appraisal-select-menu button:hover,
+.jlr-appraisal-select-menu button:focus-visible{
+  outline:0;
+  border-color:color-mix(in srgb,var(--theme-accent,#9d34ed) 42%,var(--line));
+  background:color-mix(in srgb,var(--theme-accent,#9d34ed) 12%,var(--theme-panel-hi,var(--card)));
+}
+.jlr-appraisal-select-menu button.active{
+  border-color:color-mix(in srgb,var(--theme-accent,#9d34ed) 70%,var(--line));
+  background:color-mix(in srgb,var(--theme-accent,#9d34ed) 22%,var(--theme-panel-hi,var(--card)));
+  color:var(--theme-accent-hi,#f2c8ff);
+}
