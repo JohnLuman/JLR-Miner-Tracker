@@ -7388,6 +7388,29 @@ function threatEntityCacheValue(name){
   }
   return null;
 }
+async function threatUniverseIds(batch){
+  if(Date.now()<esiBackoffUntil)throw new Error('ESI name resolution is temporarily backing off.');
+  const response=await fetch('https://esi.evetech.net/latest/universe/ids/?datasource=tranquility',{
+    method:'POST',
+    headers:{
+      'Accept':'application/json',
+      'Content-Type':'application/json',
+      'User-Agent':ESI_USER_AGENT,
+      'X-Compatibility-Date':ESI_COMPAT_DATE,
+    },
+    body:JSON.stringify(batch),
+    signal:AbortSignal.timeout(4_500),
+  });
+  observeEsiErrorLimit(response.headers);
+  if(response.status===420||response.status===429){
+    const reset=Number(response.headers.get('x-esi-error-limit-reset'));
+    const retry=clamp(response.headers.get('retry-after'),1,15*60,Number.isFinite(reset)&&reset>0?reset:5);
+    extendEsiBackoff(retry*1000);
+    throw new Error(`ESI ${response.status}: threat name lookup rate limited`);
+  }
+  if(!response.ok)throw new Error(`ESI ${response.status}: threat name lookup unavailable`);
+  return response.json();
+}
 async function resolveThreatEntities(characterNames=[],shipNames=[]){
   const wantedCharacters=new Map((characterNames||[]).map(name=>[String(name).trim().toLowerCase(),String(name).trim()]).filter(([key])=>key));
   const wantedTypes=new Map((shipNames||[]).map(name=>[String(name).trim().toLowerCase(),String(name).trim()]).filter(([key])=>key));
@@ -7411,7 +7434,7 @@ async function resolveThreatEntities(characterNames=[],shipNames=[]){
     const batch=keys.map(key=>wantedCharacters.get(key)||wantedTypes.get(key)||key);
     if(!batch.length)continue;
     try{
-      const {data}=await esiPost('https://esi.evetech.net/latest/universe/ids/?datasource=tranquility',batch);
+      const data=await threatUniverseIds(batch);
       const charByKey=new Map();
       const typeByKey=new Map();
       for(const row of Array.isArray(data?.characters)?data.characters:[]){
@@ -9854,6 +9877,27 @@ async function routeApi(req,res,url) {
 
       const running=threatScanJobs.get(cacheKey);
       if(running){
+        // Full enrichment writes each completed pilot into the shared in-memory
+        // PvP cache. Rebuild the cheap view periodically so users see rows fill
+        // in progressively instead of waiting for the slowest pilot in Local.
+        if(Date.now()-Number(running.lastPartialAt||0)>=800&&!running.partialRefresh){
+          running.lastPartialAt=Date.now();
+          running.partialRefresh=buildThreatIntel(scanText,{
+            ...running.quickOptions,
+            fast:true,
+            standingsPending:running.standingsPending,
+          }).then(next=>{
+            running.partial={
+              ...next,
+              refreshing:true,
+              progress:{
+                enriched:Math.max(0,Number(next.selectedPilotCount||0)-Number(next.pendingIntel||0)),
+                total:Math.max(0,Number(next.selectedPilotCount)||0),
+              },
+            };
+          }).catch(err=>console.warn('Threat quick-progress rebuild failed',String(err?.message||err)))
+            .finally(()=>{running.partialRefresh=null});
+        }
         return json(res,200,{
           ...running.partial,
           refreshing:true,
@@ -9886,7 +9930,21 @@ async function routeApi(req,res,url) {
         return json(res,200,complete);
       }
 
-      const job={partial:{...partial,refreshing:true},promise:null,startedAt:Date.now()};
+      const job={
+        partial:{...partial,refreshing:true,progress:{
+          enriched:Math.max(0,Number(partial.selectedPilotCount||0)-Number(partial.pendingIntel||0)),
+          total:Math.max(0,Number(partial.selectedPilotCount)||0),
+        }},
+        promise:null,
+        startedAt:Date.now(),
+        lastPartialAt:Date.now(),
+        partialRefresh:null,
+        quickOptions:{
+          ignoreOwnIds:ignoreOwn?user.characterIds:[],
+          positiveStandings:cachedStandings,
+        },
+        standingsPending:Boolean(ignorePositive&&!cachedStandings),
+      };
       const promise=buildThreatIntel(scanText,{
         ignoreOwnIds:ignoreOwn?user.characterIds:[],
         positiveStandingsPromise:standingsPromise,
