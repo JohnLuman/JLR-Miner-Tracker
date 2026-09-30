@@ -69,6 +69,17 @@ assert.match(styles,/NEON GRID — aggressive cyberpunk HUD/,'Neon final identit
 assert.match(styles,/GLACIER — faceted ice crystal \/ frozen observatory/,'Glacier final identity is present');
 assert.match(styles,/SOLAR FLARE — heliostat \/ orbital solar instrumentation/,'Solar final identity is present');
 assert.match(styles,/jlr-glyph-solar/,'selected theme glyphs have theme-specific behavior');
+assert.match(styles,/THEME QA CONSISTENCY PASS/,'theme QA consistency layer is present');
+assert.match(styles,/\.orb\.active\{\s*outline-color:var\(--theme-accent-hi/,'active controls no longer leak hard-coded purple');
+assert.match(styles,/\.system-node\.selected\{\s*outline-color:var\(--theme-accent-hi/,'selected field outline follows the active theme');
+assert.match(styles,/INDUSTRIAL — stamped service-bay material/,'Industrial has a dedicated QA material pass');
+assert.match(styles,/status becomes a quiet orbital glow/,'Void status colors preserve its material');
+assert.match(styles,/status becomes an armored status rail/,'Citadel status colors preserve its material');
+assert.match(styles,/status becomes bioluminescence/,'Serpentis status colors preserve its material');
+assert.match(styles,/status softly refracts through the glass/,'Aurora status colors preserve its material');
+assert.match(styles,/semantic status is a third signal channel/,'Neon status colors preserve its material');
+assert.match(styles,/state color becomes a refracted facet edge/,'Glacier status colors preserve its material');
+assert.match(styles,/semantic state appears as an instrument ring/,'Solar status colors preserve its material');
 
 assert.match(index,/id="fleetInsight"/,'Fleet Performance has a decision-first live insight');
 assert.match(app,/Sampled rate met the fitted target/,'Fleet insight interprets sampled rate versus target');
@@ -99,10 +110,10 @@ assert.match(app,/myLedgerCoverageBadge/,'personal ledger sync state is rendered
 assert.match(app,/outside tracked fields/,'ledger diagnostics distinguish payout rows from field attribution');
 assert.match(app,/fleetUptimeMeter/,'fleet target exposes the uptime assumption visually');
 
-assert.equal(pkg.version,'2.10.9');
-assert.ok(index.includes('/styles.css?v=2.10.9'),'main information-design CSS is cache-busted');
+assert.equal(pkg.version,'2.10.10');
+assert.ok(index.includes('/styles.css?v=2.10.10'),'main information-design CSS is cache-busted');
 assert.ok(index.includes('/tracker.css?v=2.9.147-closest-init1'),'Tracker information-design CSS is cache-busted');
-assert.ok(index.includes('/app.js?v=2.10.9'),'dashboard JS is cache-busted');
+assert.ok(index.includes('/app.js?v=2.10.10'),'dashboard JS is cache-busted');
 assert.ok(index.includes('/tracker.js?v=2.9.147-closest-init1'),'Tracker loader is cache-busted');
 assert.match(trackerLoader,/tracker-core\.js\?v=2\.9\.147-closest-init1/,'Tracker core is cache-busted');
 
