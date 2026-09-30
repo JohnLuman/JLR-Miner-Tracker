@@ -198,7 +198,7 @@ tbody tr:last-child td{border-bottom:0}
 .refine-rate{text-align:right}
 .refine-rate span{display:block;color:#8f8298;font:8px "Share Tech Mono",monospace;letter-spacing:.1em}
 .refine-rate strong{display:block;margin-top:3px;color:#dca5ff;font-size:23px;font-variant-numeric:tabular-nums}
-.refine-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:12px 13px}
+.refine-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;padding:12px 13px}
 .refine-card{
   min-width:0;padding:11px;border:1px solid #342a3e;border-radius:9px;
   background:rgba(9,11,18,.68);
