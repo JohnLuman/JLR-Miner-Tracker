@@ -245,7 +245,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.10.11');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.10.12');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -749,25 +749,6 @@
       renderAppraisal();
     }
   }
-  function appraisalShareCompactNumber(value){
-    const n=Math.max(0,Number(value)||0);
-    if(n>=1e12)return(n/1e12).toFixed(2).replace(/\.00$/,'')+'T';
-    if(n>=1e9)return(n/1e9).toFixed(2).replace(/\.00$/,'')+'B';
-    if(n>=1e6)return(n/1e6).toFixed(2).replace(/\.00$/,'')+'M';
-    if(n>=1e3)return(n/1e3).toFixed(1).replace(/\.0$/,'')+'K';
-    return Math.round(n).toLocaleString();
-  }
-  function appraisalDiscordItemLines(){
-    const allRows=(Array.isArray(appraisalData?.items)?appraisalData.items:[])
-      .filter(row=>row?.resolved!==false&&String(row?.name||'').trim());
-    const rows=allRows.slice(0,9);
-    const lines=rows.map((row,index)=>{
-      const qty=appraisalShareCompactNumber(row.amount);
-      return (index+1)+'. '+String(row.name||'').trim()+(qty&&qty!=='0'?' ×'+qty:'');
-    });
-    if(allRows.length>rows.length&&lines.length)lines[lines.length-1]+=' …';
-    return lines;
-  }
   async function shareAppraisal(){
     if(!appraisalData||appraisalBusy)return;
     const text=String($('appraisalPaste')?.value||'').trim();
@@ -785,12 +766,7 @@
       })});
       const url=String(payload?.shareUrl||payload?.directShareUrl||'');
       if(url){
-        const mode=appraisalModeLabel(appraisalData?.pricing);
-        const value=appraisalIsk(appraisalData?.summary?.value||0);
-        const discordLabel='JLR Appraisal • '+mode+' '+value+' ISK';
-        const itemLines=appraisalDiscordItemLines();
-        const discordText='['+discordLabel+']('+url+')'+(itemLines.length?'\n'+itemLines.join('\n'):'');
-        try{await navigator.clipboard.writeText(discordText);toast('Discord-ready JLR appraisal copied.')}
+        try{await navigator.clipboard.writeText(url);toast('JLR appraisal link copied. Discord will build the appraisal preview from the link.')}
         catch{toast('JLR appraisal created. Open it from the returned link.')}
       }
     }catch(error){
@@ -2993,7 +2969,7 @@
           <div class="threat-actions">
             <button id="threatPasteScan" class="orb blue" type="button">📋 PASTE & SCAN</button>
             <button id="threatRunScan" class="orb silver" type="button">SCAN TEXT</button>
-            <button id="threatShareScan" class="orb purple" type="button" title="Publish this pasted scan as a JLR-hosted D-scan link and automatically copy the URL" ${threatShareLoading?'disabled':''}>${threatShareLoading?'CREATING…':threatShareUrl?'📋 COPY INTEL LINK':'🔗 CREATE + COPY LINK'}</button>
+            <button id="threatShareScan" class="orb purple" type="button" title="Publish this pasted Local or D-scan as a JLR-hosted share link and automatically copy the URL" ${threatShareLoading?'disabled':''}>${threatShareLoading?'CREATING…':threatShareUrl?'📋 COPY INTEL LINK':'🔗 CREATE + COPY LINK'}</button>
           </div>
         </section>
 
@@ -3003,7 +2979,7 @@
             <span>${threatStatus}${threatShareError?` • ${esc(threatShareError)}`:''}</span>
             ${data?.scannedAt?`<small>updated ${ago(data.scannedAt)}</small>`:''}
           </div>
-          ${threatShareUrl?`<div class="threat-share-ready"><span>JLR D-SCAN LINK READY</span><a href="${esc(threatShareUrl)}" target="_blank" rel="noopener noreferrer">${esc(threatShareUrl)}</a></div>`:''}
+          ${threatShareUrl?`<div class="threat-share-ready"><span>JLR SHARE LINK READY</span><a href="${esc(threatShareUrl)}" target="_blank" rel="noopener noreferrer">${esc(threatShareUrl)}</a></div>`:''}
         </section>
 
         <section class="glass threat-ignore-card">
@@ -3043,7 +3019,7 @@
 
         <section class="threat-source-note">
           <strong>JLR THREAT ENGINE</strong>
-          <span>Identity, corporation, alliance, age and security come from public ESI. PvP behavior comes from zKillboard's public GET stats API and is cached in our local PvP database for 6 hours. CREATE INTEL LINK publishes the pasted scan to dscan.info and copies its share URL.</span>
+          <span>Identity, corporation, alliance, age and security come from public ESI. PvP behavior comes from zKillboard's public GET stats API and is cached in our local PvP database for 6 hours. CREATE INTEL LINK publishes the pasted Local or D-scan to JLR and copies the JLR-hosted share URL.</span>
         </section>`:''}
       </div>`;
 
@@ -3114,10 +3090,10 @@
       }catch{}
     }
     if(copied){
-      toast('JLR D-scan link copied. Paste it into your intel channel.');
+      toast('JLR share link copied. Paste it into your intel channel.');
       return true;
     }
-    toast('JLR D-scan link is ready below. Click COPY INTEL LINK or select the link to copy.');
+    toast('JLR share link is ready below. Click COPY INTEL LINK or select the link to copy.');
     return false;
   }
   async function shareThreatScan(text){
@@ -3136,7 +3112,7 @@
     try{
       const result=await api('/api/threat-share',{method:'POST',body:JSON.stringify({text:value})});
       threatShareUrl=String(result?.url||'');
-      if(!threatShareUrl)throw new Error('JLR did not return a D-scan share link.');
+      if(!threatShareUrl)throw new Error('JLR did not return a shared scan link.');
       renderThreatScan();
       await copyThreatShareUrl();
     }catch(error){
@@ -5957,7 +5933,7 @@
       try{
         const ledger=state?.esi?.ledgerDebug||{};
         const context={
-          version:state?.app?.version||'2.10.11',
+          version:state?.app?.version||'2.10.12',
           sourceTab,
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           displayMode:$('app')?.classList.contains('expanded')?'expanded':'compact',

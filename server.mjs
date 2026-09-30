@@ -16,6 +16,7 @@ import { explicitAdamHelpQuestion, adamOverviewQuestion, adamUnknownText } from 
 import { createTrackerSupportClient } from './lib/tracker-support-client.mjs';
 import { chooseRapidResponseRoutes, wandererRiskPenalty, wandererWarnings } from './lib/rapid-response-route.mjs';
 import { parseThreatPaste, compactThreatStats, threatActivityLabels, fountainThreatTags, jlrThreatScore, threatIgnoreReason } from './lib/threat-scan.mjs';
+import { sharedScanKind, sharedScanLines, sharedLocalNames } from './lib/shared-scan.mjs';
 import { archivedBuildSharePublic, migrateLegacyBuildShares } from './lib/appraisal/legacy-share.mjs';
 import { appraisalSummary, appraisalSummaryWithRefine, sanitizeAppraisalShare, APPRAISAL_PRICING, APPRAISAL_VARIANTS } from './lib/appraisal/appraisal.mjs';
 import { normalizePreviewPayoutPercent, renderAppraisalShareHtml } from './lib/appraisal/share-preview.mjs';
@@ -47,7 +48,7 @@ const PUBLIC_URL = String(process.env.PUBLIC_URL || '').trim().replace(/\/$/, ''
 const JLR_SHARE_ORIGIN = String(process.env.JLR_SHARE_ORIGIN || '').trim().replace(/\/$/, '');
 const EVE_CLIENT_ID = String(process.env.EVE_CLIENT_ID || '').trim();
 const EVE_CLIENT_SECRET = String(process.env.EVE_CLIENT_SECRET || '').trim();
-const ESI_USER_AGENT = String(process.env.ESI_USER_AGENT || 'JLR-Miner-Tracker/2.10.11').trim();
+const ESI_USER_AGENT = String(process.env.ESI_USER_AGENT || 'JLR-Miner-Tracker/2.10.12').trim();
 const ESI_COMPAT_DATE = String(process.env.ESI_COMPATIBILITY_DATE || '2026-09-16').trim();
 const TRACKER_SUPPORT_SHARED_SECRET = String(process.env.TRACKER_SUPPORT_SHARED_SECRET || '').trim();
 const trackerSupport = createTrackerSupportClient({
@@ -1284,7 +1285,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.10.11',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
+    app:{name:'JLR Miner Tracker',version:'2.10.12',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}])),wormholes:{reports:wormholeGasPublicReports(),reportHours:WORMHOLE_GAS_REPORT_TTL/3600000}},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans,
@@ -4575,7 +4576,7 @@ function trackerBrainAnswer(user,question,options={}){
   const snapshot=trackerBrainSnapshot();
   const linked=(user?.characterIds||[]).map(String).filter(Boolean);
   const primaryName=trackerBrainPrimaryName(user);
-  const appVersion='2.10.11';
+  const appVersion='2.10.12';
 
   const answer=(topic,text,extra={})=>{
     const safeText=trackerCleanText(text,1200);
@@ -7619,12 +7620,145 @@ async function positiveStandingContactsForUser(user){
   return pending;
 }
 function dscanSharePublic(row){
+  const kind=String(row?.kind||sharedScanKind(row?.text||''));
   return{
     token:String(row?.token||''),
     createdAt:row?.createdAt||null,
     text:String(row?.text||''),
-    lineCount:Number(row?.lineCount)||String(row?.text||'').split(/\r?\n/).filter(Boolean).length,
+    lineCount:Number(row?.lineCount)||sharedScanLines(row?.text||'').length,
+    kind,
+    local:kind==='local'&&row?.local?row.local:null,
+    enrichedAt:row?.enrichedAt||null,
   };
+}
+async function sharedPublicEntityProfile(kind,id){
+  const numericId=Number(id);
+  if(!numericId||!['corporation','alliance'].includes(kind))return null;
+  const segment=kind==='corporation'?'corporations':'alliances';
+  try{
+    if(Date.now()<esiBackoffUntil)return null;
+    const response=await fetch(`https://esi.evetech.net/latest/${segment}/${numericId}/?datasource=tranquility`,{
+      headers:{'Accept':'application/json','User-Agent':ESI_USER_AGENT,'X-Compatibility-Date':ESI_COMPAT_DATE},
+      signal:AbortSignal.timeout(3_000),
+    });
+    observeEsiErrorLimit(response.headers);
+    if(!response.ok)return null;
+    const data=await response.json();
+    return{
+      id:numericId,
+      name:String(data?.name||'').trim(),
+      ticker:String(data?.ticker||'').trim(),
+    };
+  }catch{return null}
+}
+function sharedGroupRows(pilots,key,nameKey,tickerKey){
+  const groups=new Map();
+  for(const pilot of pilots){
+    const id=Number(pilot?.[key])||0;
+    if(!id)continue;
+    if(!groups.has(id)){
+      groups.set(id,{
+        id,
+        name:String(pilot?.[nameKey]||id),
+        ticker:String(pilot?.[tickerKey]||''),
+        count:0,
+        pilots:[],
+      });
+    }
+    const row=groups.get(id);
+    row.count++;
+    row.pilots.push(String(pilot?.name||'Unknown'));
+  }
+  return [...groups.values()].sort((a,b)=>b.count-a.count||a.name.localeCompare(b.name));
+}
+async function buildSharedLocalIntel(scanText){
+  const names=sharedLocalNames(scanText);
+  const resolvedMap=await resolveThreatCharacterNames(names);
+  const resolved=[];
+  const unresolved=[];
+  for(const name of names){
+    const match=resolvedMap.get(String(name).toLowerCase());
+    if(match)resolved.push(match);
+    else unresolved.push(name);
+  }
+  const unique=[...new Map(resolved.map(row=>[Number(row.id),row])).values()];
+  const affiliations=await resolveThreatAffiliations(unique);
+  const corporationIds=[...new Set(unique.map(row=>Number(affiliations.get(Number(row.id))?.corporation_id)).filter(id=>id>0))];
+  const allianceIds=[...new Set(unique.map(row=>Number(affiliations.get(Number(row.id))?.alliance_id)).filter(id=>id>0))];
+
+  const [corporationNames,allianceNames,corporationProfiles,allianceProfiles]=await Promise.all([
+    resolveUniverseNames(corporationIds),
+    resolveUniverseNames(allianceIds),
+    threatMapLimit(corporationIds,8,id=>sharedPublicEntityProfile('corporation',id)),
+    threatMapLimit(allianceIds,8,id=>sharedPublicEntityProfile('alliance',id)),
+  ]);
+  const corpProfileMap=new Map((corporationProfiles||[]).filter(Boolean).map(row=>[Number(row.id),row]));
+  const allianceProfileMap=new Map((allianceProfiles||[]).filter(Boolean).map(row=>[Number(row.id),row]));
+
+  const pilots=[];
+  for(const row of unique){
+    const id=Number(row.id);
+    const affiliation=affiliations.get(id)||{};
+    const corporationId=Number(affiliation.corporation_id)||null;
+    const allianceId=Number(affiliation.alliance_id)||null;
+    const corp=corporationId?corpProfileMap.get(corporationId):null;
+    const alliance=allianceId?allianceProfileMap.get(allianceId):null;
+    pilots.push({
+      id,
+      name:String(row.name||id),
+      corporationId,
+      corporationName:corporationId?String(corp?.name||corporationNames.get(corporationId)||corporationId):'',
+      corporationTicker:String(corp?.ticker||''),
+      allianceId,
+      allianceName:allianceId?String(alliance?.name||allianceNames.get(allianceId)||allianceId):'',
+      allianceTicker:String(alliance?.ticker||''),
+    });
+  }
+  const order=new Map(names.map((name,index)=>[String(name).toLowerCase(),index]));
+  pilots.sort((a,b)=>(order.get(a.name.toLowerCase())??999999)-(order.get(b.name.toLowerCase())??999999));
+
+  return{
+    pilotCount:names.length,
+    resolvedCount:pilots.length,
+    unresolved,
+    corporations:sharedGroupRows(pilots,'corporationId','corporationName','corporationTicker'),
+    alliances:sharedGroupRows(pilots,'allianceId','allianceName','allianceTicker'),
+    pilots,
+  };
+}
+async function enrichJlrDscanShare(row,{force=false}={}){
+  if(!row)return false;
+  const kind=sharedScanKind(row.text||'');
+  let changed=String(row.kind||'')!==kind;
+  row.kind=kind;
+  if(kind==='local'){
+    const sameDigest=String(row?.local?.sourceDigest||'')===String(row?.digest||'');
+    const retryable=Boolean(row?.local?.enrichmentError)&&Date.now()-Date.parse(row?.enrichedAt||0)>10*60*1000;
+    if(force||!row.local||!sameDigest||retryable){
+      try{
+        row.local={...(await buildSharedLocalIntel(row.text||'')),sourceDigest:String(row?.digest||'')};
+      }catch(error){
+        const names=sharedLocalNames(row.text||'');
+        row.local={
+          pilotCount:names.length,
+          resolvedCount:0,
+          unresolved:names,
+          corporations:[],
+          alliances:[],
+          pilots:[],
+          sourceDigest:String(row?.digest||''),
+          enrichmentError:String(error?.message||error||'Local affiliation lookup failed').slice(0,220),
+        };
+      }
+      row.enrichedAt=now();
+      changed=true;
+    }
+  }else if(row.local){
+    delete row.local;
+    row.enrichedAt=now();
+    changed=true;
+  }
+  return changed;
 }
 async function createJlrDscanShare(req,user,scanText){
   state.dscanShares ||= {};
@@ -7633,6 +7767,7 @@ async function createJlrDscanShare(req,user,scanText){
     String(row?.digest||'')===digest&&String(row?.ownerId||'')===String(user?.id||'')
   );
   if(existing){
+    if(await enrichJlrDscanShare(existing))await save();
     return{url:dscanShareUrl(req,existing.token),share:dscanSharePublic(existing),cached:true};
   }
 
@@ -7646,13 +7781,15 @@ async function createJlrDscanShare(req,user,scanText){
     ownerId:String(user?.id||''),
     digest,
     text:scanText,
-    lineCount:scanText.split(/\r?\n/).filter(line=>String(line||'').trim()).length,
+    lineCount:sharedScanLines(scanText).length,
+    kind:sharedScanKind(scanText),
     createdAt:now(),
   };
   state.dscanShares[id]=row;
+  await enrichJlrDscanShare(row);
 
   // Shared scans are snapshots, not permanent app data. Keep a generous recent
-  // history while preventing pasted D-scans from growing state.json forever.
+  // history while preventing pasted Local/D-scans from growing state.json forever.
   const ordered=Object.values(state.dscanShares)
     .sort((a,b)=>Date.parse(b?.createdAt||0)-Date.parse(a?.createdAt||0));
   for(const stale of ordered.slice(750))delete state.dscanShares[stale.id];
@@ -9108,7 +9245,7 @@ async function routeApi(req,res,url) {
       return json(res,502,{error:'SUPPORT_APPRAISAL_FAILED',message:String(err.message||err)});
     }
   }
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.10.11',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.10.12',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
@@ -9381,7 +9518,12 @@ async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname.startsWith('/api/dscan-share/')){
     const token=String(url.pathname.split('/').pop()||'');
     const row=Object.values(state.dscanShares||{}).find(entry=>String(entry?.token||'')===token);
-    if(!row)return json(res,404,{error:'DSCAN_SHARE_NOT_FOUND',message:'That JLR D-scan share link was not found.'});
+    if(!row)return json(res,404,{error:'DSCAN_SHARE_NOT_FOUND',message:'That JLR shared scan link was not found.'});
+    try{
+      if(await enrichJlrDscanShare(row))await save();
+    }catch(error){
+      console.warn('Shared scan enrichment failed',String(error?.message||error));
+    }
     return json(res,200,{share:dscanSharePublic(row)});
   }
 
@@ -10150,7 +10292,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.10.11 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.10.12 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
 setInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': tracker-heartbeat\n\n')}catch{trackerLiveClients.delete(res)}}},20_000).unref();
 setInterval(()=>resetExpired(true),15_000).unref();

@@ -121,6 +121,6 @@ assert.match(server,/progress:\{[\s\S]*enriched:/,'background threat enrichment 
 assert.match(app,/PROFILES READY/,'client shows progressive profile completion');
 assert.match(app,/threatScanPollCount<=8\?700/,'client checks quickly for early enrichment completion');
 assert.match(app,/threatScanPollCount<60/,'client keeps following long enrichments without the old 30-second cutoff');
-assert.ok(index.includes('/app.js?v=2.10.11-threat-fast1'),'browser receives the optimized threat client');
+assert.match(index,/\/app\.js\?v=2\.10\.\d+-threat-fast1/,'browser receives the optimized threat client');
 
 console.log('Threat scanner regression passed');

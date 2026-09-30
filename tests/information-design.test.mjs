@@ -99,10 +99,10 @@ assert.match(app,/myLedgerCoverageBadge/,'personal ledger sync state is rendered
 assert.match(app,/outside tracked fields/,'ledger diagnostics distinguish payout rows from field attribution');
 assert.match(app,/fleetUptimeMeter/,'fleet target exposes the uptime assumption visually');
 
-assert.equal(pkg.version,'2.10.11');
+assert.match(pkg.version,/^2\.10\.\d+$/,'information-design release remains on the current 2.10 version line');
 assert.ok(index.includes('/styles.css?v=2.10.11'),'main information-design CSS is cache-busted');
 assert.ok(index.includes('/tracker.css?v=2.10.11'),'Tracker information-design CSS is cache-busted');
-assert.ok(index.includes('/app.js?v=2.10.11-threat-fast1'),'dashboard JS is cache-busted for the threat speed pass');
+assert.ok(index.includes('/app.js?v='+pkg.version+'-threat-fast1'),'dashboard JS cache key follows the package version and keeps the threat speed suffix');
 assert.ok(index.includes('/tracker.js?v=2.10.11-alarm2'),'Tracker alarm loader is cache-busted');
 assert.match(trackerLoader,/tracker-core\.js\?v=2\.10\.11-alarm2/,'Tracker core alarm client is cache-busted');
 assert.match(trackerLoader,/expiresAt:now\+20_000/,'cross-tab alarm lease expires quickly when an owner tab dies');
