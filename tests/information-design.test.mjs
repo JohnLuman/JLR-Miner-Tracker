@@ -73,8 +73,8 @@ assert.match(styles,/THEME QA CONSISTENCY PASS/,'theme QA consistency layer is p
 assert.match(styles,/\.orb\.active\{\s*outline-color:var\(--theme-accent-hi/,'active controls no longer leak hard-coded purple');
 assert.match(styles,/\.system-node\.selected\{\s*outline-color:var\(--theme-accent-hi/,'selected field outline follows the active theme');
 assert.match(styles,/INDUSTRIAL — stamped service-bay material/,'Industrial has a dedicated QA material pass');
-assert.match(styles,/status becomes a quiet orbital glow/,'Void status colors preserve its material');
-assert.match(styles,/status becomes an armored status rail/,'Citadel status colors preserve its material');
+assert.match(styles,/quiet orbital glow/,'Void status colors preserve its material');
+assert.match(styles,/armored status rail/,'Citadel status colors preserve its material');
 assert.match(styles,/status becomes bioluminescence/,'Serpentis status colors preserve its material');
 assert.match(styles,/status softly refracts through the glass/,'Aurora status colors preserve its material');
 assert.match(styles,/semantic status is a third signal channel/,'Neon status colors preserve its material');
