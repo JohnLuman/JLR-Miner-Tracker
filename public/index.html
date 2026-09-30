@@ -309,6 +309,7 @@
       </div>
       <div class="fleet-command-kpis information-fleet-kpis">
         <article class="fleet-kpi-primary"><span>LATEST SAMPLED RATE</span><strong id="fleetLiveRate">—</strong><small id="fleetLiveRateSub">waiting for a mining ledger change</small></article>
+        <article class="fleet-kpi-primary"><span>TODAY AVG SAMPLED RATE</span><strong id="fleetTodayAvgRate">—</strong><small id="fleetTodayAvgRateSub">mean of today's ESI rate samples</small></article>
         <article class="fleet-kpi-primary"><span>EVE DAY T3 PAYOUT</span><strong id="fleetTodayPayout">—</strong><small id="fleetTodayPayoutSub">current UTC/EVE day • exact T3 ledger</small></article>
         <article class="fleet-kpi-primary"><span>EVE DAY T3 MINED</span><strong id="fleetTodayM3">—</strong><small>current UTC/EVE day • selected fleet</small></article>
         <article class="fleet-kpi-secondary"><span>CONTRIBUTING TOONS</span><strong id="fleetActiveToons">—</strong><small id="fleetActiveToonsSub">detected in latest sample</small></article>
@@ -317,11 +318,11 @@
       </div>
       <div class="fleet-command-grid">
         <article class="fleet-command-card fleet-live-card">
-          <div class="visual-card-head"><strong>SAMPLED RATE OVER TIME</strong><small>ESI mining-ledger deltas • sampled about every 15 minutes</small></div>
+          <div class="visual-card-head"><strong>SAMPLED RATE OVER TIME</strong><small>ESI mining-ledger deltas • hover for exact interval • click to pin/link the day</small></div>
           <div id="fleetActivityChart" class="fleet-activity-chart"></div>
         </article>
         <article class="fleet-command-card fleet-history-card">
-          <div class="visual-card-head"><strong id="fleetHistoryTitle">DAILY OUTPUT</strong><small id="fleetHistorySubtitle">How much did the selected fleet mine each day? • last 7 days</small></div>
+          <div class="visual-card-head"><strong id="fleetHistoryTitle">DAILY OUTPUT</strong><small id="fleetHistorySubtitle">How much did the selected fleet mine each day? • hover for details • click to link the day</small></div>
           <div id="fleetHistoryTotals" class="fleet-history-totals">
             <div><span id="fleetHistoryVolumeLabel">7D VOLUME</span><strong id="fleetHistoryVolume">—</strong><small id="fleetHistoryPeriod">selected history range</small></div>
             <div><span id="fleetHistoryValueLabel">7D PAYOUT</span><strong id="fleetHistoryValue">—</strong><small id="fleetHistoryValueSub">tracked T3 value × payout</small></div>
