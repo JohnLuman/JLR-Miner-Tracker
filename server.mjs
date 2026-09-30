@@ -7691,7 +7691,7 @@ async function sharedPublicEntityProfile(kind,id){
   const segment=kind==='corporation'?'corporations':'alliances';
   try{
     if(Date.now()<esiBackoffUntil)return null;
-    const response=await fetch(\`https://esi.evetech.net/latest/\${segment}/\${numericId}/?datasource=tranquility\`,{
+    const response=await fetch(`https://esi.evetech.net/latest/${segment}/${numericId}/?datasource=tranquility`,{
       headers:{'Accept':'application/json','User-Agent':ESI_USER_AGENT,'X-Compatibility-Date':ESI_COMPAT_DATE},
       signal:AbortSignal.timeout(3_000),
     });
