@@ -749,6 +749,23 @@
     const n=Math.max(0,Number(value)||0);
     return n.toLocaleString(undefined,{maximumFractionDigits:2});
   }
+  function appraisalCopyNumber(value,maxFractionDigits=2){
+    const n=Number(value);
+    if(!Number.isFinite(n))return'';
+    return n.toLocaleString('en-US',{useGrouping:false,maximumFractionDigits:maxFractionDigits});
+  }
+  async function copyAppraisalValue(target){
+    const value=String(target?.dataset?.appraisalCopy||'').trim();
+    if(!value)return;
+    const unit=String(target?.dataset?.appraisalUnit||'').trim();
+    const text=unit?value+' '+unit:value;
+    try{
+      await navigator.clipboard.writeText(text);
+      toast('Copied '+text+'.');
+    }catch(error){
+      toast('Could not copy appraisal value.');
+    }
+  }
   function appraisalVolume(value){
     const n=Math.max(0,Number(value)||0);
     if(n>=1e9)return (n/1e9).toFixed(2)+'B m³';
@@ -798,10 +815,10 @@
     const deltaLabel=(delta>=0?'+':'−')+appraisalIsk(Math.abs(delta))+' ISK';
     const deltaClass=delta>=0?'positive':'negative';
     summary.innerHTML=`
-      <article class="appraisal-refine-primary"><span>REFINED BUY @ ${ratePct.toFixed(2)}%</span><strong>${appraisalIsk(refinedValue)} ISK</strong><small>Jita mineral buy estimate</small></article>
-      <article><span>RAW ORE BUY</span><strong>${appraisalIsk(rawBuy)} ISK</strong><small>recognized ore lines only</small></article>
-      <article class="${deltaClass}"><span>REFINE DIFFERENCE</span><strong>${deltaLabel}</strong><small>refined − raw buy</small></article>
-      <article><span>REFINABLE</span><strong>${lines.toLocaleString()} LINE${lines===1?'':'S'}</strong><small>${Math.max(0,Number(refine.recognizedUnits)||0).toLocaleString()} units</small></article>`;
+      <article class="appraisal-refine-primary appraisal-copy-card" role="button" tabindex="0" data-appraisal-copy="${appraisalCopyNumber(refinedValue)}" data-appraisal-unit="ISK" title="Click to copy exact refined value"><span>REFINED BUY @ ${ratePct.toFixed(2)}%</span><strong>${appraisalIsk(refinedValue)} ISK</strong><small>Jita mineral buy estimate</small></article>
+      <article class="appraisal-copy-card" role="button" tabindex="0" data-appraisal-copy="${appraisalCopyNumber(rawBuy)}" data-appraisal-unit="ISK" title="Click to copy exact raw ore value"><span>RAW ORE BUY</span><strong>${appraisalIsk(rawBuy)} ISK</strong><small>recognized ore lines only</small></article>
+      <article class="${deltaClass} appraisal-copy-card" role="button" tabindex="0" data-appraisal-copy="${appraisalCopyNumber(delta)}" data-appraisal-unit="ISK" title="Click to copy exact refine difference"><span>REFINE DIFFERENCE</span><strong>${deltaLabel}</strong><small>refined − raw buy</small></article>
+      <article class="appraisal-copy-card" role="button" tabindex="0" data-appraisal-copy="${lines}" title="Click to copy refinable line count"><span>REFINABLE</span><strong>${lines.toLocaleString()} LINE${lines===1?'':'S'}</strong><small>${Math.max(0,Number(refine.recognizedUnits)||0).toLocaleString()} units</small></article>`;
     const minerals=(Array.isArray(refine.minerals)?refine.minerals:[]).slice(0,12);
     breakdown.innerHTML=minerals.length
       ?'<div class="appraisal-refine-minerals">'+minerals.map(row=>{
@@ -845,19 +862,19 @@
     const s=appraisalData.summary||{};
     const selected=appraisalModeLabel(appraisalData.pricing);
     if(summary)summary.innerHTML=`
-      <article class="appraisal-primary"><span>${esc(selected)} APPRAISAL</span><strong>${appraisalIsk(s.value)} ISK</strong></article>
-      <article><span>JITA BUY</span><strong>${appraisalIsk(s.buy)} ISK</strong></article>
-      <article><span>SPLIT</span><strong>${appraisalIsk(s.split)} ISK</strong></article>
-      <article><span>JITA SELL</span><strong>${appraisalIsk(s.sell)} ISK</strong></article>
-      <article><span>VOLUME</span><strong>${appraisalVolume(s.volume)}</strong></article>
-      <article><span>ITEM TYPES</span><strong>${Number(s.resolvedLines||0).toLocaleString()}</strong></article>`;
+      <article class="appraisal-primary appraisal-copy-card" role="button" tabindex="0" data-appraisal-copy="${appraisalCopyNumber(s.value)}" data-appraisal-unit="ISK" title="Click to copy exact appraisal value"><span>${esc(selected)} APPRAISAL</span><strong>${appraisalIsk(s.value)} ISK</strong></article>
+      <article class="appraisal-copy-card" role="button" tabindex="0" data-appraisal-copy="${appraisalCopyNumber(s.buy)}" data-appraisal-unit="ISK" title="Click to copy exact Jita buy value"><span>JITA BUY</span><strong>${appraisalIsk(s.buy)} ISK</strong></article>
+      <article class="appraisal-copy-card" role="button" tabindex="0" data-appraisal-copy="${appraisalCopyNumber(s.split)}" data-appraisal-unit="ISK" title="Click to copy exact split value"><span>SPLIT</span><strong>${appraisalIsk(s.split)} ISK</strong></article>
+      <article class="appraisal-copy-card" role="button" tabindex="0" data-appraisal-copy="${appraisalCopyNumber(s.sell)}" data-appraisal-unit="ISK" title="Click to copy exact Jita sell value"><span>JITA SELL</span><strong>${appraisalIsk(s.sell)} ISK</strong></article>
+      <article class="appraisal-copy-card" role="button" tabindex="0" data-appraisal-copy="${appraisalCopyNumber(s.volume)}" data-appraisal-unit="m³" title="Click to copy exact volume"><span>VOLUME</span><strong>${appraisalVolume(s.volume)}</strong></article>
+      <article class="appraisal-copy-card" role="button" tabindex="0" data-appraisal-copy="${Math.max(0,Number(s.resolvedLines)||0)}" title="Click to copy item type count"><span>ITEM TYPES</span><strong>${Number(s.resolvedLines||0).toLocaleString()}</strong></article>`;
     if(items){
       const rows=Array.isArray(appraisalData.items)?appraisalData.items:[];
       items.innerHTML=`<div class="appraisal-table-wrap"><table class="appraisal-table">
         <thead><tr><th>ITEM</th><th>QTY</th><th>VOLUME</th><th>BUY / EA</th><th>SPLIT / EA</th><th>SELL / EA</th><th>BUY TOTAL</th><th>SELL TOTAL</th></tr></thead>
         <tbody>${rows.length?rows.map(row=>row.resolved===false
           ?`<tr class="appraisal-unresolved"><td><strong>${esc(row.name)}</strong><small>UNRESOLVED</small></td><td colspan="7">—</td></tr>`
-          :`<tr><td><strong>${esc(row.name)}</strong><small>${Number(row.buyOrderCount||0).toLocaleString()} buy orders • ${Number(row.sellOrderCount||0).toLocaleString()} sell orders</small></td><td>${Number(row.amount||0).toLocaleString()}</td><td>${appraisalVolume(row.totalVolume)}</td><td>${appraisalPrice(row.buy)}</td><td>${appraisalPrice(row.split)}</td><td>${appraisalPrice(row.sell)}</td><td>${appraisalIsk(row.buyTotal)}</td><td>${appraisalIsk(row.sellTotal)}</td></tr>`).join(''):'<tr><td colspan="8">No appraisal rows.</td></tr>'}</tbody>
+          :`<tr><td><strong>${esc(row.name)}</strong><small>${Number(row.buyOrderCount||0).toLocaleString()} buy orders • ${Number(row.sellOrderCount||0).toLocaleString()} sell orders</small></td><td class="appraisal-copy-cell" role="button" tabindex="0" data-appraisal-copy="${Math.max(0,Number(row.amount)||0)}" title="Click to copy quantity">${Number(row.amount||0).toLocaleString()}</td><td class="appraisal-copy-cell" role="button" tabindex="0" data-appraisal-copy="${appraisalCopyNumber(row.totalVolume)}" data-appraisal-unit="m³" title="Click to copy exact volume">${appraisalVolume(row.totalVolume)}</td><td class="appraisal-copy-cell" role="button" tabindex="0" data-appraisal-copy="${appraisalCopyNumber(row.buy)}" data-appraisal-unit="ISK" title="Click to copy exact buy price">${appraisalPrice(row.buy)}</td><td class="appraisal-copy-cell" role="button" tabindex="0" data-appraisal-copy="${appraisalCopyNumber(row.split)}" data-appraisal-unit="ISK" title="Click to copy exact split price">${appraisalPrice(row.split)}</td><td class="appraisal-copy-cell" role="button" tabindex="0" data-appraisal-copy="${appraisalCopyNumber(row.sell)}" data-appraisal-unit="ISK" title="Click to copy exact sell price">${appraisalPrice(row.sell)}</td><td class="appraisal-copy-cell" role="button" tabindex="0" data-appraisal-copy="${appraisalCopyNumber(row.buyTotal)}" data-appraisal-unit="ISK" title="Click to copy exact buy total">${appraisalIsk(row.buyTotal)}</td><td class="appraisal-copy-cell" role="button" tabindex="0" data-appraisal-copy="${appraisalCopyNumber(row.sellTotal)}" data-appraisal-unit="ISK" title="Click to copy exact sell total">${appraisalIsk(row.sellTotal)}</td></tr>`).join(''):'<tr><td colspan="8">No appraisal rows.</td></tr>'}</tbody>
       </table></div>`;
     }
     if(share)share.disabled=!Array.isArray(appraisalData.items)||!appraisalData.items.some(row=>row.resolved!==false);
@@ -2908,6 +2925,17 @@
       void calculateAppraisal();
     });
     $('appraisalShare')?.addEventListener('click',()=>void shareAppraisal());
+    $('forgePanel')?.addEventListener('click',event=>{
+      const target=event.target instanceof Element?event.target.closest('[data-appraisal-copy]'):null;
+      if(target)void copyAppraisalValue(target);
+    });
+    $('forgePanel')?.addEventListener('keydown',event=>{
+      if(event.key!=='Enter'&&event.key!==' ')return;
+      const target=event.target instanceof Element?event.target.closest('[data-appraisal-copy]'):null;
+      if(!target)return;
+      event.preventDefault();
+      void copyAppraisalValue(target);
+    });
     $('appraisalRefineRate')?.addEventListener('input',()=>{
       appraisalRefineRateTouched=true;
       renderAppraisalRefine();
