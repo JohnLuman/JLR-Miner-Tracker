@@ -217,6 +217,23 @@
   let boardSuppressClickUntil=0;
   const statusText = {ready:'GREEN • MINEABLE',picked:'YELLOW • PICKED',cleared:'RED • RESPAWN'};
 
+  function themeIconMarkup(key){
+    const k=String(key||'void').toLowerCase();
+    const icons={
+      void:'<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="9"/><ellipse cx="32" cy="32" rx="25" ry="12" transform="rotate(-24 32 32)"/><circle cx="51" cy="20" r="3" class="fill"/></svg>',
+      citadel:'<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M32 7 51 16v14c0 14-8 23-19 29C21 53 13 44 13 30V16Z"/><path d="M24 42V24h16v18M20 30h24M29 18h6"/></svg>',
+      industrial:'<svg viewBox="0 0 64 64" aria-hidden="true"><path d="m32 7 8 5 9-1 4 8 7 5-2 9 2 9-7 5-4 8-9-1-8 5-8-5-9 1-4-8-7-5 2-9-2-9 7-5 4-8 9 1Z"/><circle cx="32" cy="32" r="10"/><path d="M22 45 43 20M38 18l7 7"/></svg>',
+      serpentis:'<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M47 13c-8-5-22-2-23 7-1 8 18 7 18 16 0 10-15 15-26 9"/><path d="M17 45c8 6 22 5 25-4"/><circle cx="45" cy="15" r="3" class="fill"/></svg>',
+      blood:'<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M32 5 45 24 38 55H26l-7-31Z"/><path d="M20 24h24M32 11v44M25 35l7-7 7 7"/><circle cx="32" cy="24" r="4" class="fill"/></svg>',
+      angel:'<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M31 21 17 12 5 18l13 10L7 34l15 4-8 11 18-8"/><path d="m33 21 14-9 12 6-13 10 11 6-15 4 8 11-18-8"/></svg>',
+      edencom:'<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M32 6 52 16v15c0 13-8 22-20 28C20 53 12 44 12 31V16Z"/><path d="m36 15-12 20h9l-5 15 15-22h-9Z" class="fill"/></svg>',
+      aurora:'<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M5 42c10-22 17-26 27-10s16 15 27-8"/><path d="M7 50c11-13 20-12 28-2s14 8 22-4"/><path d="M10 29c8-15 16-14 24-4s14 8 20-3"/></svg>',
+      neon:'<svg viewBox="0 0 64 64" aria-hidden="true"><path d="m32 7 22 12v26L32 57 10 45V19Z"/><path d="m10 19 22 12 22-12M32 31v26M21 25l22-12M21 51V25M43 51V13"/></svg>',
+      glacier:'<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M31 4 50 23 42 57H18L10 31Z"/><path d="m31 4-5 25 16 28M10 31l16-2 24-6M26 29l-8 28"/></svg>',
+      solar:'<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="12" class="fill"/><circle cx="32" cy="32" r="18"/><path d="M32 3v10M32 51v10M3 32h10M51 32h10M11 11l7 7M46 46l7 7M53 11l-7 7M18 46l-7 7"/></svg>',
+    };
+    return icons[k]||icons.void;
+  }
   function syncThemeControl(theme=activeTheme){
     const select=$('themeSelect');
     const icon=$('themeSelectIcon');
@@ -224,8 +241,8 @@
     if(select.value!==theme)select.value=theme;
     const option=select.options[select.selectedIndex];
     if(icon){
-      const src=String(option?.dataset?.themeImage||'');
-      if(src&&icon.src!==src)icon.src=src;
+      icon.dataset.themeIcon=String(option?.dataset?.themeIcon||theme||'void');
+      icon.innerHTML=themeIconMarkup(icon.dataset.themeIcon);
       icon.title=String(option?.textContent||'Theme').trim();
     }
   }
@@ -275,7 +292,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.10.6');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.10.7');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -653,7 +670,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR ADAM MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.10.6'),
+      'Version: '+String(state?.app?.version||'2.10.7'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -2665,11 +2682,11 @@
       if(select.id==='themeSelect'){
         button.dataset.themeValue=String(option.value||'');
         button.classList.add('theme-menu-option');
-        const image=document.createElement('img');
-        image.className='theme-menu-image';
-        image.src=String(option.dataset.themeImage||'');
-        image.alt='';
-        image.loading='lazy';
+        const image=document.createElement('span');
+        image.className='theme-menu-image theme-glyph';
+        image.dataset.themeIcon=String(option.dataset.themeIcon||option.value||'void');
+        image.setAttribute('aria-hidden','true');
+        image.innerHTML=themeIconMarkup(image.dataset.themeIcon);
         const copy=document.createElement('span');
         copy.className='theme-menu-copy';
         const name=document.createElement('strong');
@@ -6833,7 +6850,7 @@
       try{
         const ledger=state?.esi?.ledgerDebug||{};
         const context={
-          version:state?.app?.version||'2.10.6',
+          version:state?.app?.version||'2.10.7',
           sourceTab,
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           displayMode:$('app')?.classList.contains('expanded')?'expanded':'compact',
