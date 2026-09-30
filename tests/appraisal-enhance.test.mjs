@@ -8,7 +8,7 @@ const shareHtml=fs.readFileSync(new URL('../public/appraisal-share.html',import.
 const share=fs.readFileSync(new URL('../public/appraisal-share-enhance.js',import.meta.url),'utf8');
 const shareCss=fs.readFileSync(new URL('../public/appraisal-share-enhance.css',import.meta.url),'utf8');
 
-assert.match(index,/appraisal-enhance\.js\?v=5/);
+assert.match(index,/appraisal-enhance\.js\?v=6/);
 assert.match(index,/appraisal-enhance\.css\?v=5/);
 assert.match(live,/PAYOUT %/);
 assert.match(live,/JLR NATIVE VALUE MODIFIER/);
@@ -28,14 +28,15 @@ assert.match(live,/DECISION ENGINE/,'Appraisal compares raw compressed and refin
 assert.match(live,/LIQUIDITY \+ HISTORY/,'Appraisal exposes liquidity context');
 assert.match(live,/JLR SHARED CACHE/,'Appraisal identifies shared snapshot pricing');
 assert.match(liveCss,/jlr-appraisal-freshness/,'Appraisal styles freshness status');
-assert.match(live,/CCP SDE/,'Appraisal exposes local SDE provenance');
+assert.doesNotMatch(live,/ESI STATIC FALLBACK|STATIC CATALOG WARMING|const staticLabel/,'Appraisal hides internal static-catalog fallback status from users');
 
-assert.match(shareHtml,/appraisal-share-enhance\.js\?v=3/);
+assert.match(shareHtml,/appraisal-share-enhance\.js\?v=4/);
 assert.match(shareHtml,/appraisal-share-enhance\.css\?v=1/);
 assert.match(share,/PAYOUT TOTAL/);
 assert.match(share,/COPY SUMMARY/);
 assert.match(share,/COPY TABLE/);
 assert.match(share,/data-share-copy/);
+assert.doesNotMatch(share,/STATIC DATA|ESI FALLBACK/,'Shared appraisals hide internal static-data fallback status');
 assert.match(shareCss,/share-payout-kpi/);
 
 console.log('JLR Appraisal enhancement tests passed.');
