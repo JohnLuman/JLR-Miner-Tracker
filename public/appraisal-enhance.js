@@ -22,7 +22,14 @@
     if(n>=1e3)return(n/1e3).toFixed(1)+'K m³';
     return n.toLocaleString(undefined,{maximumFractionDigits:2})+' m³';
   };
-  const modeLabel=value=>String(value||'split')==='buy'?'BUY':String(value||'split')==='sell'?'SELL':'SPLIT';
+  const modeLabel=value=>{
+    const key=String(value||'split');
+    if(key==='buy')return'BUY';
+    if(key==='sell')return'SELL';
+    if(key==='refine-buy')return'REFINE BUY';
+    if(key==='refine-sell')return'REFINE SELL';
+    return'SPLIT';
+  };
   const variantLabel=value=>String(value||'immediate')==='top5percent'?'TOP 5% AVG':'IMMEDIATE';
   let appraisal=null;
   let appraisalIntel=null;
@@ -96,16 +103,33 @@
     clearTimeout(showToast.timer);
     showToast.timer=setTimeout(()=>host.classList.add('hidden'),1700);
   }
+  function refineRate(){
+    const refine=appraisal&&appraisal.refine||{};
+    const input=document.getElementById('appraisalRefineRate');
+    const pct=clamp(Number(input&&input.value)||num(refine.selectedRate??refine.defaultRate)*100,0,100);
+    return pct/100;
+  }
   function selectedSummary(summary){
     const mode=String(appraisal&&appraisal.pricing||'split');
     if(mode==='buy')return num(summary&&summary.buy);
     if(mode==='sell')return num(summary&&summary.sell);
+    if(mode==='refine-buy')return num(appraisal?.refine?.buyAt100)*refineRate();
+    if(mode==='refine-sell')return num(appraisal?.refine?.sellAt100)*refineRate();
     return num(summary&&summary.split);
   }
   function selectedTotal(row){
     const mode=String(appraisal&&appraisal.pricing||'split');
     if(mode==='buy')return num(row&&row.buyTotal);
     if(mode==='sell')return num(row&&row.sellTotal);
+    if(mode==='refine-buy'||mode==='refine-sell'){
+      const refineRows=Array.isArray(appraisal?.refine?.items)?appraisal.refine.items:[];
+      const match=refineRows.find(item=>
+        (Number(item?.typeId)>0&&Number(item.typeId)===Number(row?.typeId))||
+        String(item?.name||'').toLowerCase()===String(row?.name||'').toLowerCase()
+      );
+      if(!match)return 0;
+      return num(mode==='refine-sell'?match.sellValueAt100:match.valueAt100)*refineRate();
+    }
     return num(row&&row.splitTotal);
   }
   function copyStrong(raw,display,label,klass=''){
@@ -115,9 +139,72 @@
     return '<button type="button" class="jlr-appraisal-copy-value '+klass+'" data-jlr-copy="'+esc(exact(raw))+'" title="Copy exact '+esc(label)+'">'+display+'</button>';
   }
 
+  function closeJlrSelects(except=null){
+    document.querySelectorAll('.jlr-appraisal-select.open').forEach(node=>{
+      if(node!==except)node.classList.remove('open');
+    });
+  }
+  function enhanceSelect(id){
+    const select=document.getElementById(id);
+    if(!select)return;
+    select.classList.add('jlr-select-native');
+    let shell=select.nextElementSibling;
+    if(!shell||!shell.classList.contains('jlr-appraisal-select')){
+      shell=document.createElement('div');
+      shell.className='jlr-appraisal-select';
+      shell.innerHTML='<button type="button" class="jlr-appraisal-select-trigger" aria-haspopup="listbox" aria-expanded="false"></button><div class="jlr-appraisal-select-menu" role="listbox"></div>';
+      select.insertAdjacentElement('afterend',shell);
+      const trigger=shell.querySelector('.jlr-appraisal-select-trigger');
+      trigger.addEventListener('click',event=>{
+        event.preventDefault();
+        const opening=!shell.classList.contains('open');
+        closeJlrSelects(shell);
+        shell.classList.toggle('open',opening);
+        trigger.setAttribute('aria-expanded',opening?'true':'false');
+      });
+      shell.querySelector('.jlr-appraisal-select-menu').addEventListener('click',event=>{
+        const option=event.target.closest('[data-jlr-select-value]');
+        if(!option)return;
+        select.value=option.dataset.jlrSelectValue||'';
+        select.dispatchEvent(new Event('change',{bubbles:true}));
+        shell.classList.remove('open');
+        trigger.setAttribute('aria-expanded','false');
+        enhanceSelect(id);
+      });
+    }
+    const signature=Array.from(select.options).map(option=>option.value+'='+option.textContent).join('|');
+    if(shell.dataset.signature!==signature){
+      shell.dataset.signature=signature;
+      const menu=shell.querySelector('.jlr-appraisal-select-menu');
+      menu.innerHTML=Array.from(select.options).map(option=>
+        '<button type="button" role="option" data-jlr-select-value="'+esc(option.value)+'">'+esc(option.textContent||option.value)+'</button>'
+      ).join('');
+    }
+    const selected=select.options[select.selectedIndex]||select.options[0];
+    const trigger=shell.querySelector('.jlr-appraisal-select-trigger');
+    trigger.textContent=selected?selected.textContent:'SELECT';
+    shell.querySelectorAll('[data-jlr-select-value]').forEach(option=>{
+      const active=option.dataset.jlrSelectValue===select.value;
+      option.classList.toggle('active',active);
+      option.setAttribute('aria-selected',active?'true':'false');
+    });
+  }
+  if(!document.documentElement.dataset.jlrSelectCloseBound){
+    document.documentElement.dataset.jlrSelectCloseBound='1';
+    document.addEventListener('click',event=>{
+      if(!event.target.closest('.jlr-appraisal-select'))closeJlrSelects();
+    });
+    document.addEventListener('keydown',event=>{
+      if(event.key==='Escape')closeJlrSelects();
+    });
+  }
+
   function ensureUi(){
     const panel=document.querySelector('#appraisalPanel .appraisal-panel');
     if(!panel)return null;
+    enhanceSelect('appraisalMarket');
+    enhanceSelect('appraisalPricing');
+    enhanceSelect('appraisalVariant');
     if(!document.getElementById('jlrAppraisalPayoutBar')){
       const controls=panel.querySelector('.appraisal-controls');
       if(controls){
@@ -334,7 +421,13 @@
     const pctInput=document.getElementById('appraisalRefineRate');
     const pct=clamp(Number(pctInput&&pctInput.value)||num(refine.selectedRate??refine.defaultRate)*100,0,100);
     const factor=pct/100;
-    const cards=[num(refine.buyAt100)*factor,num(refine.eligibleBuy),num(refine.buyAt100)*factor-num(refine.eligibleBuy),num(refine.recognizedLines)];
+    const cards=[
+      num(refine.buyAt100)*factor,
+      num(refine.sellAt100)*factor,
+      num(refine.eligibleBuy),
+      num(refine.buyAt100)*factor-num(refine.eligibleBuy),
+      num(refine.recognizedLines)
+    ];
     document.querySelectorAll('#appraisalRefineSummary article strong').forEach((node,index)=>{
       if(index>=cards.length)return;
       node.dataset.jlrCopy=exact(cards[index]);
@@ -385,6 +478,7 @@
         recognizedLines:Number(source.refine.recognizedLines)||0,
         recognizedUnits:Number(source.refine.recognizedUnits)||0,
         buyAt100:Number(source.refine.buyAt100)||0,
+        sellAt100:Number(source.refine.sellAt100)||0,
         eligibleBuy:Number(source.refine.eligibleBuy)||0,
         eligibleSplit:Number(source.refine.eligibleSplit)||0,
         eligibleSell:Number(source.refine.eligibleSell)||0,

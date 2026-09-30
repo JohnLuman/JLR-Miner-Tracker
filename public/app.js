@@ -591,7 +591,11 @@
   }
   function appraisalModeLabel(value){
     const key=String(value||'split');
-    return key==='buy'?'BUY':key==='sell'?'SELL':'SPLIT';
+    if(key==='buy')return'BUY';
+    if(key==='sell')return'SELL';
+    if(key==='refine-buy')return'REFINE BUY';
+    if(key==='refine-sell')return'REFINE SELL';
+    return'SPLIT';
   }
   function appraisalVariantLabel(value){
     return String(value||'immediate')==='top5percent'?'TOP 5% AVG':'IMMEDIATE';
@@ -602,6 +606,18 @@
     const input=$('appraisalRefineRate');
     const raw=Number(input?.value);
     return Math.max(0,Math.min(100,Number.isFinite(raw)?raw:fallback));
+  }
+  function syncAppraisalSelectedRefineValue(){
+    const mode=String(appraisalData?.pricing||'');
+    if(!appraisalData?.summary||!['refine-buy','refine-sell'].includes(mode))return;
+    const refine=appraisalData.refine||{};
+    const rate=appraisalRefineRatePct()/100;
+    const refineBuy=Math.max(0,Number(refine.buyAt100)||0)*rate;
+    const refineSell=Math.max(0,Number(refine.sellAt100)||0)*rate;
+    appraisalData.summary.refineBuy=refineBuy;
+    appraisalData.summary.refineSell=refineSell;
+    appraisalData.summary.value=mode==='refine-sell'?refineSell:refineBuy;
+    refine.selectedRate=rate;
   }
   function renderAppraisalRefine(){
     const section=$('appraisalRefineSection');
@@ -621,6 +637,7 @@
     const rate=ratePct/100;
     const lines=Math.max(0,Number(refine.recognizedLines)||0);
     const refinedValue=Math.max(0,Number(refine.buyAt100)||0)*rate;
+    const refinedSellValue=Math.max(0,Number(refine.sellAt100)||0)*rate;
     const rawBuy=Math.max(0,Number(refine.eligibleBuy)||0);
     const delta=refinedValue-rawBuy;
     if(!lines){
@@ -631,9 +648,10 @@
     const deltaLabel=(delta>=0?'+':'−')+appraisalIsk(Math.abs(delta))+' ISK';
     const deltaClass=delta>=0?'positive':'negative';
     summary.innerHTML=`
-      <article class="appraisal-refine-primary appraisal-copy-card" role="button" tabindex="0" data-appraisal-copy="${appraisalCopyNumber(refinedValue)}" data-appraisal-unit="ISK" title="Click to copy exact refined value"><span>REFINED BUY @ ${ratePct.toFixed(2)}%</span><strong>${appraisalIsk(refinedValue)} ISK</strong><small>Jita mineral buy estimate</small></article>
+      <article class="appraisal-refine-primary appraisal-copy-card" role="button" tabindex="0" data-appraisal-copy="${appraisalCopyNumber(refinedValue)}" data-appraisal-unit="ISK" title="Click to copy exact refined buy value"><span>REFINED BUY @ ${ratePct.toFixed(2)}%</span><strong>${appraisalIsk(refinedValue)} ISK</strong><small>Jita mineral buy estimate</small></article>
+      <article class="appraisal-refine-primary appraisal-copy-card" role="button" tabindex="0" data-appraisal-copy="${appraisalCopyNumber(refinedSellValue)}" data-appraisal-unit="ISK" title="Click to copy exact refined sell value"><span>REFINED SELL @ ${ratePct.toFixed(2)}%</span><strong>${appraisalIsk(refinedSellValue)} ISK</strong><small>Jita mineral sell estimate</small></article>
       <article class="appraisal-copy-card" role="button" tabindex="0" data-appraisal-copy="${appraisalCopyNumber(rawBuy)}" data-appraisal-unit="ISK" title="Click to copy exact raw ore value"><span>RAW ORE BUY</span><strong>${appraisalIsk(rawBuy)} ISK</strong><small>recognized ore lines only</small></article>
-      <article class="${deltaClass} appraisal-copy-card" role="button" tabindex="0" data-appraisal-copy="${appraisalCopyNumber(delta)}" data-appraisal-unit="ISK" title="Click to copy exact refine difference"><span>REFINE DIFFERENCE</span><strong>${deltaLabel}</strong><small>refined − raw buy</small></article>
+      <article class="${deltaClass} appraisal-copy-card" role="button" tabindex="0" data-appraisal-copy="${appraisalCopyNumber(delta)}" data-appraisal-unit="ISK" title="Click to copy exact refine difference"><span>REFINE DIFFERENCE</span><strong>${deltaLabel}</strong><small>refined buy − raw buy</small></article>
       <article class="appraisal-copy-card" role="button" tabindex="0" data-appraisal-copy="${lines}" title="Click to copy refinable line count"><span>REFINABLE</span><strong>${lines.toLocaleString()} LINE${lines===1?'':'S'}</strong><small>${Math.max(0,Number(refine.recognizedUnits)||0).toLocaleString()} units</small></article>`;
     const minerals=(Array.isArray(refine.minerals)?refine.minerals:[]).slice(0,12);
     breakdown.innerHTML=minerals.length
@@ -710,6 +728,7 @@
         pricing:String($('appraisalPricing')?.value||'split'),
         pricingVariant:String($('appraisalVariant')?.value||'immediate'),
       })});
+      syncAppraisalSelectedRefineValue();
       renderAppraisal();
       const s=appraisalData.summary||{};
       const unresolved=Number(s.unresolvedLines||0);
@@ -728,6 +747,30 @@
       renderAppraisal();
     }
   }
+  function appraisalShareCompactNumber(value){
+    const n=Math.max(0,Number(value)||0);
+    if(n>=1e12)return(n/1e12).toFixed(2).replace(/\.00$/,'')+'T';
+    if(n>=1e9)return(n/1e9).toFixed(2).replace(/\.00$/,'')+'B';
+    if(n>=1e6)return(n/1e6).toFixed(2).replace(/\.00$/,'')+'M';
+    if(n>=1e3)return(n/1e3).toFixed(1).replace(/\.0$/,'')+'K';
+    return Math.round(n).toLocaleString();
+  }
+  function appraisalDiscordItemLines(){
+    const rows=(Array.isArray(appraisalData?.items)?appraisalData.items:[])
+      .filter(row=>row?.resolved!==false&&String(row?.name||'').trim())
+      .slice(0,9);
+    const lines=[];
+    for(let i=0;i<rows.length;i+=3){
+      lines.push(rows.slice(i,i+3).map((row,offset)=>{
+        const index=i+offset+1;
+        const qty=appraisalShareCompactNumber(row.amount);
+        return index+'. '+String(row.name||'').trim()+(qty&&qty!=='0'?' ×'+qty:'');
+      }).join('  •  '));
+    }
+    const total=(Array.isArray(appraisalData?.items)?appraisalData.items:[]).filter(row=>row?.resolved!==false).length;
+    if(total>rows.length)lines.push('+'+(total-rows.length)+' more item type'+(total-rows.length===1?'':'s'));
+    return lines;
+  }
   async function shareAppraisal(){
     if(!appraisalData||appraisalBusy)return;
     const text=String($('appraisalPaste')?.value||'').trim();
@@ -745,7 +788,12 @@
       })});
       const url=String(payload?.shareUrl||'');
       if(url){
-        try{await navigator.clipboard.writeText(url);toast('JLR appraisal link copied.')}
+        const mode=appraisalModeLabel(appraisalData?.pricing);
+        const value=appraisalIsk(appraisalData?.summary?.value||0);
+        const discordLabel='JLR Appraisal • '+mode+' '+value+' ISK';
+        const itemLines=appraisalDiscordItemLines();
+        const discordText='['+discordLabel+']('+url+')'+(itemLines.length?'\n'+itemLines.join('\n'):'');
+        try{await navigator.clipboard.writeText(discordText);toast('Discord-ready JLR appraisal copied.')}
         catch{toast('JLR appraisal created. Open it from the returned link.')}
       }
     }catch(error){
@@ -1832,7 +1880,7 @@
           <div class="appraisal-controls">
             <label class="appraisal-field appraisal-title-field"><span>APPRAISAL NAME</span><input id="appraisalTitle" maxlength="120" placeholder="Example: Fleet loot split"></label>
             <label class="appraisal-field"><span>MARKET</span><select id="appraisalMarket"><option value="2">Jita 4-4</option></select></label>
-            <label class="appraisal-field"><span>PRICE</span><select id="appraisalPricing"><option value="split" selected>SPLIT</option><option value="buy">BUY</option><option value="sell">SELL</option></select></label>
+            <label class="appraisal-field"><span>PRICE</span><select id="appraisalPricing"><option value="split" selected>SPLIT</option><option value="buy">BUY</option><option value="sell">SELL</option><option value="refine-buy">REFINE BUY</option><option value="refine-sell">REFINE SELL</option></select></label>
             <label class="appraisal-field"><span>PRICING BASIS</span><select id="appraisalVariant"><option value="immediate" selected>IMMEDIATE</option><option value="top5percent">TOP 5% AVERAGE</option></select></label>
           </div>
           <div class="appraisal-quick-entry">
@@ -1888,7 +1936,8 @@
     });
     $('appraisalRefineRate')?.addEventListener('input',()=>{
       appraisalRefineRateTouched=true;
-      renderAppraisalRefine();
+      syncAppraisalSelectedRefineValue();
+      renderAppraisal();
     });
     $('appraisalPasteClipboard')?.addEventListener('click',async()=>{
       try{
@@ -1901,7 +1950,8 @@
     for(const id of ['appraisalMarket','appraisalPricing','appraisalVariant']){
       $(id)?.addEventListener('change',()=>{
         if(!appraisalData)return;
-        $('appraisalStatus').textContent='Appraisal settings changed. Click APPRAISE to refresh the values.';
+        $('appraisalStatus').textContent='Refreshing appraisal settings…';
+        void calculateAppraisal();
       });
     }
     const quick=document.querySelector('.quick-update');

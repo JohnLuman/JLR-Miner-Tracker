@@ -3516,7 +3516,7 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .appraisal-refine-rate>div{display:grid;grid-template-columns:1fr auto;align-items:center;border:1px solid color-mix(in srgb,var(--theme-accent,#9d34ed) 55%,var(--line));border-radius:8px;background:var(--theme-panel-lo,var(--panel));overflow:hidden}
 .appraisal-refine-rate input{width:100%;min-width:0;padding:8px 9px;border:0;outline:0;background:transparent;color:var(--text);font:700 13px/1 "Share Tech Mono",monospace;text-align:right}
 .appraisal-refine-rate b{padding:0 9px;color:var(--theme-accent,#b55cff);font-size:11px}
-.appraisal-refine-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
+.appraisal-refine-summary{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px}
 .appraisal-refine-summary article{display:grid;gap:3px;min-width:0;padding:10px;border:1px solid var(--line);border-radius:9px;background:color-mix(in srgb,var(--theme-panel-lo,var(--panel)) 86%,transparent)}
 .appraisal-refine-summary article span{font-size:7px;letter-spacing:.09em;color:var(--muted)}
 .appraisal-refine-summary article strong{font-size:12px;color:var(--text);font-variant-numeric:tabular-nums}

@@ -53,14 +53,30 @@
   const copyButton=(raw,display,label,klass='')=>
     '<button type="button" class="share-copy-value '+klass+'" data-share-copy="'+esc(exact(raw))+'" title="Copy exact '+esc(label)+'">'+display+'</button>';
 
+  function refineRate(appraisal){
+    const refine=appraisal&&appraisal.refine||{};
+    return clamp(num(refine.selectedRate??refine.defaultRate),0,1);
+  }
   function selectedSummary(appraisal,summary){
     if(appraisal.pricing==='buy')return num(summary.buy);
     if(appraisal.pricing==='sell')return num(summary.sell);
+    if(appraisal.pricing==='refine-buy')return num(appraisal?.refine?.buyAt100)*refineRate(appraisal);
+    if(appraisal.pricing==='refine-sell')return num(appraisal?.refine?.sellAt100)*refineRate(appraisal);
     return num(summary.split);
   }
   function selectedRow(appraisal,row){
     if(appraisal.pricing==='buy')return num(row.buyTotal);
     if(appraisal.pricing==='sell')return num(row.sellTotal);
+    if(appraisal.pricing==='refine-buy'||appraisal.pricing==='refine-sell'){
+      const list=Array.isArray(appraisal?.refine?.items)?appraisal.refine.items:[];
+      const match=list.find(item=>
+        (Number(item?.typeId)>0&&Number(item.typeId)===Number(row?.typeId))||
+        String(item?.name||'').toLowerCase()===String(row?.name||'').toLowerCase()
+      );
+      if(!match)return 0;
+      const at100=appraisal.pricing==='refine-sell'?num(match.sellValueAt100):num(match.valueAt100);
+      return at100*refineRate(appraisal);
+    }
     return num(row.splitTotal);
   }
 
@@ -131,7 +147,13 @@
     const refine=appraisal.refine;
     if(refine){
       const rate=clamp(num(refine.selectedRate??refine.defaultRate),0,1);
-      const values=[num(refine.buyAt100)*rate,num(refine.eligibleBuy),num(refine.buyAt100)*rate-num(refine.eligibleBuy),num(refine.recognizedLines)];
+      const values=[
+        num(refine.buyAt100)*rate,
+        num(refine.sellAt100)*rate,
+        num(refine.eligibleBuy),
+        num(refine.buyAt100)*rate-num(refine.eligibleBuy),
+        num(refine.recognizedLines)
+      ];
       root.querySelectorAll('.refine-grid .refine-card strong').forEach((node,index)=>{
         if(index>=values.length)return;
         node.dataset.shareCopy=exact(values[index]);
@@ -158,6 +180,7 @@
     const lines=[
       share.title||'JLR Appraisal',
       (appraisal.market&&appraisal.market.name||'Jita 4-4')+' • '+String(appraisal.pricingVariant||'immediate').toUpperCase(),
+      'Basis: '+String(appraisal.pricing||'split').replaceAll('-',' ').toUpperCase(),
       'Payout: '+pct.toFixed(1).replace(/\.0$/,'')+'%',
       (appraisal.market&&appraisal.market.name||'Market')+' Buy: '+exactPretty(summary.buy)+' ISK',
       'Split: '+exactPretty(summary.split)+' ISK',

@@ -17,7 +17,7 @@ import { createTrackerSupportClient } from './lib/tracker-support-client.mjs';
 import { chooseRapidResponseRoutes, wandererRiskPenalty, wandererWarnings } from './lib/rapid-response-route.mjs';
 import { parseThreatPaste, compactThreatStats, threatActivityLabels, fountainThreatTags, jlrThreatScore, threatIgnoreReason } from './lib/threat-scan.mjs';
 import { archivedBuildSharePublic, migrateLegacyBuildShares } from './lib/appraisal/legacy-share.mjs';
-import { appraisalSummary, sanitizeAppraisalShare, APPRAISAL_PRICING, APPRAISAL_VARIANTS } from './lib/appraisal/appraisal.mjs';
+import { appraisalSummary, appraisalSummaryWithRefine, sanitizeAppraisalShare, APPRAISAL_PRICING, APPRAISAL_VARIANTS } from './lib/appraisal/appraisal.mjs';
 import { normalizePreviewPayoutPercent, renderAppraisalShareHtml } from './lib/appraisal/share-preview.mjs';
 import { parseAppraisalPaste } from './lib/appraisal/paste.mjs';
 import { nativeAppraisalPriceSet } from './lib/appraisal/native-market.mjs';
@@ -2018,15 +2018,18 @@ function refinedOreValue(oreName,oreVolume,priceByMineral) {
   };
 }
 
-function effectiveJitaMineralPrices(){
+function effectiveJitaMineralPrices(side='buy'){
   const prices={};
+  const key=String(side||'buy').toLowerCase()==='sell'?'sell':'buy';
   for(const mineral of REFINING_MINERALS){
     const detail=state.market?.minerals?.[mineral]||{};
-    const direct=Number(detail.effectiveJitaBuy ?? detail.jita?.buy);
+    const direct=Number(key==='sell'?detail.jita?.sell:(detail.effectiveJitaBuy ?? detail.jita?.buy));
     if(Number.isFinite(direct)&&direct>0){prices[mineral]=direct;continue}
-    for(const ore of Object.values(state.market?.prices||{})){
-      const fallback=Number(ore?.jita?.breakdown?.[mineral]?.unitPrice);
-      if(Number.isFinite(fallback)&&fallback>0){prices[mineral]=fallback;break}
+    if(key==='buy'){
+      for(const ore of Object.values(state.market?.prices||{})){
+        const fallback=Number(ore?.jita?.breakdown?.[mineral]?.unitPrice);
+        if(Number.isFinite(fallback)&&fallback>0){prices[mineral]=fallback;break}
+      }
     }
   }
   return prices;
@@ -6061,13 +6064,14 @@ function appraisalOreRecipe(name){
   return ORE_SURVEY_T3_REPROCESSING[key]||ORE_SURVEY_EXTRA_REPROCESSING[key]||null;
 }
 function appraisalRefinePreview(items,sdeMaterialRows=[]){
-  const prices=effectiveJitaMineralPrices();
+  const buyPrices=effectiveJitaMineralPrices('buy');
+  const sellPrices=effectiveJitaMineralPrices('sell');
   const mineralTotals=new Map();
   const refineItems=[];
   const sdeMaterials=new Map((Array.isArray(sdeMaterialRows)?sdeMaterialRows:[])
     .filter(row=>Number(row?.typeId)>0)
     .map(row=>[Number(row.typeId),row]));
-  let recognizedLines=0,recognizedUnits=0,buyAt100=0,eligibleBuy=0,eligibleSplit=0,eligibleSell=0;
+  let recognizedLines=0,recognizedUnits=0,buyAt100=0,sellAt100=0,eligibleBuy=0,eligibleSplit=0,eligibleSell=0;
   let sdeRecipeLines=0,legacyRecipeLines=0;
   for(const row of Array.isArray(items)?items:[]){
     if(row?.resolved===false)continue;
@@ -6089,21 +6093,27 @@ function appraisalRefinePreview(items,sdeMaterialRows=[]){
     const portionSize=Math.max(1,Number(recipe?.portionSize)||0);
     if(!recipe||!amount||!portionSize)continue;
     const batches=amount/portionSize;
-    let lineValue=0,priced=true;
+    let lineBuyValue=0,lineSellValue=0,buyPriced=true,sellPriced=true;
     const lineMinerals=[];
     for(const [mineral,grossPerBatchRaw] of Object.entries(recipe.minerals||{})){
       const grossPerBatch=Math.max(0,Number(grossPerBatchRaw)||0);
-      const unitBuy=Math.max(0,Number(prices[mineral])||0);
-      if(!grossPerBatch||!unitBuy){priced=false;break}
+      const unitBuy=Math.max(0,Number(buyPrices[mineral])||0);
+      const unitSell=Math.max(0,Number(sellPrices[mineral])||0);
+      if(!grossPerBatch)continue;
       const quantityAt100=grossPerBatch*batches;
-      const valueAt100=quantityAt100*unitBuy;
-      lineValue+=valueAt100;
-      lineMinerals.push({mineral,quantityAt100,unitBuy,valueAt100});
+      const valueAt100=unitBuy>0?quantityAt100*unitBuy:0;
+      const valueSellAt100=unitSell>0?quantityAt100*unitSell:0;
+      if(!(unitBuy>0))buyPriced=false;
+      if(!(unitSell>0))sellPriced=false;
+      lineBuyValue+=valueAt100;
+      lineSellValue+=valueSellAt100;
+      lineMinerals.push({mineral,quantityAt100,unitBuy,unitSell,valueAt100,valueSellAt100});
     }
-    if(!priced||!lineMinerals.length)continue;
+    if(!lineMinerals.length||(!buyPriced&&!sellPriced))continue;
     recognizedLines++;
     recognizedUnits+=amount;
-    buyAt100+=lineValue;
+    if(buyPriced)buyAt100+=lineBuyValue;
+    if(sellPriced)sellAt100+=lineSellValue;
     eligibleBuy+=Math.max(0,Number(row?.buyTotal)||0);
     eligibleSplit+=Math.max(0,Number(row?.splitTotal)||0);
     eligibleSell+=Math.max(0,Number(row?.sellTotal)||0);
@@ -6115,14 +6125,19 @@ function appraisalRefinePreview(items,sdeMaterialRows=[]){
       buyTotal:Math.max(0,Number(row?.buyTotal)||0),
       splitTotal:Math.max(0,Number(row?.splitTotal)||0),
       sellTotal:Math.max(0,Number(row?.sellTotal)||0),
-      valueAt100:lineValue,
+      valueAt100:buyPriced?lineBuyValue:0,
+      sellValueAt100:sellPriced?lineSellValue:0,
       recipeSource,
     });
     for(const mineral of lineMinerals){
-      const current=mineralTotals.get(mineral.mineral)||{mineral:mineral.mineral,quantityAt100:0,unitBuy:mineral.unitBuy,valueAt100:0};
+      const current=mineralTotals.get(mineral.mineral)||{
+        mineral:mineral.mineral,quantityAt100:0,unitBuy:mineral.unitBuy,unitSell:mineral.unitSell,valueAt100:0,valueSellAt100:0
+      };
       current.quantityAt100+=mineral.quantityAt100;
       current.valueAt100+=mineral.valueAt100;
-      current.unitBuy=mineral.unitBuy;
+      current.valueSellAt100+=mineral.valueSellAt100;
+      current.unitBuy=mineral.unitBuy||current.unitBuy;
+      current.unitSell=mineral.unitSell||current.unitSell;
       mineralTotals.set(mineral.mineral,current);
     }
   }
@@ -6133,12 +6148,13 @@ function appraisalRefinePreview(items,sdeMaterialRows=[]){
     recognizedLines,
     recognizedUnits,
     buyAt100,
+    sellAt100,
     eligibleBuy,
     eligibleSplit,
     eligibleSell,
     items:refineItems,
-    minerals:[...mineralTotals.values()].sort((a,b)=>b.valueAt100-a.valueAt100||a.mineral.localeCompare(b.mineral)),
-    pricingBasis:'Jita mineral buy',
+    minerals:[...mineralTotals.values()].sort((a,b)=>Math.max(b.valueAt100,b.valueSellAt100)-Math.max(a.valueAt100,a.valueSellAt100)||a.mineral.localeCompare(b.mineral)),
+    pricingBasis:'Jita mineral buy / sell',
     recipeSource:sdeRecipeLines>0?'ccp-sde':(legacyRecipeLines>0?'legacy-fallback':'none'),
     sdeRecipeLines,
     legacyRecipeLines,
@@ -6146,7 +6162,8 @@ function appraisalRefinePreview(items,sdeMaterialRows=[]){
 }
 function attachAppraisalRefine(appraisal,sdeMaterialRows=[]){
   if(!appraisal||typeof appraisal!=='object')return appraisal;
-  return{...appraisal,refine:appraisalRefinePreview(appraisal.items,sdeMaterialRows)};
+  const refine=appraisalRefinePreview(appraisal.items,sdeMaterialRows);
+  return{...appraisal,refine,summary:appraisalSummaryWithRefine(appraisal.items,appraisal.pricing,refine)};
 }
 function appraisalSharePublic(row){
   if(!row)return null;
@@ -9204,6 +9221,7 @@ async function routeApi(req,res,url) {
       const requestedRefineRate=Number(body?.refineRate);
       if(appraisal?.refine&&Number.isFinite(requestedRefineRate)){
         appraisal.refine.selectedRate=Math.max(0,Math.min(1,requestedRefineRate/100));
+        appraisal.summary=appraisalSummaryWithRefine(appraisal.items,appraisal.pricing,appraisal.refine);
       }
       const base=sanitizeAppraisalShare({title:body?.title,appraisal},user);
       if(!base.appraisal.items.some(row=>row.resolved!==false))return json(res,400,{error:'EMPTY_APPRAISAL_SHARE',message:'No EVE items could be resolved.'});
