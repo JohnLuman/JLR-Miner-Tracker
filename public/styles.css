@@ -5106,3 +5106,376 @@ html[data-theme="solar"] .theme-select-icon svg{animation:jlr-glyph-solar 2.7s e
   html[data-theme="neon"] body::before,
   html[data-theme="solar"] body::after{animation:none!important}
 }
+
+
+/* =========================================================================
+   v2.10.10 THEME QA CONSISTENCY PASS
+   Semantic state colors stay meaningful without replacing theme materials.
+   ========================================================================= */
+
+/* Remove legacy/default purple leakage from every theme. */
+html[data-theme] .orb.active{
+  outline-color:var(--theme-accent-hi,#ce68ff);
+  box-shadow:inset 0 2px #ffffff55,inset 0 -5px 9px #0005,0 0 0 1px color-mix(in srgb,var(--theme-accent,#9d34ed) 35%,transparent);
+}
+html[data-theme] .system-node.selected{
+  outline-color:var(--theme-accent-hi,#ce68ff);
+}
+html[data-theme] .field-board .system-node.drag-over{
+  outline-color:var(--theme-accent-hi,#ce68ff);
+}
+
+/* Header furniture follows the active theme instead of the original purple shell. */
+html[data-theme] .brand-mark{
+  background:linear-gradient(180deg,var(--theme-accent-hi,#ce68ff),var(--theme-accent-lo,#470099));
+  border:1px solid color-mix(in srgb,var(--theme-accent-hi,#ce68ff) 45%,var(--line));
+  box-shadow:inset 0 1px #ffffff28,0 0 10px color-mix(in srgb,var(--theme-accent,#9d34ed) 20%,transparent);
+}
+html[data-theme] .status-pill,
+html[data-theme] .user-chip{
+  border-color:color-mix(in srgb,var(--theme-accent,#9d34ed) 22%,var(--line));
+  background:color-mix(in srgb,var(--theme-panel-lo,#101018) 92%,transparent);
+}
+
+/* Semantic field/target colors become an indicator token, not the whole material. */
+.system-node[data-status="ready"],.target-card.green{--semantic-status:var(--green)}
+.system-node[data-status="picked"],.target-card.yellow{--semantic-status:var(--yellow)}
+.system-node[data-status="cleared"]{--semantic-status:var(--red)}
+.system-node[data-status="ice"],.ice-system-node{--semantic-status:#59d4ff}
+.target-card.cherry{--semantic-status:var(--cherry)}
+.target-card.priority-first{--semantic-status:#45d979}
+
+html[data-theme] .system-node[data-status="ready"],
+html[data-theme] .system-node[data-status="picked"],
+html[data-theme] .system-node[data-status="cleared"],
+html[data-theme] .system-node[data-status="ice"],
+html[data-theme] .ice-system-node,
+html[data-theme] .target-card.green,
+html[data-theme] .target-card.yellow,
+html[data-theme] .target-card.cherry,
+html[data-theme] .target-card.priority-first{
+  border-color:color-mix(in srgb,var(--semantic-status) 52%,var(--line));
+}
+html[data-theme] .system-node[data-status] .sys-state{
+  color:color-mix(in srgb,var(--semantic-status,var(--text)) 74%,var(--text));
+}
+html[data-theme] .target-card.green,
+html[data-theme] .target-card.yellow,
+html[data-theme] .target-card.cherry,
+html[data-theme] .target-card.priority-first{
+  background:
+    linear-gradient(90deg,color-mix(in srgb,var(--semantic-status) 10%,transparent),transparent 45%),
+    var(--theme-panel-lo,var(--panel));
+  box-shadow:inset 3px 0 var(--semantic-status);
+}
+html[data-theme] .target-card .target-rank{
+  background:var(--theme-panel-lo,var(--panel));
+  border-color:color-mix(in srgb,var(--semantic-status,#66717c) 52%,var(--line));
+}
+
+/* Shared secondary controls that were still visually default. */
+html[data-theme] .field-selected-detail,
+html[data-theme] .board-customize,
+html[data-theme] .target-ore-control{
+  border-color:color-mix(in srgb,var(--theme-accent,#9d34ed) 20%,var(--line));
+  background:var(--theme-panel-lo,var(--panel));
+}
+
+/* VOID — preserve darkness; status appears as a quiet orbital glow. */
+html[data-theme="void"] .system-node[data-status="ready"],
+html[data-theme="void"] .system-node[data-status="picked"],
+html[data-theme="void"] .system-node[data-status="cleared"],
+html[data-theme="void"] .system-node[data-status="ice"],
+html[data-theme="void"] .ice-system-node{
+  background:
+    radial-gradient(circle at 50% 115%,color-mix(in srgb,var(--semantic-status) 18%,transparent),transparent 58%),
+    #0d0c13cc;
+  box-shadow:inset 0 -2px var(--semantic-status),0 10px 24px #0004;
+}
+html[data-theme="void"] .target-card{
+  border-radius:18px;
+  background:#0d0c13cc;
+  box-shadow:0 12px 26px #0003;
+}
+html[data-theme="void"] .target-rank{border-radius:50%}
+html[data-theme="void"] .field-selected-detail,
+html[data-theme="void"] .board-customize,
+html[data-theme="void"] .target-ore-control{border-radius:16px;background:#0d0c13cc}
+
+/* CITADEL — semantic state becomes an armored status rail. */
+html[data-theme="citadel"] .system-node[data-status="ready"],
+html[data-theme="citadel"] .system-node[data-status="picked"],
+html[data-theme="citadel"] .system-node[data-status="cleared"],
+html[data-theme="citadel"] .system-node[data-status="ice"],
+html[data-theme="citadel"] .ice-system-node{
+  background:linear-gradient(180deg,#102833,#0a1b23);
+  box-shadow:inset 4px 0 var(--semantic-status),inset 0 1px #77e5ff12;
+}
+html[data-theme="citadel"] .target-card{
+  clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,12px 100%,0 calc(100% - 12px));
+  border-radius:0;
+  background:linear-gradient(180deg,#102833,#0a1b23);
+}
+html[data-theme="citadel"] .target-card.green,
+html[data-theme="citadel"] .target-card.yellow,
+html[data-theme="citadel"] .target-card.cherry,
+html[data-theme="citadel"] .target-card.priority-first{
+  box-shadow:inset 5px 0 var(--semantic-status);
+}
+html[data-theme="citadel"] .target-rank,
+html[data-theme="citadel"] .field-selected-detail,
+html[data-theme="citadel"] .board-customize,
+html[data-theme="citadel"] .target-ore-control{border-radius:1px}
+
+/* INDUSTRIAL — stamped service-bay material; hazard stripe is an accent, not wallpaper. */
+html[data-theme="industrial"] .section-title{
+  border:2px solid #59402b;
+  border-radius:2px;
+  background:
+    linear-gradient(180deg,#2d2015,#1a120c);
+  box-shadow:inset 0 1px #ffffff09,inset 0 -3px #0005;
+  font-family:"Share Tech Mono",monospace;
+}
+html[data-theme="industrial"] .section-title::after{
+  content:"";
+  width:58px;
+  height:8px;
+  margin-left:auto;
+  border:1px solid #6e4b26;
+  background:repeating-linear-gradient(135deg,#e4962d 0 8px,#21160d 8px 16px);
+  opacity:.75;
+}
+html[data-theme="industrial"] .system-node[data-status="ready"],
+html[data-theme="industrial"] .system-node[data-status="picked"],
+html[data-theme="industrial"] .system-node[data-status="cleared"],
+html[data-theme="industrial"] .system-node[data-status="ice"],
+html[data-theme="industrial"] .ice-system-node{
+  border:2px solid color-mix(in srgb,var(--semantic-status) 42%,#513a27);
+  border-radius:2px;
+  background:
+    radial-gradient(circle at 7px 7px,#e4a64a70 0 1px,#5b391d 1.5px 3px,transparent 3.5px),
+    radial-gradient(circle at calc(100% - 7px) 7px,#e4a64a70 0 1px,#5b391d 1.5px 3px,transparent 3.5px),
+    linear-gradient(180deg,#2a1d13,#17100b);
+  box-shadow:inset 0 -4px var(--semantic-status),inset 0 2px #ffffff07,3px 4px 0 #07050345;
+}
+html[data-theme="industrial"] .system-node.selected{
+  outline-style:dashed;
+  outline-width:2px;
+  outline-offset:2px;
+}
+html[data-theme="industrial"] .target-card{
+  border:2px solid #513a27;
+  border-radius:2px;
+  background:
+    radial-gradient(circle at 8px 8px,#e4a64a70 0 1px,#5b391d 1.5px 3px,transparent 3.5px),
+    linear-gradient(180deg,#2a1d13,#17100b);
+  box-shadow:inset 0 2px #ffffff07,inset 0 -4px #0006,3px 4px 0 #07050345;
+}
+html[data-theme="industrial"] .target-card.green,
+html[data-theme="industrial"] .target-card.yellow,
+html[data-theme="industrial"] .target-card.cherry,
+html[data-theme="industrial"] .target-card.priority-first{
+  box-shadow:inset 5px 0 var(--semantic-status),inset 0 2px #ffffff07,inset 0 -4px #0006,3px 4px 0 #07050345;
+}
+html[data-theme="industrial"] .target-rank{
+  border-radius:2px;
+  border-width:2px;
+  box-shadow:inset 0 2px #ffffff09,inset 0 -3px #0006;
+}
+html[data-theme="industrial"] .field-selected-detail,
+html[data-theme="industrial"] .board-customize,
+html[data-theme="industrial"] .target-ore-control{
+  border:2px solid #513a27;
+  border-radius:2px;
+  background:linear-gradient(180deg,#281b12,#17100b);
+  box-shadow:inset 0 1px #ffffff08,inset 0 -3px #0005;
+}
+html[data-theme="industrial"] .favorite-toggle{border-radius:2px}
+
+/* SERPENTIS — keep the organic shell; status becomes bioluminescence. */
+html[data-theme="serpentis"] .system-node[data-status="ready"],
+html[data-theme="serpentis"] .system-node[data-status="picked"],
+html[data-theme="serpentis"] .system-node[data-status="cleared"],
+html[data-theme="serpentis"] .system-node[data-status="ice"],
+html[data-theme="serpentis"] .ice-system-node{
+  background:
+    radial-gradient(circle at 18% 18%,color-mix(in srgb,var(--semantic-status) 13%,transparent),transparent 28%),
+    #0b1e15;
+  box-shadow:inset 0 0 20px color-mix(in srgb,var(--semantic-status) 12%,transparent),inset 0 -2px var(--semantic-status);
+}
+html[data-theme="serpentis"] .target-card{border-radius:22px 5px 22px 5px;background:#0b1e15}
+html[data-theme="serpentis"] .target-card.green,
+html[data-theme="serpentis"] .target-card.yellow,
+html[data-theme="serpentis"] .target-card.cherry,
+html[data-theme="serpentis"] .target-card.priority-first{
+  box-shadow:inset 0 0 22px color-mix(in srgb,var(--semantic-status) 12%,transparent),inset 3px 0 var(--semantic-status);
+}
+html[data-theme="serpentis"] .target-rank{border-radius:50%}
+html[data-theme="serpentis"] .field-selected-detail,
+html[data-theme="serpentis"] .board-customize,
+html[data-theme="serpentis"] .target-ore-control{border-radius:18px 5px 18px 5px}
+
+/* BLOOD — keep status restrained so semantic colors do not destroy the cathedral mood. */
+html[data-theme="blood"] .system-node[data-status="ready"],
+html[data-theme="blood"] .system-node[data-status="picked"],
+html[data-theme="blood"] .system-node[data-status="cleared"],
+html[data-theme="blood"] .system-node[data-status="ice"],
+html[data-theme="blood"] .ice-system-node{
+  background:linear-gradient(145deg,#2c071450,transparent 48%),#0d0307;
+  box-shadow:inset 0 -3px var(--semantic-status),inset 0 0 24px #43000d24;
+}
+html[data-theme="blood"] .target-card{
+  clip-path:polygon(9px 0,100% 0,100% calc(100% - 9px),calc(100% - 9px) 100%,0 100%,0 9px);
+  border-radius:0;
+  background:#0d0307;
+}
+html[data-theme="blood"] .target-card.green,
+html[data-theme="blood"] .target-card.yellow,
+html[data-theme="blood"] .target-card.cherry,
+html[data-theme="blood"] .target-card.priority-first{
+  box-shadow:inset 0 -3px var(--semantic-status),inset 3px 0 color-mix(in srgb,var(--semantic-status) 45%,#54101f);
+}
+html[data-theme="blood"] .target-rank{
+  border-radius:0 10px 0 10px;
+  background:#090205;
+}
+html[data-theme="blood"] .field-selected-detail,
+html[data-theme="blood"] .board-customize,
+html[data-theme="blood"] .target-ore-control{border-radius:0 12px 0 12px;background:#0d0307}
+
+/* ANGEL — semantic state reads like a cockpit lamp, not a recolored panel. */
+html[data-theme="angel"] .system-node[data-status="ready"],
+html[data-theme="angel"] .system-node[data-status="picked"],
+html[data-theme="angel"] .system-node[data-status="cleared"],
+html[data-theme="angel"] .system-node[data-status="ice"],
+html[data-theme="angel"] .ice-system-node{
+  background:linear-gradient(180deg,#fff2bd05,transparent 22%),#201e17;
+  box-shadow:inset 0 -3px var(--semantic-status),inset 0 1px #f8dd9a16;
+}
+html[data-theme="angel"] .target-card{border-radius:7px;background:#201e17}
+html[data-theme="angel"] .target-card.green,
+html[data-theme="angel"] .target-card.yellow,
+html[data-theme="angel"] .target-card.cherry,
+html[data-theme="angel"] .target-card.priority-first{box-shadow:inset 4px 0 var(--semantic-status),inset 0 -2px #0005}
+html[data-theme="angel"] .target-rank{
+  border-radius:50%;
+  border-width:2px;
+  box-shadow:inset 0 0 0 3px #17150f;
+}
+html[data-theme="angel"] .field-selected-detail,
+html[data-theme="angel"] .board-customize,
+html[data-theme="angel"] .target-ore-control{border-radius:6px;background:#201e17}
+
+/* EDENCOM — semantic state becomes a tactical edge channel. */
+html[data-theme="edencom"] .system-node[data-status="ready"],
+html[data-theme="edencom"] .system-node[data-status="picked"],
+html[data-theme="edencom"] .system-node[data-status="cleared"],
+html[data-theme="edencom"] .system-node[data-status="ice"],
+html[data-theme="edencom"] .ice-system-node{
+  background:#0c1c31;
+  box-shadow:inset 4px 0 var(--semantic-status),inset 0 1px #7fc4ff10;
+}
+html[data-theme="edencom"] .target-card{border-radius:1px;background:#0c1c31}
+html[data-theme="edencom"] .target-card.green,
+html[data-theme="edencom"] .target-card.yellow,
+html[data-theme="edencom"] .target-card.cherry,
+html[data-theme="edencom"] .target-card.priority-first{box-shadow:inset 4px 0 var(--semantic-status)}
+html[data-theme="edencom"] .target-rank,
+html[data-theme="edencom"] .field-selected-detail,
+html[data-theme="edencom"] .board-customize,
+html[data-theme="edencom"] .target-ore-control{border-radius:1px;background:#0c1c31}
+
+/* AURORA — status softly refracts through the glass. */
+html[data-theme="aurora"] .system-node[data-status="ready"],
+html[data-theme="aurora"] .system-node[data-status="picked"],
+html[data-theme="aurora"] .system-node[data-status="cleared"],
+html[data-theme="aurora"] .system-node[data-status="ice"],
+html[data-theme="aurora"] .ice-system-node{
+  background:
+    linear-gradient(135deg,color-mix(in srgb,var(--semantic-status) 10%,transparent),transparent 46%),
+    linear-gradient(135deg,#ff89e60a,#6cf4df08),
+    #1b1024b8;
+  box-shadow:inset 0 1px #ffffff20,inset 0 -2px color-mix(in srgb,var(--semantic-status) 62%,transparent);
+}
+html[data-theme="aurora"] .target-card{border-radius:22px;background:#1b1024b8;backdrop-filter:blur(9px)}
+html[data-theme="aurora"] .target-card.green,
+html[data-theme="aurora"] .target-card.yellow,
+html[data-theme="aurora"] .target-card.cherry,
+html[data-theme="aurora"] .target-card.priority-first{box-shadow:inset 3px 0 color-mix(in srgb,var(--semantic-status) 72%,transparent),inset 0 1px #ffffff20}
+html[data-theme="aurora"] .target-rank{border-radius:50%}
+html[data-theme="aurora"] .field-selected-detail,
+html[data-theme="aurora"] .board-customize,
+html[data-theme="aurora"] .target-ore-control{border-radius:18px;background:#1b1024b8;backdrop-filter:blur(8px)}
+
+/* NEON — semantic status is a third signal channel along the lower edge. */
+html[data-theme="neon"] .system-node[data-status="ready"],
+html[data-theme="neon"] .system-node[data-status="picked"],
+html[data-theme="neon"] .system-node[data-status="cleared"],
+html[data-theme="neon"] .system-node[data-status="ice"],
+html[data-theme="neon"] .ice-system-node{
+  background:linear-gradient(135deg,#e640ff0b,transparent 32%,#4cf1ff08),#0a101d;
+  box-shadow:inset 2px 0 #e840ff55,inset -2px 0 #4bf2ff42,inset 0 -3px var(--semantic-status);
+}
+html[data-theme="neon"] .target-card{
+  clip-path:polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,10px 100%,0 calc(100% - 10px));
+  border-radius:0;
+  background:#0a101d;
+}
+html[data-theme="neon"] .target-card.green,
+html[data-theme="neon"] .target-card.yellow,
+html[data-theme="neon"] .target-card.cherry,
+html[data-theme="neon"] .target-card.priority-first{box-shadow:inset 2px 0 #e840ff55,inset -2px 0 #4bf2ff42,inset 0 -3px var(--semantic-status)}
+html[data-theme="neon"] .target-rank,
+html[data-theme="neon"] .field-selected-detail,
+html[data-theme="neon"] .board-customize,
+html[data-theme="neon"] .target-ore-control{border-radius:0;background:#0a101d}
+
+/* GLACIER — state color becomes a refracted facet edge. */
+html[data-theme="glacier"] .system-node[data-status="ready"],
+html[data-theme="glacier"] .system-node[data-status="picked"],
+html[data-theme="glacier"] .system-node[data-status="cleared"],
+html[data-theme="glacier"] .system-node[data-status="ice"],
+html[data-theme="glacier"] .ice-system-node{
+  background:
+    linear-gradient(145deg,color-mix(in srgb,var(--semantic-status) 9%,transparent),transparent 38%),
+    #102536cc;
+  box-shadow:inset 0 1px #f2fdff45,inset -3px -3px color-mix(in srgb,var(--semantic-status) 55%,transparent);
+}
+html[data-theme="glacier"] .target-card{
+  clip-path:polygon(0 0,calc(100% - 14px) 0,100% 18px,100% 100%,18px 100%,0 calc(100% - 12px));
+  border-radius:0;
+  background:#102536cc;
+}
+html[data-theme="glacier"] .target-card.green,
+html[data-theme="glacier"] .target-card.yellow,
+html[data-theme="glacier"] .target-card.cherry,
+html[data-theme="glacier"] .target-card.priority-first{box-shadow:inset -3px -3px color-mix(in srgb,var(--semantic-status) 58%,transparent),inset 0 1px #f2fdff45}
+html[data-theme="glacier"] .target-rank{
+  clip-path:polygon(50% 0,100% 26%,84% 100%,16% 100%,0 26%);
+  border-radius:0;
+}
+html[data-theme="glacier"] .field-selected-detail,
+html[data-theme="glacier"] .board-customize,
+html[data-theme="glacier"] .target-ore-control{border-radius:2px 12px 2px 12px;background:#102536cc}
+
+/* SOLAR — semantic state appears as an instrument ring. */
+html[data-theme="solar"] .system-node[data-status="ready"],
+html[data-theme="solar"] .system-node[data-status="picked"],
+html[data-theme="solar"] .system-node[data-status="cleared"],
+html[data-theme="solar"] .system-node[data-status="ice"],
+html[data-theme="solar"] .ice-system-node{
+  background:radial-gradient(circle at 100% 0,color-mix(in srgb,var(--semantic-status) 10%,transparent),transparent 42%),#191f24;
+  box-shadow:inset 0 1px #fff6b72b,inset 0 -3px var(--semantic-status);
+}
+html[data-theme="solar"] .target-card{border-radius:18px;background:#191f24}
+html[data-theme="solar"] .target-card.green,
+html[data-theme="solar"] .target-card.yellow,
+html[data-theme="solar"] .target-card.cherry,
+html[data-theme="solar"] .target-card.priority-first{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--semantic-status) 36%,transparent),inset 0 -3px var(--semantic-status)}
+html[data-theme="solar"] .target-rank{
+  border-radius:50%;
+  box-shadow:inset 0 0 0 3px #11161b,0 0 10px color-mix(in srgb,var(--semantic-status,#ffd84a) 14%,transparent);
+}
+html[data-theme="solar"] .field-selected-detail,
+html[data-theme="solar"] .board-customize,
+html[data-theme="solar"] .target-ore-control{border-radius:14px;background:#191f24}
