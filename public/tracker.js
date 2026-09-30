@@ -1,7 +1,7 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.9.147';
-  const CORE_URL='/tracker-core.js?v=2.10.11';
+  const ALARM_VERSION='2.10.11-alarm2';
+  const CORE_URL='/tracker-core.js?v=2.10.11-alarm2';
 
   let alarmContext=null;
   let alarmNodes=[];
@@ -18,7 +18,7 @@
     try{
       const current=JSON.parse(localStorage.getItem(key)||'null');
       if(current?.tab!==alarmTabId&&Number(current?.expiresAt)>now)return false;
-      localStorage.setItem(key,JSON.stringify({tab:alarmTabId,expiresAt:now+90_000}));
+      localStorage.setItem(key,JSON.stringify({tab:alarmTabId,expiresAt:now+20_000}));
       if(JSON.parse(localStorage.getItem(key)||'null')?.tab!==alarmTabId)return false;
       alarmLeaseKey=key;
     }catch(error){}
@@ -39,9 +39,9 @@
     try{
       const current=JSON.parse(localStorage.getItem(alarmLeaseKey)||'null');
       if(current?.tab!==alarmTabId){alarmLeaseKey='';return}
-      localStorage.setItem(alarmLeaseKey,JSON.stringify({tab:alarmTabId,expiresAt:Date.now()+90_000}));
+      localStorage.setItem(alarmLeaseKey,JSON.stringify({tab:alarmTabId,expiresAt:Date.now()+20_000}));
     }catch(error){}
-  },15_000);
+  },5_000);
   window.addEventListener('pagehide',releaseAlarmLease);
 
   function ensureAlarmContext(){
@@ -159,22 +159,23 @@
   }
 
   async function playFighterAlarm(loss){
-    if(!loss?.test&&!claimAlarmLease())return false;
     stopAlarmNodes();
     const context=ensureAlarmContext();
-    if(!context){
-      if(!loss?.test)releaseAlarmLease();
-      return false;
-    }
-    if(context.state==='suspended'){
+    if(context&&context.state==='suspended'){
       try{await context.resume()}catch(error){}
     }
-    if(context.state!=='running'){
+
+    // Always surface the visual alarm, even when browser autoplay policy keeps
+    // the AudioContext suspended. Only a tab that can actually play sound may
+    // claim the cross-tab audio lease.
+    showAlarmOverlay(loss||{});
+    if(!context||context.state!=='running'){
       if(!loss?.test)releaseAlarmLease();
       return false;
     }
+    if(!loss?.test&&!claimAlarmLease())return false;
+
     const generation=alarmGeneration;
-    showAlarmOverlay(loss||{});
     playAlarmCycle(context,generation);
     return true;
   }
@@ -185,6 +186,7 @@
       alarmVersion:ALARM_VERSION,
       audioContext:alarmContext?.state||'none',
       alarmActive:Boolean(alarmTimer||alarmNodes.length),
+      leaseHeld:Boolean(alarmLeaseKey),
     };
   }
 

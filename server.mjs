@@ -155,6 +155,7 @@ const TRACKER_R2Z2_BASE_URL = 'https://r2z2.zkillboard.com/ephemeral';
 const TRACKER_R2Z2_EDGE_WAIT_MS = 6 * 1000;
 const TRACKER_R2Z2_REQUEST_GAP_MS = 120;
 const TRACKER_R2Z2_ERROR_WAIT_MS = 5 * 1000;
+const TRACKER_ALERT_REPLAY_MS = 60 * 1000;
 const TRACKER_LIVE_RETENTION_MS = 24 * 60 * 60 * 1000;
 const TRACKER_CLOSEST_LOOKUP_TIMEOUT_MS = 1_800;
 const TRACKER_CLOSEST_HISTORY_LIMIT = 12;
@@ -6679,12 +6680,30 @@ function trackerLiveStatus(){
   };
 }
 
-function sendTrackerEvent(event,payload){
-  const msg=`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
-  for(const res of [...trackerLiveClients]){
-    try{res.write(msg)}
-    catch{trackerLiveClients.delete(res)}
+function trackerEventMessage(event,payload){
+  return `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
+}
+function sendTrackerEventTo(res,event,payload){
+  try{
+    res.write(trackerEventMessage(event,payload));
+    return true;
+  }catch{
+    trackerLiveClients.delete(res);
+    return false;
   }
+}
+function sendTrackerEvent(event,payload){
+  for(const res of [...trackerLiveClients])sendTrackerEventTo(res,event,payload);
+}
+function freshTrackerLiveLosses(maxAgeMs=TRACKER_ALERT_REPLAY_MS){
+  const cutoff=Date.now()-Math.max(0,Number(maxAgeMs)||0);
+  return trackerLiveLosses
+    .filter(row=>{
+      const received=Date.parse(row?.receivedAt||'');
+      return Number.isFinite(received)&&received>=cutoff&&reportableHeavyFighterLoss(row);
+    })
+    .slice()
+    .sort((a,b)=>Date.parse(a?.receivedAt||0)-Date.parse(b?.receivedAt||0));
 }
 
 function trimTrackerLiveLosses(){
@@ -6829,6 +6848,11 @@ async function runTrackerR2z2Loop(){
           trackerR2z2State.lastError=null;
           console.log(`Heavy Fighter Tracker: R2Z2 live at sequence ${trackerR2z2State.nextSequence}`);
           sendTrackerEvent('status',trackerLiveStatus());
+          // A Heavy Fighter can land while R2Z2 is crossing the final catch-up
+          // sequence after a deploy/reseed. Those rows are already in the live
+          // cache but were intentionally not broadcast until the edge was known.
+          // Replay only the still-fresh rows so alarms are not lost or stale.
+          for(const loss of freshTrackerLiveLosses())sendTrackerEvent('loss',loss);
         }
         await sleep(TRACKER_R2Z2_EDGE_WAIT_MS);
         continue;
@@ -9586,9 +9610,13 @@ async function routeApi(req,res,url) {
       'Connection':'keep-alive',
       'X-Accel-Buffering':'no',
     });
-    res.write('retry: 3000\n');
-    res.write(`event: ready\ndata: ${JSON.stringify({...trackerLiveStatus(),corporationName:access.corporationName})}\n\n`);
+    res.write('retry: 2000\n');
     trackerLiveClients.add(res);
+    sendTrackerEventTo(res,'ready',{...trackerLiveStatus(),corporationName:access.corporationName});
+    // Railway/proxies can recycle long-lived SSE connections. On every
+    // reconnect, replay only Heavy Fighter rows received in JLR's 60-second
+    // alert window. Client killmail-ID dedupe prevents duplicate alarms.
+    for(const loss of freshTrackerLiveLosses())sendTrackerEventTo(res,'loss',loss);
     req.on('close',()=>trackerLiveClients.delete(res));
     return;
   }

@@ -85,6 +85,8 @@ assert.match(tracker,/trackerOverviewHtml\(losses,status,sourceUrl\)/,'Tracker p
 assert.match(trackerCss,/\.tracker-overview-grid\{display:grid;grid-template-columns:/,'paired Tracker intel uses a restrained two-column layout');
 assert.match(trackerCss,/\.fighter-loss-alarm-overlay/,'Heavy Fighter loss alarm has a dedicated visual overlay');
 assert.match(tracker,/const ALERT_MAX_AGE_MS=60\*1000/,'Heavy Fighter alert window is capped at 60 seconds');
+assert.match(tracker,/const ALERT_FALLBACK_POLL_SECONDS=20/,'armed Heavy Fighter alerts have a 20-second polling safety net');
+assert.match(tracker,/Math\.min\(serverSeconds,ALERT_FALLBACK_POLL_SECONDS\)/,'armed polling fallback stays inside the alert freshness window');
 assert.match(tracker,/Date\.parse\(String\(row\?\.receivedAt\|\|''\)\)/,'Heavy Fighter alert freshness is based on JLR receive time');
 assert.match(tracker,/filter\(isAlertFresh\)/,'polling cannot alarm on historical losses that merely look unseen');
 assert.match(index,/id="scoutGlobalAlert"/,'Scout update requests are visible outside the Scout tab');
@@ -101,8 +103,11 @@ assert.equal(pkg.version,'2.10.11');
 assert.ok(index.includes('/styles.css?v=2.10.11'),'main information-design CSS is cache-busted');
 assert.ok(index.includes('/tracker.css?v=2.10.11'),'Tracker information-design CSS is cache-busted');
 assert.ok(index.includes('/app.js?v=2.10.11'),'dashboard JS is cache-busted');
-assert.ok(index.includes('/tracker.js?v=2.10.11'),'Tracker loader is cache-busted');
-assert.match(trackerLoader,/tracker-core\.js\?v=2\.10\.11/,'Tracker core is cache-busted');
+assert.ok(index.includes('/tracker.js?v=2.10.11-alarm2'),'Tracker alarm loader is cache-busted');
+assert.match(trackerLoader,/tracker-core\.js\?v=2\.10\.11-alarm2/,'Tracker core alarm client is cache-busted');
+assert.match(trackerLoader,/expiresAt:now\+20_000/,'cross-tab alarm lease expires quickly when an owner tab dies');
+assert.match(trackerLoader,/},5_000\);/,'cross-tab alarm lease refreshes every five seconds');
+assert.match(trackerLoader,/showAlarmOverlay\(loss\|\|\{\}\);[\s\S]*context\.state!=='running'/,'visual Heavy Fighter alarm still appears when browser sound is locked');
 
 assert.match(styles,/\.app\.compact\{width:min\(1120px,calc\(100vw - 12px\)\);max-width:1120px\}/,'Compact app keeps a bounded design width');
 assert.match(styles,/\.app\.expanded\{width:min\(1600px,calc\(100vw - 12px\)\);max-width:1600px\}/,'Expanded app keeps a bounded design width');
