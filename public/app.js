@@ -34,8 +34,6 @@
   let appraisalMarkets = [];
   let appraisalMarketsBusy = false;
   let appraisalRefineRateTouched = false;
-  let forgeBuildPlans = [];
-  let forgeBuildPlansBusy = false;
   let stateRenderFrame = 0;
   let stateRenderPending = false;
   const scoutLastSystem = new Map();
@@ -263,7 +261,7 @@
   function renderDataStatus(){
     const el=$('liveBadge');
     const versionEl=$('appVersion');
-    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.10.4');
+    if(versionEl)versionEl.textContent='v'+String(state?.app?.version||'2.10.5');
     if(!el)return;
     if(state?.esi?.syncing){
       el.textContent='● SYNCING EVE DATA';
@@ -641,7 +639,7 @@
     const track=brainMicTrack;
     const lines=[
       'JLR ADAM MIC DIAGNOSTICS',
-      'Version: '+String(state?.app?.version||'2.10.4'),
+      'Version: '+String(state?.app?.version||'2.10.5'),
       'Time: '+new Date().toISOString(),
       'Browser: '+String(navigator.userAgent||'unknown'),
       'SpeechRecognition: '+String(recognition),
@@ -925,60 +923,6 @@
     }
   }
 
-  function renderForgeBuildPlans(){
-    const host=$('forgeBuildPlans');
-    if(!host)return;
-    if(forgeBuildPlansBusy&&!forgeBuildPlans.length){
-      host.innerHTML='<div class="visual-empty">Loading build plans…</div>';
-      return;
-    }
-    if(!forgeBuildPlans.length){
-      host.innerHTML='<div class="visual-empty">No saved build plans.</div>';
-      return;
-    }
-    host.innerHTML=forgeBuildPlans.map(row=>{
-      const s=row.plan?.summary||{};
-      const canDelete=Boolean(row.canDelete);
-      return `<article class="forge-plan-row">
-        <div class="forge-plan-copy">
-          <strong>${esc(row.title||'JLR Build')}</strong>
-          <small>${esc(String(row.status||'planning').toUpperCase())} • ${Number(s.buildableLines||0)} build line${Number(s.buildableLines)===1?'':'s'} • ${Number(s.materialTypes||0)} material types</small>
-        </div>
-        <div class="forge-plan-actions">
-          <a class="board-tool" href="/forge/${encodeURIComponent(row.token||'')}" target="_blank" rel="noopener">OPEN</a>
-          ${canDelete?`<button class="board-tool danger" type="button" data-forge-plan-delete="${esc(row.id)}">REMOVE</button>`:''}
-        </div>
-      </article>`;
-    }).join('');
-  }
-  async function loadForgeBuildPlans(force=true){
-    if(forgeBuildPlansBusy)return;
-    forgeBuildPlansBusy=true;
-    renderForgeBuildPlans();
-    try{
-      const payload=await api('/api/forge/board'+(force?'?t='+Date.now():''));
-      forgeBuildPlans=Array.isArray(payload?.shares)?payload.shares:[];
-    }catch(error){
-      const host=$('forgeBuildPlans');
-      if(host)host.innerHTML='<div class="visual-empty">Could not load build plans: '+esc(error.message||error)+'</div>';
-    }finally{
-      forgeBuildPlansBusy=false;
-      renderForgeBuildPlans();
-    }
-  }
-  async function removeForgeBuildPlan(id){
-    const row=forgeBuildPlans.find(item=>String(item.id)===String(id));
-    if(!row)return;
-    if(!confirm('Remove build plan "'+String(row.title||'JLR Build')+'"?'))return;
-    try{
-      await api('/api/forge/share/'+encodeURIComponent(id)+'/delete',{method:'POST',body:'{}'});
-      forgeBuildPlans=forgeBuildPlans.filter(item=>String(item.id)!==String(id));
-      renderForgeBuildPlans();
-      toast('Build plan removed.');
-    }catch(error){
-      toast('Could not remove build plan: '+String(error.message||error));
-    }
-  }
   function addAppraisalQuickEntry(){
     const input=$('appraisalQuickEntry');
     const paste=$('appraisalPaste');
@@ -2948,11 +2892,6 @@
             <div id="appraisalRefineSummary" class="appraisal-refine-summary"><div class="visual-empty">Run an appraisal to calculate ore refine value.</div></div>
             <div id="appraisalRefineBreakdown" class="appraisal-refine-breakdown"></div>
           </section>
-          <section class="appraisal-build-plans">
-            <div class="brain-card-head"><strong>JLR BUILD PLANS</strong><small>Old Forge plans you posted — remove your own plans here</small></div>
-            <div class="forge-plan-toolbar"><button id="forgeBuildPlansRefresh" class="board-tool" type="button">↻ REFRESH</button></div>
-            <div id="forgeBuildPlans" class="forge-build-plans"><div class="visual-empty">Loading build plans…</div></div>
-          </section>
         </section>
       </section>`;
 
@@ -2987,14 +2926,6 @@
         $('appraisalStatus').textContent='Appraisal settings changed. Click APPRAISE to refresh the values.';
       });
     }
-    $('forgeBuildPlansRefresh')?.addEventListener('click',()=>void loadForgeBuildPlans(true));
-    $('forgeBuildPlans')?.addEventListener('click',event=>{
-      const button=event.target instanceof Element?event.target.closest('[data-forge-plan-delete]'):null;
-      if(button)void removeForgeBuildPlan(String(button.dataset.forgePlanDelete||''));
-    });
-    void loadForgeBuildPlans(false);
-
-
     const quick=document.querySelector('.quick-update');
     let assistant=document.querySelector('.tracker-assistant-panel');
     if(!assistant)assistant=document.createElement('section');
@@ -6840,7 +6771,7 @@
       try{
         const ledger=state?.esi?.ledgerDebug||{};
         const context={
-          version:state?.app?.version||'2.10.4',
+          version:state?.app?.version||'2.10.5',
           sourceTab,
           selectedSystem:selectedSystem||$('systemSelect')?.value||'',
           displayMode:$('app')?.classList.contains('expanded')?'expanded':'compact',
