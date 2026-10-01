@@ -4,6 +4,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import zlib from 'node:zlib';
+import { decodeMoonBaseline, structureRows } from './lib/ceo-moons.mjs';
 import { fileURLToPath } from 'node:url';
 import { DOCTRINE_SEED_B64 } from './lib/doctrine-seed.mjs';
 import { parseProbeScan, parseA0Scan, parseIceScan, parseWormholeGasScan } from './lib/probe-scan.mjs';
@@ -77,6 +78,8 @@ const MARKET_SCOPES = [MARKET_STRUCTURE_SCOPE, SEARCH_STRUCTURES_SCOPE, READ_STR
 const MARKET_CHARACTER_NAME = String(process.env.MARKET_CHARACTER_NAME || 'John Leman Raholan').trim();
 const JLR_OWNER_CHARACTER_NAME = String(process.env.JLR_OWNER_CHARACTER_NAME || 'John Leman Raholan').trim();
 const CEO_CHARACTER_NAME = String(process.env.CEO_CHARACTER_NAME || 'Renius').trim();
+const CEO_MOON_BASELINE=decodeMoonBaseline(process.env.CEO_MOON_BASELINE_GZIP_B64||'');
+console.info('CEO moon baseline',JSON.stringify({available:CEO_MOON_BASELINE.available,count:CEO_MOON_BASELINE.records.length,sourceDate:CEO_MOON_BASELINE.sourceDate||null}));
 const CEO_WALLET_SCOPE = 'esi-wallet.read_corporation_wallets.v1';
 const CEO_LEGACY_WALLET_SCOPE = 'esi-wallet.read_corporation_wallet.v1';
 const CEO_SCOPES = Object.freeze([
@@ -986,7 +989,14 @@ function ceoStatusForUser(user){
 const CEO_FINANCE_CACHE_MS=5*60*1000;
 let ceoFinanceCache={at:0,data:null,promise:null};
 
+let ceoTokenPending=null;
 async function ceoAccessToken(){
+  if(ceoTokenPending)return ceoTokenPending;
+  const pending=refreshCeoAccessToken().finally(()=>{if(ceoTokenPending===pending)ceoTokenPending=null});
+  ceoTokenPending=pending;
+  return pending;
+}
+async function refreshCeoAccessToken(){
   const admin=state.ceoAdmin||{};
   if(!admin.refreshTokenEnc||!admin.characterId){
     const error=new Error('Renius has not authorized CEO ESI yet.');
@@ -1239,6 +1249,33 @@ async function ceoFinanceSnapshot({force=false}={}){
     throw error;
   }).finally(()=>{if(ceoFinanceCache.promise===pending)ceoFinanceCache.promise=null});
   ceoFinanceCache.promise=pending;
+  return pending;
+}
+
+let ceoStructuresCache={at:0,data:null,promise:null};
+async function ceoMoonSnapshot({force=false}={}){
+  if(!force&&ceoStructuresCache.data&&Date.now()-ceoStructuresCache.at<5*60_000)return ceoStructuresCache.data;
+  if(ceoStructuresCache.promise)return ceoStructuresCache.promise;
+  const pending=(async()=>{
+    const checkedAt=now();
+    let live;
+    try{
+      const {access,admin}=await ceoAccessToken();
+      await save();
+      const result=await ceoPagedGet('https://esi.evetech.net/latest/corporations/'+Number(admin.corporationId)+'/structures/?datasource=tranquility',access);
+      const ids=[...new Set(result.rows.flatMap(row=>[Number(row.system_id),Number(row.type_id)]).filter(id=>id>0))];
+      const names=await resolveUniverseNames(ids);
+      live={available:true,checkedAt,updatedAt:checkedAt,stale:false,truncated:result.truncated,records:structureRows(result.rows,names),error:null};
+    }catch(error){
+      const previous=ceoStructuresCache.data?.live;
+      live={available:false,checkedAt,updatedAt:previous?.updatedAt||null,stale:Boolean(previous?.records?.length),truncated:previous?.truncated||false,records:previous?.records||[],error:String(error?.message||error).slice(0,220)};
+    }
+    const data={baseline:CEO_MOON_BASELINE,live};
+    console.info('CEO structures pull',JSON.stringify({available:live.available,stale:live.stale,count:live.records.length,baselineCount:CEO_MOON_BASELINE.records.length}));
+    ceoStructuresCache.at=Date.now();ceoStructuresCache.data=data;
+    return data;
+  })().finally(()=>{if(ceoStructuresCache.promise===pending)ceoStructuresCache.promise=null});
+  ceoStructuresCache.promise=pending;
   return pending;
 }
 
@@ -1871,6 +1908,7 @@ async function handleCallback(req,res,url) {
       };
       await save();
       ceoFinanceCache={at:0,data:null,promise:null};
+      ceoStructuresCache={at:0,data:null,promise:null};
       setSessionCookie(res,user.id,req);
       return redirect(res,'/?ceo=authorized');
     }
@@ -9807,6 +9845,10 @@ async function routeApi(req,res,url) {
     if(!state.ceoAdmin?.refreshTokenEnc)return json(res,409,{error:'CEO_ESI_NOT_AUTHORIZED',message:'Renius must authorize CEO ESI first.'});
     try{return json(res,200,await ceoFinanceSnapshot({force:url.searchParams.get('force')==='1'}))}
     catch(error){return json(res,502,{error:error?.code||'CEO_FINANCE_FAILED',message:String(error?.message||error)})}
+  }
+  if(req.method==='GET'&&url.pathname==='/api/ceo/moons'){
+    if(!requireCeoViewer(req,res))return;
+    return json(res,200,await ceoMoonSnapshot({force:url.searchParams.get('force')==='1'}));
   }
   if(req.method==='POST'&&url.pathname==='/api/ceo/loyalty/adjust'){
     const viewer=requireCeoViewer(req,res);

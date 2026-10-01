@@ -4002,3 +4002,27 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .ceo-wallet-repair{padding:16px;border:1px solid #806338;color:#e8cb98;font-size:13px;line-height:1.6}
 .ceo-wallet-repair p{margin:8px 0}
 .ceo-wallet-repair ol{margin:8px 0 0;padding-left:22px}
+.ceo-moon-card{grid-column:1/-1;min-width:0}
+.ceo-moon-card p,.ceo-moon-card small{font-size:12px;line-height:1.5}
+.ceo-moon-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:16px 0}
+.ceo-moon-summary>div{background:rgba(110,130,180,.08);padding:12px;border-radius:8px;min-width:0}
+.ceo-moon-summary small,.ceo-moon-summary strong{display:block;overflow-wrap:anywhere}
+.ceo-moon-summary strong{font-size:16px;margin-top:5px}
+.ceo-moon-filters{display:grid;grid-template-columns:2fr 1fr 1.4fr;gap:10px;margin:14px 0}
+.ceo-moon-filters input,.ceo-moon-filters select{min-width:0;width:100%;font-size:13px;background:var(--panel,#141720);color:var(--text,#edf0f8);border:1px solid var(--border,#3c4051);border-radius:7px;padding:10px}
+.ceo-moon-records{max-height:640px;overflow:auto;margin-top:8px}
+.ceo-moon-record,.ceo-live-structure{border:1px solid var(--border,#3c4051);border-radius:8px;margin-bottom:8px;font-size:13px}
+.ceo-moon-record summary{display:grid;grid-template-columns:85px minmax(0,1fr) minmax(170px,220px);gap:12px;align-items:center;padding:13px;cursor:pointer}
+.ceo-moon-record summary strong{overflow-wrap:anywhere}
+.ceo-moon-record summary small{display:block;font-size:10px;color:var(--muted,#aaa)}
+.ceo-moon-system{font-weight:700;color:var(--accent,#b49fff)}
+.ceo-moon-detail,.ceo-live-structure>div{padding:0 14px 14px}
+.ceo-moon-composition{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 14px}
+.ceo-moon-composition span{background:rgba(110,130,180,.13);border-radius:5px;padding:5px 8px}
+.ceo-moon-values{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.ceo-moon-values small,.ceo-moon-values b{display:block;overflow-wrap:anywhere}
+.ceo-moon-source-notes{margin-top:15px;font-size:13px}.ceo-moon-source-notes summary{cursor:pointer;font-weight:700}
+.ceo-live-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-top:26px}
+.ceo-live-structure summary{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:13px;cursor:pointer;flex-wrap:wrap}
+.ceo-fuel{font-size:12px;color:#97d9b3}.ceo-fuel.low{color:#ffd58e}.ceo-fuel.expired{color:#ff9898}.ceo-fuel.unknown{color:#abb2bf}
+@media(max-width:780px){.ceo-moon-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.ceo-moon-filters{grid-template-columns:1fr}.ceo-moon-record summary{grid-template-columns:1fr}.ceo-moon-values{grid-template-columns:repeat(2,minmax(0,1fr))}}
