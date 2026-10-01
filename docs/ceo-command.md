@@ -7,8 +7,8 @@ Private access is checked on every API route. Only the JLR owner and Renius can 
 - Corporation overview and per-section pull health.
 - Monthly income source charts and current corporation wallet division charts.
 - Monthly history comes only from ESI journal entries observed by JLR. The 2024 workbook was a development reference and is no longer loaded or displayed.
-- Corporation member dates, wallet journal references, manual loyalty points, and retained adjustment history.
-- Current ESI moon extraction schedules and corporation structure fuel/service filters, with separate pull status and stale warnings.
+- Monthly member deposits, withdrawals, transaction counts and exact journal drilldown. Manual loyalty points are a separate optional panel.
+- Current Metenox stock, fuel expiry and operating cost projections, alongside corporation structure fuel/service filters. Legacy Athanor pull records are retired.
 - Assets, industry jobs, contracts, and market orders with search, filters, pagination, and partial/stale warnings.
 - Wallet journal explorer, exact member-party filtering, and links from member records.
 - Discord message counts and voice-channel presence, with manual Discord-to-EVE member links.
@@ -44,3 +44,9 @@ Financial journal retention is bounded to 400 days / 50,000 entries. Loyalty has
 Run `npm test`. CEO tests cover API access guards, missing scopes, normalization, pagination, stale results, finance import reconciliation, journal retention, exact member matching, Discord privacy, UTC boundaries, collection gaps, Gateway heartbeat/resume behavior, and preserving setup on failed token validation.
 
 An unconfigured bot makes no Discord network calls. Successful deployment and mocked tests do not establish a live Discord connection; check its connection status after installing the bot. A successful ESI snapshot is labelled separately from an unavailable, partial, or older result.
+
+## Metenox estimates
+
+Metenox records are matched to current ESI structures by type ID. Corporation assets supply reported gas and fuel stock; absent bay rows mean unknown, not zero. Asset totals can include reserves, so stock coverage is not the same as the structure's reported fuel expiry. Partial or failed asset pulls are marked. When ESI omits gas, an explicitly labelled manual reading can be saved with the current assumptions timestamp.
+
+Expected gross revenue for 30 days is entered per drill. Net projections deduct current Jita immediate sell prices for gas and the selected/reported fuel type, optional tax and other costs. They assume 720 operating hours and are estimates, not realized wallet profit. Gas consumption uses 200 units/hour (CCP Version 23.01 patch notes); fuel uses 5 blocks/hour. Fuel prices refresh hourly; CEO assets and structures refresh every five minutes. No old workbook values are used.

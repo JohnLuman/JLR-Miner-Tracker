@@ -123,4 +123,8 @@ assert.equal(memberUrl.searchParams.get('query'),'');assert.equal(memberUrl.sear
 memberRequest.resolve({ok:true,json:async()=>({...view,...exact})});await task;
 assert.match($('ceoJournalCount').textContent,/3 matching entries/);
 const pendingCount=pending.length;browser.window.JlrCeoJournal.viewMember('<bad>');assert.equal(pending.length,pendingCount);
+task=browser.window.JlrCeoJournal.viewMember(99,'2026-09');
+const monthlyRequest=pending.shift();
+assert.equal(new URL(monthlyRequest.url,'https://example.test').searchParams.get('month'),'2026-09','Member drilldown carries the chosen month');
+monthlyRequest.resolve({ok:true,json:async()=>view});await task;
 console.log('Member wallet drilldown exact identity matching, reset filters and totals passed.');

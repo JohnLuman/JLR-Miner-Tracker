@@ -4,6 +4,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import zlib from 'node:zlib';
+import { metenoxRows, validateMetenoxProfile, FUEL_BLOCK_NAMES } from './lib/ceo-metenox.mjs';
 import { structureRows } from './lib/ceo-moons.mjs';
 import { CEO_OPERATION_ROUTES, operationNameIds, normalizeOperations } from './lib/ceo-operations.mjs';
 import { createDiscordActivity, discordId } from './lib/ceo-discord.mjs';
@@ -56,7 +57,7 @@ const PUBLIC_URL = String(process.env.PUBLIC_URL || '').trim().replace(/\/$/, ''
 const JLR_SHARE_ORIGIN = String(process.env.JLR_SHARE_ORIGIN || '').trim().replace(/\/$/, '');
 const EVE_CLIENT_ID = String(process.env.EVE_CLIENT_ID || '').trim();
 const EVE_CLIENT_SECRET = String(process.env.EVE_CLIENT_SECRET || '').trim();
-const ESI_USER_AGENT = String(process.env.ESI_USER_AGENT || 'JLR-Miner-Tracker/2.10.16').trim();
+const ESI_USER_AGENT = String(process.env.ESI_USER_AGENT || 'JLR-Miner-Tracker/2.10.17').trim();
 const ESI_COMPAT_DATE = String(process.env.ESI_COMPATIBILITY_DATE || '2026-09-16').trim();
 const TRACKER_SUPPORT_SHARED_SECRET = String(process.env.TRACKER_SUPPORT_SHARED_SECRET || '').trim();
 const trackerSupport = createTrackerSupportClient({
@@ -1154,6 +1155,7 @@ function ceoMemberFinanceRows(memberIds,names,journal,trackingRows){
     corpWalletOut:0,
     corpWalletNet:0,
     journalEntries:0,
+    months:{},
     lastJournalAt:null,
     startDate:trackingById.get(id)?.startDate||null,
     logonDate:trackingById.get(id)?.logonDate||null,
@@ -1167,6 +1169,12 @@ function ceoMemberFinanceRows(memberIds,names,journal,trackingRows){
     for(const id of partyIds){
       const row=rows.get(id);
       if(!row)continue;
+      const month=String(entry?.date||'').slice(0,7);
+      if(/^\d{4}-\d{2}$/.test(month)){
+        const monthly=row.months[month] ||= {corpWalletIn:0,corpWalletOut:0,corpWalletNet:0,journalEntries:0};
+        monthly.journalEntries++;monthly.corpWalletNet+=amount;
+        if(amount>0)monthly.corpWalletIn+=amount;else if(amount<0)monthly.corpWalletOut-=amount;
+      }
       row.journalEntries++;
       row.corpWalletNet+=amount;
       if(amount>0)row.corpWalletIn+=amount;
@@ -1264,6 +1272,20 @@ async function ceoFinanceSnapshot({force=false}={}){
   return pending;
 }
 
+let ceoMetenoxPriceCache={at:0,data:null,promise:null};
+async function ceoMetenoxPrices(){
+  if(ceoMetenoxPriceCache.data&&Date.now()-ceoMetenoxPriceCache.at<60*60_000)return ceoMetenoxPriceCache.data;
+  if(ceoMetenoxPriceCache.promise)return ceoMetenoxPriceCache.promise;
+  const pending=(async()=>{
+    try{
+      const priced=await nativeEsiAppraisal(['Magmatic Gas',...FUEL_BLOCK_NAMES].map(name=>name+'\t1').join('\n'),{market:2,pricing:'sell'});
+      const prices=Object.fromEntries((priced.items||[]).filter(row=>row.resolved!==false&&!row.marketDataStale&&Number(row.sell)>0).map(row=>[row.name,Number(row.sell)]));
+      const data={prices,updatedAt:priced.marketData?.oldestAt||priced.generatedAt,error:Object.keys(prices).length<5?'Some current Jita fuel prices could not be loaded.':null};
+      ceoMetenoxPriceCache.at=Date.now();ceoMetenoxPriceCache.data=data;return data;
+    }catch(error){return {prices:{},updatedAt:null,error:String(error?.message||error).slice(0,220)};}
+  })().finally(()=>{ceoMetenoxPriceCache.promise=null});
+  ceoMetenoxPriceCache.promise=pending;return pending;
+}
 let ceoStructuresCache={at:0,data:null,promise:null};
 async function ceoMoonSnapshot({force=false}={}){
   if(!force&&ceoStructuresCache.data&&Date.now()-ceoStructuresCache.at<5*60_000)return ceoStructuresCache.data;
@@ -1282,18 +1304,18 @@ async function ceoMoonSnapshot({force=false}={}){
       const previous=ceoStructuresCache.data?.live;
       live={available:false,checkedAt,updatedAt:previous?.updatedAt||null,stale:Boolean(previous?.records?.length),truncated:previous?.truncated||false,records:previous?.records||[],error:String(error?.message||error).slice(0,220)};
     }
-    let extractions;
+    let metenox;
     try{
-      const {access,admin}=await ceoAccessToken();
-      const result=await ceoPagedGet('https://esi.evetech.net/latest/corporations/'+Number(admin.corporationId)+'/mining/extractions/?datasource=tranquility',access);
-      const names=await resolveUniverseNames(result.rows.map(row=>Number(row.moon_id)).filter(id=>id>0));
-      extractions={available:true,checkedAt,updatedAt:checkedAt,stale:false,truncated:result.truncated,error:null,records:result.rows.map(row=>({moonId:Number(row.moon_id),name:names.get(Number(row.moon_id))||String(row.moon_id),structureId:Number(row.structure_id),startedAt:row.extraction_start_time||null,readyAt:row.chunk_arrival_time||null,decayAt:row.natural_decay_time||null})).sort((a,b)=>Date.parse(a.readyAt)-Date.parse(b.readyAt))};
+      const assets=await ceoOperationsSnapshot('assets',{force});
+      const priceSnapshot=await ceoMetenoxPrices();
+      const records=metenoxRows(live.records,assets.records,{profiles:state.ceoAdmin.metenoxProfiles||{},prices:priceSnapshot.prices,assetsAvailable:assets.available,assetsPartial:assets.truncated||assets.stale});
+      metenox={available:live.available,checkedAt,updatedAt:live.updatedAt,stale:live.stale,truncated:live.truncated,error:live.error,records,assetsUpdatedAt:assets.updatedAt,assetsError:assets.error,assetsPartial:assets.truncated||assets.stale,priceUpdatedAt:priceSnapshot.updatedAt,priceError:priceSnapshot.error};
     }catch(error){
-      const previous=ceoStructuresCache.data?.extractions;
-      extractions={available:false,checkedAt,updatedAt:previous?.updatedAt||null,stale:Boolean(previous?.records?.length),records:previous?.records||[],error:String(error?.message||error).slice(0,220)};
+      const previous=ceoStructuresCache.data?.metenox;
+      metenox={available:false,checkedAt,updatedAt:previous?.updatedAt||null,stale:Boolean(previous?.records?.length),records:previous?.records||[],error:String(error?.message||error).slice(0,220)};
     }
-    const data={live,extractions};
-    console.info('CEO structures pull',JSON.stringify({available:live.available,stale:live.stale,count:live.records.length}));
+    const data={live,metenox};
+    console.info('CEO structures pull',JSON.stringify({available:live.available,stale:live.stale,count:live.records.length,metenox:metenox.records.length,metenoxError:metenox.error||metenox.assetsError||metenox.priceError||null}));
     ceoStructuresCache.at=Date.now();ceoStructuresCache.data=data;
     return data;
   })().finally(()=>{if(ceoStructuresCache.promise===pending)ceoStructuresCache.promise=null});
@@ -1780,7 +1802,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Tracker',version:'2.10.16',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
+    app:{name:'JLR Tracker',version:'2.10.17',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}])),wormholes:{reports:wormholeGasPublicReports(),reportHours:WORMHOLE_GAS_REPORT_TTL/3600000}},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans,
@@ -9941,7 +9963,7 @@ async function routeApi(req,res,url) {
       return json(res,502,{error:'SUPPORT_APPRAISAL_FAILED',message:String(err.message||err)});
     }
   }
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Tracker',version:'2.10.16',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME,ceoCharacterName:CEO_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Tracker',version:'2.10.17',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME,ceoCharacterName:CEO_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/ceo/status'){
     const viewer=requireCeoViewer(req,res);
     if(!viewer)return;
@@ -10007,10 +10029,22 @@ async function routeApi(req,res,url) {
     if(!member)return json(res,409,{error:'CURRENT_MEMBER_REQUIRED',message:'Refresh CEO data and select a member from the current corporation roster.'});
     activity.links[userId]={characterId:member.characterId,characterName:member.name,updatedAt:now()};await save();return json(res,200,{ok:true});
   }
+  if(req.method==='POST'&&url.pathname==='/api/ceo/metenox/profile'){
+    const viewer=requireCeoViewer(req,res);if(!viewer)return;
+    let profile;
+    try{profile=validateMetenoxProfile(await readBody(req,8000));}
+    catch(error){return json(res,400,{error:'INVALID_METENOX_PROFILE',message:String(error?.message||error)});}
+    const current=await ceoMoonSnapshot();
+    if(!current.live?.available||!current.metenox?.records?.some(row=>String(row.structureId)===profile.structureId))return json(res,409,{error:'METENOX_NOT_CURRENT',message:'Refresh current Metenox structures before saving.'});
+    state.ceoAdmin.metenoxProfiles ||= {};
+    state.ceoAdmin.metenoxProfiles[profile.structureId]={...profile,updatedAt:now()};
+    await save();ceoStructuresCache.at=0;
+    return json(res,200,{ok:true});
+  }
   if(req.method==='GET'&&url.pathname==='/api/ceo/health'){
     const viewer=requireCeoViewer(req,res);if(!viewer)return;
     const status=ceoStatusForUser(viewer.user);
-    return json(res,200,ceoDataHealth({connected:status.connected,upgradeRequired:status.authorizationUpgradeRequired,walletGranted:status.walletScopeGranted,finance:ceoFinanceCache.data,walletPull:state.ceoAdmin?.walletJournalPull||null,structures:ceoStructuresCache.data?.live||null,extractions:ceoStructuresCache.data?.extractions||null,operations:Object.fromEntries([...ceoOperationsCache].map(([key,cache])=>[key,cache.data])),pending:{finance:Boolean(ceoFinanceCache.promise),structures:Boolean(ceoStructuresCache.promise),...Object.fromEntries([...ceoOperationsCache].map(([key,cache])=>[key,Boolean(cache.promise)]))},discord:{configured:Boolean(state.ceoAdmin.discord?.tokenEnc),enabled:Boolean(state.ceoAdmin.discord?.enabled),connected:discordLive.connected,status:discordLive.status}}));
+    return json(res,200,ceoDataHealth({connected:status.connected,upgradeRequired:status.authorizationUpgradeRequired,walletGranted:status.walletScopeGranted,finance:ceoFinanceCache.data,walletPull:state.ceoAdmin?.walletJournalPull||null,structures:ceoStructuresCache.data?.live||null,metenox:ceoStructuresCache.data?.metenox||null,operations:Object.fromEntries([...ceoOperationsCache].map(([key,cache])=>[key,cache.data])),pending:{finance:Boolean(ceoFinanceCache.promise),structures:Boolean(ceoStructuresCache.promise),...Object.fromEntries([...ceoOperationsCache].map(([key,cache])=>[key,Boolean(cache.promise)]))},discord:{configured:Boolean(state.ceoAdmin.discord?.tokenEnc),enabled:Boolean(state.ceoAdmin.discord?.enabled),connected:discordLive.connected,status:discordLive.status}}));
   }
   if(req.method==='GET'&&url.pathname==='/api/ceo/journal'){
     if(!requireCeoViewer(req,res))return;
@@ -11111,7 +11145,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Tracker v2.10.16 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Tracker v2.10.17 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
 setInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': tracker-heartbeat\n\n')}catch{trackerLiveClients.delete(res)}}},20_000).unref();
 setInterval(()=>resetExpired(true),15_000).unref();

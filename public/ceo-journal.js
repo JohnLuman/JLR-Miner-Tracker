@@ -30,12 +30,13 @@
     if(chosen&&!members.some(row=>String(row.characterId)===chosen))select.innerHTML+='<option value="'+esc(chosen)+'">Character '+esc(chosen)+'</option>';
     select.value=chosen;
   }
-  function viewMember(characterId){
+  function viewMember(characterId,month=''){
     const id=String(characterId||'');if(!/^\d+$/.test(id))return;
     const select=$('ceoJournalParty');if(!select)return;
     if(!Array.from(select.options||[]).some(option=>option.value===id))select.innerHTML+='<option value="'+esc(id)+'">Character '+esc(id)+'</option>';
     select.value=id;
     for(const control of ['ceoJournalSearch','ceoJournalMonth','ceoJournalDivision','ceoJournalDirection'])if($(control))$(control).value='';
+    if(/^\d{4}-\d{2}$/.test(month))$('ceoJournalMonth').value=month;
     clearTimeout(timer);page=1;const request=load();
     $('ceoJournalParty')?.focus?.({preventScroll:true});
     $('ceoJournalCard')?.scrollIntoView?.({behavior:'smooth',block:'start'});
@@ -56,7 +57,7 @@
   document.addEventListener('input',event=>{if(event.target?.id==='ceoJournalSearch'){clearTimeout(timer);page=1;timer=setTimeout(()=>void load(),300);}});
   document.addEventListener('change',event=>{if(['ceoJournalMonth','ceoJournalDivision','ceoJournalDirection','ceoJournalParty'].includes(event.target?.id)){clearTimeout(timer);page=1;void load();}});
   document.addEventListener('click',event=>{
-    const member=event.target?.closest?.('[data-ceo-member-journal]');if(member)viewMember(member.dataset.ceoMemberJournal);
+    const member=event.target?.closest?.('[data-ceo-member-journal]');if(member)viewMember(member.dataset.ceoMemberJournal,member.dataset.ceoMemberMonth||'');
     if(event.target?.closest?.('#ceoJournalRefresh'))void load();
     if(event.target?.closest?.('#ceoJournalPrev')&&!busy&&page>1){page--;void load();}
     if(event.target?.closest?.('#ceoJournalNext')&&!busy&&page<(data?.pages||1)){page++;void load();}

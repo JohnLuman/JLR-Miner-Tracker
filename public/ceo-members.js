@@ -11,6 +11,7 @@
       if(activity==='unknown')return login===null;
       return true;
     }).slice().sort((a,b)=>{
+      if(sort==='deposits'||sort==='withdrawals'){const key=sort==='deposits'?'corpWalletIn':'corpWalletOut';return (Number(b[key])||0)-(Number(a[key])||0)||String(a.name).localeCompare(String(b.name));}
       if(sort==='loyalty')return (Number(b.loyalty?.balance)||0)-(Number(a.loyalty?.balance)||0)||String(a.name).localeCompare(String(b.name));
       if(sort==='login'||sort==='joined'){
         const key=sort==='login'?'logonDate':'startDate';
