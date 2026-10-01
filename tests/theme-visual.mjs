@@ -60,6 +60,7 @@ try{
           buttonRadius:css('.orb.blue').borderTopLeftRadius,
           buttonHeight:parseFloat(css('.orb.blue').minHeight),
           navRadius:css('.nav-menu-trigger').borderRadius,
+          menuFont:css('.nav-menu-panel .app-tab').fontSize,
           buttonAccent:css('.orb.blue').borderLeftColor,
           warningAccent:css('.orb.red').borderLeftColor,
         };
@@ -68,6 +69,7 @@ try{
       assert.ok(values.overflow<=1,theme+' overflows '+size.name+' by '+values.overflow+'px');
       assert.equal(values.buttonRadius,'0px',theme+' primary action loses Connected Rail shape');
       assert.equal(values.navRadius,'0px',theme+' navigation loses Connected Rail shape');
+      assert.equal(values.menuFont,'12px',theme+' dropdown labels remain too small');
       assert.ok(values.buttonHeight>=32,theme+' controls are too small');
       assert.notEqual(values.buttonAccent,values.warningAccent,theme+' warning actions need a distinct rail');
       assert.notEqual(values.ready,values.picked,theme+' ready and picked look alike');
