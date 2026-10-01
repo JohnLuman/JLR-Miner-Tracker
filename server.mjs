@@ -19,6 +19,7 @@ import { nearestTrackedSystems, needsScanUpdate, actionableLedgerScanWarning, re
 import { addVerifiedSiteMining, autoClearFieldAtCap, FIELD_AUTO_CLEAR_REASON } from './lib/field-auto-clear.mjs';
 import { positiveLedgerDeltas, dueRouteStops, fountainRouteDestination, brainLiveIntent } from './lib/brain-intel.mjs';
 import { isDoctrineDataQuestion, answerDoctrineQuestion, answerMiningMarketQuestion, normalizeAdamQuestion, isAppraisalDataQuestion, appraisalQuestionNeedsMarket, appraisalMarketIdFromQuestion, appraisalQuantityFromQuestion, answerAppraisalStaticQuestion, answerAppraisalMarketQuestion } from './lib/adam-data.mjs';
+import { resolveAdamSystem, answerAdamFieldQuestion } from './lib/adam-fields.mjs';
 import { explicitAdamHelpQuestion, adamOverviewQuestion, adamUnknownText } from './lib/adam-prompts.mjs';
 import { createTrackerSupportClient } from './lib/tracker-support-client.mjs';
 import { chooseRapidResponseRoutes, wandererRiskPenalty, wandererWarnings } from './lib/rapid-response-route.mjs';
@@ -4684,7 +4685,7 @@ async function trackerBrainDataAnswer(user,question,options={}){
     return response('field-value',best.system+' is the highest estimated Jita refined value among currently ready, recently scanned T3 fields: '+best.ore+', about '+Math.round(best.siteJBV).toLocaleString()+' ISK for the full site. That compares site value, not fleet ISK per hour, travel time or local threats.',{focusSystem:best.system});
   }
 
-  const mentioned=SYSTEM_DEFS.find(row=>String(question).toUpperCase().includes(row.system))?.system;
+  const mentioned=resolveAdamSystem(question,trackerTrackedSystemNames()).system;
   const selectedPrompt=/^(?:(?:what is|whats|show|explain|give me|tell me) )?(?:the )?(?:(?:field|system) (?:status|state|timer|respawn|scan|condition)|(?:respawn|scan) (?:status|timer|time|age))\b/.test(q);
   const selected=tab==='fields'&&(/\b(?:this|that|selected|current) (?:system|field)\b/.test(q)||selectedPrompt)
     ?context.selectedSystem:'';
@@ -4693,7 +4694,7 @@ async function trackerBrainDataAnswer(user,question,options={}){
     const definition=effectiveSystems().find(row=>row.system===system);
     if(definition)return response('field-value',system+' has an estimated full-site Jita refined value of '+Math.round(definition.siteJBV).toLocaleString()+' ISK for '+definition.ore+'. That assumes the whole site is mined and does not account for travel, fleet yield, interruptions or current depletion.',{focusSystem:system});
   }
-  if(system&&/\b(?:status|state|ready|scan|picked|cleared|respawn|timer|why|when|back|remaining|deplet|mined|what|how long)\b/.test(q)){
+  if(system&&/\b(?:status|state|ready|scan|update|updated|fresh|stale|due|picked|cleared|respawn|timer|why|when|back|remaining|deplet|mined|what|how long)\b/.test(q)){
     const detail=trackerBrainWhySystem(system);
     if(detail)return response('field-detail',detail.system+' ('+detail.ore+'): '+detail.facts.join(' '),{focusSystem:detail.system,field:detail});
   }
@@ -5072,7 +5073,11 @@ function trackerBrainContextualQuestion(question,currentTab,context){
   }
   return out;
 }
+function trackerTrackedSystemNames(){
+  return [...new Set([...SYSTEM_DEFS.map(row=>row.system),...(state.market?.iceFields||[]).map(row=>row.system),...(state.market?.a0Fields||[]).map(row=>row.system),...Object.keys(state.market?.a0Reports||{}),...Object.keys(state.scans||{})])].filter(Boolean);
+}
 function explicitSystemFromQuestion(value){
+  if(resolveAdamSystem(value,trackerTrackedSystemNames()).explicit)return true;
   return Boolean(String(value||'').toUpperCase().match(/\b[A-Z0-9]{1,10}(?:-[A-Z0-9]{1,10})+\b/));
 }
 
@@ -10557,6 +10562,12 @@ async function routeApi(req,res,url) {
     const currentTab=trackerCleanText(body?.currentTab,40);
     const context=trackerBrainContext(body?.context);
     context.currentTab=currentTab||context.currentTab;
+    const fieldAnswer=answerAdamFieldQuestion({question,names:trackerTrackedSystemNames(),fields:state.fields,scans:scanActivityPublic(),context});
+    if(fieldAnswer){
+      fieldAnswer.generatedAt=now();
+      void trackerSupport.rememberAnswer({userId:user.id,question,currentTab,context,answer:fieldAnswer});
+      return json(res,200,fieldAnswer);
+    }
     const oreContextAnswer=trackerBrainOreSurveyAnswer(question,context);
     if(oreContextAnswer)return json(res,200,oreContextAnswer);
     const supportResolution=await trackerSupport.resolveQuestion({
