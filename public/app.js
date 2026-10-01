@@ -4100,8 +4100,8 @@
   }
   function field(system){return state?.fields?.[system]||null}
   function def(system){return definitions().find(x=>x.system===system)||null}
-  function boardScanLine(system){
-    const row=state?.scans?.[system]||null;
+  function boardScanLine(system,scanOverride=null){
+    const row=scanOverride||state?.scans?.[system]||null;
     const at=row?.lastScanAt||null;
     const ms=Date.parse(at||'');
     if(!Number.isFinite(ms))return{text:'SCAN • NEVER',stale:true,title:'No Probe Scanner update recorded yet'};
@@ -4774,15 +4774,15 @@
     card.setAttribute('role','group');
     const distance=Number(row.distanceLy);
     const spectral=String(row.spectralClass||'A0');
-    const stateLine=due?'NEEDS UPDATE • PASTE SCAN':scan.detected?'A0 SITE ACTIVE':'NO A0 SITE';
-    const scanLine=boardScanLine(row.system);
+    const stateLine=scan.superseded?'PREVIOUS SITE':due?'SCAN DUE':scan.detected?'A0 SITE ACTIVE':'NO A0 SITE';
+    const scanLine=boardScanLine(row.system,{lastScanAt:scan.lastCheckedAt,due});
     card.innerHTML='<button class="favorite-toggle" type="button" aria-pressed="'+favorite+'" title="'+(favorite?'Remove from favorites':'Favorite this system')+'">'+(favorite?'★':'☆')+'</button>'+
       (boardArrangeMode?'<span class="drag-grip" aria-hidden="true">⠿</span>':'')+
       '<span class="sys-name">'+esc(row.system)+'</span>'+
-      '<span class="sys-ore">BLUE '+esc(spectral)+' STAR'+(Number.isFinite(distance)?' • '+distance.toFixed(2)+' LY':'')+'</span>'+
+      '<span class="sys-ore">RARE ASTEROIDS'+(Number.isFinite(distance)?' • '+distance.toFixed(2)+' LY':'')+'</span>'+
       '<span class="sys-state">'+esc(stateLine)+'</span>'+
       '<span class="sys-scan'+(scanLine.stale?' stale':'')+'">'+esc(scanLine.text)+'</span>';
-    card.title=row.system+' • '+spectral+' Blue star'+(favorite?' • Favorite':'')+(Number.isFinite(distance)?' • '+distance.toFixed(2)+' LY from C-N4OD':'')+(due?' • Needs Probe Scanner update':scan.detected?' • A0 rare asteroid site detected':' • Checked; no active A0 site detected')+' • refresh due every 12 hours';
+    card.title=row.system+' • '+spectral+' star'+(favorite?' • Favorite':'')+(Number.isFinite(distance)?' • '+distance.toFixed(2)+' LY from C-N4OD':'')+(due?' • Needs Probe Scanner update':scan.detected?' • A0 rare asteroid site detected':' • Checked; no active A0 site detected')+' • refresh due every 12 hours';
     card.querySelector('.favorite-toggle').addEventListener('click',e=>{
       e.preventDefault();e.stopPropagation();toggleBoardFavorite('a0',row.system);sfx('select');
     });
@@ -4799,7 +4799,7 @@
     let counts={ready:0,picked:0,cleared:0,cherry:0};
     const iceFields=Array.isArray(state.source?.iceFields)?state.source.iceFields:[];
     const a0Fields=Array.isArray(state.source?.a0Fields)?state.source.a0Fields:[];
-    const a0Due=a0Fields.filter(row=>row.scan?.due||!row.scan?.lastCheckedAt||Date.now()-Date.parse(row.scan.lastCheckedAt)>=12*60*60*1000).length;
+    const a0Due=a0Fields.filter(row=>!row.scan?.superseded).filter(row=>row.scan?.due||!row.scan?.lastCheckedAt||Date.now()-Date.parse(row.scan.lastCheckedAt)>=12*60*60*1000).length;
     const a0Filter=document.querySelector('.filter[data-filter="a0"]');
     if(a0Filter)a0Filter.textContent=a0Due?`A0 • ${a0Due} UPDATE`:'A0 ✓';
 
@@ -4814,9 +4814,9 @@
         if(filter==='all'||filter===entry.f.status||(filter==='cherry'&&entry.f.cherryPicked))board.appendChild(node(entry.d,entry.f,true));
       }else if(entry.kind==='ice'&&(filter==='all'||filter==='ice')){
         board.appendChild(iceBoardNode(entry.row));
-      }else if(entry.kind==='a0'&&(filter==='a0'||(filter==='all'&&entry.row.scan?.detected))){
-        // Confirmed A0 sites belong on the main board too. Once confirmed, they
-        // remain visible there when stale so the 12-hour NEEDS UPDATE state is obvious.
+      }else if(entry.kind==='a0'&&!entry.row.scan?.superseded&&(filter==='a0'||(filter==='all'&&entry.row.scan?.detected))){
+        // Only the latest confirmed A0 site stays on the main board.
+        // Its own A0 report supplies both freshness status and scan age.
         board.appendChild(a0BoardNode(entry.row));
       }
     }

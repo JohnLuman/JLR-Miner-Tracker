@@ -19,6 +19,7 @@ import { nearestTrackedSystems, needsScanUpdate, actionableLedgerScanWarning, re
 import { addVerifiedSiteMining, autoClearFieldAtCap, FIELD_AUTO_CLEAR_REASON } from './lib/field-auto-clear.mjs';
 import { positiveLedgerDeltas, dueRouteStops, fountainRouteDestination, brainLiveIntent } from './lib/brain-intel.mjs';
 import { isDoctrineDataQuestion, answerDoctrineQuestion, answerMiningMarketQuestion, normalizeAdamQuestion, isAppraisalDataQuestion, appraisalQuestionNeedsMarket, appraisalMarketIdFromQuestion, appraisalQuantityFromQuestion, answerAppraisalStaticQuestion, answerAppraisalMarketQuestion } from './lib/adam-data.mjs';
+import { latestA0Site, preserveA0ConfirmationHistory } from './lib/a0-active-site.mjs';
 import { resolveAdamSystem, answerAdamFieldQuestion } from './lib/adam-fields.mjs';
 import { explicitAdamHelpQuestion, adamOverviewQuestion, adamUnknownText } from './lib/adam-prompts.mjs';
 import { createTrackerSupportClient } from './lib/tracker-support-client.mjs';
@@ -764,6 +765,7 @@ async function loadState() {
     parsed.market.iceFields ||= [];
     parsed.market.a0Fields ||= [];
     parsed.market.a0Reports ||= {};
+    preserveA0ConfirmationHistory(parsed.market.a0Reports);
     parsed.market.a0ScannedAt ||= null;
     parsed.market.wormholeGasReports ||= {};
     parsed.market.t3Distances ||= {};
@@ -1651,6 +1653,7 @@ function scanActivityPublic() {
   return out;
 }
 function a0PublicFields() {
+  const latestSite=latestA0Site(state.market?.a0Reports);
   const rows=new Map((state.market?.a0Fields||[]).map(row=>[row.system,{...row}]));
   for(const [system,report] of Object.entries(state.market?.a0Reports||{})){
     if(!report||!(Number(report.distanceLy)<=TITAN_BRIDGE_RANGE_LY))continue;
@@ -1670,6 +1673,8 @@ function a0PublicFields() {
   const at=Date.now();
   return [...rows.values()].map(row=>{
     const report=state.market?.a0Reports?.[row.system]||null;
+    const superseded=Boolean(report?.lastDetectedAt||report?.detected)&&latestSite?.system!==row.system;
+    const active=Boolean(report?.detected)&&latestSite?.system===row.system;
     const checkedAt=report?.lastCheckedAt||null;
     const checkedMs=Date.parse(checkedAt||'');
     const due=!Number.isFinite(checkedMs)||at-checkedMs>=A0_REPORT_TTL;
@@ -1677,9 +1682,12 @@ function a0PublicFields() {
     return {
       ...row,
       scan:{
-        status:due?'needs-update':report?.detected?'active':'clear',
+        status:superseded?'superseded':due?'needs-update':active?'active':'clear',
         due,
-        detected:Boolean(report?.detected),
+        detected:active,
+        reportedDetected:Boolean(report?.detected),
+        superseded,
+        supersededBySystem:superseded?latestSite?.system:null,
         lastCheckedAt:checkedAt,
         nextUpdateAt,
         siteName:report?.siteName||null,
@@ -5399,6 +5407,8 @@ async function recordA0ProbeScan({characterName,systemId,system,text}){
   if(!scan.valid)return {tracked:true,inRange:true,candidate,scan,status:'invalid'};
 
   state.market.a0Reports ||= {};
+  preserveA0ConfirmationHistory(state.market.a0Reports);
+  const previousReport=state.market.a0Reports[system];
   const checkedAt=now();
   state.market.a0Reports[system]={
     systemId:Number(systemId),
@@ -5407,6 +5417,7 @@ async function recordA0ProbeScan({characterName,systemId,system,text}){
     starId:Number(candidate.starId)||null,
     spectralClass:String(candidate.spectralClass||'A0'),
     detected:Boolean(scan.detected),
+    lastDetectedAt:scan.detected?checkedAt:previousReport?.lastDetectedAt||null,
     siteName:scan.siteName,
     scannerRowCount:Number(scan.scannerRowCount)||0,
     lastCheckedAt:checkedAt,
