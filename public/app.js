@@ -2036,7 +2036,7 @@
       const button=menu.querySelector('.app-tab[data-tab="'+tab+'"]');
       menu.classList.toggle('active',!!button);
       const current=menu.querySelector('.nav-menu-current');
-      if(current)current.textContent=button?(NAV_TAB_LABELS[tab]||String(button.textContent||'').trim()):(current.dataset.default||'MENU');
+      if(current)current.textContent=button?(NAV_TAB_LABELS[tab]||String(button.textContent||'').trim()):'';
     });
   }
   function initNavDropdowns(){
