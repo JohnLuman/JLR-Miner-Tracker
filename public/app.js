@@ -1755,11 +1755,11 @@
             :'Backend is ready. Waiting for Renius to authorize the corporation read scopes.';
     }
     if(auth){
-      const showAuth=Boolean(status.canAuthorize&&(!status.connected||status.authorizationUpgradeRequired));
+      const showAuth=Boolean(status.canAuthorize);
       auth.classList.toggle('hidden',!showAuth);
       auth.disabled=!status.authorizeUrl;
       auth.dataset.authorizeUrl=status.authorizeUrl||'';
-      auth.textContent=status.authorizationUpgradeRequired?'UPDATE RENIUS CEO ESI':'AUTHORIZE RENIUS CEO ESI';
+      auth.textContent=status.connected||status.authorizationUpgradeRequired?'UPDATE RENIUS CEO ESI':'AUTHORIZE RENIUS CEO ESI';
     }
     const badge=$('ceoConnectionBadge');
     if(badge){
