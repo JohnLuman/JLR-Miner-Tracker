@@ -11,5 +11,12 @@
     if (answer.updatesOnly && target && Date.parse(scans[target.system]?.lastScanAt || '') >= answer.at) return null;
     return answer;
   }
-  window.JlrAdamNavigation = { recommendation, select };
+  function followup(question, answer, options = {}) {
+    const current = select(answer, options);
+    const q = String(question || '').toLowerCase();
+    if (!current?.target?.system || !/\b(?:there|that system|that one)\b/.test(q)) return question;
+    if (!/\b(?:get|go|travel|route|way|directions|gates|jumps)\b/.test(q)) return question;
+    return 'route to ' + current.target.system;
+  }
+  window.JlrAdamNavigation = { recommendation, select, followup };
 })();

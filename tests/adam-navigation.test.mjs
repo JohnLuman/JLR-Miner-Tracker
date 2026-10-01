@@ -14,6 +14,11 @@ assert.equal(api.select(answer, { characterId: '123', location: { system: 'OTHER
 assert.equal(api.select(answer, { characterId: '123', at: at + 5 * 60_000 }), null);
 assert.equal(api.select(answer, { characterId: '123', scans: { 'PNQY-Y': { lastScanAt: new Date(at + 1).toISOString() } }, at }), null);
 assert.equal(api.recommendation({ topic: 'field-scan' }, '123'), null);
+assert.equal(api.followup('???? what can you do to tell me how to get there?', answer, { characterId: '123', location: response.location, at }), 'route to PNQY-Y');
+assert.equal(api.followup('how do I get there?', answer, { characterId: '456', at }), 'how do I get there?');
+assert.equal(api.followup('how do I get there?', answer, { characterId: '123', at: at + 5 * 60_000 }), 'how do I get there?');
+assert.equal(api.followup('what ore is there?', answer, { characterId: '123', at }), 'what ore is there?');
+assert.equal(api.followup('route to B170-R', answer, { characterId: '123', at }), 'route to B170-R');
 
 const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
 const elements = new Map();

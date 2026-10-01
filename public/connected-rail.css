@@ -65,7 +65,7 @@ html body.jlr-rail-controls.jlr-rail-controls .app .nav-dropdown-bar {
   clip-path: none;
   overflow: visible;
   gap: 3px;
-  padding: 6px 6px 9px;
+  padding: 3px 5px 4px;
   border-radius: 4px;
   background: var(--jlr-rail-panel);
   border: 1px solid var(--jlr-rail-edge);
@@ -78,8 +78,8 @@ html body.jlr-rail-controls.jlr-rail-controls .nav-menu-trigger {
   background: transparent;
   box-shadow: none;
   clip-path: none;
-  padding-left: 15px;
-  min-height: 40px;
+  padding: 4px 10px 4px 15px;
+  min-height: 34px;
   color: var(--jlr-rail-text);
 }
 html body.jlr-rail-controls.jlr-rail-controls .nav-menu-trigger::before {
@@ -151,4 +151,31 @@ html body.jlr-rail-controls.jlr-rail-controls .app .information-tabs.nav-dropdow
 }
 @media(prefers-reduced-motion:reduce) {
   html body.jlr-rail-controls.jlr-rail-controls button,html body.jlr-rail-controls.jlr-rail-controls .nav-menu-trigger { transition: none; }
+}
+
+/* Readable field controls without squeezing the clipboard action. */
+html body.jlr-rail-controls .scan-import-row {
+  grid-template-columns: minmax(0,1fr) auto;
+}
+html body.jlr-rail-controls .scan-import-row #scanStatus { grid-column: 1 / -1; font-size: 11px; line-height: 1.4; }
+html body.jlr-rail-controls .scan-import-row select { min-width: 0; width: 100%; }
+html body.jlr-rail-controls #pasteScan { white-space: nowrap; width: auto; padding: 6px 12px; }
+html body.jlr-rail-controls.jlr-rail-controls .app .field-board .system-node { padding: 8px 6px; }
+html body.jlr-rail-controls.jlr-rail-controls .app .field-board .sys-name { font-size: 13px; line-height: 1.35; }
+html body.jlr-rail-controls.jlr-rail-controls .app .field-board .sys-ore { font-size: 10px; line-height: 1.4; }
+html body.jlr-rail-controls.jlr-rail-controls .app .field-board .sys-state { font-size: 11px; line-height: 1.4; margin-top: 5px; }
+html body.jlr-rail-controls.jlr-rail-controls .app .field-board :is(.sys-scan,.sys-evidence,.sys-ice-coverage) { font-size: 10px; font-weight: 600; letter-spacing: 0; line-height: 1.4; white-space: normal; overflow-wrap: anywhere; }
+html body.jlr-rail-controls.jlr-rail-controls .app .field-board.board-size-large .sys-name { font-size: 16px; }
+html body.jlr-rail-controls.jlr-rail-controls .app .field-board.board-size-large .sys-state { font-size: 12px; }
+html body.jlr-rail-controls.jlr-rail-controls .app .field-board.board-size-large :is(.sys-ore,.sys-scan,.sys-evidence,.sys-ice-coverage) { font-size: 11px; }
+html body.jlr-rail-controls.jlr-rail-controls button:is(#threatShareScan,#appraisalShare,#appraisalPasteClipboard,#threatEditShare,#threatNewShare) {
+  background: var(--jlr-rail-panel); box-shadow: none;
+  border-left-color: var(--jlr-rail-edge);
+}
+/* Keep generous invisible chart targets; only the selected point gets a small ring. */
+html body.jlr-rail-controls .fleet-chart-hit { fill: transparent; stroke: transparent; pointer-events: all; }
+html body.jlr-rail-controls .fleet-chart-hit:focus-visible { r: 3px; stroke: #8bd3ff; stroke-width: 1.5px; }
+@media(max-width:430px) {
+  html body.jlr-rail-controls .scan-import-row { grid-template-columns: 1fr; }
+  html body.jlr-rail-controls #pasteScan { width: 100%; }
 }

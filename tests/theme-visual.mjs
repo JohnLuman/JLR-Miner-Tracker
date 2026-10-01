@@ -22,8 +22,8 @@ const markup=`<!doctype html><html data-theme="void"><head><meta name="viewport"
       <details class="nav-menu"><summary class="nav-menu-trigger"><span class="nav-menu-copy"><strong>SYSTEM</strong><small class="nav-menu-current"></small></span><span class="nav-menu-chevron">⌄</span></summary></details>
     </nav>
     <div class="top-actions"><button class="orb blue">PASTE SCAN</button><button class="orb silver">COPY LINK</button><button class="orb red">CLEAR TEXT</button><button class="board-tool active" aria-pressed="true">SOUND ON</button><button class="orb silver" disabled>SYNCING</button></div>
-    <section class="kpis information-kpis operations-summary-bar"><article class="kpi summary-cell"><span>APP PAYOUT</span><strong>4.2B ISK</strong><small>Today</small></article><article class="kpi summary-cell"><span>FLEET RATE</span><strong>2.8M m³/hr</strong><small>Measured</small></article><article class="kpi summary-cell"><span>SCAN DUE</span><strong>3 fields</strong><small>Attention</small></article></section>
-    <section class="glass board-panel"><div class="section-title"><strong>FIELD TRACKER</strong></div><div class="field-board node-grid"><article class="system-node" data-status="ready"><span class="sys-name">K-8SQS</span><span class="sys-ore">Arkonor</span><span class="sys-state">READY</span></article><article class="system-node" data-status="picked"><span class="sys-name">Y-2ANO</span><span class="sys-ore">Bistot</span><span class="sys-state">PICKED</span></article><article class="system-node" data-status="cleared"><span class="sys-name">PNQY-Y</span><span class="sys-ore">Crokite</span><span class="sys-state">CLEARED</span></article></div></section>
+    <div class="scan-import-row"><select id="scanCharacter"><option>Yeda Parmala</option></select><span class="scan-help-wrap"><button id="pasteScan" class="orb blue">📋 PASTE SCAN</button></span><span id="scanStatus">Copy Probe Scanner rows, then paste.</span></div><svg width="300" height="40"><circle class="fleet-chart-hit fleet-chart-linked" cx="20" cy="20" r="8" tabindex="0"/></svg><section class="kpis information-kpis operations-summary-bar"><article class="kpi summary-cell"><span>APP PAYOUT</span><strong>4.2B ISK</strong><small>Today</small></article><article class="kpi summary-cell"><span>FLEET RATE</span><strong>2.8M m³/hr</strong><small>Measured</small></article><article class="kpi summary-cell"><span>SCAN DUE</span><strong>3 fields</strong><small>Attention</small></article></section>
+    <section class="glass board-panel"><div class="section-title"><strong>FIELD TRACKER</strong></div><div class="field-board node-grid board-size-large"><article class="system-node" data-status="ready"><span class="sys-name">K-8SQS</span><span class="sys-ore">Arkonor</span><span class="sys-state">READY</span></article><article class="system-node" data-status="picked"><span class="sys-name">Y-2ANO</span><span class="sys-ore">Bistot</span><span class="sys-state">PICKED</span></article><article class="system-node" data-status="cleared"><span class="sys-name">PNQY-Y</span><span class="sys-ore">Crokite</span><span class="sys-state">CLEARED</span></article></div></section>
     <section class="glass hit-panel"><div class="section-title"><strong>NEXT TARGETS</strong></div><div class="hit-order"><button class="target-card green"><span class="target-rank"><strong>1</strong></span><span class="target-main"><strong>K-8SQS</strong><small>Ready to mine</small></span></button><button class="target-card yellow"><span class="target-rank"><strong>2</strong></span><span class="target-main"><strong>Y-2ANO</strong><small>Scan recommended</small></span></button></div></section>
     <section class="glass appraisal-panel"><div class="section-title"><strong>APPRAISAL</strong></div><div class="appraisal-summary"><article><span>JITA VALUE</span><strong>812M ISK</strong></article><article><span>LOCAL VALUE</span><strong>874M ISK</strong></article></div></section>
   </main></body></html>`;
@@ -61,11 +61,19 @@ try{
           buttonHeight:parseFloat(css('.orb.blue').minHeight),
           navRadius:css('.nav-menu-trigger').borderRadius,
           menuFont:css('.nav-menu-panel .app-tab').fontSize,
+          navHeight:document.querySelector('.nav-dropdown-bar').getBoundingClientRect().height,
+          cardNameFont:parseFloat(css('.field-board .sys-name').fontSize),
+          hitStroke:css('.fleet-chart-hit').stroke,
+          pasteFits:document.querySelector('#pasteScan').scrollWidth<=document.querySelector('#pasteScan').clientWidth,
           buttonAccent:css('.orb.blue').borderLeftColor,
           warningAccent:css('.orb.red').borderLeftColor,
         };
       });
       assert.ok(values.accent,theme+' missing accent');
+      assert.ok(values.cardNameFont>=16,theme+' large cards need readable system names');
+      assert.equal(values.hitStroke,'rgba(0, 0, 0, 0)',theme+' linked chart hit areas must stay invisible');
+      assert.ok(values.pasteFits,theme+' clipboard label is clipped');
+      if(size.name==='desktop')assert.ok(values.navHeight<=50,theme+' desktop navigation is too tall');
       assert.ok(values.overflow<=1,theme+' overflows '+size.name+' by '+values.overflow+'px');
       assert.equal(values.buttonRadius,'0px',theme+' primary action loses Connected Rail shape');
       assert.equal(values.navRadius,'0px',theme+' navigation loses Connected Rail shape');

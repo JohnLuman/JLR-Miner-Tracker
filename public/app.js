@@ -532,17 +532,19 @@
       }
       const context=adamContextSnapshot();
       const answerCharacterId=scoutSelectedCharacterId||scanCharacterId;
+      const navigationQuestion=window.JlrAdamNavigation?.followup(text,adamNavigationRecommendation,{characterId:answerCharacterId,location:scoutLocations.get(String(answerCharacterId)),scans:state?.scans||{}})||text;
       const response=await api('/api/tracker/brain/ask',{
         method:'POST',
         body:JSON.stringify({
-          question:text,
+          question:navigationQuestion,
           characterId:answerCharacterId,
           payoutPct:Number(fleetSettings.payout),
           currentTab:context.currentTab,
           context,
         }),
       });
-      adamNavigationRecommendation=window.JlrAdamNavigation?.recommendation(response,answerCharacterId)||null;
+      const nextRecommendation=window.JlrAdamNavigation?.recommendation(response,answerCharacterId)||null;
+      if(nextRecommendation)adamNavigationRecommendation=nextRecommendation;
       if(adamNavigationRecommendation&&response.location)scoutLocations.set(String(answerCharacterId),response.location);
       renderScoutTargets();
       const answer=String(response?.text||'I do not have an answer for that yet.');
