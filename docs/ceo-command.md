@@ -6,14 +6,14 @@ Private access is checked on every API route. Only the JLR owner and Renius can 
 
 - Corporation overview and per-section pull health.
 - Monthly income source charts and current corporation wallet division charts.
-- Historical wallet months imported from the admin workbook, labelled separately from ESI. The import recalculates raw rows; cached worksheet summary figures differ. Historical totals do not become current balances or member earnings.
+- Monthly history comes only from ESI journal entries observed by JLR. The 2024 workbook was a development reference and is no longer loaded or displayed.
 - Corporation member dates, wallet journal references, manual loyalty points, and retained adjustment history.
-- Moon workbook baseline and live structure fuel/service filters.
+- Current ESI moon extraction schedules and corporation structure fuel/service filters, with separate pull status and stale warnings.
 - Assets, industry jobs, contracts, and market orders with search, filters, pagination, and partial/stale warnings.
 - Wallet journal explorer, exact member-party filtering, and links from member records.
 - Discord message counts and voice-channel presence, with manual Discord-to-EVE member links.
 
-The workbook itself is preserved. Private imports live in runtime configuration, not this repository. `CEO_MOON_BASELINE_GZIP_B64` and `CEO_FINANCE_BASELINE_GZIP_B64` contain compressed imports.
+The original workbook is preserved as a source file. Legacy baseline environment variables are ignored by CEO COMMAND.
 
 ## Remaining account setup
 
@@ -35,9 +35,9 @@ Message bodies, attachments, and audio are not retained. Voice time includes mut
 
 ## Pull behavior
 
-CEO data warms once after application startup when core authorization is present. Each section has its own cache or pull status; an operations failure does not block another operation. Refreshing data health inspects state and makes no ESI calls. For a new ESI pull, use the relevant section's refresh button. Wallet journal requests search saved entries rather than pulling ESI repeatedly.
+CEO data warms after application startup and refreshes in the background every five minutes when core authorization is present. Each section has its own cache or pull status; an operations failure does not block another operation. Refreshing data health inspects state and makes no ESI calls. For a new ESI pull, use the relevant section's refresh button. Wallet journal requests search saved entries rather than pulling ESI repeatedly.
 
-Financial journal retention is bounded to 400 days / 50,000 entries. Imported workbook totals are separate and do not expire with that journal window. Loyalty has no automatic scoring formula; corrections use opposite adjustments and retain their history. Up to 250 adjustments are retained per member, with the latest ten shown.
+Financial journal retention is bounded to 400 days / 50,000 entries. Loyalty has no automatic scoring formula; corrections use opposite adjustments and retain their history. Up to 250 adjustments are retained per member, with the latest ten shown.
 
 ## Verification
 
