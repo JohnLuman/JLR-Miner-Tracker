@@ -970,7 +970,7 @@ function ceoStatusForUser(user){
     optionalScopes:[CEO_WALLET_SCOPE],
     grantedScopes:granted,
     missingScopes,
-    authorizeUrl:access.canAuthorize?'/auth/eve/ceo/start?character='+encodeURIComponent(String(access.authorizeCharacterId||'')):null,
+    authorizeUrl:access.canAuthorize?'/auth/eve/ceo/start?character='+encodeURIComponent(String(access.authorizeCharacterId||''))+(connected?'&wallet=1':''):null,
     features:{
       monthlyIncome:true,
       walletBreakdown:true,
@@ -1740,7 +1740,8 @@ async function startCeoSso(req,res,url){
   u.searchParams.set('response_type','code');
   u.searchParams.set('client_id',EVE_CLIENT_ID);
   u.searchParams.set('redirect_uri',redirectUri);
-  u.searchParams.set('scope',CEO_SCOPES.join(' '));
+  const requestedScopes=url.searchParams.get('wallet')==='1'?[...CEO_SCOPES,CEO_WALLET_SCOPE]:[...CEO_SCOPES];
+  u.searchParams.set('scope',requestedScopes.join(' '));
   u.searchParams.set('state',stateId);
   if(!EVE_CLIENT_SECRET){
     const challenge=crypto.createHash('sha256').update(verifier).digest('base64url');
