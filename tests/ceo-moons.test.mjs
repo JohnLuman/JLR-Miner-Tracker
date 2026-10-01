@@ -59,3 +59,29 @@ for(const allowed of [false,true]){
   if(allowed)assert.equal(payload.status,200);
 }
 console.log('CEO moon baseline, missing values, fuel status, search and private endpoint tests passed.');
+
+const upkeep=[...structures,{structureId:55,system:'B-TEST',type:'Fortizar',fuelStatus:'OK',fuelHours:200,services:[{name:'Market',state:'offline'}]}];
+const selectStructures=browser.window.JlrCeoMoons.selectStructures;
+assert.equal(selectStructures(upkeep,{filter:'fuel'}).length,2);
+assert.equal(selectStructures(upkeep,{filter:'unknown'})[0].fuelStatus,'UNKNOWN');
+assert.equal(selectStructures(upkeep,{filter:'offline'})[0].structureId,55);
+assert.equal(selectStructures(upkeep,{query:'market'})[0].structureId,55);
+assert.equal(selectStructures(upkeep,{query:'1000000000001'})[0].fuelStatus,'LOW');
+assert.equal(selectStructures(upkeep)[0].fuelStatus,'EXPIRED');
+assert.equal(upkeep[0].structureId,structures[0].structureId,'Filtering does not mutate the source');
+browser.fetch=async()=>({ok:true,json:async()=>({baseline,live:{available:true,updatedAt:'2026-10-01T00:00:00Z',records:upkeep}})});
+await browser.window.JlrCeoMoons.load(true);
+assert.match(get('ceoStructureSummary').textContent,/5 structures/);
+assert.match(get('ceoStructureSummary').textContent,/1 with offline services/);
+get('ceoStructureFilter').value='offline';browser.window.JlrCeoMoons.render();
+assert.match(get('ceoLiveStructures').innerHTML,/Fortizar/);
+assert.doesNotMatch(get('ceoLiveStructures').innerHTML,/Athanor/);
+assert.match(get('ceoStructureCount').textContent,/1 of 5/);
+get('ceoStructureSearch').value='no-match';browser.window.JlrCeoMoons.render();
+assert.match(get('ceoLiveStructures').innerHTML,/No structures match/);
+get('ceoStructureSearch').value='';browser.fetch=async()=>{throw new Error('Connection failed');};
+await browser.window.JlrCeoMoons.load(true);
+assert.match(get('ceoStructuresStamp').textContent,/LAST SUCCESSFUL PULL/);
+assert.match(get('ceoStructuresWarning').textContent,/Connection failed/);
+assert.match(get('ceoLiveStructures').innerHTML,/Fortizar/);
+console.log('CEO structure upkeep filters, counts, preserved results and stale timestamps passed.');
