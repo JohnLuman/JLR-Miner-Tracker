@@ -3968,4 +3968,27 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .ceo-finance-totals{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;font:800 7px/1.3 "Share Tech Mono",monospace;color:#aeb4c1}.ceo-finance-totals strong{color:#79f3a0}
 .ceo-big-number{margin-top:12px;padding:9px;border:1px solid #2d313b;border-radius:7px;background:#0d0f15}.ceo-big-number small{display:block;color:#777e8d;font-size:7px}.ceo-big-number strong{display:block;margin-top:4px;font:900 15px/1 Oxanium,Segoe UI,sans-serif}
 .ceo-finance-foot{display:flex;align-items:center;justify-content:flex-end;gap:9px;color:#7f8592;font-size:8px}.ceo-finance-warnings{padding:8px 10px;border:1px solid #6c4d20;border-radius:7px;background:#21170c;color:#f4c36d;font-size:8px}
+
+.ceo-member-card{grid-column:1/-1;min-height:0}
+.ceo-member-head{display:grid;grid-template-columns:minmax(160px,220px) minmax(0,1fr);gap:10px;align-items:stretch;margin-top:10px}
+.ceo-member-head .ceo-big-number{margin-top:0}
+.ceo-role-health{padding:9px;border:1px solid #2d313b;border-radius:7px;background:#0d0f15}
+.ceo-role-title{display:flex;justify-content:space-between;gap:10px;align-items:center}
+.ceo-role-title strong{font:900 8px/1 "Share Tech Mono",monospace;letter-spacing:.08em}
+.ceo-role-title small{color:#777e8d;font-size:7px;text-align:right}
+.ceo-role-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin-top:7px}
+.ceo-role-row{display:grid;grid-template-columns:18px minmax(0,1fr);gap:6px;align-items:center;padding:6px 7px;border:1px solid #353944;border-radius:6px;background:#101219}
+.ceo-role-row>span{font-weight:1000;text-align:center}.ceo-role-row b{display:block;font-size:7.5px}.ceo-role-row small{display:block;margin-top:2px;color:#777e8d;font-size:6.5px}
+.ceo-role-row.ready{border-color:#245d37}.ceo-role-row.ready>span{color:#74f59a}.ceo-role-row.blocked{border-color:#704126;background:#1d130e}.ceo-role-row.blocked>span{color:#ffb067}
+.ceo-role-note{margin:7px 0 0!important;color:#d9aa70!important;font-size:7.5px!important}
+.ceo-loyalty-controls{display:grid;grid-template-columns:minmax(180px,1fr) 120px minmax(220px,1.2fr) auto;gap:6px;margin-top:10px}
+.ceo-loyalty-controls select,.ceo-loyalty-controls input{min-width:0;border:1px solid #343944;border-radius:6px;background:#0c0e14;color:#d8dce7;padding:7px 8px;font:800 8px/1 "Share Tech Mono",monospace}
+.ceo-member-table-head,.ceo-member-row{display:grid;grid-template-columns:minmax(180px,1.5fr) repeat(4,minmax(105px,.75fr));gap:7px;align-items:center}
+.ceo-member-table-head{margin-top:10px;padding:0 8px 5px;color:#666e7c;font:900 6.5px/1 "Share Tech Mono",monospace;letter-spacing:.08em}
+.ceo-member-finance{display:grid;gap:4px;max-height:360px;overflow:auto;padding-right:3px}
+.ceo-member-row{padding:8px;border:1px solid #292d36;border-radius:7px;background:#0d0f15}
+.ceo-member-row>div:not(.ceo-member-name){display:grid;gap:3px}.ceo-member-row small{color:#717887;font-size:6.5px}.ceo-member-row b{font-size:7.5px}.ceo-member-name strong{display:block;font-size:8.5px}.ceo-member-name small{display:block;margin-top:3px}
+.ceo-member-row .positive{color:#77f39b}.ceo-member-row .negative{color:#ff8080}
+@media(max-width:900px){.ceo-member-head{grid-template-columns:1fr}.ceo-loyalty-controls{grid-template-columns:1fr 1fr}.ceo-role-grid{grid-template-columns:1fr}.ceo-member-table-head{display:none}.ceo-member-row{grid-template-columns:1fr 1fr}.ceo-member-name{grid-column:1/-1}}
+@media(max-width:560px){.ceo-loyalty-controls,.ceo-member-row{grid-template-columns:1fr}.ceo-member-name{grid-column:auto}}
 @media(max-width:680px){.ceo-chart-row{grid-template-columns:76px minmax(0,1fr)}.ceo-pie{width:72px;height:72px}}
