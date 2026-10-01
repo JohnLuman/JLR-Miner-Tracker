@@ -353,7 +353,7 @@ html[data-theme="citadel"] .nav-menu-trigger, html[data-theme="citadel"] .nav-me
   clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,8px 100%,0 calc(100% - 8px));
   border-radius:0;
 }
-html[data-theme="citadel"] .orb, html[data-theme="citadel"] input, html[data-theme="citadel"] select, html[data-theme="citadel"] textarea{
+html[data-theme="citadel"] input, html[data-theme="citadel"] select, html[data-theme="citadel"] textarea{
   border-radius:2px!important;
 }
 html[data-theme="citadel"] .appraisal-table th{
