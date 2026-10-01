@@ -1274,7 +1274,7 @@ async function ceoFinanceSnapshot({force=false}={}){
 
 let ceoMetenoxPriceCache={at:0,data:null,promise:null};
 async function ceoMetenoxPrices(){
-  if(ceoMetenoxPriceCache.data&&Date.now()-ceoMetenoxPriceCache.at<60*60_000)return ceoMetenoxPriceCache.data;
+  if(ceoMetenoxPriceCache.data&&Date.now()-ceoMetenoxPriceCache.at<(ceoMetenoxPriceCache.data.error?60_000:60*60_000))return ceoMetenoxPriceCache.data;
   if(ceoMetenoxPriceCache.promise)return ceoMetenoxPriceCache.promise;
   const pending=(async()=>{
     try{
