@@ -1747,9 +1747,9 @@
     }
     if(statusText){
       statusText.textContent=status.authorizationUpgradeRequired
-        ?'Renius is verified as CEO, but this token needs an ESI scope refresh before corporation wallet data can load.'
+        ?'Renius is verified as CEO, but this token needs a core CEO ESI scope refresh.'
         :status.connected
-          ?'Renius CEO ESI is connected'+(status.corporationName?' • '+status.corporationName:'')+'.'
+          ?'Renius CEO ESI is connected'+(status.corporationName?' • '+status.corporationName:'')+(status.walletScopeGranted?' • corp wallet connected':status.legacyWalletScopeGranted?' • core online; corp wallet scope is legacy':' • core online; corp wallet scope is separate')+'.'
           :status.canAuthorize
             ?'Backend is ready. Renius can authorize the corporation read scopes here.'
             :'Backend is ready. Waiting for Renius to authorize the corporation read scopes.';
@@ -1770,10 +1770,15 @@
     if(client)client.textContent=status.oauthClientId?'OAuth client '+status.oauthClientId:'';
     if(scopeList){
       const granted=new Set(status.grantedScopes||[]);
-      scopeList.innerHTML=(status.requestedScopes||[]).map(scope=>
+      const coreRows=(status.requestedScopes||[]).map(scope=>
         '<div class="ceo-scope-row '+(granted.has(scope)?'granted':'pending')+'"><span>'+
         (granted.has(scope)?'✓':'○')+'</span><code>'+esc(scope)+'</code></div>'
-      ).join('')||'<div class="visual-empty">No CEO scopes configured.</div>';
+      ).join('');
+      const walletScope=String(status.walletScope||'');
+      const walletRow=walletScope
+        ?'<div class="ceo-scope-row '+(status.walletScopeGranted?'granted':'optional')+'"><span>'+(status.walletScopeGranted?'✓':'◇')+'</span><code>'+esc(walletScope)+' • OPTIONAL WALLET</code></div>'
+        :'';
+      scopeList.innerHTML=coreRows+walletRow||'<div class="visual-empty">No CEO scopes configured.</div>';
     }
   }
   function ceoMoney(value){return Math.round(Number(value)||0).toLocaleString()+' ISK'}
@@ -1836,7 +1841,15 @@
       :divisionsBlocked
         ?'<div class="visual-empty">ESI DIVISION ACCESS DENIED</div>'
         :ceoLegend(wallets,walletTotal);
-    if($('ceoWalletTotal'))$('ceoWalletTotal').textContent=walletBlocked?'ACCESS REQUIRED':ceoMoney(data.finance?.totalBalance||0);
+    if($('ceoWalletTotal'))$('ceoWalletTotal').textContent=walletBlocked?'WALLET ESI UNAVAILABLE':ceoMoney(data.finance?.totalBalance||0);
+    const walletNote=$('ceoWalletNote');
+    if(walletNote){
+      const wa=data.walletAccess||{};
+      walletNote.textContent=walletBlocked
+        ?(wa.legacyGranted?'Core CEO access is working. EVE SSO accepted the legacy wallet scope, but current wallet ESI requires the newer plural scope that SSO is rejecting for this app.':'Core CEO access is working; corporation wallet ESI is currently unavailable.')
+        :'Corporation wallet ESI is live.';
+      walletNote.classList.toggle('blocked',walletBlocked);
+    }
     if($('ceoMemberCount'))$('ceoMemberCount').textContent=Number(data.members?.count||0).toLocaleString();
 
     const roleHealth=$('ceoRoleHealth');
@@ -2087,7 +2100,7 @@
         </section>
         <section class="ceo-command-grid">
           <article class="glass ceo-command-card ceo-chart-card"><div class="ceo-card-title"><div><span class="eyebrow">MONTHLY INCOME</span><h3>INCOME SOURCES</h3></div><select id="ceoIncomeMonth" aria-label="Income month"></select></div><p>Positive corporation-wallet journal entries grouped by EVE reference type. JLR retains observed journal entries so monthly history grows over time.</p><div class="ceo-chart-row"><div id="ceoIncomePie" class="ceo-pie"></div><div id="ceoIncomeLegend" class="ceo-legend"><div class="visual-empty">Waiting for Renius CEO ESI.</div></div></div><div id="ceoIncomeTotals" class="ceo-finance-totals"></div></article>
-          <article class="glass ceo-command-card ceo-chart-card"><span class="eyebrow">CORE FINANCE</span><h3>WALLET BREAKDOWN</h3><p>Live corporation wallet divisions and current balances.</p><div class="ceo-chart-row"><div id="ceoWalletPie" class="ceo-pie"></div><div id="ceoWalletLegend" class="ceo-legend"><div class="visual-empty">Waiting for Renius CEO ESI.</div></div></div><div class="ceo-big-number"><small>TOTAL CORP WALLET</small><strong id="ceoWalletTotal">—</strong></div></article>
+          <article class="glass ceo-command-card ceo-chart-card"><span class="eyebrow">CORE FINANCE</span><h3>WALLET BREAKDOWN</h3><p>Live corporation wallet divisions and current balances.</p><div class="ceo-chart-row"><div id="ceoWalletPie" class="ceo-pie"></div><div id="ceoWalletLegend" class="ceo-legend"><div class="visual-empty">Waiting for Renius CEO ESI.</div></div></div><div class="ceo-big-number"><small>TOTAL CORP WALLET</small><strong id="ceoWalletTotal">—</strong></div><div id="ceoWalletNote" class="ceo-wallet-note"></div></article>
           <article class="glass ceo-command-card ceo-member-card"><span class="eyebrow">MEMBERS</span><h3>FINANCE + LOYALTY</h3><p>Corp wallet activity involving each member plus a private loyalty ledger. Points are manual for now so JLR does not invent the corporation's reward formula.</p><div class="ceo-member-head"><div class="ceo-big-number"><small>CORP MEMBERS</small><strong id="ceoMemberCount">—</strong></div><div id="ceoRoleHealth" class="ceo-role-health"></div></div><div class="ceo-loyalty-controls"><select id="ceoLoyaltyMember" aria-label="Corporation member"><option value="">Choose member…</option></select><input id="ceoLoyaltyPoints" type="number" step="1" min="-100000" max="100000" placeholder="+/- points"><input id="ceoLoyaltyNote" maxlength="160" placeholder="Reason / note"><button id="ceoLoyaltyAdjust" class="board-tool" type="button">ADJUST POINTS</button></div><div class="ceo-member-table-head"><span>MEMBER</span><span>IN</span><span>OUT</span><span>NET IMPACT</span><span>LOYALTY</span></div><div id="ceoMemberFinanceRows" class="ceo-member-finance"><div class="visual-empty">Waiting for corporation roster…</div></div></article>
           <article class="glass ceo-command-card"><span class="eyebrow">COMMUNICATIONS</span><h3>DISCORD ACTIVITY</h3><p>Bot-fed participation counts for text and voice activity. JLR will track activity totals, not message contents or voice recordings.</p><div class="ceo-placeholder">DISCORD BOT CONNECTION REQUIRED</div></article>
           <article class="glass ceo-command-card"><span class="eyebrow">ADMIN SHEET</span><h3>MOONS + STRUCTURES</h3><p>The TMP Admin workbook remains the baseline for moon, structure, tax, fuel and breakeven knowledge while live ESI is layered on top.</p><div class="ceo-placeholder">SHEET BASELINE</div></article>
