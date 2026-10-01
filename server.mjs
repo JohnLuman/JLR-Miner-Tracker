@@ -6,6 +6,7 @@ import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 import { decodeMoonBaseline, structureRows } from './lib/ceo-moons.mjs';
 import { CEO_OPERATION_ROUTES, operationNameIds, normalizeOperations } from './lib/ceo-operations.mjs';
+import { journalPage } from './lib/ceo-journal.mjs';
 import { fileURLToPath } from 'node:url';
 import { DOCTRINE_SEED_B64 } from './lib/doctrine-seed.mjs';
 import { parseProbeScan, parseA0Scan, parseIceScan, parseWormholeGasScan } from './lib/probe-scan.mjs';
@@ -1190,13 +1191,16 @@ async function ceoFinanceSnapshot({force=false}={}){
       ceoTry('roles',async()=>(await esiGet('https://esi.evetech.net/latest/characters/'+admin.characterId+'/roles/?datasource=tranquility',access)).data,errors,{}),
     ]);
     const walletListError=errors.find(row=>row.section==='wallets')||null;
+    const journalCoverage=[];
     const journalParts=walletListError?[]:await Promise.all(Array.from({length:7},(_,index)=>index+1).map(async division=>{
       const result=await ceoTry('wallet-journal-'+division,()=>ceoPagedGet(base+'/wallets/'+division+'/journal/?datasource=tranquility',access,{maxPages:20}),errors,{rows:[],truncated:false});
+      journalCoverage.push({division,pagesFetched:result.pagesFetched||0,reportedPages:result.reportedPages||0,truncated:Boolean(result.truncated)});
       return(result.rows||[]).map(row=>({...row,_division:division}));
     }));
     const walletErrors=errors.filter(row=>row.section==='wallets'||String(row.section||'').startsWith('wallet-journal-'));
     state.ceoAdmin.walletLastCheckedAt=now();
     state.ceoAdmin.walletLastError=walletErrors.length?walletErrors.map(row=>row.message).filter(Boolean).join(' | ').slice(0,600):null;
+    state.ceoAdmin.walletJournalPull={checkedAt:now(),updatedAt:walletErrors.length?state.ceoAdmin.walletJournalPull?.updatedAt||null:now(),available:!walletErrors.length,truncated:journalCoverage.some(row=>row.truncated),divisions:journalCoverage.sort((a,b)=>a.division-b.division),error:state.ceoAdmin.walletLastError||null};
     const latestJournal=journalParts.flat();
     ceoRememberFinanceJournal(latestJournal);
     state.ceoAdmin.financeUpdatedAt=now();
@@ -9884,6 +9888,12 @@ async function routeApi(req,res,url) {
     const section=url.searchParams.get('section')||'assets';
     if(!Object.hasOwn(CEO_OPERATION_ROUTES,section))return json(res,400,{error:'INVALID_CEO_OPERATIONS_SECTION'});
     return json(res,200,await ceoOperationsSnapshot(section,{force:url.searchParams.get('force')==='1'}));
+  }
+  if(req.method==='GET'&&url.pathname==='/api/ceo/journal'){
+    if(!requireCeoViewer(req,res))return;
+    const admin=state.ceoAdmin||{};
+    const result=journalPage(Object.values(admin.financeJournal||{}),{query:url.searchParams.get('query')||'',month:url.searchParams.get('month')||'',division:url.searchParams.get('division')||'',direction:url.searchParams.get('direction')||'',page:url.searchParams.get('page')||1});
+    return json(res,200,{...result,walletGranted:Array.isArray(admin.scopes)&&admin.scopes.includes(CEO_WALLET_SCOPE),pull:admin.walletJournalPull||null});
   }
   if(req.method==='POST'&&url.pathname==='/api/ceo/loyalty/adjust'){
     const viewer=requireCeoViewer(req,res);
