@@ -5,6 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 import { decodeMoonBaseline, structureRows } from './lib/ceo-moons.mjs';
+import { CEO_OPERATION_ROUTES, operationNameIds, normalizeOperations } from './lib/ceo-operations.mjs';
 import { fileURLToPath } from 'node:url';
 import { DOCTRINE_SEED_B64 } from './lib/doctrine-seed.mjs';
 import { parseProbeScan, parseA0Scan, parseIceScan, parseWormholeGasScan } from './lib/probe-scan.mjs';
@@ -1279,6 +1280,32 @@ async function ceoMoonSnapshot({force=false}={}){
   return pending;
 }
 
+let ceoOperationsCache=new Map();
+async function ceoOperationsSnapshot(section,{force=false}={}){
+  if(!Object.hasOwn(CEO_OPERATION_ROUTES,section))throw new Error('Unknown corporation operations section');
+  let cache=ceoOperationsCache.get(section);
+  if(!cache){cache={at:0,data:null,promise:null};ceoOperationsCache.set(section,cache);}
+  if(!force&&cache.data&&Date.now()-cache.at<5*60_000)return cache.data;
+  if(cache.promise)return cache.promise;
+  const pending=(async()=>{
+    const checkedAt=now();let data;
+    try{
+      const {access,admin}=await ceoAccessToken();await save();
+      const url='https://esi.evetech.net/latest/corporations/'+Number(admin.corporationId)+CEO_OPERATION_ROUTES[section]+'?datasource=tranquility'+(section==='jobs'?'&include_completed=true':'');
+      const result=await ceoPagedGet(url,access,{maxPages:section==='assets'?50:20});
+      const names=await resolveUniverseNames(operationNameIds(section,result.rows));
+      const normalized=normalizeOperations(section,result.rows,names);
+      data={section,available:true,checkedAt,updatedAt:checkedAt,stale:false,error:null,truncated:result.truncated,pagesFetched:result.pagesFetched,reportedPages:result.reportedPages,...normalized};
+    }catch(error){
+      data={section,available:false,checkedAt,updatedAt:cache.data?.updatedAt||null,stale:Boolean(cache.data?.updatedAt),error:String(error?.message||error).slice(0,220),truncated:cache.data?.truncated||false,pagesFetched:cache.data?.pagesFetched||0,reportedPages:cache.data?.reportedPages||0,records:cache.data?.records||[],summary:cache.data?.summary||null};
+    }
+    cache.data=data;cache.at=Date.now();
+    console.info('CEO operations pull',JSON.stringify({section,available:data.available,stale:data.stale,count:data.records.length,truncated:data.truncated}));
+    return data;
+  })().finally(()=>{if(cache.promise===pending)cache.promise=null});
+  cache.promise=pending;return pending;
+}
+
 function sameOrigin(req) {
   const origin = req.headers.origin; if (!origin) return true;
   try { return new URL(origin).origin === new URL(requestBaseUrl(req)).origin; } catch { return false; }
@@ -1909,6 +1936,7 @@ async function handleCallback(req,res,url) {
       await save();
       ceoFinanceCache={at:0,data:null,promise:null};
       ceoStructuresCache={at:0,data:null,promise:null};
+      ceoOperationsCache=new Map();
       setSessionCookie(res,user.id,req);
       return redirect(res,'/?ceo=authorized');
     }
@@ -9849,6 +9877,12 @@ async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname==='/api/ceo/moons'){
     if(!requireCeoViewer(req,res))return;
     return json(res,200,await ceoMoonSnapshot({force:url.searchParams.get('force')==='1'}));
+  }
+  if(req.method==='GET'&&url.pathname==='/api/ceo/operations'){
+    if(!requireCeoViewer(req,res))return;
+    const section=url.searchParams.get('section')||'assets';
+    if(!Object.hasOwn(CEO_OPERATION_ROUTES,section))return json(res,400,{error:'INVALID_CEO_OPERATIONS_SECTION'});
+    return json(res,200,await ceoOperationsSnapshot(section,{force:url.searchParams.get('force')==='1'}));
   }
   if(req.method==='POST'&&url.pathname==='/api/ceo/loyalty/adjust'){
     const viewer=requireCeoViewer(req,res);
