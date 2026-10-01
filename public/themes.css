@@ -1046,7 +1046,7 @@ html[data-theme="edencom"] .nav-dropdown-bar{
   border-radius:1px;
   background:#071526f0;
 }
-html[data-theme="edencom"] .nav-menu-trigger, html[data-theme="edencom"] .nav-menu-panel .app-tab, html[data-theme="edencom"] .orb, html[data-theme="edencom"] input, html[data-theme="edencom"] select, html[data-theme="edencom"] textarea{
+html[data-theme="edencom"] input, html[data-theme="edencom"] select, html[data-theme="edencom"] textarea{
   border-radius:1px!important;
 }
 html[data-theme="edencom"] .nav-menu-panel .app-tab.active{
@@ -1165,7 +1165,7 @@ html[data-theme="aurora"] .nav-dropdown-bar{
   background:#160d20bf;
   backdrop-filter:blur(8px);
 }
-html[data-theme="aurora"] .nav-menu-trigger, html[data-theme="aurora"] .nav-menu-panel .app-tab, html[data-theme="aurora"] .orb, html[data-theme="aurora"] input, html[data-theme="aurora"] select, html[data-theme="aurora"] textarea{
+html[data-theme="aurora"] input, html[data-theme="aurora"] select, html[data-theme="aurora"] textarea{
   border-radius:18px!important;
 }
 html[data-theme="aurora"] .nav-menu-panel{
@@ -1325,7 +1325,7 @@ html[data-theme="neon"] .nav-dropdown-bar{
   border:1px solid #374457;
   background:#070c15ec;
 }
-html[data-theme="neon"] .nav-menu-trigger, html[data-theme="neon"] .nav-menu-panel .app-tab, html[data-theme="neon"] .orb, html[data-theme="neon"] input, html[data-theme="neon"] select, html[data-theme="neon"] textarea{
+html[data-theme="neon"] input, html[data-theme="neon"] select, html[data-theme="neon"] textarea{
   border-radius:0!important;
 }
 html[data-theme="neon"] .orb{
