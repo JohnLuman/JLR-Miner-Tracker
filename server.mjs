@@ -4,6 +4,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import zlib from 'node:zlib';
+import { moonProduction, priceMoonProduction } from './lib/ceo-metenox-production.mjs';
 import { metenoxRows, validateMetenoxProfile, FUEL_BLOCK_NAMES } from './lib/ceo-metenox.mjs';
 import { structureRows } from './lib/ceo-moons.mjs';
 import { CEO_OPERATION_ROUTES, operationNameIds, normalizeOperations } from './lib/ceo-operations.mjs';
@@ -57,7 +58,7 @@ const PUBLIC_URL = String(process.env.PUBLIC_URL || '').trim().replace(/\/$/, ''
 const JLR_SHARE_ORIGIN = String(process.env.JLR_SHARE_ORIGIN || '').trim().replace(/\/$/, '');
 const EVE_CLIENT_ID = String(process.env.EVE_CLIENT_ID || '').trim();
 const EVE_CLIENT_SECRET = String(process.env.EVE_CLIENT_SECRET || '').trim();
-const ESI_USER_AGENT = String(process.env.ESI_USER_AGENT || 'JLR-Miner-Tracker/2.10.17').trim();
+const ESI_USER_AGENT = String(process.env.ESI_USER_AGENT || 'JLR-Miner-Tracker/2.10.18').trim();
 const ESI_COMPAT_DATE = String(process.env.ESI_COMPATIBILITY_DATE || '2026-09-16').trim();
 const TRACKER_SUPPORT_SHARED_SECRET = String(process.env.TRACKER_SUPPORT_SHARED_SECRET || '').trim();
 const trackerSupport = createTrackerSupportClient({
@@ -1273,18 +1274,37 @@ async function ceoFinanceSnapshot({force=false}={}){
 }
 
 let ceoMetenoxPriceCache={at:0,data:null,promise:null};
-async function ceoMetenoxPrices(){
-  if(ceoMetenoxPriceCache.data&&Date.now()-ceoMetenoxPriceCache.at<(ceoMetenoxPriceCache.data.error?60_000:60*60_000))return ceoMetenoxPriceCache.data;
+async function ceoMetenoxPrices(materialNames=[]){
+  const names=[...new Set(['Magmatic Gas',...FUEL_BLOCK_NAMES,...materialNames])].sort();
+  const key=names.join('|');
+  if(ceoMetenoxPriceCache.key===key&&ceoMetenoxPriceCache.data&&Date.now()-ceoMetenoxPriceCache.at<(ceoMetenoxPriceCache.data.error?60_000:60*60_000))return ceoMetenoxPriceCache.data;
   if(ceoMetenoxPriceCache.promise)return ceoMetenoxPriceCache.promise;
   const pending=(async()=>{
     try{
-      const priced=await nativeEsiAppraisal(['Magmatic Gas',...FUEL_BLOCK_NAMES].map(name=>name+'\t1').join('\n'),{market:2,pricing:'sell'});
+      const priced=await nativeEsiAppraisal(names.map(name=>name+'\t1').join('\n'),{market:2,pricing:'split'});
       const prices=Object.fromEntries((priced.items||[]).filter(row=>row.resolved!==false&&!row.marketDataStale&&Number(row.sell)>0).map(row=>[row.name,Number(row.sell)]));
-      const data={prices,updatedAt:priced.marketData?.oldestAt||priced.generatedAt,error:Object.keys(prices).length<5?'Some current Jita fuel prices could not be loaded.':null};
-      ceoMetenoxPriceCache.at=Date.now();ceoMetenoxPriceCache.data=data;return data;
+      const buyPrices=Object.fromEntries((priced.items||[]).filter(row=>row.resolved!==false&&!row.marketDataStale&&Number(row.buy)>0).map(row=>[row.name,Number(row.buy)]));
+      const data={prices,buyPrices,updatedAt:priced.marketData?.oldestAt||priced.generatedAt,error:['Magmatic Gas',...FUEL_BLOCK_NAMES].some(name=>!prices[name])?'Some current Jita fuel prices could not be loaded.':null};
+      ceoMetenoxPriceCache.key=key;ceoMetenoxPriceCache.at=Date.now();ceoMetenoxPriceCache.data=data;return data;
     }catch(error){return {prices:{},updatedAt:null,error:String(error?.message||error).slice(0,220)};}
   })().finally(()=>{ceoMetenoxPriceCache.promise=null});
   ceoMetenoxPriceCache.promise=pending;return pending;
+}
+async function ceoMetenoxProduction(structures){
+  const profiles=state.ceoAdmin.metenoxProfiles||{};
+  const current=structures.filter(row=>Number(row.typeId)===81826);
+  const ores=current.flatMap(row=>profiles[String(row.structureId)]?.composition||[]);
+  const recipes={};
+  if(ores.length){
+    const resolved=await appraisalResolveItems(ores);
+    const types=[...resolved.map.values()].filter(Boolean);
+    const materials=await trackerSupport.sdeMaterials({typeIds:[...new Set(types.map(row=>row.typeId))]});
+    for(const type of types){
+      const material=materials.items.find(row=>row.typeId===type.typeId);
+      if(material)recipes[type.name.toLowerCase()]={...material,volume:type.volume,moonOre:[2396,2397,2398,2399,2400].includes(type.groupId)};
+    }
+  }
+  return Object.fromEntries(current.map(row=>[String(row.structureId),moonProduction(profiles[String(row.structureId)]?.composition,recipes)]));
 }
 let ceoStructuresCache={at:0,data:null,promise:null};
 async function ceoMoonSnapshot({force=false}={}){
@@ -1307,8 +1327,10 @@ async function ceoMoonSnapshot({force=false}={}){
     let metenox;
     try{
       const assets=await ceoOperationsSnapshot('assets',{force});
-      const priceSnapshot=await ceoMetenoxPrices();
-      const records=metenoxRows(live.records,assets.records,{profiles:state.ceoAdmin.metenoxProfiles||{},prices:priceSnapshot.prices,assetsAvailable:assets.available,assetsPartial:assets.truncated||assets.stale});
+      const production=await ceoMetenoxProduction(live.records);
+      const priceSnapshot=await ceoMetenoxPrices(Object.values(production).flatMap(row=>row.outputs.map(item=>item.name)));
+      for(const id of Object.keys(production))production[id]=priceMoonProduction(production[id],priceSnapshot.buyPrices);
+      const records=metenoxRows(live.records,assets.records,{profiles:state.ceoAdmin.metenoxProfiles||{},prices:priceSnapshot.prices,production,assetsAvailable:assets.available,assetsPartial:assets.truncated||assets.stale});
       metenox={available:live.available,checkedAt,updatedAt:live.updatedAt,stale:live.stale,truncated:live.truncated,error:live.error,records,assetsUpdatedAt:assets.updatedAt,assetsError:assets.error,assetsPartial:assets.truncated||assets.stale,priceUpdatedAt:priceSnapshot.updatedAt,priceError:priceSnapshot.error};
     }catch(error){
       const previous=ceoStructuresCache.data?.metenox;
@@ -1802,7 +1824,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Tracker',version:'2.10.17',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
+    app:{name:'JLR Tracker',version:'2.10.18',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}])),wormholes:{reports:wormholeGasPublicReports(),reportHours:WORMHOLE_GAS_REPORT_TTL/3600000}},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans,
@@ -9963,7 +9985,7 @@ async function routeApi(req,res,url) {
       return json(res,502,{error:'SUPPORT_APPRAISAL_FAILED',message:String(err.message||err)});
     }
   }
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Tracker',version:'2.10.17',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME,ceoCharacterName:CEO_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Tracker',version:'2.10.18',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME,ceoCharacterName:CEO_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/ceo/status'){
     const viewer=requireCeoViewer(req,res);
     if(!viewer)return;
@@ -10035,7 +10057,7 @@ async function routeApi(req,res,url) {
     try{profile=validateMetenoxProfile(await readBody(req,8000));}
     catch(error){return json(res,400,{error:'INVALID_METENOX_PROFILE',message:String(error?.message||error)});}
     const current=await ceoMoonSnapshot();
-    if(!current.live?.available||!current.metenox?.records?.some(row=>String(row.structureId)===profile.structureId))return json(res,409,{error:'METENOX_NOT_CURRENT',message:'Refresh current Metenox structures before saving.'});
+    if(!current.live?.available||!current.live?.records?.some(row=>Number(row.typeId)===81826&&String(row.structureId)===profile.structureId))return json(res,409,{error:'METENOX_NOT_CURRENT',message:'Refresh current Metenox structures before saving.'});
     state.ceoAdmin.metenoxProfiles ||= {};
     state.ceoAdmin.metenoxProfiles[profile.structureId]={...profile,updatedAt:now()};
     await save();ceoStructuresCache.at=0;
@@ -11145,7 +11167,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Tracker v2.10.17 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Tracker v2.10.18 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
 setInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': tracker-heartbeat\n\n')}catch{trackerLiveClients.delete(res)}}},20_000).unref();
 setInterval(()=>resetExpired(true),15_000).unref();
