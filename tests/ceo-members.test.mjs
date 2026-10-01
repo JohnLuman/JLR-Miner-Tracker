@@ -63,3 +63,22 @@ console.log('CEO loyalty history ordering, limits, escaping and member rendering
 
 assert.match($('ceoMemberFinanceRows').innerHTML,/data-ceo-member-journal="1"/);
 assert.match($('ceoMemberFinanceRows').innerHTML,/corporation wallet direction/);
+
+const monthlyStart=server.indexOf('function ceoMemberFinanceRows('),monthlyEnd=server.indexOf('async function ceoFinanceSnapshot(',monthlyStart);
+const monthlyContext={ceoLoyaltyBalance:()=>({balance:0})};vm.createContext(monthlyContext);
+vm.runInContext(server.slice(monthlyStart,monthlyEnd),monthlyContext);
+const monthlyRows=monthlyContext.ceoMemberFinanceRows([1,2],new Map([[1,'Alpha'],[2,'Beta']]),[
+  {date:'2026-09-30T00:00:00Z',amount:100,firstPartyId:1,secondPartyId:1},
+  {date:'2026-10-01T00:00:00Z',amount:-30,firstPartyId:1,secondPartyId:88},
+],[]);
+assert.equal(monthlyRows[0].months['2026-09'].journalEntries,1,'Member appearing in both parties is counted once');
+assert.equal(monthlyRows[0].months['2026-09'].corpWalletIn,100);
+assert.equal(monthlyRows[0].months['2026-10'].corpWalletOut,30);
+assert.equal(monthlyRows[0].corpWalletNet,70);
+ui.ceoFinanceData={finance:{months:[{month:'2026-10'}]},members:{finance:monthlyRows},walletAccess:{available:true},errors:[]};
+$('ceoMemberMonth').value='2026-10';$('ceoMemberSearch').value='Alpha';ui.renderCeoFinance();
+assert.match($('ceoMemberFinanceRows').innerHTML,/30 ISK/);
+assert.doesNotMatch($('ceoMemberFinanceRows').innerHTML,/100 ISK/);
+assert.match($('ceoMemberFinanceRows').innerHTML,/data-ceo-member-month="2026-10"/);
+assert.equal(select([{name:'A',corpWalletIn:1},{name:'B',corpWalletIn:20}],{sort:'deposits'})[0].name,'B');
+console.log('Monthly member wallet totals, sorting and exact drilldown passed.');

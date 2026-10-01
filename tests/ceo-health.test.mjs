@@ -19,7 +19,7 @@ assert.equal(result.rows.find(row=>row.id==='members').count,12);
 assert.equal(ceoDataHealth({...base,walletGranted:true,walletPull:good}).rows.find(row=>row.id==='wallet').status,'pulled');
 assert.equal(ceoDataHealth({...base,upgradeRequired:true,operations:{assets:good}}).rows.find(row=>row.id==='assets').status,'permission');
 assert.equal(ceoDataHealth({...base,connected:false,operations:{assets:good}}).rows.find(row=>row.id==='assets').status,'disconnected');
-assert.equal(ceoDataHealth({...base,baseline:null}).rows.at(-1).id,'extractions');
+assert.equal(ceoDataHealth({...base,baseline:null}).rows.at(-1).id,'metenox');
 
 const source=fs.readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
 const start=source.indexOf("  if(req.method==='GET'&&url.pathname==='/api/ceo/health'){");
