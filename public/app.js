@@ -1884,16 +1884,27 @@
     }
     const memberRows=$('ceoMemberFinanceRows');
     if(memberRows){
-      memberRows.innerHTML=financeRows.length?financeRows.map(row=>{
+      const filtered=window.JlrCeoMembers?.select(financeRows,{query:$('ceoMemberSearch')?.value||'',activity:$('ceoMemberActivity')?.value||'all',sort:$('ceoMemberSort')?.value||'name'})||financeRows;
+      const memberCount=$('ceoMemberResultCount');
+      if(memberCount)memberCount.textContent=failedSections.has('members')?'Corporation roster unavailable':filtered.length+' of '+financeRows.length+' members • ESI snapshot';
+      const memberDate=value=>trackingBlocked?'Tracking unavailable':window.JlrCeoMembers?.formatDate(value)||'Not reported';
+      memberRows.innerHTML=filtered.length?filtered.map(row=>{
         const net=Number(row.corpWalletNet)||0;
-        return '<div class="ceo-member-row">'+
-          '<div class="ceo-member-name"><strong>'+esc(row.name)+'</strong><small>'+Number(row.journalEntries||0).toLocaleString()+' wallet journal refs</small></div>'+
+        return '<details class="ceo-member-record"><summary class="ceo-member-row">'+
+          '<div class="ceo-member-name"><strong>'+esc(row.name)+'</strong><small>Last login: '+esc(memberDate(row.logonDate))+'</small></div>'+
           '<div><small>IN</small><b>'+esc(walletBlocked?'Unavailable':ceoMoney(row.corpWalletIn||0))+'</b></div>'+
           '<div><small>OUT</small><b>'+esc(walletBlocked?'Unavailable':ceoMoney(row.corpWalletOut||0))+'</b></div>'+
           '<div><small>NET IMPACT</small><b class="'+(!walletBlocked?(net>=0?'positive':'negative'):'')+'">'+esc(walletBlocked?'Unavailable':ceoMoney(net))+'</b></div>'+
           '<div><small>LOYALTY</small><b>'+Number(row.loyalty?.balance||0).toLocaleString()+' pts</b></div>'+
-        '</div>';
-      }).join(''):'<div class="visual-empty">No corporation members returned.</div>';
+        '</summary><div class="ceo-member-details">'+
+          '<div><small>JOINED CORPORATION</small><b>'+esc(memberDate(row.startDate))+'</b></div>'+
+          '<div><small>LAST LOGIN</small><b>'+esc(memberDate(row.logonDate))+'</b></div>'+
+          '<div><small>LAST LOGOUT</small><b>'+esc(memberDate(row.logoffDate))+'</b></div>'+
+          '<div><small>LOYALTY LAST UPDATED</small><b>'+esc(window.JlrCeoMembers?.formatDate(row.loyalty?.updatedAt)||'Not reported')+'</b></div>'+
+          '<div><small>WALLET JOURNAL REFERENCES</small><b>'+esc(walletBlocked?'Unavailable':Number(row.journalEntries||0).toLocaleString())+'</b></div>'+
+          '<div><small>CHARACTER ID</small><b>'+esc(String(row.characterId))+'</b></div>'+
+          '</div></details>';
+      }).join(''):'<div class="visual-empty">'+(financeRows.length?'No members match these filters.':failedSections.has('members')?'Corporation roster could not be loaded.':'No corporation members returned.')+'</div>';
     }
 
     const adjustButton=$('ceoLoyaltyAdjust');
@@ -2112,7 +2123,7 @@
         <section class="ceo-command-grid">
           <article class="glass ceo-command-card ceo-chart-card"><div class="ceo-card-title"><div><span class="eyebrow">MONTHLY INCOME</span><h3>INCOME SOURCES</h3></div><select id="ceoIncomeMonth" aria-label="Income month"></select></div><p>Positive corporation-wallet journal entries grouped by EVE reference type. JLR retains observed journal entries so monthly history grows over time.</p><div class="ceo-chart-row"><div id="ceoIncomePie" class="ceo-pie"></div><div id="ceoIncomeLegend" class="ceo-legend"><div class="visual-empty">Waiting for Renius CEO ESI.</div></div></div><div id="ceoIncomeTotals" class="ceo-finance-totals"></div></article>
           <article class="glass ceo-command-card ceo-chart-card"><span class="eyebrow">CORE FINANCE</span><h3>WALLET BREAKDOWN</h3><p>Live corporation wallet divisions and current balances.</p><div class="ceo-chart-row"><div id="ceoWalletPie" class="ceo-pie"></div><div id="ceoWalletLegend" class="ceo-legend"><div class="visual-empty">Waiting for Renius CEO ESI.</div></div></div><div class="ceo-big-number"><small>TOTAL CORP WALLET</small><strong id="ceoWalletTotal">—</strong></div><div id="ceoWalletNote" class="ceo-wallet-note"></div></article>
-          <article class="glass ceo-command-card ceo-member-card"><span class="eyebrow">MEMBERS</span><h3>FINANCE + LOYALTY</h3><p>Corp wallet activity involving each member plus a private loyalty ledger. Points are manual for now so JLR does not invent the corporation's reward formula.</p><div class="ceo-member-head"><div class="ceo-big-number"><small>CORP MEMBERS</small><strong id="ceoMemberCount">—</strong></div><div id="ceoRoleHealth" class="ceo-role-health"></div></div><div class="ceo-loyalty-controls"><select id="ceoLoyaltyMember" aria-label="Corporation member"><option value="">Choose member…</option></select><input id="ceoLoyaltyPoints" type="number" step="1" min="-100000" max="100000" placeholder="+/- points"><input id="ceoLoyaltyNote" maxlength="160" placeholder="Reason / note"><button id="ceoLoyaltyAdjust" class="board-tool" type="button">ADJUST POINTS</button></div><div class="ceo-member-table-head"><span>MEMBER</span><span>IN</span><span>OUT</span><span>NET IMPACT</span><span>LOYALTY</span></div><div id="ceoMemberFinanceRows" class="ceo-member-finance"><div class="visual-empty">Waiting for corporation roster…</div></div></article>
+          <article class="glass ceo-command-card ceo-member-card"><span class="eyebrow">MEMBERS</span><h3>MEMBER OVERVIEW + LOYALTY</h3><p>Corp wallet activity involving each member plus a private loyalty ledger. Points are manual for now so JLR does not invent the corporation's reward formula.</p><div class="ceo-member-head"><div class="ceo-big-number"><small>CORP MEMBERS</small><strong id="ceoMemberCount">—</strong></div><div id="ceoRoleHealth" class="ceo-role-health"></div></div><div class="ceo-loyalty-controls"><select id="ceoLoyaltyMember" aria-label="Corporation member"><option value="">Choose member…</option></select><input id="ceoLoyaltyPoints" type="number" step="1" min="-100000" max="100000" placeholder="+/- points"><input id="ceoLoyaltyNote" maxlength="160" placeholder="Reason / note"><button id="ceoLoyaltyAdjust" class="board-tool" type="button">ADJUST POINTS</button></div><div class="ceo-member-filters"><input id="ceoMemberSearch" type="search" aria-label="Search corporation members" placeholder="Search member name or character ID…"><select id="ceoMemberActivity" aria-label="Filter member login dates"><option value="all">All members</option><option value="recent">Logged in within 7 days</option><option value="older">Last login over 30 days ago</option><option value="unknown">Login date not reported</option></select><select id="ceoMemberSort" aria-label="Sort corporation members"><option value="name">Name A–Z</option><option value="login">Most recent login</option><option value="joined">Most recently joined</option><option value="loyalty">Most loyalty points</option></select></div><small id="ceoMemberResultCount"></small><p>Expand a member for join and login dates. Dates reflect the ESI snapshot and do not indicate who is online now.</p><div class="ceo-member-table-head"><span>MEMBER</span><span>IN</span><span>OUT</span><span>NET IMPACT</span><span>LOYALTY</span></div><div id="ceoMemberFinanceRows" class="ceo-member-finance"><div class="visual-empty">Waiting for corporation roster…</div></div></article>
           <article class="glass ceo-command-card"><span class="eyebrow">COMMUNICATIONS</span><h3>DISCORD ACTIVITY</h3><p>Bot-fed participation counts for text and voice activity. JLR will track activity totals, not message contents or voice recordings.</p><div class="ceo-placeholder">DISCORD BOT CONNECTION REQUIRED</div></article>
           <article class="glass ceo-command-card ceo-moon-card"><div class="ceo-card-title"><div><span class="eyebrow">ADMIN WORKBOOK</span><h3>MOONS + STRUCTURES</h3></div><button id="ceoMoonRefresh" class="board-tool" type="button">REFRESH STRUCTURES</button></div><p id="ceoMoonSource">Loading admin workbook baseline…</p><p>Sheet prices are historical estimates. Live ESI structure status appears separately below.</p><div id="ceoMoonSummary" class="ceo-moon-summary"></div><div class="ceo-moon-filters"><input id="ceoMoonSearch" type="search" aria-label="Search moon records" placeholder="Search system, structure, ore or recorded name…"><select id="ceoMoonSystem" aria-label="Moon system"><option value="">All systems</option></select><select id="ceoMoonSort" aria-label="Sort moon records"><option value="name">System / name</option><option value="sell">Sheet sell / day: highest first</option><option value="buy">Sheet buy / day: highest first</option></select></div><small id="ceoMoonCount"></small><div id="ceoMoonRecords" class="ceo-moon-records"></div><details class="ceo-moon-source-notes"><summary>Sheet assumptions and source notes</summary><div id="ceoMoonAssumptions"></div></details><div class="ceo-live-head"><h3>CORPORATION STRUCTURES</h3><small id="ceoStructuresStamp"></small></div><p>ESI identifies structures by type and ID. The sheet has no structure IDs, so records are not automatically paired.</p><div id="ceoStructuresWarning" class="ceo-wallet-note blocked hidden"></div><div id="ceoLiveStructures"></div></article>
           <article class="glass ceo-command-card"><span class="eyebrow">OPERATIONS</span><h3>ASSETS • JOBS • CONTRACTS • ORDERS</h3><p>Read-only corporation operational data in one private view for Renius and JLR administration.</p><div class="ceo-placeholder">WAITING FOR CEO ESI</div></article>
@@ -2131,6 +2142,9 @@
     });
     $('ceoFinanceRefresh')?.addEventListener('click',()=>{void loadCeoFinance(true);void window.JlrCeoMoons?.load(true);});
     $('ceoLoyaltyAdjust')?.addEventListener('click',()=>void adjustCeoLoyalty());
+    $('ceoMemberSearch')?.addEventListener('input',renderCeoFinance);
+    $('ceoMemberActivity')?.addEventListener('change',renderCeoFinance);
+    $('ceoMemberSort')?.addEventListener('change',renderCeoFinance);
     $('ceoIncomeMonth')?.addEventListener('change',event=>{
       ceoSelectedMonth=String(event.target.value||'');
       renderCeoFinance();

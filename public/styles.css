@@ -4025,4 +4025,12 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .ceo-live-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-top:26px}
 .ceo-live-structure summary{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:13px;cursor:pointer;flex-wrap:wrap}
 .ceo-fuel{font-size:12px;color:#97d9b3}.ceo-fuel.low{color:#ffd58e}.ceo-fuel.expired{color:#ff9898}.ceo-fuel.unknown{color:#abb2bf}
+.ceo-member-card{grid-column:1/-1;min-width:0}
+.ceo-member-card .ceo-loyalty-controls select,.ceo-member-card .ceo-loyalty-controls input,.ceo-member-card .ceo-loyalty-controls button{font-size:13px;min-height:38px}
+.ceo-member-filters{display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;margin:16px 0 8px}
+.ceo-member-filters input,.ceo-member-filters select{min-width:0;width:100%;padding:10px;font-size:13px;border-radius:7px;border:1px solid var(--border,#3c4051);background:var(--panel,#141720);color:var(--text,#edf0f8)}
+.ceo-member-record{margin-bottom:8px}.ceo-member-record .ceo-member-row{cursor:pointer;padding:12px}.ceo-member-record .ceo-member-name strong{font-size:13px}.ceo-member-record .ceo-member-row small{font-size:11px;line-height:1.5}.ceo-member-record .ceo-member-row b{font-size:12px;overflow-wrap:anywhere}
+.ceo-member-details{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;padding:14px;border:1px solid var(--border,#3c4051);border-top:0;border-radius:0 0 8px 8px}
+.ceo-member-details small,.ceo-member-details b{display:block;font-size:11px;line-height:1.6;overflow-wrap:anywhere}.ceo-member-details b{font-size:12px}.ceo-member-card .ceo-member-table-head{font-size:10px}.ceo-member-card>p,.ceo-member-card>small{font-size:12px;line-height:1.5}
+@media(max-width:780px){.ceo-member-filters{grid-template-columns:1fr}.ceo-member-details{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:780px){.ceo-moon-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.ceo-moon-filters{grid-template-columns:1fr}.ceo-moon-record summary{grid-template-columns:1fr}.ceo-moon-values{grid-template-columns:repeat(2,minmax(0,1fr))}}
