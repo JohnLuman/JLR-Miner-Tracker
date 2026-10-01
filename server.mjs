@@ -6,6 +6,7 @@ import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 import { decodeMoonBaseline, structureRows } from './lib/ceo-moons.mjs';
 import { CEO_OPERATION_ROUTES, operationNameIds, normalizeOperations } from './lib/ceo-operations.mjs';
+import { ceoDataHealth } from './lib/ceo-health.mjs';
 import { journalPage } from './lib/ceo-journal.mjs';
 import { fileURLToPath } from 'node:url';
 import { DOCTRINE_SEED_B64 } from './lib/doctrine-seed.mjs';
@@ -9888,6 +9889,11 @@ async function routeApi(req,res,url) {
     const section=url.searchParams.get('section')||'assets';
     if(!Object.hasOwn(CEO_OPERATION_ROUTES,section))return json(res,400,{error:'INVALID_CEO_OPERATIONS_SECTION'});
     return json(res,200,await ceoOperationsSnapshot(section,{force:url.searchParams.get('force')==='1'}));
+  }
+  if(req.method==='GET'&&url.pathname==='/api/ceo/health'){
+    const viewer=requireCeoViewer(req,res);if(!viewer)return;
+    const status=ceoStatusForUser(viewer.user);
+    return json(res,200,ceoDataHealth({connected:status.connected,upgradeRequired:status.authorizationUpgradeRequired,walletGranted:status.walletScopeGranted,finance:ceoFinanceCache.data,walletPull:state.ceoAdmin?.walletJournalPull||null,structures:ceoStructuresCache.data?.live||null,operations:Object.fromEntries([...ceoOperationsCache].map(([key,cache])=>[key,cache.data])),pending:{finance:Boolean(ceoFinanceCache.promise),structures:Boolean(ceoStructuresCache.promise),...Object.fromEntries([...ceoOperationsCache].map(([key,cache])=>[key,Boolean(cache.promise)]))},baseline:CEO_MOON_BASELINE}));
   }
   if(req.method==='GET'&&url.pathname==='/api/ceo/journal'){
     if(!requireCeoViewer(req,res))return;

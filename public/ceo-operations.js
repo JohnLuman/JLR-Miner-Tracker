@@ -56,10 +56,10 @@
   async function load(force=false){
     const requested=section;if(busy.has(requested))return;
     if(data.has(requested)&&!force){render();return;}
-    busy.add(requested);errors.delete(requested);render();
+    busy.add(requested);errors.delete(requested);render();window.JlrCeoHealth?.schedule();
     try{const response=await fetch('/api/ceo/operations?section='+requested+(force?'&force=1':''),{credentials:'same-origin',cache:'no-store'});if(!response.ok)throw new Error(response.status===401?'Log in to view CEO operations.':response.status===403?'CEO operations are restricted.':'Operations request failed ('+response.status+').');data.set(requested,await response.json());}
     catch(error){errors.set(requested,String(error.message||error));}
-    finally{busy.delete(requested);render();}
+    finally{busy.delete(requested);render();window.JlrCeoHealth?.schedule();}
   }
   document.addEventListener('click',event=>{
     const tab=event.target?.closest?.('[data-ceo-operation-tab]');

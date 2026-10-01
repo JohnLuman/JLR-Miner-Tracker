@@ -41,10 +41,10 @@
   }
   async function load(force=false){
     if(busy)return;if(data&&!force){render();return;}
-    busy=true;loadError='';render();
+    busy=true;loadError='';render();window.JlrCeoHealth?.schedule();
     try{const response=await fetch('/api/ceo/moons'+(force?'?force=1':''),{credentials:'same-origin',cache:'no-store'});if(!response.ok)throw new Error(response.status===403?'CEO access is restricted.':response.status===401?'Log in to view CEO data.':'Moon records could not be loaded.');data=await response.json();}
     catch(error){loadError=String(error.message||error);const warning=$('ceoStructuresWarning');if(warning){warning.classList.remove('hidden');warning.textContent=loadError;}}
-    finally{busy=false;render();}
+    finally{busy=false;render();window.JlrCeoHealth?.schedule();}
   }
   document.addEventListener('input',event=>{if(['ceoMoonSearch','ceoStructureSearch'].includes(event.target?.id))render();});
   document.addEventListener('change',event=>{if(['ceoMoonSystem','ceoMoonSort','ceoStructureFilter'].includes(event.target?.id))render();});

@@ -1945,16 +1945,17 @@
   async function loadCeoFinance(force=false){
     if(!ceoAllowed()||!ceoCommandStatus?.connected||ceoFinanceLoading)return;
     if(ceoFinanceData&&!force){renderCeoFinance();return}
-    ceoFinanceLoading=true;renderCeoFinance();
+    ceoFinanceLoading=true;renderCeoFinance();window.JlrCeoHealth?.schedule();
     try{ceoFinanceData=await api('/api/ceo/finance'+(force?'?force=1':''));void window.JlrCeoJournal?.load()}
     catch(error){toast('CEO finance: '+String(error.message||error))}
-    finally{ceoFinanceLoading=false;renderCeoFinance()}
+    finally{ceoFinanceLoading=false;renderCeoFinance();window.JlrCeoHealth?.schedule()}
   }
   async function loadCeoCommand(force=false){
     if(!ceoAllowed()||ceoCommandLoading)return;
     void window.JlrCeoMoons?.load(force);
     void window.JlrCeoOperations?.load(force);
     void window.JlrCeoJournal?.load();
+    void window.JlrCeoHealth?.load();
     if(ceoCommandStatus&&!force){
       renderCeoCommand();
       if(ceoCommandStatus.connected&&!ceoCommandStatus.authorizationUpgradeRequired)void loadCeoFinance(false);
@@ -2123,6 +2124,7 @@
           </div>
         </section>
         <section id="ceoWalletRepair" class="glass ceo-wallet-repair hidden" aria-live="polite"></section>
+        <section class="glass ceo-health-card"><div class="ceo-card-title"><div><span class="eyebrow">DATA HEALTH</span><h3>CEO READINESS</h3></div><button id="ceoHealthRefresh" class="board-tool" type="button">REFRESH STATUS</button></div><p>Pull status for each section. Refreshing this status does not pull ESI data. Open each operations tab to load it; use its refresh button for a new pull. Status updates after a section finishes loading.</p><small id="ceoHealthSummary">Checking data health…</small><div id="ceoHealthRows"></div></section>
         <section class="ceo-command-grid">
           <article class="glass ceo-command-card ceo-chart-card"><div class="ceo-card-title"><div><span class="eyebrow">MONTHLY INCOME</span><h3>INCOME SOURCES</h3></div><select id="ceoIncomeMonth" aria-label="Income month"></select></div><p>Positive corporation-wallet journal entries grouped by EVE reference type. JLR retains observed journal entries so monthly history grows over time.</p><div class="ceo-chart-row"><div id="ceoIncomePie" class="ceo-pie"></div><div id="ceoIncomeLegend" class="ceo-legend"><div class="visual-empty">Waiting for Renius CEO ESI.</div></div></div><div id="ceoIncomeTotals" class="ceo-finance-totals"></div></article>
           <article class="glass ceo-command-card ceo-chart-card"><span class="eyebrow">CORE FINANCE</span><h3>WALLET BREAKDOWN</h3><p>Live corporation wallet divisions and current balances.</p><div class="ceo-chart-row"><div id="ceoWalletPie" class="ceo-pie"></div><div id="ceoWalletLegend" class="ceo-legend"><div class="visual-empty">Waiting for Renius CEO ESI.</div></div></div><div class="ceo-big-number"><small>TOTAL CORP WALLET</small><strong id="ceoWalletTotal">—</strong></div><div id="ceoWalletNote" class="ceo-wallet-note"></div></article>
