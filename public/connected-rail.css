@@ -118,7 +118,7 @@ html body.jlr-rail-controls.jlr-rail-controls .nav-menu-panel {
   background: var(--jlr-rail-panel);
   clip-path: none;
 }
-html body.jlr-rail-controls.jlr-rail-controls .nav-menu-panel .app-tab {
+html body.jlr-rail-controls.jlr-rail-controls .app .information-tabs.nav-dropdown-bar .nav-menu-panel .app-tab {
   border-radius: 0;
   min-height: 54px;
   padding: 9px 12px 23px;
@@ -128,14 +128,14 @@ html body.jlr-rail-controls.jlr-rail-controls .nav-menu-panel .app-tab {
   border-bottom: 1px solid var(--jlr-rail-edge);
   box-shadow: none;
 }
-html body.jlr-rail-controls.jlr-rail-controls .nav-menu-panel .app-tab::after {
+html body.jlr-rail-controls.jlr-rail-controls .app .information-tabs.nav-dropdown-bar .nav-menu-panel .app-tab::after {
   font-size: 11px;
   color: var(--muted,#abb0c0);
   letter-spacing: 0;
   bottom: 8px;
   left: 12px;
 }
-html body.jlr-rail-controls.jlr-rail-controls .nav-menu-panel .app-tab.active {
+html body.jlr-rail-controls.jlr-rail-controls .app .information-tabs.nav-dropdown-bar .nav-menu-panel .app-tab.active {
   border-left-color: var(--jlr-rail-accent);
   background: color-mix(in srgb,var(--jlr-rail-accent) 20%,var(--jlr-rail-panel));
 }
