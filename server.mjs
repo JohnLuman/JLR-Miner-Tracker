@@ -9892,7 +9892,7 @@ async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname==='/api/ceo/journal'){
     if(!requireCeoViewer(req,res))return;
     const admin=state.ceoAdmin||{};
-    const result=journalPage(Object.values(admin.financeJournal||{}),{query:url.searchParams.get('query')||'',month:url.searchParams.get('month')||'',division:url.searchParams.get('division')||'',direction:url.searchParams.get('direction')||'',page:url.searchParams.get('page')||1});
+    const result=journalPage(Object.values(admin.financeJournal||{}),{query:url.searchParams.get('query')||'',month:url.searchParams.get('month')||'',division:url.searchParams.get('division')||'',direction:url.searchParams.get('direction')||'',party:url.searchParams.get('party')||'',page:url.searchParams.get('page')||1});
     return json(res,200,{...result,walletGranted:Array.isArray(admin.scopes)&&admin.scopes.includes(CEO_WALLET_SCOPE),pull:admin.walletJournalPull||null});
   }
   if(req.method==='POST'&&url.pathname==='/api/ceo/loyalty/adjust'){

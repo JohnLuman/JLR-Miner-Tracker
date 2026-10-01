@@ -22,10 +22,29 @@
     const prev=$('ceoJournalPrev'),next=$('ceoJournalNext');if(prev)prev.disabled=busy||data.page<=1;if(next)next.disabled=busy||data.page>=data.pages;
     host.innerHTML=data.records.map(row=>'<details class="ceo-journal-record"><summary><span>'+esc(date(row.date))+'</span><strong>'+esc(String(row.refType||'Unknown').replaceAll('_',' '))+'</strong><b class="'+(row.amount<0?'negative':'positive')+'">'+esc(money(row.amount))+'</b></summary><div><p>Division '+esc(row.division)+' • Journal reference '+esc(row.refId)+'</p><p>'+esc(row.description||'No description reported')+'</p><p>Reason: '+esc(row.reason||'Not reported')+'</p><p>First party ID: '+esc(row.firstPartyId||'Not reported')+' • Second party ID: '+esc(row.secondPartyId||'Not reported')+'</p><p>Balance after entry: '+esc(money(row.balance))+'</p></div></details>').join('')||'<div class="visual-empty">'+(!data.walletGranted&&!data.retained?'Waiting for corporation wallet permission.':data.retained?'No wallet entries match these filters.':'No wallet journal entries have been observed yet.')+'</div>';
   }
+  function setMembers(rows){
+    const select=$('ceoJournalParty');if(!select)return;
+    const chosen=select.value;
+    const members=(rows||[]).slice().sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+    select.innerHTML='<option value="">All parties / members</option>'+members.map(row=>'<option value="'+esc(row.characterId)+'">'+esc(row.name)+'</option>').join('');
+    if(chosen&&!members.some(row=>String(row.characterId)===chosen))select.innerHTML+='<option value="'+esc(chosen)+'">Character '+esc(chosen)+'</option>';
+    select.value=chosen;
+  }
+  function viewMember(characterId){
+    const id=String(characterId||'');if(!/^\d+$/.test(id))return;
+    const select=$('ceoJournalParty');if(!select)return;
+    if(!Array.from(select.options||[]).some(option=>option.value===id))select.innerHTML+='<option value="'+esc(id)+'">Character '+esc(id)+'</option>';
+    select.value=id;
+    for(const control of ['ceoJournalSearch','ceoJournalMonth','ceoJournalDivision','ceoJournalDirection'])if($(control))$(control).value='';
+    clearTimeout(timer);page=1;const request=load();
+    $('ceoJournalParty')?.focus?.({preventScroll:true});
+    $('ceoJournalCard')?.scrollIntoView?.({behavior:'smooth',block:'start'});
+    return request;
+  }
   async function load(){
     if(!$('ceoJournalRecords'))return;
     const request=++serial;
-    const params=new URLSearchParams({query:$('ceoJournalSearch')?.value||'',month:$('ceoJournalMonth')?.value||'',division:$('ceoJournalDivision')?.value||'',direction:$('ceoJournalDirection')?.value||'',page:String(page)});
+    const params=new URLSearchParams({query:$('ceoJournalSearch')?.value||'',month:$('ceoJournalMonth')?.value||'',division:$('ceoJournalDivision')?.value||'',direction:$('ceoJournalDirection')?.value||'',party:$('ceoJournalParty')?.value||'',page:String(page)});
     busy=true;error='';render();
     try{
       const response=await fetch('/api/ceo/journal?'+params,{credentials:'same-origin',cache:'no-store'});
@@ -35,11 +54,12 @@
     finally{if(request===serial){busy=false;render();}}
   }
   document.addEventListener('input',event=>{if(event.target?.id==='ceoJournalSearch'){clearTimeout(timer);page=1;timer=setTimeout(()=>void load(),300);}});
-  document.addEventListener('change',event=>{if(['ceoJournalMonth','ceoJournalDivision','ceoJournalDirection'].includes(event.target?.id)){clearTimeout(timer);page=1;void load();}});
+  document.addEventListener('change',event=>{if(['ceoJournalMonth','ceoJournalDivision','ceoJournalDirection','ceoJournalParty'].includes(event.target?.id)){clearTimeout(timer);page=1;void load();}});
   document.addEventListener('click',event=>{
+    const member=event.target?.closest?.('[data-ceo-member-journal]');if(member)viewMember(member.dataset.ceoMemberJournal);
     if(event.target?.closest?.('#ceoJournalRefresh'))void load();
     if(event.target?.closest?.('#ceoJournalPrev')&&!busy&&page>1){page--;void load();}
     if(event.target?.closest?.('#ceoJournalNext')&&!busy&&page<(data?.pages||1)){page++;void load();}
   });
-  window.JlrCeoJournal={load,render};
+  window.JlrCeoJournal={load,render,setMembers,viewMember};
 })();

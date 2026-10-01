@@ -60,3 +60,6 @@ rows[0].loyalty={...balance};$('ceoMemberSearch').value='Alpha';ui.renderCeoFina
 assert.match($('ceoMemberFinanceRows').innerHTML,/LOYALTY ADJUSTMENT HISTORY/);
 assert.match($('ceoMemberFinanceRows').innerHTML,/Reason 14/);
 console.log('CEO loyalty history ordering, limits, escaping and member rendering passed.');
+
+assert.match($('ceoMemberFinanceRows').innerHTML,/data-ceo-member-journal="1"/);
+assert.match($('ceoMemberFinanceRows').innerHTML,/corporation wallet direction/);

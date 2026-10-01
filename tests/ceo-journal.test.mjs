@@ -73,3 +73,27 @@ const oldPulls=pulls;financeContext.state.ceoAdmin.scopes=[];
 await financeContext.ceoFinanceSnapshot({force:true});
 assert.equal(pulls,oldPulls,'Missing wallet scope must not call journal endpoints');
 console.log('Journal pull coverage, partial failure timestamps and missing-scope handling passed.');
+
+const exactRows=[
+  {...rows[0],refId:'99',firstPartyId:199,secondPartyId:888},
+  {...rows[0],refId:'2',firstPartyId:99,secondPartyId:88},
+  {...rows[0],refId:'3',firstPartyId:88,secondPartyId:99},
+  {...rows[0],refId:'4',firstPartyId:99,secondPartyId:99},
+];
+const exact=journalPage(exactRows,{party:'99'});
+assert.equal(exact.total,3,'Party filter matches either exact ID, excluding text and partial ID matches');
+assert.equal(exact.totals.income,60,'An entry with member in both parties counts once');
+assert.equal(journalPage(exactRows,{party:'not-an-id'}).total,0);
+assert.equal(journalPage(exactRows,{party:'99',division:'2'}).total,0);
+$('ceoJournalParty').value='99';browser.window.JlrCeoJournal.setMembers([{characterId:99,name:'<Member>'},{characterId:88,name:'Beta'}]);
+assert.match($('ceoJournalParty').innerHTML,/&lt;Member&gt;/);
+assert.equal($('ceoJournalParty').value,'99');
+for(const id of ['ceoJournalSearch','ceoJournalMonth','ceoJournalDivision','ceoJournalDirection'])$(id).value='old-filter';
+task=browser.window.JlrCeoJournal.viewMember(99);
+const memberRequest=pending.shift();const memberUrl=new URL(memberRequest.url,'https://example.test');
+assert.equal(memberUrl.searchParams.get('party'),'99');assert.equal(memberUrl.searchParams.get('page'),'1');
+assert.equal(memberUrl.searchParams.get('query'),'');assert.equal(memberUrl.searchParams.get('month'),'');
+memberRequest.resolve({ok:true,json:async()=>({...view,...exact})});await task;
+assert.match($('ceoJournalCount').textContent,/3 matching entries/);
+const pendingCount=pending.length;browser.window.JlrCeoJournal.viewMember('<bad>');assert.equal(pending.length,pendingCount);
+console.log('Member wallet drilldown exact identity matching, reset filters and totals passed.');
