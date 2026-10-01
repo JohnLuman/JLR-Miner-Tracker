@@ -4794,6 +4794,7 @@
     if(!state)return;
     const board=$('fieldBoard');
     syncBoardControls();
+    window.JlrFieldUpdateFeedback?.observe(state);
     board.innerHTML='';
     let counts={ready:0,picked:0,cleared:0,cherry:0};
     const iceFields=Array.isArray(state.source?.iceFields)?state.source.iceFields:[];
@@ -4820,6 +4821,7 @@
       }
     }
 
+    window.JlrFieldUpdateFeedback?.paint(board);
     $('statusCounts').textContent=`${counts.ready} mineable • ${counts.picked} picked • ${counts.cleared} respawning • ${counts.cherry} cherry • ${iceFields.length} ice • ${a0Fields.length} A0 • ${a0Due} need update`;
     $('systemCountLabel').textContent=`${definitions().length} T3 • ${iceFields.length} ICE • ${a0Fields.length} A0`;
     if(filter==='a0'&&!a0Fields.length)board.innerHTML='<div class="target-empty"><strong>No A0 systems found within 6 LY.</strong><span>The server scans Fountain star spectral classes through ESI. Active rare-asteroid anomalies themselves are not exposed remotely.</span></div>';
