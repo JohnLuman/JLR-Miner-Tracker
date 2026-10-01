@@ -88,7 +88,7 @@ assert.match(get('ceoLiveStructures').innerHTML,/Fortizar/);
 console.log('CEO structure upkeep filters, counts, preserved results and stale timestamps passed.');
 
 const drill={structureId:55,typeId:81826,type:'Metenox Moon Drill',system:'Current system',fuelHours:240,fuelExpires:'2026-10-11T00:00:00Z',fuelStatus:'OK',services:[]};
-const drillRows=metenoxRows([drill],[],{profiles:{55:{revenue30Days:5000000000,fuelType:'Helium Fuel Block',gasUnits:4800}},prices:{'Magmatic Gas':1000,'Helium Fuel Block':20000}});
+const drillRows=metenoxRows([drill],[],{production:{55:{revenue30Days:5000000000,outputs:[]}},profiles:{55:{fuelType:'Helium Fuel Block',gasUnits:4800}},prices:{'Magmatic Gas':1000,'Helium Fuel Block':20000}});
 browser.fetch=async()=>({ok:true,json:async()=>({baseline,live:{available:true,records:[]},metenox:{available:true,updatedAt:new Date().toISOString(),records:drillRows}})});
 await browser.window.JlrCeoMoons.load(true);
 assert.match(get('ceoMoonRecords').innerHTML,/Current system/);
@@ -97,7 +97,7 @@ assert.match(get('ceoMoonSource').textContent,/CURRENT METENOX ESI/);
 assert.match(get('ceoMoonRecords').innerHTML,/4,784,000,000 ISK/);
 assert.match(get('ceoMoonRecords').innerHTML,/manual/);
 
-const pullContext={ceoStructuresCache:{at:0,data:null,promise:null},now:()=>new Date().toISOString(),ceoAccessToken:async()=>({access:'test',admin:{corporationId:1}}),save:async()=>{},ceoPagedGet:async()=>({rows:[{structure_id:55,type_id:81826,system_id:123}],truncated:false}),resolveUniverseNames:async()=>new Map([[81826,'Metenox Moon Drill']]),structureRows,metenoxRows,state:{ceoAdmin:{}},ceoOperationsSnapshot:async()=>({available:true,records:[],updatedAt:new Date().toISOString()}),ceoMetenoxPrices:async()=>({prices:{},updatedAt:null,error:null}),console:{info(){}}};
+const pullContext={ceoStructuresCache:{at:0,data:null,promise:null},now:()=>new Date().toISOString(),ceoAccessToken:async()=>({access:'test',admin:{corporationId:1}}),save:async()=>{},ceoPagedGet:async()=>({rows:[{structure_id:55,type_id:81826,system_id:123}],truncated:false}),resolveUniverseNames:async()=>new Map([[81826,'Metenox Moon Drill']]),structureRows,metenoxRows,state:{ceoAdmin:{}},ceoOperationsSnapshot:async()=>({available:true,records:[],updatedAt:new Date().toISOString()}),ceoMetenoxProduction:async()=>({}),priceMoonProduction:row=>row,ceoMetenoxPrices:async()=>({prices:{},updatedAt:null,error:null}),console:{info(){}}};
 vm.createContext(pullContext);
 const moonStart=server.indexOf('async function ceoMoonSnapshot('),moonEnd=server.indexOf('let ceoOperationsCache=',moonStart);
 vm.runInContext(server.slice(moonStart,moonEnd),pullContext);
