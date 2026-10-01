@@ -90,6 +90,7 @@
   let ceoFinanceData=null;
   let ceoFinanceLoading=false;
   let ceoSelectedMonth='';
+  let ceoLoyaltyBusy=false;
   let ledgerAuditLoading=false;
   let myLedgerSummary=null;
   let brainLastSystem='';
@@ -1793,6 +1794,12 @@
     const data=ceoFinanceData;
     if($('ceoFinanceLoading'))$('ceoFinanceLoading').classList.toggle('hidden',!ceoFinanceLoading);
     if(!data)return;
+    const errors=data.errors||[];
+    const failedSections=new Set(errors.map(row=>String(row.section||'')));
+    const walletBlocked=failedSections.has('wallets')||[...failedSections].some(section=>section.startsWith('wallet-journal-'));
+    const divisionsBlocked=failedSections.has('divisions');
+    const trackingBlocked=failedSections.has('membertracking');
+
     const months=data.finance?.months||[];
     if(!ceoSelectedMonth||!months.some(row=>row.month===ceoSelectedMonth))ceoSelectedMonth=months[0]?.month||'';
     const month=months.find(row=>row.month===ceoSelectedMonth)||null;
@@ -1801,28 +1808,103 @@
       const current=monthSelect.value;
       monthSelect.innerHTML=months.map(row=>'<option value="'+esc(row.month)+'">'+esc(row.month)+'</option>').join('');
       monthSelect.value=ceoSelectedMonth||current;
+      monthSelect.disabled=walletBlocked||!months.length;
     }
     const sources=(month?.sources||[]).map(row=>({name:row.name,value:Number(row.value)||0}));
     const sourceTotal=sources.reduce((sum,row)=>sum+row.value,0);
-    if($('ceoIncomePie'))$('ceoIncomePie').style.background=ceoPieStyle(sources);
-    if($('ceoIncomeLegend'))$('ceoIncomeLegend').innerHTML=ceoLegend(sources,sourceTotal);
-    if($('ceoIncomeTotals'))$('ceoIncomeTotals').innerHTML=month
-      ?'<span>IN '+esc(ceoMoney(month.income))+'</span><span>OUT '+esc(ceoMoney(month.expenses))+'</span><strong>NET '+esc(ceoMoney(month.net))+'</strong>'
-      :'<span>No journal month available yet.</span>';
+    if($('ceoIncomePie'))$('ceoIncomePie').style.background=walletBlocked?'conic-gradient(#2a2020 0 100%)':ceoPieStyle(sources);
+    if($('ceoIncomeLegend'))$('ceoIncomeLegend').innerHTML=walletBlocked
+      ?'<div class="visual-empty">ACCOUNTANT ROLE REQUIRED</div>'
+      :ceoLegend(sources,sourceTotal);
+    if($('ceoIncomeTotals'))$('ceoIncomeTotals').innerHTML=walletBlocked
+      ?'<strong>WALLET JOURNAL ACCESS REQUIRED</strong>'
+      :month
+        ?'<span>IN '+esc(ceoMoney(month.income))+'</span><span>OUT '+esc(ceoMoney(month.expenses))+'</span><strong>NET '+esc(ceoMoney(month.net))+'</strong>'
+        :'<span>No journal month available yet.</span>';
 
     const wallets=(data.finance?.wallets||[]).map(row=>({name:row.name,value:Math.max(0,Number(row.balance)||0)}));
     const walletTotal=wallets.reduce((sum,row)=>sum+row.value,0);
-    if($('ceoWalletPie'))$('ceoWalletPie').style.background=ceoPieStyle(wallets);
-    if($('ceoWalletLegend'))$('ceoWalletLegend').innerHTML=ceoLegend(wallets,walletTotal);
-    if($('ceoWalletTotal'))$('ceoWalletTotal').textContent=ceoMoney(data.finance?.totalBalance||0);
+    if($('ceoWalletPie'))$('ceoWalletPie').style.background=walletBlocked?'conic-gradient(#2a2020 0 100%)':ceoPieStyle(wallets);
+    if($('ceoWalletLegend'))$('ceoWalletLegend').innerHTML=walletBlocked
+      ?'<div class="visual-empty">ACCOUNTANT / JUNIOR ACCOUNTANT REQUIRED</div>'
+      :divisionsBlocked
+        ?'<div class="visual-empty">DIRECTOR REQUIRED FOR DIVISION NAMES</div>'
+        :ceoLegend(wallets,walletTotal);
+    if($('ceoWalletTotal'))$('ceoWalletTotal').textContent=walletBlocked?'ACCESS REQUIRED':ceoMoney(data.finance?.totalBalance||0);
     if($('ceoMemberCount'))$('ceoMemberCount').textContent=Number(data.members?.count||0).toLocaleString();
+
+    const roleHealth=$('ceoRoleHealth');
+    if(roleHealth){
+      const assigned=data.roleHealth?.assigned||[];
+      const requirements=data.roleHealth?.requirements||[];
+      roleHealth.innerHTML=
+        '<div class="ceo-role-title"><strong>IN-GAME ROLE HEALTH</strong><small>'+esc(assigned.length?assigned.join(' • '):'No explicit corporation roles returned')+'</small></div>'+
+        '<div class="ceo-role-grid">'+requirements.map(row=>
+          '<div class="ceo-role-row '+(row.ready?'ready':'blocked')+'"><span>'+(row.ready?'✓':'!')+'</span><div><b>'+esc(row.feature)+'</b><small>'+esc((row.roles||[]).join(' / '))+'</small></div></div>'
+        ).join('')+'</div>'+
+        ((!walletBlocked&&!divisionsBlocked&&!trackingBlocked)?'':'<p class="ceo-role-note">Renius is confirmed as CEO, but these ESI routes still enforce their specific in-game corporation role flags. Assign <b>Director</b> and <b>Accountant</b>, then refresh CEO data.</p>');
+    }
+
+    const financeRows=data.members?.finance||[];
+    const memberSelect=$('ceoLoyaltyMember');
+    if(memberSelect){
+      const selected=memberSelect.value;
+      memberSelect.innerHTML='<option value="">Choose member…</option>'+financeRows.map(row=>
+        '<option value="'+esc(String(row.characterId))+'">'+esc(row.name)+' • '+Number(row.loyalty?.balance||0).toLocaleString()+' pts</option>'
+      ).join('');
+      if(financeRows.some(row=>String(row.characterId)===selected))memberSelect.value=selected;
+    }
+    const memberRows=$('ceoMemberFinanceRows');
+    if(memberRows){
+      memberRows.innerHTML=financeRows.length?financeRows.map(row=>{
+        const net=Number(row.corpWalletNet)||0;
+        return '<div class="ceo-member-row">'+
+          '<div class="ceo-member-name"><strong>'+esc(row.name)+'</strong><small>'+Number(row.journalEntries||0).toLocaleString()+' wallet journal refs</small></div>'+
+          '<div><small>IN</small><b>'+esc(ceoMoney(row.corpWalletIn||0))+'</b></div>'+
+          '<div><small>OUT</small><b>'+esc(ceoMoney(row.corpWalletOut||0))+'</b></div>'+
+          '<div><small>NET IMPACT</small><b class="'+(net>=0?'positive':'negative')+'">'+esc(ceoMoney(net))+'</b></div>'+
+          '<div><small>LOYALTY</small><b>'+Number(row.loyalty?.balance||0).toLocaleString()+' pts</b></div>'+
+        '</div>';
+      }).join(''):'<div class="visual-empty">No corporation members returned.</div>';
+    }
+
+    const adjustButton=$('ceoLoyaltyAdjust');
+    if(adjustButton){
+      adjustButton.disabled=ceoLoyaltyBusy;
+      adjustButton.textContent=ceoLoyaltyBusy?'SAVING…':'ADJUST POINTS';
+    }
+
     if($('ceoFinanceStamp'))$('ceoFinanceStamp').textContent=data.generatedAt?'ESI '+new Date(data.generatedAt).toLocaleString():'';
     const warnings=$('ceoFinanceWarnings');
     if(warnings){
-      const errors=data.errors||[];
       warnings.classList.toggle('hidden',!errors.length);
-      warnings.textContent=errors.length?'Some ESI sections need a corporation role or retry: '+errors.map(row=>row.section).join(', '):'';
+      const needs=[];
+      if(walletBlocked)needs.push('wallets → Accountant or Junior Accountant');
+      if(divisionsBlocked)needs.push('divisions → Director');
+      if(trackingBlocked)needs.push('member tracking → Director');
+      const other=[...failedSections].filter(section=>section!=='wallets'&&section!=='divisions'&&section!=='membertracking'&&!section.startsWith('wallet-journal-'));
+      warnings.innerHTML=errors.length
+        ?'<strong>ESI ROLE CHECK</strong> '+esc(needs.join(' • ')+(other.length?(needs.length?' • ':'')+'retry: '+other.join(', '):''))
+        :'';
     }
+  }
+    async function adjustCeoLoyalty(){
+    if(ceoLoyaltyBusy)return;
+    const characterId=String($('ceoLoyaltyMember')?.value||'');
+    const points=Math.trunc(Number($('ceoLoyaltyPoints')?.value));
+    const note=String($('ceoLoyaltyNote')?.value||'').trim();
+    if(!characterId){toast('Choose a corporation member first.');return}
+    if(!Number.isFinite(points)||points===0){toast('Enter a positive or negative loyalty point adjustment.');return}
+    ceoLoyaltyBusy=true;renderCeoFinance();
+    try{
+      await api('/api/ceo/loyalty/adjust',{method:'POST',body:JSON.stringify({characterId,points,note})});
+      if($('ceoLoyaltyPoints'))$('ceoLoyaltyPoints').value='';
+      if($('ceoLoyaltyNote'))$('ceoLoyaltyNote').value='';
+      ceoFinanceData=null;
+      await loadCeoFinance(true);
+      toast('Loyalty points updated.');
+    }catch(error){toast('Loyalty: '+String(error.message||error))}
+    finally{ceoLoyaltyBusy=false;renderCeoFinance()}
   }
   async function loadCeoFinance(force=false){
     if(!ceoAllowed()||!ceoCommandStatus?.connected||ceoFinanceLoading)return;
@@ -2004,7 +2086,7 @@
         <section class="ceo-command-grid">
           <article class="glass ceo-command-card ceo-chart-card"><div class="ceo-card-title"><div><span class="eyebrow">MONTHLY INCOME</span><h3>INCOME SOURCES</h3></div><select id="ceoIncomeMonth" aria-label="Income month"></select></div><p>Positive corporation-wallet journal entries grouped by EVE reference type. JLR retains observed journal entries so monthly history grows over time.</p><div class="ceo-chart-row"><div id="ceoIncomePie" class="ceo-pie"></div><div id="ceoIncomeLegend" class="ceo-legend"><div class="visual-empty">Waiting for Renius CEO ESI.</div></div></div><div id="ceoIncomeTotals" class="ceo-finance-totals"></div></article>
           <article class="glass ceo-command-card ceo-chart-card"><span class="eyebrow">CORE FINANCE</span><h3>WALLET BREAKDOWN</h3><p>Live corporation wallet divisions and current balances.</p><div class="ceo-chart-row"><div id="ceoWalletPie" class="ceo-pie"></div><div id="ceoWalletLegend" class="ceo-legend"><div class="visual-empty">Waiting for Renius CEO ESI.</div></div></div><div class="ceo-big-number"><small>TOTAL CORP WALLET</small><strong id="ceoWalletTotal">—</strong></div></article>
-          <article class="glass ceo-command-card"><span class="eyebrow">MEMBERS</span><h3>FINANCE + LOYALTY</h3><p>Corp-wide member roster is available from CEO ESI. The loyalty ledger is reserved for a TMP-defined point formula so JLR does not invent what should earn points.</p><div class="ceo-big-number"><small>CORP MEMBERS</small><strong id="ceoMemberCount">—</strong></div><div class="ceo-placeholder">LOYALTY FORMULA • READY TO CONFIGURE</div></article>
+          <article class="glass ceo-command-card ceo-member-card"><span class="eyebrow">MEMBERS</span><h3>FINANCE + LOYALTY</h3><p>Corp wallet activity involving each member plus a private loyalty ledger. Points are manual for now so JLR does not invent the corporation's reward formula.</p><div class="ceo-member-head"><div class="ceo-big-number"><small>CORP MEMBERS</small><strong id="ceoMemberCount">—</strong></div><div id="ceoRoleHealth" class="ceo-role-health"></div></div><div class="ceo-loyalty-controls"><select id="ceoLoyaltyMember" aria-label="Corporation member"><option value="">Choose member…</option></select><input id="ceoLoyaltyPoints" type="number" step="1" min="-100000" max="100000" placeholder="+/- points"><input id="ceoLoyaltyNote" maxlength="160" placeholder="Reason / note"><button id="ceoLoyaltyAdjust" class="board-tool" type="button">ADJUST POINTS</button></div><div class="ceo-member-table-head"><span>MEMBER</span><span>IN</span><span>OUT</span><span>NET IMPACT</span><span>LOYALTY</span></div><div id="ceoMemberFinanceRows" class="ceo-member-finance"><div class="visual-empty">Waiting for corporation roster…</div></div></article>
           <article class="glass ceo-command-card"><span class="eyebrow">COMMUNICATIONS</span><h3>DISCORD ACTIVITY</h3><p>Bot-fed participation counts for text and voice activity. JLR will track activity totals, not message contents or voice recordings.</p><div class="ceo-placeholder">DISCORD BOT CONNECTION REQUIRED</div></article>
           <article class="glass ceo-command-card"><span class="eyebrow">ADMIN SHEET</span><h3>MOONS + STRUCTURES</h3><p>The TMP Admin workbook remains the baseline for moon, structure, tax, fuel and breakeven knowledge while live ESI is layered on top.</p><div class="ceo-placeholder">SHEET BASELINE</div></article>
           <article class="glass ceo-command-card"><span class="eyebrow">OPERATIONS</span><h3>ASSETS • JOBS • CONTRACTS • ORDERS</h3><p>Read-only corporation operational data in one private view for Renius and JLR administration.</p><div class="ceo-placeholder">WAITING FOR CEO ESI</div></article>
@@ -2022,6 +2104,7 @@
       if(url)window.location.assign(url);
     });
     $('ceoFinanceRefresh')?.addEventListener('click',()=>void loadCeoFinance(true));
+    $('ceoLoyaltyAdjust')?.addEventListener('click',()=>void adjustCeoLoyalty());
     $('ceoIncomeMonth')?.addEventListener('change',event=>{
       ceoSelectedMonth=String(event.target.value||'');
       renderCeoFinance();
