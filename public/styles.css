@@ -3999,3 +3999,6 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .ceo-scope-row.optional{border-color:#5c4c29;background:#17140d}.ceo-scope-row.optional span{color:#e9c96f}
 .ceo-wallet-note{margin-top:7px;color:#7f8795;font-size:7.5px;line-height:1.45}
 .ceo-wallet-note.blocked{padding:7px 8px;border:1px solid #664829;border-radius:6px;background:#1c140c;color:#e8b973}
+.ceo-wallet-repair{padding:16px;border:1px solid #806338;color:#e8cb98;font-size:13px;line-height:1.6}
+.ceo-wallet-repair p{margin:8px 0}
+.ceo-wallet-repair ol{margin:8px 0 0;padding-left:22px}

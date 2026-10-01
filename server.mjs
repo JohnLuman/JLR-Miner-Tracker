@@ -1112,7 +1112,6 @@ function ceoRoleHealth(payload,errors=[]){
       {feature:'Corporation wallets + journal',documentedRoles:['Accountant','Junior_Accountant'],ready:walletReady},
       {feature:'Wallet division names',documentedRoles:['Director'],ready:divisionsReady},
       {feature:'Member tracking',documentedRoles:['Director'],ready:memberTrackingReady},
-      {feature:'Corporation mining observers',documentedRoles:['Accountant'],ready:!failed.has('mining-observers')},
     ],
     note:'Renius is already verified as the corporation CEO. JLR reports ESI endpoint access separately from CEO status and will not tell the CEO to self-assign roles.',
   };
@@ -1169,8 +1168,10 @@ async function ceoFinanceSnapshot({force=false}={}){
     if(!corporationId)throw new Error('CEO corporation is not configured.');
     const errors=[];
     const base='https://esi.evetech.net/latest/corporations/'+corporationId;
+    const walletGranted=Array.isArray(admin.scopes)&&admin.scopes.includes(CEO_WALLET_SCOPE);
+    if(!walletGranted)errors.push({section:'wallets',code:'CEO_WALLET_SCOPE_MISSING',message:'Corporation wallet permission has not been granted. Renius can use CONNECT CORP WALLET tomorrow; the other CEO data remains available.'});
     const [wallets,divisions,members,memberTracking,characterRoles]=await Promise.all([
-      ceoTry('wallets',async()=>(await esiGet(base+'/wallets/?datasource=tranquility',access)).data,errors,[]),
+      walletGranted?ceoTry('wallets',async()=>(await esiGet(base+'/wallets/?datasource=tranquility',access)).data,errors,[]):Promise.resolve([]),
       ceoTry('divisions',async()=>(await esiGet(base+'/divisions/?datasource=tranquility',access)).data,errors,{wallet:[],hangar:[]}),
       ceoTry('members',async()=>(await esiGet(base+'/members/?datasource=tranquility',access)).data,errors,[]),
       ceoTry('membertracking',async()=>(await esiGet(base+'/membertracking/?datasource=tranquility',access)).data,errors,[]),
@@ -1721,6 +1722,7 @@ async function startCeoSso(req,res,url){
   const character=state.characters[requestedId];
   if(!requestedId||!user.characterIds.includes(requestedId)||!character)return redirect(res,'/?error=ceo-character-not-linked');
   if(String(character.name||'').trim().toLowerCase()!==CEO_CHARACTER_NAME.toLowerCase())return redirect(res,'/?error=ceo-renius-required');
+  const includeWallet=url.searchParams.get('wallet')==='1'||(url.searchParams.get('wallet')!=='0'&&ceoStatusForUser(user).connected);
 
   const meta=await getSsoMetadata();
   const stateId=randomId();
@@ -1728,6 +1730,7 @@ async function startCeoSso(req,res,url){
   const redirectUri=callbackUrl(req);
   oauthStates.set(stateId,{
     intent:'ceo',
+    includeWallet,
     userId:user.id,
     expectedCharacterId:requestedId,
     verifier,
@@ -1740,7 +1743,7 @@ async function startCeoSso(req,res,url){
   u.searchParams.set('response_type','code');
   u.searchParams.set('client_id',EVE_CLIENT_ID);
   u.searchParams.set('redirect_uri',redirectUri);
-  const requestedScopes=url.searchParams.get('wallet')==='1'?[...CEO_SCOPES,CEO_WALLET_SCOPE]:[...CEO_SCOPES];
+  const requestedScopes=includeWallet?[...CEO_SCOPES,CEO_WALLET_SCOPE]:[...CEO_SCOPES];
   u.searchParams.set('scope',requestedScopes.join(' '));
   u.searchParams.set('state',stateId);
   if(!EVE_CLIENT_SECRET){
@@ -1842,6 +1845,7 @@ async function handleCallback(req,res,url) {
       const linked=state.characters[charId];
       if(!linked||linked.ownerUserId!==user.id||String(linked.name||'').trim().toLowerCase()!==CEO_CHARACTER_NAME.toLowerCase())throw new Error('This character is not the configured CEO character');
       for(const scope of CEO_SCOPES)if(!identity.scopes.includes(scope))throw new Error('CEO scope missing: '+scope);
+      if(pending.includeWallet&&!identity.scopes.includes(CEO_WALLET_SCOPE))throw new Error('EVE did not grant the corporation wallet permission. Existing CEO access has been kept.');
 
       const characterInfo=(await esiGet('https://esi.evetech.net/latest/characters/'+charId+'/?datasource=tranquility')).data;
       const corporationId=Number(characterInfo?.corporation_id)||0;
@@ -1860,10 +1864,13 @@ async function handleCallback(req,res,url) {
         scopes:identity.scopes,
         authorizedAt:now(),
         lastError:null,
+        walletLastError:null,
+        walletLastCheckedAt:null,
         financeJournal:state.ceoAdmin?.financeJournal||{},
         financeUpdatedAt:state.ceoAdmin?.financeUpdatedAt||null,
       };
       await save();
+      ceoFinanceCache={at:0,data:null,promise:null};
       setSessionCookie(res,user.id,req);
       return redirect(res,'/?ceo=authorized');
     }

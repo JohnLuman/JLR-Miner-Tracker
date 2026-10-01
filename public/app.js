@@ -1759,7 +1759,14 @@
       auth.classList.toggle('hidden',!showAuth);
       auth.disabled=!status.authorizeUrl;
       auth.dataset.authorizeUrl=status.authorizeUrl||'';
-      auth.textContent=status.connected||status.authorizationUpgradeRequired?'UPDATE RENIUS CEO ESI':'AUTHORIZE RENIUS CEO ESI';
+      auth.textContent=status.connected&&!status.walletScopeGranted?'CONNECT CORP WALLET':status.connected||status.authorizationUpgradeRequired?'UPDATE RENIUS CEO ESI':'AUTHORIZE RENIUS CEO ESI';
+    }
+    const repair=$('ceoWalletRepair');
+    if(repair){
+      repair.classList.toggle('hidden',!status.connected||Boolean(status.walletScopeGranted));
+      repair.innerHTML='<strong>ONE PERMISSION LEFT: CORPORATION WALLET</strong><p>Members and other granted CEO permissions remain available. Wallet balances and income need one more EVE approval.</p>'+(status.canAuthorize
+        ?'<ol><li>Click <b>CONNECT CORP WALLET</b> above.</li><li>Choose Renius and approve the corporation wallet permission in EVE.</li><li>Return here. JLR checks the permission and refreshes CEO data automatically.</li></ol>'
+        :'<p>Renius can finish this from his own CEO COMMAND tomorrow. Your account can refresh the available data.</p>');
     }
     const badge=$('ceoConnectionBadge');
     if(badge){
@@ -1776,7 +1783,7 @@
       ).join('');
       const walletScope=String(status.walletScope||'');
       const walletRow=walletScope
-        ?'<div class="ceo-scope-row '+(status.walletScopeGranted?'granted':'optional')+'"><span>'+(status.walletScopeGranted?'✓':'◇')+'</span><code>'+esc(walletScope)+' • OPTIONAL WALLET</code></div>'
+        ?'<div class="ceo-scope-row '+(status.walletScopeGranted?'granted':'optional')+'"><span>'+(status.walletScopeGranted?'✓':'◇')+'</span><code>'+esc(walletScope)+(status.walletScopeGranted?' • CONNECTED':' • SETUP NEEDED')+'</code></div>'
         :'';
       scopeList.innerHTML=coreRows+walletRow||'<div class="visual-empty">No CEO scopes configured.</div>';
     }
@@ -1804,10 +1811,12 @@
   function renderCeoFinance(){
     const data=ceoFinanceData;
     if($('ceoFinanceLoading'))$('ceoFinanceLoading').classList.toggle('hidden',!ceoFinanceLoading);
+    const refresh=$('ceoFinanceRefresh');
+    if(refresh){refresh.disabled=ceoFinanceLoading||!ceoCommandStatus?.connected;refresh.textContent=ceoFinanceLoading?'REFRESHING…':'REFRESH CEO DATA';}
     if(!data)return;
     const errors=data.errors||[];
     const failedSections=new Set(errors.map(row=>String(row.section||'')));
-    const walletBlocked=failedSections.has('wallets')||[...failedSections].some(section=>section.startsWith('wallet-journal-'));
+    const walletBlocked=data.walletAccess?.available===false||failedSections.has('wallets')||[...failedSections].some(section=>section.startsWith('wallet-journal-'));
     const divisionsBlocked=failedSections.has('divisions');
     const trackingBlocked=failedSections.has('membertracking');
 
@@ -1846,11 +1855,11 @@
     if(walletNote){
       const wa=data.walletAccess||{};
       walletNote.textContent=walletBlocked
-        ?(wa.legacyGranted?'Core CEO access is working. EVE SSO accepted the legacy wallet scope, but current wallet ESI requires the newer plural scope that SSO is rejecting for this app.':'Core CEO access is working; corporation wallet ESI is currently unavailable.')
+        ?(!wa.granted?'Corporation wallet permission is missing. Renius can finish the setup above; available CEO data still works.':'The wallet permission is granted, but ESI could not return wallet data. Refresh CEO data to retry; see access details below.')
         :'Corporation wallet ESI is live.';
       walletNote.classList.toggle('blocked',walletBlocked);
     }
-    if($('ceoMemberCount'))$('ceoMemberCount').textContent=Number(data.members?.count||0).toLocaleString();
+    if($('ceoMemberCount'))$('ceoMemberCount').textContent=failedSections.has('members')?'Unavailable':Number(data.members?.count||0).toLocaleString();
 
     const roleHealth=$('ceoRoleHealth');
     if(roleHealth){
@@ -1879,9 +1888,9 @@
         const net=Number(row.corpWalletNet)||0;
         return '<div class="ceo-member-row">'+
           '<div class="ceo-member-name"><strong>'+esc(row.name)+'</strong><small>'+Number(row.journalEntries||0).toLocaleString()+' wallet journal refs</small></div>'+
-          '<div><small>IN</small><b>'+esc(ceoMoney(row.corpWalletIn||0))+'</b></div>'+
-          '<div><small>OUT</small><b>'+esc(ceoMoney(row.corpWalletOut||0))+'</b></div>'+
-          '<div><small>NET IMPACT</small><b class="'+(net>=0?'positive':'negative')+'">'+esc(ceoMoney(net))+'</b></div>'+
+          '<div><small>IN</small><b>'+esc(walletBlocked?'Unavailable':ceoMoney(row.corpWalletIn||0))+'</b></div>'+
+          '<div><small>OUT</small><b>'+esc(walletBlocked?'Unavailable':ceoMoney(row.corpWalletOut||0))+'</b></div>'+
+          '<div><small>NET IMPACT</small><b class="'+(!walletBlocked?(net>=0?'positive':'negative'):'')+'">'+esc(walletBlocked?'Unavailable':ceoMoney(net))+'</b></div>'+
           '<div><small>LOYALTY</small><b>'+Number(row.loyalty?.balance||0).toLocaleString()+' pts</b></div>'+
         '</div>';
       }).join(''):'<div class="visual-empty">No corporation members returned.</div>';
@@ -2098,6 +2107,7 @@
             <button id="ceoAuthorize" class="orb purple hidden" type="button">AUTHORIZE RENIUS CEO ESI</button>
           </div>
         </section>
+        <section id="ceoWalletRepair" class="glass ceo-wallet-repair hidden" aria-live="polite"></section>
         <section class="ceo-command-grid">
           <article class="glass ceo-command-card ceo-chart-card"><div class="ceo-card-title"><div><span class="eyebrow">MONTHLY INCOME</span><h3>INCOME SOURCES</h3></div><select id="ceoIncomeMonth" aria-label="Income month"></select></div><p>Positive corporation-wallet journal entries grouped by EVE reference type. JLR retains observed journal entries so monthly history grows over time.</p><div class="ceo-chart-row"><div id="ceoIncomePie" class="ceo-pie"></div><div id="ceoIncomeLegend" class="ceo-legend"><div class="visual-empty">Waiting for Renius CEO ESI.</div></div></div><div id="ceoIncomeTotals" class="ceo-finance-totals"></div></article>
           <article class="glass ceo-command-card ceo-chart-card"><span class="eyebrow">CORE FINANCE</span><h3>WALLET BREAKDOWN</h3><p>Live corporation wallet divisions and current balances.</p><div class="ceo-chart-row"><div id="ceoWalletPie" class="ceo-pie"></div><div id="ceoWalletLegend" class="ceo-legend"><div class="visual-empty">Waiting for Renius CEO ESI.</div></div></div><div class="ceo-big-number"><small>TOTAL CORP WALLET</small><strong id="ceoWalletTotal">—</strong></div><div id="ceoWalletNote" class="ceo-wallet-note"></div></article>
