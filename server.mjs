@@ -10504,17 +10504,7 @@ async function routeApi(req,res,url) {
     if(!ch)return json(res,404,{error:'CHARACTER_NOT_LINKED'});
     try{
       const location=await scoutLocationSnapshot(ch,user);
-      const [nearest,nearestMiningResult]=await Promise.all([
-        trackerBrainNearestSystems(location.systemId,{updatesOnly:true,limit:5,fieldOnly:true}),
-        trackerBrainNearestSystems(location.systemId,{updatesOnly:false,limit:1,fieldOnly:true,availableOnly:true}),
-      ]);
-      const nearestMiningRow=nearestMiningResult.rows?.[0]||null;
-      const nearestMining=nearestMiningRow?{
-        system:nearestMiningRow.system,
-        jumps:nearestMiningRow.jumps,
-        lastScanAt:nearestMiningRow.activity?.lastScanAt||null,
-        status:state.fields?.[nearestMiningRow.system]?.status||'unknown',
-      }:null;
+      const nearest=await trackerBrainNearestSystems(location.systemId,{updatesOnly:true,limit:5});
       const targets=nearest.rows.map(row=>{
         const activity=row.activity||{};
         const ledger=activity.ledger||null;
@@ -10531,7 +10521,7 @@ async function routeApi(req,res,url) {
           ledgerNeedsScan:ledgerDue,
         };
       });
-      return json(res,200,{characterId,characterName:ch.name,location,nearestMining,targets,candidates:nearest.candidates,checkedAt:now()});
+      return json(res,200,{characterId,characterName:ch.name,location,nearestScan:targets[0]||null,targets,candidates:nearest.candidates,checkedAt:now()});
     }catch(error){
       if(error?.code==='LOCATION_SCOPE_REQUIRED'||error?.code==='COMPANION_WAITING')return json(res,409,{error:error.code,message:error.message});
       return json(res,502,{error:'SCOUT_TARGETS_FAILED',message:String(error.message||error)});

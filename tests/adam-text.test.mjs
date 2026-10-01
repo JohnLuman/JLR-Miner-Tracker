@@ -14,7 +14,7 @@ assert.match(app,/id="adamAsk"/,'Adam has an explicit ask action');
 assert.match(app,/function adamContextSnapshot\(\)/,'Adam builds current JLR context for each question');
 assert.match(app,/TRAVEL WATCH/,'travel and location logic remains inside Adam');
 assert.doesNotMatch(app,/SCOUT \/ TRAVEL WATCH/,'visible Adam workspace no longer uses Scout branding');
-assert.match(app,/NEAREST MINING SYSTEM/,'Adam automatically surfaces the nearest available mining system');
+assert.match(app,/NEAREST SCAN/,'Adam automatically surfaces the nearest system requiring a scan');
 assert.match(app,/adam-copy-system/,'nearest mining system is copyable for EVE');
 assert.match(app,/id="scoutCharacterSelect"/,'Scout includes a travel-toon selector');
 assert.match(app,/id="scoutTargetList"/,'Scout renders nearby Field Tracker update targets');

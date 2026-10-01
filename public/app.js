@@ -46,7 +46,7 @@
   let scoutFollowEnabled = localStorage.getItem('jlrScoutFollow') !== 'false';
   let scoutSelectedCharacterId = localStorage.getItem('jlrScoutCharacter') || '';
   let scoutTargets = [];
-  let scoutNearestMining = null;
+  let scoutNearestScan = null;
   let adamNavigationRecommendation = null;
   let scoutTargetsLoading = false;
   let scoutTargetsRefreshPending = false;
@@ -1064,11 +1064,12 @@
     if(!host)return;
     const selected=(me?.characters||[]).find(ch=>String(ch.characterId)===String(scoutSelectedCharacterId));
     const location=scoutLocations.get(String(scoutSelectedCharacterId));
-    const navigation=window.JlrAdamNavigation?.select(adamNavigationRecommendation,{characterId:scoutSelectedCharacterId||scanCharacterId,location,scans:state?.scans||{}});
-    const shownTarget=navigation?navigation.target:scoutNearestMining;
+    const selectedNavigation=window.JlrAdamNavigation?.select(adamNavigationRecommendation,{characterId:scoutSelectedCharacterId||scanCharacterId,location,scans:state?.scans||{}});
+    const navigation=selectedNavigation?.updatesOnly?selectedNavigation:null;
+    const shownTarget=navigation?navigation.target:scoutNearestScan;
     const scanTarget=Boolean(navigation?.updatesOnly);
-    const targetLabel=scanTarget?'NEXT SCAN':'NEAREST MINING SYSTEM';
-    const targetDescription=scanTarget?'needs a scan update':'available tracked field';
+    const targetLabel=scanTarget?'NEXT SCAN':'NEAREST SCAN';
+    const targetDescription='needs a scan update';
     if(summary){
       summary.textContent=location?.system
         ?String(selected?.name||'Selected toon')+' • '+location.system+' • closest scan updates'
@@ -1076,17 +1077,17 @@
     }
     if(nearest){
       if(scoutTargetsLoading&&!navigation){
-        nearest.innerHTML='<div class="adam-nearest-copy"><span>NEAREST MINING SYSTEM</span><strong>CHECKING…</strong><small>Calculating from the current Adam travel-toon location.</small></div>';
+        nearest.innerHTML='<div class="adam-nearest-copy"><span>NEAREST SCAN</span><strong>CHECKING…</strong><small>Calculating from the current Adam travel-toon location.</small></div>';
       }else if(shownTarget?.system){
         nearest.innerHTML='<div class="adam-nearest-copy"><span>'+targetLabel+'</span><strong>'+esc(shownTarget.system)+'</strong><small>'+Number(shownTarget.jumps||0)+' jump'+(Number(shownTarget.jumps||0)===1?'':'s')+' from '+esc(location?.system||'current location')+' • '+targetDescription+'</small></div><button class="adam-copy-system" type="button" data-copy-system="'+esc(shownTarget.system)+'">COPY SYSTEM</button>';
       }else{
-        nearest.innerHTML='<div class="adam-nearest-copy"><span>'+targetLabel+'</span><strong>—</strong><small>'+(navigation?esc(navigation.text):'No available tracked mining field could be ranked from this location.')+'</small></div>';
+        nearest.innerHTML='<div class="adam-nearest-copy"><span>'+targetLabel+'</span><strong>—</strong><small>'+(navigation?esc(navigation.text):'No tracked systems currently need a scan update.')+'</small></div>';
       }
     }
     if(quickNearest){
       if(shownTarget?.system){
         quickNearest.classList.remove('hidden');
-        quickNearest.innerHTML='<span>'+(scanTarget?'NEXT SCAN':'NEAREST MINE')+'</span><strong>'+esc(shownTarget.system)+'</strong><small>'+Number(shownTarget.jumps||0)+'J</small><button class="adam-copy-system" type="button" data-copy-system="'+esc(shownTarget.system)+'">COPY</button>';
+        quickNearest.innerHTML='<span>'+(scanTarget?'NEXT SCAN':'NEAREST SCAN')+'</span><strong>'+esc(shownTarget.system)+'</strong><small>'+Number(shownTarget.jumps||0)+'J</small><button class="adam-copy-system" type="button" data-copy-system="'+esc(shownTarget.system)+'">COPY</button>';
       }else{
         quickNearest.classList.add('hidden');
         quickNearest.innerHTML='';
@@ -1118,7 +1119,7 @@
     if(scoutTargetsLoading){if(force)scoutTargetsRefreshPending=true;return;}
     const chars=(me.characters||[]).filter(ch=>ch.locationAccess);
     if(!chars.length){
-      scoutNearestMining=null;scoutTargets=[];scoutTargetsError='No toon currently has EVE location access.';renderScoutTargets();return;
+      scoutNearestScan=null;scoutTargets=[];scoutTargetsError='No toon currently has EVE location access.';renderScoutTargets();return;
     }
     if(!chars.some(ch=>String(ch.characterId)===String(scoutSelectedCharacterId))){
       const preferred=chars.find(ch=>String(ch.characterId)===String(scanCharacterId))
@@ -1139,10 +1140,10 @@
         scoutLocations.set(String(scoutSelectedCharacterId),response.location);
         scoutTargetsOriginSystem=String(response.location.system);
       }
-      scoutNearestMining=response?.nearestMining&&typeof response.nearestMining==='object'?response.nearestMining:null;
+      scoutNearestScan=response?.nearestScan&&typeof response.nearestScan==='object'?response.nearestScan:null;
       scoutTargets=Array.isArray(response?.targets)?response.targets:[];
     }catch(error){
-      scoutNearestMining=null;
+      scoutNearestScan=null;
       scoutTargets=[];
       scoutTargetsError=String(error?.message||error||'Could not calculate nearby field updates.');
     }finally{
@@ -1437,7 +1438,10 @@
 
     const o=audio.createOscillator(),g=audio.createGain(),n=audio.currentTime;
     o.connect(g);g.connect(audio.destination);
-    if(kind==='hover'){
+    if(kind==='fieldUpdate'){
+      o.type='sine';o.frequency.setValueAtTime(660,n);o.frequency.exponentialRampToValueAtTime(880,n+.09);
+      g.gain.setValueAtTime(.009,n);g.gain.exponentialRampToValueAtTime(.001,n+.13);o.start(n);o.stop(n+.14);
+    }else if(kind==='hover'){
       o.type='sine';o.frequency.setValueAtTime(560,n);o.frequency.exponentialRampToValueAtTime(710,n+.045);
       g.gain.setValueAtTime(.018,n);g.gain.exponentialRampToValueAtTime(.001,n+.060);o.start(n);o.stop(n+.065);
     }else if(kind==='threatHover'){
@@ -2308,7 +2312,7 @@
             <label class="brain-setting"><span>AUTO FOLLOW TOONS</span><select id="brainFollowEnabled"><option value="on">ON</option><option value="off">OFF</option></select></label>
           </div>
           <div id="brainScanPrompt" class="brain-scan-prompt hidden" role="status"><span id="brainScanPromptText"></span><button id="brainScanOpen" class="board-tool" type="button">OPEN SCANNER</button></div>
-          <div id="adamNearestMining" class="adam-nearest-mining"><div class="adam-nearest-copy"><span>NEAREST MINING SYSTEM</span><strong>CHECKING…</strong><small>Calculating from the current Adam travel-toon location.</small></div></div>
+          <div id="adamNearestMining" class="adam-nearest-mining"><div class="adam-nearest-copy"><span>NEAREST SCAN</span><strong>CHECKING…</strong><small>Calculating from the current Adam travel-toon location.</small></div></div>
           <div class="brain-follow-head"><strong>CLOSEST SCAN UPDATES</strong><small id="scoutTargetSummary">Select a toon to calculate routes.</small></div>
           <div id="scoutTargetList" class="scout-target-list"><div class="visual-empty">Waiting for location…</div></div>
           <div class="brain-follow-head scout-linked-head"><strong>LINKED TOONS</strong><small id="brainFollowStatus">Checking location access…</small></div>
@@ -4831,7 +4835,7 @@
       }
     }
 
-    window.JlrFieldUpdateFeedback?.paint(board);
+    window.JlrFieldUpdateFeedback?.paint(board,()=>{if(!document.hidden)sfx('fieldUpdate')});
     $('statusCounts').textContent=`${counts.ready} mineable • ${counts.picked} picked • ${counts.cleared} respawning • ${counts.cherry} cherry • ${iceFields.length} ice • ${a0Fields.length} A0 • ${a0Due} need update`;
     $('systemCountLabel').textContent=`${definitions().length} T3 • ${iceFields.length} ICE • ${a0Fields.length} A0`;
     if(filter==='a0'&&!a0Fields.length)board.innerHTML='<div class="target-empty"><strong>No A0 systems found within 6 LY.</strong><span>The server scans Fountain star spectral classes through ESI. Active rare-asteroid anomalies themselves are not exposed remotely.</span></div>';
