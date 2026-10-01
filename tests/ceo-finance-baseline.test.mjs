@@ -16,10 +16,10 @@ const start=app.indexOf('  function renderCeoFinance(){'),end=app.indexOf('    a
 const elements=new Map();const $=id=>{if(!elements.has(id))elements.set(id,{value:'',innerHTML:'',style:{},classList:{toggle(){}}});return elements.get(id);};
 const context={window:{},$,ceoFinanceData:{walletAccess:{available:false},finance:{months:[],imported:baseline},errors:[{section:'wallets'}]},ceoFinanceLoading:false,ceoCommandStatus:{connected:true},ceoSelectedMonth:'',ceoLoyaltyBusy:false,esc:String,ceoMoney:n=>n+' ISK',ceoPieStyle:()=>'valid-pie',ceoLegend:rows=>rows.map(row=>row.name).join(',')};
 vm.createContext(context);vm.runInContext(app.slice(start,end),context);context.renderCeoFinance();
-assert.match($('ceoIncomeSource').textContent,/IMPORTED ADMIN WORKBOOK/);assert.match($('ceoIncomeLegend').innerHTML,/Mining/);
-assert.equal($('ceoIncomeMonth').disabled,false);assert.match($('ceoIncomeTotals').innerHTML,/80 ISK/);
+assert.match($('ceoIncomeSource').textContent,/ESI JOURNAL/);assert.doesNotMatch($('ceoIncomeMonth').innerHTML,/2024|sheet:/);
+assert.equal($('ceoIncomeMonth').disabled,true);assert.doesNotMatch($('ceoIncomeTotals').innerHTML,/80 ISK/);
 assert.match($('ceoWalletTotal').textContent,/UNAVAILABLE/,'Historical income never becomes a current wallet balance');
-assert.match($('ceoOverviewMonths').textContent,/0 ESI months • 1 workbook months/);
+assert.match($('ceoOverviewMonths').textContent,/0 ESI months/);
 const server=fs.readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
 const memoryStart=server.indexOf('function ceoRememberFinanceJournal('),memoryEnd=server.indexOf('function ceoFinanceSummary(',memoryStart);
 const state={ceoAdmin:{financeJournal:{old:{refId:'old',date:'2020-01-01T00:00:00Z'}}}};

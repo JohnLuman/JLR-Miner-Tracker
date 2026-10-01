@@ -20,6 +20,33 @@ assert.equal(journalPage([{...rows[0],amount:0}],{direction:'zero'}).total,1);
 assert.equal(rows[0].refId,'0','Queries leave saved records unchanged');
 
 const source=fs.readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
+// Exercise the actual ESI ingestion path, rather than only normalized fixtures.
+const ingestContext={state:{ceoAdmin:{financeJournal:{}}}};
+vm.createContext(ingestContext);
+const ingestStart=source.indexOf('function ceoRememberFinanceJournal(');
+const ingestEnd=source.indexOf('function ceoFinanceSummary(',ingestStart);
+vm.runInContext(source.slice(ingestStart,ingestEnd),ingestContext);
+const recentDate=new Date().toISOString();
+const esiRows=[
+  {id:1234567890,date:recentDate,_division:1,amount:200,balance:1000,ref_type:'player_donation',first_party_id:99,second_party_id:88},
+  {id:1234567891,date:recentDate,_division:2,amount:-50,balance:950,ref_type:'corporation_account_withdrawal',first_party_id:88,second_party_id:99},
+];
+ingestContext.ceoRememberFinanceJournal(esiRows);
+ingestContext.ceoRememberFinanceJournal(esiRows);
+const retained=Object.values(ingestContext.state.ceoAdmin.financeJournal);
+assert.equal(retained.length,2,'ESI id entries are retained and repeated pulls do not duplicate them');
+assert.equal(retained[0].refId,'1234567890');
+assert.equal(retained[1].division,2);
+const ingestedPage=journalPage(retained,{month:recentDate.slice(0,7)});
+assert.equal(ingestedPage.total,2);
+assert.equal(ingestedPage.totals.income,200);
+assert.equal(ingestedPage.totals.expenses,50);
+assert.equal(ingestedPage.totals.net,150);
+const summaryEnd=source.indexOf('function ceoRoleList(',ingestEnd);
+vm.runInContext(source.slice(ingestEnd,summaryEnd),ingestContext);
+assert.equal(ingestContext.ceoFinanceSummary([],{},retained).months[0].net,150,'Raw ESI entries populate monthly income totals');
+ingestContext.ceoRememberFinanceJournal([{ref_id:1234567892,date:recentDate,_division:3,amount:25}]);
+assert.equal(Object.keys(ingestContext.state.ceoAdmin.financeJournal).length,3,'Legacy reference field remains supported');
 const start=source.indexOf("  if(req.method==='GET'&&url.pathname==='/api/ceo/journal'){");
 const end=source.indexOf('\n  if(',start+5);assert.ok(start>0);
 for(const allowed of [false,true]){

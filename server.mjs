@@ -4,11 +4,10 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import zlib from 'node:zlib';
-import { decodeMoonBaseline, structureRows } from './lib/ceo-moons.mjs';
+import { structureRows } from './lib/ceo-moons.mjs';
 import { CEO_OPERATION_ROUTES, operationNameIds, normalizeOperations } from './lib/ceo-operations.mjs';
 import { createDiscordActivity, discordId } from './lib/ceo-discord.mjs';
 import { createDiscordGateway } from './lib/ceo-discord-gateway.mjs';
-import { decodeFinanceBaseline } from './lib/ceo-finance-baseline.mjs';
 import { ceoDataHealth } from './lib/ceo-health.mjs';
 import { journalPage } from './lib/ceo-journal.mjs';
 import { fileURLToPath } from 'node:url';
@@ -86,10 +85,6 @@ const MARKET_SCOPES = [MARKET_STRUCTURE_SCOPE, SEARCH_STRUCTURES_SCOPE, READ_STR
 const MARKET_CHARACTER_NAME = String(process.env.MARKET_CHARACTER_NAME || 'John Leman Raholan').trim();
 const JLR_OWNER_CHARACTER_NAME = String(process.env.JLR_OWNER_CHARACTER_NAME || 'John Leman Raholan').trim();
 const CEO_CHARACTER_NAME = String(process.env.CEO_CHARACTER_NAME || 'Renius').trim();
-const CEO_FINANCE_BASELINE=decodeFinanceBaseline(process.env.CEO_FINANCE_BASELINE_GZIP_B64||'');
-console.info('CEO finance baseline',JSON.stringify({available:CEO_FINANCE_BASELINE.available,months:CEO_FINANCE_BASELINE.months.length,entries:CEO_FINANCE_BASELINE.entries}));
-const CEO_MOON_BASELINE=decodeMoonBaseline(process.env.CEO_MOON_BASELINE_GZIP_B64||'');
-console.info('CEO moon baseline',JSON.stringify({available:CEO_MOON_BASELINE.available,count:CEO_MOON_BASELINE.records.length,sourceDate:CEO_MOON_BASELINE.sourceDate||null}));
 const CEO_WALLET_SCOPE = 'esi-wallet.read_corporation_wallets.v1';
 const CEO_LEGACY_WALLET_SCOPE = 'esi-wallet.read_corporation_wallet.v1';
 const CEO_SCOPES = Object.freeze([
@@ -1057,7 +1052,7 @@ async function ceoTry(label,work,errors,fallback){
 function ceoRememberFinanceJournal(rows){
   const store=state.ceoAdmin.financeJournal ||= {};
   for(const row of rows||[]){
-    const refId=String(row?.ref_id??'');
+    const refId=String(row?.id??row?.ref_id??'');
     const date=String(row?.date||'');
     if(!refId||!date)continue;
     store[refId]={
@@ -1235,7 +1230,7 @@ async function ceoFinanceSnapshot({force=false}={}){
       generatedAt:now(),
       corporationId,
       corporationName:admin.corporationName||null,
-      finance:{...ceoFinanceSummary(wallets,divisions,remembered),imported:CEO_FINANCE_BASELINE},
+      finance:ceoFinanceSummary(wallets,divisions,remembered),
       roleHealth:ceoRoleHealth(characterRoles,errors),
       walletAccess:{
         currentScope:CEO_WALLET_SCOPE,
@@ -1255,7 +1250,7 @@ async function ceoFinanceSnapshot({force=false}={}){
         source:'ESI wallet journal',
         liveWindowDays:30,
         retainedByJlr:true,
-        note:'ESI wallet journals provide roughly the recent 30-day window. JLR retains observed entries so month history grows after CEO authorization; older TMP Admin workbook history can be layered in as a baseline.',
+        note:'ESI wallet journals provide roughly the recent 30-day window. JLR retains observed entries so month history grows after CEO authorization; only observed ESI entries are included.',
       },
       errors,
     };
@@ -1287,8 +1282,18 @@ async function ceoMoonSnapshot({force=false}={}){
       const previous=ceoStructuresCache.data?.live;
       live={available:false,checkedAt,updatedAt:previous?.updatedAt||null,stale:Boolean(previous?.records?.length),truncated:previous?.truncated||false,records:previous?.records||[],error:String(error?.message||error).slice(0,220)};
     }
-    const data={baseline:CEO_MOON_BASELINE,live};
-    console.info('CEO structures pull',JSON.stringify({available:live.available,stale:live.stale,count:live.records.length,baselineCount:CEO_MOON_BASELINE.records.length}));
+    let extractions;
+    try{
+      const {access,admin}=await ceoAccessToken();
+      const result=await ceoPagedGet('https://esi.evetech.net/latest/corporations/'+Number(admin.corporationId)+'/mining/extractions/?datasource=tranquility',access);
+      const names=await resolveUniverseNames(result.rows.map(row=>Number(row.moon_id)).filter(id=>id>0));
+      extractions={available:true,checkedAt,updatedAt:checkedAt,stale:false,truncated:result.truncated,error:null,records:result.rows.map(row=>({moonId:Number(row.moon_id),name:names.get(Number(row.moon_id))||String(row.moon_id),structureId:Number(row.structure_id),startedAt:row.extraction_start_time||null,readyAt:row.chunk_arrival_time||null,decayAt:row.natural_decay_time||null})).sort((a,b)=>Date.parse(a.readyAt)-Date.parse(b.readyAt))};
+    }catch(error){
+      const previous=ceoStructuresCache.data?.extractions;
+      extractions={available:false,checkedAt,updatedAt:previous?.updatedAt||null,stale:Boolean(previous?.records?.length),records:previous?.records||[],error:String(error?.message||error).slice(0,220)};
+    }
+    const data={live,extractions};
+    console.info('CEO structures pull',JSON.stringify({available:live.available,stale:live.stale,count:live.records.length}));
     ceoStructuresCache.at=Date.now();ceoStructuresCache.data=data;
     return data;
   })().finally(()=>{if(ceoStructuresCache.promise===pending)ceoStructuresCache.promise=null});
@@ -4896,7 +4901,7 @@ const TRACKER_APP_KNOWLEDGE = {
     label:'CEO Command',
     aliases:['ceo','ceo command','corp command','corporation command','corp finance'],
     description:'CEO Command is a private corporation administration workspace restricted on the server to the JLR owner and Renius. Renius uses a dedicated corporation ESI authorization that is separate from normal linked-toon access. The workspace is designed for monthly corporation income, wallet divisions, member finance and loyalty tracking, moon and structure administration, corporation assets, jobs, contracts and market orders. Discord activity requires a separate bot connection and is intended to store participation totals rather than message contents or voice recordings.',
-    panels:['monthly income sources','corporation wallet breakdown','member finance and loyalty','moon and structure baseline','corporation assets, industry, contracts and orders','Discord participation totals','CEO ESI permission health']
+    panels:['monthly income sources','corporation wallet breakdown','member finance and loyalty','current moon extractions and structures','corporation assets, industry, contracts and orders','Discord participation totals','CEO ESI permission health']
   },
   feedback:{
     label:'Feedback',
@@ -10005,7 +10010,7 @@ async function routeApi(req,res,url) {
   if(req.method==='GET'&&url.pathname==='/api/ceo/health'){
     const viewer=requireCeoViewer(req,res);if(!viewer)return;
     const status=ceoStatusForUser(viewer.user);
-    return json(res,200,ceoDataHealth({connected:status.connected,upgradeRequired:status.authorizationUpgradeRequired,walletGranted:status.walletScopeGranted,finance:ceoFinanceCache.data,walletPull:state.ceoAdmin?.walletJournalPull||null,structures:ceoStructuresCache.data?.live||null,operations:Object.fromEntries([...ceoOperationsCache].map(([key,cache])=>[key,cache.data])),pending:{finance:Boolean(ceoFinanceCache.promise),structures:Boolean(ceoStructuresCache.promise),...Object.fromEntries([...ceoOperationsCache].map(([key,cache])=>[key,Boolean(cache.promise)]))},baseline:CEO_MOON_BASELINE,discord:{configured:Boolean(state.ceoAdmin.discord?.tokenEnc),enabled:Boolean(state.ceoAdmin.discord?.enabled),connected:discordLive.connected,status:discordLive.status}}));
+    return json(res,200,ceoDataHealth({connected:status.connected,upgradeRequired:status.authorizationUpgradeRequired,walletGranted:status.walletScopeGranted,finance:ceoFinanceCache.data,walletPull:state.ceoAdmin?.walletJournalPull||null,structures:ceoStructuresCache.data?.live||null,extractions:ceoStructuresCache.data?.extractions||null,operations:Object.fromEntries([...ceoOperationsCache].map(([key,cache])=>[key,cache.data])),pending:{finance:Boolean(ceoFinanceCache.promise),structures:Boolean(ceoStructuresCache.promise),...Object.fromEntries([...ceoOperationsCache].map(([key,cache])=>[key,Boolean(cache.promise)]))},discord:{configured:Boolean(state.ceoAdmin.discord?.tokenEnc),enabled:Boolean(state.ceoAdmin.discord?.enabled),connected:discordLive.connected,status:discordLive.status}}));
   }
   if(req.method==='GET'&&url.pathname==='/api/ceo/journal'){
     if(!requireCeoViewer(req,res))return;
@@ -11148,3 +11153,4 @@ setInterval(()=>{discordActivity?.flush();if(discordActivity?.consumeDirty())voi
 process.once('SIGTERM',()=>{discordGateway?.stop();discordActivity?.pause();void save().finally(()=>process.exit(0));setTimeout(()=>process.exit(0),5000).unref();});
 
 setTimeout(()=>void warmCeoCommand(),8000).unref();
+setInterval(()=>void warmCeoCommand(),5*60_000).unref();
