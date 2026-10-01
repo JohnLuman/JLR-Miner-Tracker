@@ -1,0 +1,45 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+
+const runtime = { window: {}, Date };
+vm.runInNewContext(fs.readFileSync(new URL('../public/adam-navigation.js', import.meta.url), 'utf8'), runtime);
+const api = runtime.window.JlrAdamNavigation;
+const at = Date.now();
+const response = { topic: 'nearest-system', closest: { system: 'PNQY-Y', jumps: 4 }, updatesOnly: true, location: { system: 'KCT-0A' }, text: 'Next scan: PNQY-Y.' };
+const answer = api.recommendation(response, '123', at);
+assert.equal(api.select(answer, { characterId: '123', location: response.location, at }).target.system, 'PNQY-Y');
+assert.equal(api.select(answer, { characterId: '456', at }), null);
+assert.equal(api.select(answer, { characterId: '123', location: { system: 'OTHER' }, at }), null);
+assert.equal(api.select(answer, { characterId: '123', at: at + 5 * 60_000 }), null);
+assert.equal(api.select(answer, { characterId: '123', scans: { 'PNQY-Y': { lastScanAt: new Date(at + 1).toISOString() } }, at }), null);
+assert.equal(api.recommendation({ topic: 'field-scan' }, '123'), null);
+
+const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+const elements = new Map();
+const get = id => { if (!elements.has(id)) elements.set(id, { innerHTML: '', textContent: '', classList: { add() {}, remove() {} } }); return elements.get(id); };
+const ui = { window: runtime.window, $: get, Date, state: { scans: {} }, me: { characters: [{ characterId: '123', name: 'Yeda Parmala' }] }, scoutSelectedCharacterId: '123', scanCharacterId: '999', scoutLocations: new Map([['123', response.location]]), adamNavigationRecommendation: answer, scoutNearestMining: { system: 'APM-6K', jumps: 1 }, scoutTargetsLoading: false, scoutTargetsError: '', scoutTargets: [], esc: value => String(value) };
+const begin = app.indexOf('  function renderScoutTargets(){');
+const end = app.indexOf('\n  async function loadScoutTargets', begin);
+vm.runInNewContext(app.slice(begin, end) + '\nthis.render=renderScoutTargets;', ui);
+ui.render();
+for (const id of ['adamNearestMining', 'adamQuickNearest']) {
+  assert.match(get(id).innerHTML, /NEXT SCAN/);
+  assert.match(get(id).innerHTML, /PNQY-Y/);
+  assert.match(get(id).innerHTML, /data-copy-system="PNQY-Y"/);
+  assert.doesNotMatch(get(id).innerHTML, /APM-6K/);
+}
+ui.scoutTargetsLoading = true;
+ui.render();
+assert.match(get('adamQuickNearest').innerHTML, /PNQY-Y/, 'background polling must not replace the answer target');
+ui.adamNavigationRecommendation = api.recommendation({ topic: 'nearest-system-current', updatesOnly: true, text: 'No systems need scans.', location: response.location }, '123', at);
+ui.render();
+assert.match(get('adamNearestMining').innerHTML, /No systems need scans/);
+assert.equal(get('adamQuickNearest').innerHTML, '');
+ui.scoutTargetsLoading = false;
+ui.adamNavigationRecommendation = null;
+ui.render();
+assert.match(get('adamQuickNearest').innerHTML, /NEAREST MINE/);
+assert.match(get('adamQuickNearest').innerHTML, /APM-6K/);
+assert.match(app, /characterId:answerCharacterId/);
+console.log('Adam navigation answer/card/copy agreement, travel toon, refresh preservation and expiry passed.');

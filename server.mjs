@@ -4795,11 +4795,11 @@ async function trackerBrainLiveAnswer(user,question,options={}){
   }
   if(updatesOnly&&!nearest.candidates){
     const text='No tracked systems currently need a scan update.';
-    return{handled:true,topic:'nearest-system-current',text,generatedAt:now(),location};
+    return{handled:true,topic:'nearest-system-current',text,generatedAt:now(),location,updatesOnly};
   }
   if(!nearest.rows.length){
     const text='I found '+ch.name+' in '+location.system+', but E S I could not calculate routes to the tracked systems.';
-    return{handled:true,topic:'nearest-system-error',text,generatedAt:now(),location};
+    return{handled:true,topic:'nearest-system-error',text,generatedAt:now(),location,updatesOnly};
   }
 
   const first=nearest.rows[0];

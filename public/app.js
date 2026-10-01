@@ -47,6 +47,7 @@
   let scoutSelectedCharacterId = localStorage.getItem('jlrScoutCharacter') || '';
   let scoutTargets = [];
   let scoutNearestMining = null;
+  let adamNavigationRecommendation = null;
   let scoutTargetsLoading = false;
   let scoutTargetsRefreshPending = false;
   let scoutTargetsError = '';
@@ -530,16 +531,20 @@
         return;
       }
       const context=adamContextSnapshot();
+      const answerCharacterId=scoutSelectedCharacterId||scanCharacterId;
       const response=await api('/api/tracker/brain/ask',{
         method:'POST',
         body:JSON.stringify({
           question:text,
-          characterId:scanCharacterId,
+          characterId:answerCharacterId,
           payoutPct:Number(fleetSettings.payout),
           currentTab:context.currentTab,
           context,
         }),
       });
+      adamNavigationRecommendation=window.JlrAdamNavigation?.recommendation(response,answerCharacterId)||null;
+      if(adamNavigationRecommendation&&response.location)scoutLocations.set(String(answerCharacterId),response.location);
+      renderScoutTargets();
       const answer=String(response?.text||'I do not have an answer for that yet.');
       if(response?.focusItem){adamLastDoctrineItem=String(response.focusItem).slice(0,120);adamLastDoctrineItemAt=Date.now()}
       if(response?.focusSystem)brainLastSystem=String(response.focusSystem);
@@ -1059,24 +1064,29 @@
     if(!host)return;
     const selected=(me?.characters||[]).find(ch=>String(ch.characterId)===String(scoutSelectedCharacterId));
     const location=scoutLocations.get(String(scoutSelectedCharacterId));
+    const navigation=window.JlrAdamNavigation?.select(adamNavigationRecommendation,{characterId:scoutSelectedCharacterId||scanCharacterId,location,scans:state?.scans||{}});
+    const shownTarget=navigation?navigation.target:scoutNearestMining;
+    const scanTarget=Boolean(navigation?.updatesOnly);
+    const targetLabel=scanTarget?'NEXT SCAN':'NEAREST MINING SYSTEM';
+    const targetDescription=scanTarget?'needs a scan update':'available tracked field';
     if(summary){
       summary.textContent=location?.system
         ?String(selected?.name||'Selected toon')+' • '+location.system+' • closest scan updates'
         :'Select a location-enabled toon to rank nearby scan updates.';
     }
     if(nearest){
-      if(scoutTargetsLoading){
+      if(scoutTargetsLoading&&!navigation){
         nearest.innerHTML='<div class="adam-nearest-copy"><span>NEAREST MINING SYSTEM</span><strong>CHECKING…</strong><small>Calculating from the current Adam travel-toon location.</small></div>';
-      }else if(scoutNearestMining?.system){
-        nearest.innerHTML='<div class="adam-nearest-copy"><span>NEAREST MINING SYSTEM</span><strong>'+esc(scoutNearestMining.system)+'</strong><small>'+Number(scoutNearestMining.jumps||0)+' jump'+(Number(scoutNearestMining.jumps||0)===1?'':'s')+' from '+esc(location?.system||'current location')+' • available tracked field</small></div><button class="adam-copy-system" type="button" data-copy-system="'+esc(scoutNearestMining.system)+'">COPY SYSTEM</button>';
+      }else if(shownTarget?.system){
+        nearest.innerHTML='<div class="adam-nearest-copy"><span>'+targetLabel+'</span><strong>'+esc(shownTarget.system)+'</strong><small>'+Number(shownTarget.jumps||0)+' jump'+(Number(shownTarget.jumps||0)===1?'':'s')+' from '+esc(location?.system||'current location')+' • '+targetDescription+'</small></div><button class="adam-copy-system" type="button" data-copy-system="'+esc(shownTarget.system)+'">COPY SYSTEM</button>';
       }else{
-        nearest.innerHTML='<div class="adam-nearest-copy"><span>NEAREST MINING SYSTEM</span><strong>—</strong><small>No available tracked mining field could be ranked from this location.</small></div>';
+        nearest.innerHTML='<div class="adam-nearest-copy"><span>'+targetLabel+'</span><strong>—</strong><small>'+(navigation?esc(navigation.text):'No available tracked mining field could be ranked from this location.')+'</small></div>';
       }
     }
     if(quickNearest){
-      if(scoutNearestMining?.system){
+      if(shownTarget?.system){
         quickNearest.classList.remove('hidden');
-        quickNearest.innerHTML='<span>NEAREST MINE</span><strong>'+esc(scoutNearestMining.system)+'</strong><small>'+Number(scoutNearestMining.jumps||0)+'J</small><button class="adam-copy-system" type="button" data-copy-system="'+esc(scoutNearestMining.system)+'">COPY</button>';
+        quickNearest.innerHTML='<span>'+(scanTarget?'NEXT SCAN':'NEAREST MINE')+'</span><strong>'+esc(shownTarget.system)+'</strong><small>'+Number(shownTarget.jumps||0)+'J</small><button class="adam-copy-system" type="button" data-copy-system="'+esc(shownTarget.system)+'">COPY</button>';
       }else{
         quickNearest.classList.add('hidden');
         quickNearest.innerHTML='';
