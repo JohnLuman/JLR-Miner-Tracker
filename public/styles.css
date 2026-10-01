@@ -3992,3 +3992,6 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 @media(max-width:900px){.ceo-member-head{grid-template-columns:1fr}.ceo-loyalty-controls{grid-template-columns:1fr 1fr}.ceo-role-grid{grid-template-columns:1fr}.ceo-member-table-head{display:none}.ceo-member-row{grid-template-columns:1fr 1fr}.ceo-member-name{grid-column:1/-1}}
 @media(max-width:560px){.ceo-loyalty-controls,.ceo-member-row{grid-template-columns:1fr}.ceo-member-name{grid-column:auto}}
 @media(max-width:680px){.ceo-chart-row{grid-template-columns:76px minmax(0,1fr)}.ceo-pie{width:72px;height:72px}}
+
+.ceo-oauth-client{margin-top:7px;color:#737b89;font:800 7px/1.3 "Share Tech Mono",monospace;word-break:break-all}
+#ceoConnectionBadge:not(.connected){border-color:#775321;color:#f4c36d;background:#21170c}
