@@ -4,7 +4,24 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0a0a10">
-  <title>JLR Miner Tracker</title>
+  <title>JLR Tracker</title>
+  <meta name="description" content="EVE Online field tracking, fleet performance, appraisals, threat intel, and corporation tools in one JLR hub.">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="JLR Tracker">
+  <meta property="og:title" content="JLR Tracker">
+  <meta property="og:description" content="EVE Online field tracking, fleet performance, appraisals, threat intel, and corporation tools in one JLR hub.">
+  <meta property="og:url" content="__JLR_PUBLIC_URL__/">
+  <meta property="og:image" content="__JLR_PUBLIC_URL__/assets/jlr-appraisal-preview.png?v=4">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="256">
+  <meta property="og:image:height" content="256">
+  <meta property="og:image:alt" content="JLR Tracker mark">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="JLR Tracker">
+  <meta name="twitter:description" content="EVE Online field tracking, fleet performance, appraisals, threat intel, and corporation tools in one JLR hub.">
+  <meta name="twitter:image" content="__JLR_PUBLIC_URL__/assets/jlr-appraisal-preview.png?v=4">
+  <meta name="twitter:image:alt" content="JLR Tracker mark">
+  <link rel="icon" type="image/png" href="/assets/jlr-appraisal-preview.png?v=4">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700&family=Rajdhani:wght@600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
@@ -17,8 +34,8 @@
   <main id="loginView" class="login-shell hidden">
     <section class="login-card">
       <div class="brand-kicker">JLR INDUSTRIAL NETWORK // FOUNTAIN</div>
-      <h1>JLR MINER TRACKER</h1>
-      <p class="login-copy">Shared T3/ice field board, fixed 10-hour T3 respawn timers, saved-fit mining projections, EVE mining-ledger rates, and Jita/C-N refine values.</p>
+      <h1>JLR TRACKER</h1>
+      <p class="login-copy">Field tracking, fleet performance, appraisals, threat intel, and corporation tools for your EVE operations.</p>
       <div class="privacy-card"><strong>Private toon following.</strong><span>When Auto Follow is on and this page is open, Tracker checks linked toons' EVE locations to suggest scans. Locations are not stored in shared field history or shown to other users. Turn it off in Adam.</span></div>
       <a id="eveLogin" class="eve-login" href="/auth/eve/start?intent=login" aria-label="Log in with EVE Online">
         <img src="https://web.ccpgamescdn.com/eveonlineassets/developers/eve-sso-login-white-large.png" alt="Log in with EVE Online">
@@ -33,7 +50,7 @@
     <header class="topbar">
       <div class="brand">
         <div class="brand-kicker">JLR INDUSTRIAL NETWORK // FOUNTAIN</div>
-        <div class="brand-line"><span class="brand-mark">JLR</span><h1>MINER TRACKER</h1><span class="brand-status-stack"><small id="appVersion" class="app-version">v2.10.16</small><span id="liveBadge" class="status-pill" title="Latest EVE data sync status">● DATA LOADING</span></span></div>
+        <div class="brand-line"><span class="brand-mark">JLR</span><h1>TRACKER</h1><span class="brand-status-stack"><small id="appVersion" class="app-version">v2.10.16</small><span id="liveBadge" class="status-pill" title="Latest EVE data sync status">● DATA LOADING</span></span></div>
       </div>
       <div class="top-actions">
         <button id="compactMode" class="orb purple active" type="button" title="Condensed operations view with smaller cards and fewer detail panels">COMPACT</button>
@@ -563,7 +580,7 @@
   <script src="/ceo-operations.js?v=2.10.16-ceo15-fieldblink1-a0single1-adamnav2" defer></script>
   <script src="/field-update-feedback.js?v=2" defer></script>
   <script src="/adam-navigation.js?v=1" defer></script>
-  <script src="/app.js?v=2.10.16-threat-fast1-ceo15-fieldblink1-a0single1-adamnav2" defer></script>
+  <script src="/app.js?v=2.10.16-threat-fast1-ceo15-fieldblink1-a0single1-adamnav2-brand1" defer></script>
   <script src="/appraisal-enhance.js?v=6" defer></script>
   <script src="/tracker.js?v=2.10.12-hotzones1" defer></script>
 </body>

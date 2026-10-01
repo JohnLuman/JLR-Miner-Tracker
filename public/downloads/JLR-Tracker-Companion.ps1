@@ -448,7 +448,7 @@ function Invoke-JlrClipboardWatcher {
 
 function Pair-JlrCompanion {
   $nl = [Environment]::NewLine
-  $message = "In JLR Miner Tracker open BRAIN > DESKTOP COMPANION and click CREATE PAIR CODE." + $nl + $nl + "Paste the 10-character code here."
+  $message = "In JLR Tracker open BRAIN > DESKTOP COMPANION and click CREATE PAIR CODE." + $nl + $nl + "Paste the 10-character code here."
   $code = [Microsoft.VisualBasic.Interaction]::InputBox($message,"Pair JLR Tracker Companion","")
   if([string]::IsNullOrWhiteSpace($code)){ return $false }
   $body = @{ code=$code.Trim().ToUpperInvariant(); deviceName=$env:COMPUTERNAME } | ConvertTo-Json
@@ -726,7 +726,7 @@ $script:StatusItem = New-Object System.Windows.Forms.ToolStripMenuItem
 $script:StatusItem.Text = "Status: starting"
 $script:StatusItem.Enabled = $false
 $menu.Items.Add($script:StatusItem) | Out-Null
-$openItem = $menu.Items.Add("Open JLR Miner Tracker")
+$openItem = $menu.Items.Add("Open JLR Tracker")
 $pairItem = $menu.Items.Add("Pair / Re-pair")
 $script:ScanModeItem = New-Object System.Windows.Forms.ToolStripMenuItem
 $script:ScanModeItem.Text = "Creator Scan Mode: checking"

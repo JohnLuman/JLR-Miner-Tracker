@@ -141,7 +141,7 @@
 
         <footer class="footer">
           <div><strong>JLR MARKET NETWORK</strong><span>Market pricing is sourced through the configured appraisal provider and presented in JLR format.</span></div>
-          <a href="/">OPEN JLR MINER TRACKER <span aria-hidden="true">›</span></a>
+          <a href="/">OPEN JLR TRACKER <span aria-hidden="true">›</span></a>
         </footer>
       `;
     }catch(error){
