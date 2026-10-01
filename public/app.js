@@ -1746,22 +1746,28 @@
       return;
     }
     if(statusText){
-      statusText.textContent=status.connected
-        ?'Renius CEO ESI is connected'+(status.corporationName?' • '+status.corporationName:'')+'.'
-        :status.canAuthorize
-          ?'Backend is ready. Renius can authorize the corporation read scopes here.'
-          :'Backend is ready. Waiting for Renius to authorize the corporation read scopes.';
+      statusText.textContent=status.authorizationUpgradeRequired
+        ?'Renius is verified as CEO, but this token needs an ESI scope refresh before corporation wallet data can load.'
+        :status.connected
+          ?'Renius CEO ESI is connected'+(status.corporationName?' • '+status.corporationName:'')+'.'
+          :status.canAuthorize
+            ?'Backend is ready. Renius can authorize the corporation read scopes here.'
+            :'Backend is ready. Waiting for Renius to authorize the corporation read scopes.';
     }
     if(auth){
-      auth.classList.toggle('hidden',!status.canAuthorize||status.connected);
+      const showAuth=Boolean(status.canAuthorize&&(!status.connected||status.authorizationUpgradeRequired));
+      auth.classList.toggle('hidden',!showAuth);
       auth.disabled=!status.authorizeUrl;
       auth.dataset.authorizeUrl=status.authorizeUrl||'';
+      auth.textContent=status.authorizationUpgradeRequired?'UPDATE RENIUS CEO ESI':'AUTHORIZE RENIUS CEO ESI';
     }
     const badge=$('ceoConnectionBadge');
     if(badge){
-      badge.textContent=status.connected?'● CEO ESI CONNECTED':'○ CEO ESI NOT CONNECTED';
-      badge.classList.toggle('connected',Boolean(status.connected));
+      badge.textContent=status.authorizationUpgradeRequired?'● CEO ESI UPDATE REQUIRED':status.connected?'● CEO ESI CONNECTED':'○ CEO ESI NOT CONNECTED';
+      badge.classList.toggle('connected',Boolean(status.connected&&!status.authorizationUpgradeRequired));
     }
+    const client=$('ceoOauthClient');
+    if(client)client.textContent=status.oauthClientId?'OAuth client '+status.oauthClientId:'';
     if(scopeList){
       const granted=new Set(status.grantedScopes||[]);
       scopeList.innerHTML=(status.requestedScopes||[]).map(scope=>
@@ -1814,7 +1820,7 @@
     const sourceTotal=sources.reduce((sum,row)=>sum+row.value,0);
     if($('ceoIncomePie'))$('ceoIncomePie').style.background=walletBlocked?'conic-gradient(#2a2020 0 100%)':ceoPieStyle(sources);
     if($('ceoIncomeLegend'))$('ceoIncomeLegend').innerHTML=walletBlocked
-      ?'<div class="visual-empty">ACCOUNTANT ROLE REQUIRED</div>'
+      ?'<div class="visual-empty">ESI WALLET ACCESS DENIED</div>'
       :ceoLegend(sources,sourceTotal);
     if($('ceoIncomeTotals'))$('ceoIncomeTotals').innerHTML=walletBlocked
       ?'<strong>WALLET JOURNAL ACCESS REQUIRED</strong>'
@@ -1826,9 +1832,9 @@
     const walletTotal=wallets.reduce((sum,row)=>sum+row.value,0);
     if($('ceoWalletPie'))$('ceoWalletPie').style.background=walletBlocked?'conic-gradient(#2a2020 0 100%)':ceoPieStyle(wallets);
     if($('ceoWalletLegend'))$('ceoWalletLegend').innerHTML=walletBlocked
-      ?'<div class="visual-empty">ACCOUNTANT / JUNIOR ACCOUNTANT REQUIRED</div>'
+      ?'<div class="visual-empty">ESI WALLET ACCESS DENIED</div>'
       :divisionsBlocked
-        ?'<div class="visual-empty">DIRECTOR REQUIRED FOR DIVISION NAMES</div>'
+        ?'<div class="visual-empty">ESI DIVISION ACCESS DENIED</div>'
         :ceoLegend(wallets,walletTotal);
     if($('ceoWalletTotal'))$('ceoWalletTotal').textContent=walletBlocked?'ACCESS REQUIRED':ceoMoney(data.finance?.totalBalance||0);
     if($('ceoMemberCount'))$('ceoMemberCount').textContent=Number(data.members?.count||0).toLocaleString();
@@ -1838,11 +1844,11 @@
       const assigned=data.roleHealth?.assigned||[];
       const requirements=data.roleHealth?.requirements||[];
       roleHealth.innerHTML=
-        '<div class="ceo-role-title"><strong>IN-GAME ROLE HEALTH</strong><small>'+esc(assigned.length?assigned.join(' • '):'No explicit corporation roles returned')+'</small></div>'+
+        '<div class="ceo-role-title"><strong>CEO / ESI ACCESS HEALTH</strong><small>'+esc(assigned.length?assigned.join(' • '):'Renius verified as corporation CEO')+'</small></div>'+
         '<div class="ceo-role-grid">'+requirements.map(row=>
-          '<div class="ceo-role-row '+(row.ready?'ready':'blocked')+'"><span>'+(row.ready?'✓':'!')+'</span><div><b>'+esc(row.feature)+'</b><small>'+esc((row.roles||[]).join(' / '))+'</small></div></div>'
+          '<div class="ceo-role-row '+(row.ready?'ready':'blocked')+'"><span>'+(row.ready?'✓':'!')+'</span><div><b>'+esc(row.feature)+'</b><small>'+esc((row.documentedRoles||[]).join(' / ')||'ESI access check')+'</small></div></div>'
         ).join('')+'</div>'+
-        ((!walletBlocked&&!divisionsBlocked&&!trackingBlocked)?'':'<p class="ceo-role-note">Renius is confirmed as CEO, but these ESI routes still enforce their specific in-game corporation role flags. Assign <b>Director</b> and <b>Accountant</b>, then refresh CEO data.</p>');
+        ((!walletBlocked&&!divisionsBlocked&&!trackingBlocked)?'':'<p class="ceo-role-note">Renius is already verified as CEO. Do not change his corporation roles just for JLR; the blocked rows above are ESI endpoint denials and JLR will show the exact response below.</p>');
     }
 
     const financeRows=data.members?.finance||[];
@@ -1878,13 +1884,9 @@
     const warnings=$('ceoFinanceWarnings');
     if(warnings){
       warnings.classList.toggle('hidden',!errors.length);
-      const needs=[];
-      if(walletBlocked)needs.push('wallets → Accountant or Junior Accountant');
-      if(divisionsBlocked)needs.push('divisions → Director');
-      if(trackingBlocked)needs.push('member tracking → Director');
-      const other=[...failedSections].filter(section=>section!=='wallets'&&section!=='divisions'&&section!=='membertracking'&&!section.startsWith('wallet-journal-'));
+      const uniqueMessages=[...new Set(errors.map(row=>String(row.message||'').trim()).filter(Boolean))];
       warnings.innerHTML=errors.length
-        ?'<strong>ESI ROLE CHECK</strong> '+esc(needs.join(' • ')+(other.length?(needs.length?' • ':'')+'retry: '+other.join(', '):''))
+        ?'<strong>ESI ACCESS CHECK</strong> '+esc(uniqueMessages.length?uniqueMessages.join(' • '):errors.map(row=>row.section).join(', '))
         :'';
     }
   }
@@ -1918,7 +1920,7 @@
     if(!ceoAllowed()||ceoCommandLoading)return;
     if(ceoCommandStatus&&!force){
       renderCeoCommand();
-      if(ceoCommandStatus.connected)void loadCeoFinance(false);
+      if(ceoCommandStatus.connected&&!ceoCommandStatus.authorizationUpgradeRequired)void loadCeoFinance(false);
       return;
     }
     ceoCommandLoading=true;
@@ -1930,7 +1932,7 @@
     }finally{
       ceoCommandLoading=false;
       renderCeoCommand();
-      if(ceoCommandStatus?.connected)void loadCeoFinance(force);
+      if(ceoCommandStatus?.connected&&!ceoCommandStatus?.authorizationUpgradeRequired)void loadCeoFinance(force);
     }
   }
   function syncTrackerTabAccess(){
@@ -2094,7 +2096,7 @@
         <div class="ceo-finance-foot"><span id="ceoFinanceLoading" class="hidden">Refreshing corporation ESI…</span><span id="ceoFinanceStamp"></span><button id="ceoFinanceRefresh" class="orb silver" type="button">REFRESH CEO DATA</button></div>
         <div id="ceoFinanceWarnings" class="ceo-finance-warnings hidden"></div>
         <section class="glass ceo-scope-panel">
-          <div class="brain-card-head"><strong>CEO ESI PERMISSION SET</strong><small>Dedicated Renius token • normal JLR toon permissions stay unchanged</small></div>
+          <div class="brain-card-head"><strong>CEO ESI PERMISSION SET</strong><small>Dedicated Renius token • normal JLR toon permissions stay unchanged</small></div><div id="ceoOauthClient" class="ceo-oauth-client"></div>
           <div id="ceoScopeList" class="ceo-scope-list"><div class="visual-empty">Loading requested scopes…</div></div>
         </section>
       </section>`;
