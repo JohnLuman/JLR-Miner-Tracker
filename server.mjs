@@ -1133,6 +1133,7 @@ function ceoLoyaltyBalance(characterId){
     balance:Number(row?.balance)||0,
     updatedAt:row?.updatedAt||null,
     adjustmentCount:Array.isArray(row?.adjustments)?row.adjustments.length:0,
+    history:(Array.isArray(row?.adjustments)?row.adjustments:[]).slice(-10).reverse().map(entry=>({points:Number(entry.points)||0,note:String(entry.note||''),createdAt:entry.createdAt||null,createdBy:String(entry.createdBy||'CEO Command')})),
   };
 }
 function ceoMemberFinanceRows(memberIds,names,journal,trackingRows){

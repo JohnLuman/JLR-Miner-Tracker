@@ -23,5 +23,14 @@
     });
   }
   const formatDate=value=>timestamp(value)===null?'Not reported':new Date(value).toLocaleString();
-  window.JlrCeoMembers={select,formatDate};
+  const escape=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+  function loyaltyHistory(loyalty){
+    const rows=Array.isArray(loyalty?.history)?loyalty.history:[];
+    const count=Number(loyalty?.adjustmentCount)||0;
+    return '<div class="ceo-loyalty-history"><strong>LOYALTY ADJUSTMENT HISTORY</strong><small>'+ (rows.length?'Latest '+rows.length+' of '+count+' retained adjustments. Up to 250 are retained per member.':'No recorded adjustments.')+'</small>'+rows.map(row=>{
+      const points=Number(row.points)||0;
+      return '<div class="ceo-loyalty-history-row"><b class="'+(points>=0?'positive':'negative')+'">'+(points>0?'+':'')+points.toLocaleString()+' pts</b><span>'+escape(row.note||'No reason recorded')+'</span><small>'+escape(formatDate(row.createdAt))+' • '+escape(row.createdBy||'CEO Command')+'</small></div>';
+    }).join('')+'<p>To correct points, make an opposite adjustment with a reason. Existing records remain in the history.</p></div>';
+  }
+  window.JlrCeoMembers={select,formatDate,loyaltyHistory};
 })();

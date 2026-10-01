@@ -1903,7 +1903,7 @@
           '<div><small>LOYALTY LAST UPDATED</small><b>'+esc(window.JlrCeoMembers?.formatDate(row.loyalty?.updatedAt)||'Not reported')+'</b></div>'+
           '<div><small>WALLET JOURNAL REFERENCES</small><b>'+esc(walletBlocked?'Unavailable':Number(row.journalEntries||0).toLocaleString())+'</b></div>'+
           '<div><small>CHARACTER ID</small><b>'+esc(String(row.characterId))+'</b></div>'+
-          '</div></details>';
+          '</div>'+ (window.JlrCeoMembers?.loyaltyHistory(row.loyalty)||'')+'</details>';
       }).join(''):'<div class="visual-empty">'+(financeRows.length?'No members match these filters.':failedSections.has('members')?'Corporation roster could not be loaded.':'No corporation members returned.')+'</div>';
     }
 
