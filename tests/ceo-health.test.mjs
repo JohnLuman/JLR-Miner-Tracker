@@ -26,7 +26,7 @@ const start=source.indexOf("  if(req.method==='GET'&&url.pathname==='/api/ceo/he
 const end=source.indexOf('\n  if(',start+5);
 for(const allowed of [false,true]){
   let calls=0,payload;
-  const context={req:{method:'GET'},res:{},url:new URL('https://example.test/api/ceo/health'),requireCeoViewer:()=>allowed?{user:{}}:null,ceoStatusForUser:()=>({connected:true,walletScopeGranted:false}),ceoDataHealth:args=>{calls++;return ceoDataHealth(args);},ceoFinanceCache:{data:null},ceoStructuresCache:{data:null},ceoOperationsCache:new Map([['assets',{data:good}]]),state:{ceoAdmin:{}},CEO_MOON_BASELINE:base.baseline,json:(res,status,data)=>payload={status,data}};
+  const context={req:{method:'GET'},res:{},url:new URL('https://example.test/api/ceo/health'),requireCeoViewer:()=>allowed?{user:{}}:null,ceoStatusForUser:()=>({connected:true,walletScopeGranted:false}),ceoDataHealth:args=>{calls++;return ceoDataHealth(args);},ceoFinanceCache:{data:null},ceoStructuresCache:{data:null},ceoOperationsCache:new Map([['assets',{data:good}]]),state:{ceoAdmin:{}},discordLive:{status:'not-configured',connected:false},CEO_MOON_BASELINE:base.baseline,json:(res,status,data)=>payload={status,data}};
   vm.createContext(context);await vm.runInContext('(async()=>{'+source.slice(start,end)+'})()',context);
   assert.equal(calls,allowed?1:0,'Private guard precedes cache inspection');
   if(allowed){assert.equal(payload.status,200);assert.equal(payload.data.rows.find(row=>row.id==='assets').count,0);}

@@ -3,7 +3,7 @@
   let serial=0,timer;
   const $=id=>document.getElementById(id);
   const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
-  const labels={unpulled:'NOT PULLED',permission:'PERMISSION NEEDED',disconnected:'NOT CONNECTED',loading:'PULLING',stale:'PREVIOUS RESULTS',failed:'PULL FAILED',partial:'PARTIAL RESULTS',older:'OLDER SNAPSHOT',pulled:'PULL SUCCEEDED',saved:'BASELINE SAVED',missing:'BASELINE MISSING'};
+  const labels={setup:'SETUP NEEDED',paused:'PAUSED',collecting:'COLLECTING',unpulled:'NOT PULLED',permission:'PERMISSION NEEDED',disconnected:'NOT CONNECTED',loading:'PULLING',stale:'PREVIOUS RESULTS',failed:'PULL FAILED',partial:'PARTIAL RESULTS',older:'OLDER SNAPSHOT',pulled:'PULL SUCCEEDED',saved:'BASELINE SAVED',missing:'BASELINE MISSING'};
   async function load(){
     const host=$('ceoHealthRows');if(!host)return;
     const request=++serial;

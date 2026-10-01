@@ -62,3 +62,5 @@ assert.equal(selected[0].name,'x','Order sorting uses remaining value, not unit 
 browser.fetch=async()=>{throw Error('Network unavailable');};await browser.window.JlrCeoOperations.load(true);
 assert.match(get('ceoOperationStamp').textContent,/STALE/);assert.match(get('ceoOperationWarning').textContent,/Previous results/);
 console.log('CEO operations normalization, cache/failure handling, private access, search and pagination passed.');
+const refreshed=[];browser.fetch=async url=>{refreshed.push(new URL(url,'https://example.test').searchParams.get('section'));return {ok:true,json:async()=>({available:true,records:[],summary:{},updatedAt:'2026-10-01T00:00:00Z'})};};
+await browser.window.JlrCeoOperations.refreshAll();assert.deepEqual(refreshed.sort(),['assets','contracts','jobs','orders']);

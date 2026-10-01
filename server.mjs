@@ -6,6 +6,9 @@ import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 import { decodeMoonBaseline, structureRows } from './lib/ceo-moons.mjs';
 import { CEO_OPERATION_ROUTES, operationNameIds, normalizeOperations } from './lib/ceo-operations.mjs';
+import { createDiscordActivity, discordId } from './lib/ceo-discord.mjs';
+import { createDiscordGateway } from './lib/ceo-discord-gateway.mjs';
+import { decodeFinanceBaseline } from './lib/ceo-finance-baseline.mjs';
 import { ceoDataHealth } from './lib/ceo-health.mjs';
 import { journalPage } from './lib/ceo-journal.mjs';
 import { fileURLToPath } from 'node:url';
@@ -81,6 +84,8 @@ const MARKET_SCOPES = [MARKET_STRUCTURE_SCOPE, SEARCH_STRUCTURES_SCOPE, READ_STR
 const MARKET_CHARACTER_NAME = String(process.env.MARKET_CHARACTER_NAME || 'John Leman Raholan').trim();
 const JLR_OWNER_CHARACTER_NAME = String(process.env.JLR_OWNER_CHARACTER_NAME || 'John Leman Raholan').trim();
 const CEO_CHARACTER_NAME = String(process.env.CEO_CHARACTER_NAME || 'Renius').trim();
+const CEO_FINANCE_BASELINE=decodeFinanceBaseline(process.env.CEO_FINANCE_BASELINE_GZIP_B64||'');
+console.info('CEO finance baseline',JSON.stringify({available:CEO_FINANCE_BASELINE.available,months:CEO_FINANCE_BASELINE.months.length,entries:CEO_FINANCE_BASELINE.entries}));
 const CEO_MOON_BASELINE=decodeMoonBaseline(process.env.CEO_MOON_BASELINE_GZIP_B64||'');
 console.info('CEO moon baseline',JSON.stringify({available:CEO_MOON_BASELINE.available,count:CEO_MOON_BASELINE.records.length,sourceDate:CEO_MOON_BASELINE.sourceDate||null}));
 const CEO_WALLET_SCOPE = 'esi-wallet.read_corporation_wallets.v1';
@@ -648,6 +653,7 @@ function freshState() {
       financeJournal: {},
       financeUpdatedAt: null,
       loyaltyLedger: {},
+      discord:{enabled:false,tokenEnc:null,guildId:null,botId:null,guilds:{}},
       walletLastError: null,
       walletLastCheckedAt: null,
     },
@@ -706,6 +712,8 @@ async function loadState() {
     if(!Array.isArray(parsed.ceoAdmin.scopes))parsed.ceoAdmin.scopes=[];
     if(!parsed.ceoAdmin.financeJournal||typeof parsed.ceoAdmin.financeJournal!=='object'||Array.isArray(parsed.ceoAdmin.financeJournal))parsed.ceoAdmin.financeJournal={};
     if(!parsed.ceoAdmin.loyaltyLedger||typeof parsed.ceoAdmin.loyaltyLedger!=='object'||Array.isArray(parsed.ceoAdmin.loyaltyLedger))parsed.ceoAdmin.loyaltyLedger={};
+    parsed.ceoAdmin.discord={...base.ceoAdmin.discord,...(parsed.ceoAdmin.discord||{})};
+    if(!parsed.ceoAdmin.discord.guilds||typeof parsed.ceoAdmin.discord.guilds!=='object'||Array.isArray(parsed.ceoAdmin.discord.guilds))parsed.ceoAdmin.discord.guilds={};
     parsed.ceoAdmin.walletLastError ||= null;
     parsed.ceoAdmin.walletLastCheckedAt ||= null;
     delete parsed.forge;
@@ -1064,11 +1072,10 @@ function ceoRememberFinanceJournal(rows){
   }
   const cutoff=Date.now()-400*24*60*60*1000;
   const ordered=Object.entries(store).sort((a,b)=>Date.parse(b[1]?.date||0)-Date.parse(a[1]?.date||0));
-  for(const [id,row] of ordered){
+  for(const [index,[id,row]] of ordered.entries()){
     const stamp=Date.parse(row?.date||'');
-    if((Number.isFinite(stamp)&&stamp<cutoff)||ordered.indexOf([id,row])>=50000)delete store[id];
+    if((Number.isFinite(stamp)&&stamp<cutoff)||index>=50000)delete store[id];
   }
-  if(ordered.length>50000)for(const [id] of ordered.slice(50000))delete store[id];
 }
 function ceoFinanceSummary(wallets,divisions,journal){
   const walletNames=new Map((Array.isArray(divisions?.wallet)?divisions.wallet:[]).map(row=>[Number(row.division),String(row.name||'Division '+row.division)]));
@@ -1225,7 +1232,7 @@ async function ceoFinanceSnapshot({force=false}={}){
       generatedAt:now(),
       corporationId,
       corporationName:admin.corporationName||null,
-      finance:ceoFinanceSummary(wallets,divisions,remembered),
+      finance:{...ceoFinanceSummary(wallets,divisions,remembered),imported:CEO_FINANCE_BASELINE},
       roleHealth:ceoRoleHealth(characterRoles,errors),
       walletAccess:{
         currentScope:CEO_WALLET_SCOPE,
@@ -1312,6 +1319,44 @@ async function ceoOperationsSnapshot(section,{force=false}={}){
   cache.promise=pending;return pending;
 }
 
+async function warmCeoCommand(){
+  const admin=state.ceoAdmin||{};
+  if(!admin.refreshTokenEnc||String(admin.characterName||'').toLowerCase()!==CEO_CHARACTER_NAME.toLowerCase()||CEO_SCOPES.some(scope=>!(admin.scopes||[]).includes(scope)))return;
+  const work=[['finance',()=>ceoFinanceSnapshot()],['structures',()=>ceoMoonSnapshot()],...['jobs','contracts','orders','assets'].map(section=>[section,()=>ceoOperationsSnapshot(section)])];
+  for(const [section,pull] of work){
+    try{const data=await pull();console.info('CEO initial pull',JSON.stringify({section,available:section==='finance'?!data.errors.some(row=>row.section==='members'||row.section==='membertracking'):section==='structures'?data.live.available:data.available,errors:section==='finance'?data.errors.map(row=>row.section):[]}));}
+    catch{console.warn('CEO initial pull failed',JSON.stringify({section}));}
+  }
+}
+let discordActivity=null,discordGateway=null,discordLive={status:'not-configured',connected:false,lastEventAt:null},discordConfigBusy=false;
+function startCeoDiscord(){
+  discordGateway?.stop();discordGateway=null;discordActivity?.pause();
+  const config=state.ceoAdmin.discord;
+  discordLive={status:config?.tokenEnc?'disabled':'not-configured',connected:false,lastEventAt:null};
+  if(!config?.enabled||!config.tokenEnc||!discordId(config.guildId)){discordActivity=null;return;}
+  const activity=config.guilds[config.guildId] ||= {guildId:config.guildId,days:{},links:{}};
+  discordActivity=createDiscordActivity(activity);
+  let token;try{token=decrypt(config.tokenEnc);}catch{discordLive.status='token-unreadable';return;}
+  discordGateway=createDiscordGateway({token,guildId:config.guildId,
+    onStatus:status=>{discordLive={...discordLive,...status};},
+    onPause:()=>discordActivity?.pause(),onResume:()=>discordActivity?.resume(),
+    onDispatch:(type,data)=>{
+      if(type==='READY'){discordLive.status='waiting-for-server';discordLive.connected=false;}
+      else if(type==='GUILD_CREATE'&&!data.unavailable){discordActivity.seed(data);discordLive.status='connected';discordLive.connected=true;}
+      else if(type==='GUILD_UPDATE')discordActivity.updateGuild(data);
+      else if(type==='GUILD_DELETE'){discordActivity.pause();discordLive.status=data.unavailable?'server-unavailable':'bot-removed';discordLive.connected=false;}
+      else if(type==='MESSAGE_CREATE')discordActivity.message(data);
+      else if(type==='VOICE_STATE_UPDATE')discordActivity.voice(data);
+      discordLive.lastEventAt=now();
+    }});
+  discordGateway.start();
+}
+function ceoDiscordSnapshot(options={}){
+  const config=state.ceoAdmin.discord||{},activity=config.guilds?.[config.guildId];
+  const collector=discordActivity||(activity?createDiscordActivity(activity):null);
+  const counts=collector?.snapshot(options)||{days:30,periodStart:null,periodEnd:null,startedAt:null,totals:{users:0,messages:0,voiceSeconds:0},records:[],voicePresent:0};
+  return {...counts,configured:Boolean(config.tokenEnc),enabled:Boolean(config.enabled),guildId:config.guildId||null,guildName:activity?.guildName||null,botId:config.botId||null,inviteUrl:config.botId?'https://discord.com/oauth2/authorize?client_id='+config.botId+'&scope=bot&permissions=1024':null,connection:{...discordLive},note:'Counts begin when the bot connects. Voice figures measure channel presence, including muted time, not speech. AFK channels and known bots are excluded. Only channels visible to the bot are counted. UTC daily counts are retained for 90 days. Collection gaps are not estimated.'};
+}
 function sameOrigin(req) {
   const origin = req.headers.origin; if (!origin) return true;
   try { return new URL(origin).origin === new URL(requestBaseUrl(req)).origin; } catch { return false; }
@@ -9890,10 +9935,53 @@ async function routeApi(req,res,url) {
     if(!Object.hasOwn(CEO_OPERATION_ROUTES,section))return json(res,400,{error:'INVALID_CEO_OPERATIONS_SECTION'});
     return json(res,200,await ceoOperationsSnapshot(section,{force:url.searchParams.get('force')==='1'}));
   }
+  if(req.method==='GET'&&url.pathname==='/api/ceo/discord'){
+    if(!requireCeoViewer(req,res))return;
+    return json(res,200,ceoDiscordSnapshot({days:url.searchParams.get('days'),query:url.searchParams.get('query')||'',sort:url.searchParams.get('sort')||'messages'}));
+  }
+  if(req.method==='POST'&&url.pathname==='/api/ceo/discord/config'){
+    if(!requireCeoViewer(req,res))return;
+    if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
+    if(discordConfigBusy)return json(res,409,{error:'DISCORD_SETUP_BUSY',message:'A Discord connection check is already running.'});
+    const body=await readBody(req,4000),existing=state.ceoAdmin.discord;
+    if(body.enabled===false){existing.enabled=false;startCeoDiscord();await save();return json(res,200,ceoDiscordSnapshot());}
+    const guildId=String(body.guildId||existing.guildId||'').trim();
+    let token=String(body.token||'').trim().replace(/^Bot\s+/i,'');
+    if(!token&&existing.tokenEnc){try{token=decrypt(existing.tokenEnc);}catch{}}
+    if(!discordId(guildId)||token.length<20||token.length>300||/\s/.test(token))return json(res,400,{error:'DISCORD_SETUP_INVALID',message:'Enter a Discord server ID and bot token. Keep the token in this private setup form.'});
+    discordConfigBusy=true;
+    try{
+      const options={headers:{Authorization:'Bot '+token},signal:AbortSignal.timeout(15000)};
+      const botResponse=await fetch('https://discord.com/api/v10/users/@me',options);
+      if(!botResponse.ok)return json(res,400,{error:'DISCORD_TOKEN_CHECK_FAILED',message:'Discord could not validate that bot token. Existing setup was preserved.'});
+      const bot=await botResponse.json();if(!bot.bot||!discordId(bot.id))return json(res,400,{error:'DISCORD_BOT_REQUIRED',message:'Use a dedicated bot token from the Discord Developer Portal.'});
+      const guildResponse=await fetch('https://discord.com/api/v10/guilds/'+guildId,options);
+      if(!guildResponse.ok)return json(res,409,{error:'DISCORD_BOT_NOT_IN_SERVER',message:'Install this bot in the selected server with View Channels permission, then retry. Existing setup was preserved.',inviteUrl:'https://discord.com/oauth2/authorize?client_id='+bot.id+'&scope=bot&permissions=1024'});
+      const guild=await guildResponse.json();
+      discordGateway?.stop();discordActivity?.pause();
+      state.ceoAdmin.discord={...existing,enabled:true,tokenEnc:encrypt(token),guildId,botId:bot.id};
+      state.ceoAdmin.discord.guilds[guildId] ||= {guildId,guildName:String(guild.name||'').slice(0,100),days:{},links:{}};
+      startCeoDiscord();await save();return json(res,200,ceoDiscordSnapshot());
+    }catch{return json(res,502,{error:'DISCORD_CHECK_UNAVAILABLE',message:'Discord connection check failed. Existing setup was preserved; retry shortly.'});}
+    finally{discordConfigBusy=false;}
+  }
+  if(req.method==='POST'&&url.pathname==='/api/ceo/discord/link'){
+    if(!requireCeoViewer(req,res))return;
+    if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
+    const body=await readBody(req,2000),config=state.ceoAdmin.discord,userId=String(body.userId||'');
+    const activity=config.guilds?.[config.guildId];
+    if(!activity||!discordId(userId))return json(res,400,{error:'DISCORD_USER_REQUIRED',message:'Select an observed Discord account.'});
+    if(!Object.values(activity.days||{}).some(day=>Object.hasOwn(day,userId)))return json(res,404,{error:'DISCORD_USER_NOT_OBSERVED'});
+    activity.links ||= {};
+    if(!body.characterId){delete activity.links[userId];await save();return json(res,200,{ok:true});}
+    const member=(ceoFinanceCache.data?.members?.roster||[]).find(row=>String(row.characterId)===String(body.characterId));
+    if(!member)return json(res,409,{error:'CURRENT_MEMBER_REQUIRED',message:'Refresh CEO data and select a member from the current corporation roster.'});
+    activity.links[userId]={characterId:member.characterId,characterName:member.name,updatedAt:now()};await save();return json(res,200,{ok:true});
+  }
   if(req.method==='GET'&&url.pathname==='/api/ceo/health'){
     const viewer=requireCeoViewer(req,res);if(!viewer)return;
     const status=ceoStatusForUser(viewer.user);
-    return json(res,200,ceoDataHealth({connected:status.connected,upgradeRequired:status.authorizationUpgradeRequired,walletGranted:status.walletScopeGranted,finance:ceoFinanceCache.data,walletPull:state.ceoAdmin?.walletJournalPull||null,structures:ceoStructuresCache.data?.live||null,operations:Object.fromEntries([...ceoOperationsCache].map(([key,cache])=>[key,cache.data])),pending:{finance:Boolean(ceoFinanceCache.promise),structures:Boolean(ceoStructuresCache.promise),...Object.fromEntries([...ceoOperationsCache].map(([key,cache])=>[key,Boolean(cache.promise)]))},baseline:CEO_MOON_BASELINE}));
+    return json(res,200,ceoDataHealth({connected:status.connected,upgradeRequired:status.authorizationUpgradeRequired,walletGranted:status.walletScopeGranted,finance:ceoFinanceCache.data,walletPull:state.ceoAdmin?.walletJournalPull||null,structures:ceoStructuresCache.data?.live||null,operations:Object.fromEntries([...ceoOperationsCache].map(([key,cache])=>[key,cache.data])),pending:{finance:Boolean(ceoFinanceCache.promise),structures:Boolean(ceoStructuresCache.promise),...Object.fromEntries([...ceoOperationsCache].map(([key,cache])=>[key,Boolean(cache.promise)]))},baseline:CEO_MOON_BASELINE,discord:{configured:Boolean(state.ceoAdmin.discord?.tokenEnc),enabled:Boolean(state.ceoAdmin.discord?.enabled),connected:discordLive.connected,status:discordLive.status}}));
   }
   if(req.method==='GET'&&url.pathname==='/api/ceo/journal'){
     if(!requireCeoViewer(req,res))return;
@@ -11034,3 +11122,9 @@ setInterval(()=>{if(doctrineRequested)refreshDoctrineMarket().catch(console.erro
 setTimeout(()=>refreshMarketPrices().catch(console.error),2_000).unref();
 setInterval(()=>refreshFieldDistances().catch(console.error),24*60*60_000).unref();
 setTimeout(()=>refreshFieldDistances().catch(console.error),1_000).unref();
+
+startCeoDiscord();
+setInterval(()=>{discordActivity?.flush();if(discordActivity?.consumeDirty())void save();},30_000).unref();
+process.once('SIGTERM',()=>{discordGateway?.stop();discordActivity?.pause();void save().finally(()=>process.exit(0));setTimeout(()=>process.exit(0),5000).unref();});
+
+setTimeout(()=>void warmCeoCommand(),8000).unref();

@@ -53,8 +53,8 @@
     const resultCount=$('ceoOperationCount');if(resultCount)resultCount.textContent=!current?'':!current.available&&!current.stale?'Data unavailable':matches.length?'Showing '+(page*pageSize+1)+'–'+(page*pageSize+visible.length)+' of '+matches.length+' matching records'+(current.truncated?' • partial':''):'0 matching records';
     const prev=$('ceoOperationPrev'),next=$('ceoOperationNext');if(prev)prev.disabled=page===0;if(next)next.disabled=page>=pages-1;
   }
-  async function load(force=false){
-    const requested=section;if(busy.has(requested))return;
+  async function load(force=false,requested=section){
+    if(busy.has(requested))return;
     if(data.has(requested)&&!force){render();return;}
     busy.add(requested);errors.delete(requested);render();window.JlrCeoHealth?.schedule();
     try{const response=await fetch('/api/ceo/operations?section='+requested+(force?'&force=1':''),{credentials:'same-origin',cache:'no-store'});if(!response.ok)throw new Error(response.status===401?'Log in to view CEO operations.':response.status===403?'CEO operations are restricted.':'Operations request failed ('+response.status+').');data.set(requested,await response.json());}
@@ -70,5 +70,5 @@
   });
   document.addEventListener('input',event=>{if(event.target?.id==='ceoOperationSearch'){page=0;render();}});
   document.addEventListener('change',event=>{if(['ceoOperationFilter','ceoOperationSort'].includes(event.target?.id)){page=0;render();}});
-  window.JlrCeoOperations={load,render,select};
+  window.JlrCeoOperations={load,render,select,refreshAll:()=>Promise.all(['assets','jobs','contracts','orders'].map(name=>load(true,name)))};
 })();
