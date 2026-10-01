@@ -3,7 +3,7 @@
   "version": "2.10.16",
   "private": true,
   "type": "module",
-  "description": "Shared EVE Online mining tracker with website SSO, fleet ESI actuals, T3 field timers, and compact/expanded UI.",
+  "description": "EVE Online operations hub with field tracking, fleet performance, appraisals, threat intel, and corporation tools.",
   "scripts": {
     "start": "node server.mjs",
     "test:visual": "node tests/theme-visual.mjs",

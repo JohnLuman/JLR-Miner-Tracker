@@ -1247,7 +1247,7 @@
           $('scoutGlobalAlert')?.classList.add('hidden');
           const scoutTab=document.querySelector('.app-tab[data-tab="brain"]');
           if(scoutTab)adamMarkCurrent();
-          document.title='JLR Miner Tracker';
+          document.title='JLR Tracker';
         }
         if(snapshot.needsScan){
           if(id===String(scanCharacterId)&&!scanBusy)setScanStatus(snapshot.system+': SCAN UPDATE NEEDED','warning');
@@ -6563,7 +6563,7 @@
           $('brainScanPrompt')?.classList.add('hidden');
           $('scoutGlobalAlert')?.classList.add('hidden');
           adamMarkCurrent();
-          document.title='JLR Miner Tracker';
+          document.title='JLR Tracker';
         }
       }
       if(preview?.tracked&&preview?.scan?.valid){

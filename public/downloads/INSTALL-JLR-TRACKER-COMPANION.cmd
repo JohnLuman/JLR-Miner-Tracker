@@ -23,6 +23,6 @@ echo Starting JLR Tracker Companion...
 start "" powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%JLR_PS1%"
 echo.
 echo Installed. Look for JLR Tracker Companion in the Windows system tray.
-echo It will ask for the one-time pairing code from JLR Miner Tracker ^> BRAIN.
+echo It will ask for the one-time pairing code from JLR Tracker ^> BRAIN.
 timeout /t 5 >nul
 exit /b 0
