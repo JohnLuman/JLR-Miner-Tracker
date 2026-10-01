@@ -1,0 +1,151 @@
+/* Connected Rail: shared controls for JLR, using each theme's existing palette. */
+body.jlr-rail-controls {
+  --jlr-rail-accent: var(--theme-accent-hi, #c49aff);
+  --jlr-rail-panel: var(--theme-panel-lo, #11131d);
+  --jlr-rail-text: var(--text, #edf0f8);
+  --jlr-rail-edge: var(--line, #343747);
+}
+html body.jlr-rail-controls.jlr-rail-controls button:not(:where(.target-card,.system-node,.brain-decision-row,.scout-target-row,.favorite-toggle,.adam-quick-close,.brain-close,.jlr-appraisal-copy-value)) {
+  --jlr-control-accent: var(--jlr-rail-accent);
+  border: 1px solid var(--jlr-rail-edge);
+  border-left: 3px solid color-mix(in srgb, var(--jlr-control-accent) 55%, var(--jlr-rail-edge));
+  border-radius: 0 5px 5px 0;
+  background: color-mix(in srgb, var(--jlr-control-accent) 6%, var(--jlr-rail-panel));
+  color: var(--jlr-rail-text);
+  box-shadow: inset 0 -2px color-mix(in srgb, var(--jlr-control-accent) 12%, var(--jlr-rail-panel));
+  clip-path: none;
+  text-shadow: none;
+  min-height: 32px;
+  font-size: 12px;
+  font-weight: 650;
+  transition: background .14s ease, border-color .14s ease, box-shadow .14s ease;
+}
+html body.jlr-rail-controls.jlr-rail-controls button.orb::before { display: none; }
+html body.jlr-rail-controls.jlr-rail-controls button:is(.green) { --jlr-control-accent: #78e8a0; }
+html body.jlr-rail-controls.jlr-rail-controls button:is(.yellow) { --jlr-control-accent: #ffe185; }
+html body.jlr-rail-controls.jlr-rail-controls button:is(.red) { --jlr-control-accent: #ff8d94; }
+html body.jlr-rail-controls.jlr-rail-controls button:is(.cherry) { --jlr-control-accent: #ff9abf; }
+html body.jlr-rail-controls.jlr-rail-controls button:is(.ice-filter) { --jlr-control-accent: #92d7ff; }
+html body.jlr-rail-controls.jlr-rail-controls button:is(.a0-filter) { --jlr-control-accent: #c89cff; }
+html body.jlr-rail-controls.jlr-rail-controls button:is(.blue,.purple,#pasteScan,#gasPasteScan,#scanPasteCheck,.adam-send,.doctrine-multibuy-copy) {
+  background: color-mix(in srgb, var(--jlr-control-accent) 24%, var(--jlr-rail-panel));
+  border-left-color: var(--jlr-control-accent);
+  box-shadow: inset 0 -2px color-mix(in srgb, var(--jlr-control-accent) 40%, var(--jlr-rail-panel));
+}
+html body.jlr-rail-controls.jlr-rail-controls button:is(.red,.doctrine-shop-remove,.doctrine-shop-clear,#fleetClearMiners,#threatClear,#clearScan) {
+  --jlr-control-accent: #ff8d94;
+  color: #ffb8bc;
+}
+html body.jlr-rail-controls.jlr-rail-controls button:is(.active,[aria-pressed="true"],[aria-selected="true"]) {
+  border-left-color: var(--jlr-control-accent);
+  border-top-color: color-mix(in srgb, var(--jlr-control-accent) 60%, var(--jlr-rail-edge));
+  background: color-mix(in srgb, var(--jlr-control-accent) 22%, var(--jlr-rail-panel));
+  box-shadow: inset 0 -2px var(--jlr-control-accent);
+  outline: none;
+}
+html body.jlr-rail-controls.jlr-rail-controls button:not(:where(.target-card,.system-node,.brain-decision-row,.scout-target-row,.favorite-toggle,.adam-quick-close,.brain-close,.jlr-appraisal-copy-value)):hover:not(:disabled) {
+  background: color-mix(in srgb, var(--jlr-control-accent) 28%, var(--jlr-rail-panel));
+  border-left-color: var(--jlr-control-accent);
+  color: var(--jlr-rail-text);
+  filter: none;
+  transform: none;
+}
+html body.jlr-rail-controls.jlr-rail-controls button:focus-visible,
+html body.jlr-rail-controls.jlr-rail-controls .nav-menu-trigger:focus-visible {
+  outline: 2px solid var(--jlr-rail-accent);
+  outline-offset: 3px;
+}
+html body.jlr-rail-controls.jlr-rail-controls button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+/* Existing four-group navigation, connected by one continuous accent rail. */
+html body.jlr-rail-controls.jlr-rail-controls .app .nav-dropdown-bar {
+  gap: 3px;
+  padding: 6px 6px 9px;
+  border-radius: 4px;
+  background: var(--jlr-rail-panel);
+  border: 1px solid var(--jlr-rail-edge);
+  border-bottom: 3px solid color-mix(in srgb, var(--jlr-rail-accent) 45%, var(--jlr-rail-edge));
+  box-shadow: none;
+}
+html body.jlr-rail-controls.jlr-rail-controls .nav-menu-trigger {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  clip-path: none;
+  padding-left: 15px;
+  min-height: 40px;
+  color: var(--jlr-rail-text);
+}
+html body.jlr-rail-controls.jlr-rail-controls .nav-menu-trigger::before {
+  left: 3px;
+  top: 11px;
+  bottom: 11px;
+  height: auto;
+  width: 3px;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--jlr-rail-accent) 35%, var(--jlr-rail-edge));
+  box-shadow: none;
+}
+html body.jlr-rail-controls.jlr-rail-controls .nav-menu.active > .nav-menu-trigger,
+html body.jlr-rail-controls.jlr-rail-controls .nav-menu[open] > .nav-menu-trigger {
+  border: 0;
+  background: linear-gradient(90deg,color-mix(in srgb,var(--jlr-rail-accent) 22%,var(--jlr-rail-panel)),var(--jlr-rail-panel));
+}
+html body.jlr-rail-controls.jlr-rail-controls .nav-menu.active > .nav-menu-trigger::before,
+html body.jlr-rail-controls.jlr-rail-controls .nav-menu[open] > .nav-menu-trigger::before {
+  background: var(--jlr-rail-accent);
+}
+html body.jlr-rail-controls.jlr-rail-controls .nav-menu-trigger:hover { transform: none; filter: brightness(1.12); }
+html body.jlr-rail-controls.jlr-rail-controls .nav-menu-copy > strong { font-size: 11px; }
+html body.jlr-rail-controls.jlr-rail-controls .nav-menu-current { font-size: 10px; color: var(--muted,#abb0c0); }
+html body.jlr-rail-controls.jlr-rail-controls .nav-menu-current:empty { display: none; }
+html body.jlr-rail-controls.jlr-rail-controls .nav-menu.active .nav-menu-current { color: var(--jlr-rail-accent); }
+html body.jlr-rail-controls.jlr-rail-controls .nav-menu-chevron {
+  border: 0;
+  border-bottom: 2px solid var(--jlr-rail-accent);
+  border-radius: 0;
+  background: transparent;
+  color: var(--jlr-rail-text);
+}
+html body.jlr-rail-controls.jlr-rail-controls .nav-menu-panel {
+  border-radius: 0 0 7px 7px;
+  border-top: 3px solid var(--jlr-rail-accent);
+  border-left: 3px solid color-mix(in srgb,var(--jlr-rail-accent) 55%,var(--jlr-rail-edge));
+  background: var(--jlr-rail-panel);
+  clip-path: none;
+}
+html body.jlr-rail-controls.jlr-rail-controls .nav-menu-panel .app-tab {
+  border-radius: 0;
+  min-height: 54px;
+  padding: 9px 12px 23px;
+  font-size: 12px;
+  background: transparent;
+  border-left-color: transparent;
+  border-bottom: 1px solid var(--jlr-rail-edge);
+  box-shadow: none;
+}
+html body.jlr-rail-controls.jlr-rail-controls .nav-menu-panel .app-tab::after {
+  font-size: 11px;
+  color: var(--muted,#abb0c0);
+  letter-spacing: 0;
+  bottom: 8px;
+  left: 12px;
+}
+html body.jlr-rail-controls.jlr-rail-controls .nav-menu-panel .app-tab.active {
+  border-left-color: var(--jlr-rail-accent);
+  background: color-mix(in srgb,var(--jlr-rail-accent) 20%,var(--jlr-rail-panel));
+}
+@media(max-width:760px) {
+  html body.jlr-rail-controls.jlr-rail-controls .nav-menu-trigger { min-height: 44px; }
+  html body.jlr-rail-controls.jlr-rail-controls .nav-menu-copy { flex-direction: column; align-items: flex-start; gap: 5px; }
+}
+@media(pointer:coarse) {
+  html body.jlr-rail-controls.jlr-rail-controls button:not(:where(.favorite-toggle,.adam-quick-close,.brain-close)) { min-height: 44px; }
+}
+@media(prefers-reduced-motion:reduce) {
+  html body.jlr-rail-controls.jlr-rail-controls button,html body.jlr-rail-controls.jlr-rail-controls .nav-menu-trigger { transition: none; }
+}

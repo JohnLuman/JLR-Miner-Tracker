@@ -9,12 +9,19 @@ const root=fileURLToPath(new URL('..',import.meta.url));
 const output=resolve(process.env.THEME_SNAPSHOT_DIR||join(root,'artifacts/theme-screenshots'));
 const styles=await readFile(join(root,'public/styles.css'),'utf8');
 const themes=await readFile(join(root,'public/themes.css'),'utf8');
+const rail=await readFile(join(root,'public/connected-rail.css'),'utf8');
 const names=['void','citadel','industrial','serpentis','blood','angel','edencom','aurora','neon','glacier','solar'];
 const widths=[{name:'desktop',width:1440,height:900},{name:'mobile',width:390,height:844}];
-const markup=`<!doctype html><html data-theme="void"><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body>
+const markup=`<!doctype html><html data-theme="void"><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body class="jlr-rail-controls">
   <main class="app compact">
     <header class="topbar glass"><div class="brand-line"><span class="brand-mark">JLR</span><h1>TRACKER</h1></div><span class="status-pill">● DATA LIVE</span></header>
-    <nav class="nav-dropdown-bar"><button class="nav-menu-trigger app-tab active">FIELDS</button><button class="nav-menu-trigger app-tab">APPRAISAL</button><button class="nav-menu-trigger app-tab">ADAM</button></nav>
+    <nav class="app-tabs information-tabs nav-dropdown-bar">
+      <details class="nav-menu active"><summary class="nav-menu-trigger"><span class="nav-menu-copy"><strong>OPS</strong><small class="nav-menu-current">FIELDS</small></span><span class="nav-menu-chevron">⌄</span></summary><div class="nav-menu-panel"><div class="nav-menu-heading"><span>OPERATIONS</span></div><button class="app-tab active" data-nav-desc="T3, ice and A0 field control">FIELDS</button><button class="app-tab" data-nav-desc="Miner fits, boosts and fleet output">FLEET</button></div></details>
+      <details class="nav-menu"><summary class="nav-menu-trigger"><span class="nav-menu-copy"><strong>RESOURCES</strong><small class="nav-menu-current"></small></span><span class="nav-menu-chevron">⌄</span></summary><div class="nav-menu-panel"><div class="nav-menu-heading"><span>RESOURCES</span></div><button class="app-tab" data-nav-desc="Paste items, price them and refine">APPRAISAL</button></div></details>
+      <details class="nav-menu"><summary class="nav-menu-trigger"><span class="nav-menu-copy"><strong>INTEL</strong><small class="nav-menu-current"></small></span><span class="nav-menu-chevron">⌄</span></summary></details>
+      <details class="nav-menu"><summary class="nav-menu-trigger"><span class="nav-menu-copy"><strong>SYSTEM</strong><small class="nav-menu-current"></small></span><span class="nav-menu-chevron">⌄</span></summary></details>
+    </nav>
+    <div class="top-actions"><button class="orb blue">PASTE SCAN</button><button class="orb silver">COPY LINK</button><button class="orb red">CLEAR TEXT</button><button class="board-tool active" aria-pressed="true">SOUND ON</button><button class="orb silver" disabled>SYNCING</button></div>
     <section class="kpis information-kpis operations-summary-bar"><article class="kpi summary-cell"><span>APP PAYOUT</span><strong>4.2B ISK</strong><small>Today</small></article><article class="kpi summary-cell"><span>FLEET RATE</span><strong>2.8M m³/hr</strong><small>Measured</small></article><article class="kpi summary-cell"><span>SCAN DUE</span><strong>3 fields</strong><small>Attention</small></article></section>
     <section class="glass board-panel"><div class="section-title"><strong>FIELD TRACKER</strong></div><div class="field-board node-grid"><article class="system-node" data-status="ready"><span class="sys-name">K-8SQS</span><span class="sys-ore">Arkonor</span><span class="sys-state">READY</span></article><article class="system-node" data-status="picked"><span class="sys-name">Y-2ANO</span><span class="sys-ore">Bistot</span><span class="sys-state">PICKED</span></article><article class="system-node" data-status="cleared"><span class="sys-name">PNQY-Y</span><span class="sys-ore">Crokite</span><span class="sys-state">CLEARED</span></article></div></section>
     <section class="glass hit-panel"><div class="section-title"><strong>NEXT TARGETS</strong></div><div class="hit-order"><button class="target-card green"><span class="target-rank"><strong>1</strong></span><span class="target-main"><strong>K-8SQS</strong><small>Ready to mine</small></span></button><button class="target-card yellow"><span class="target-rank"><strong>2</strong></span><span class="target-main"><strong>Y-2ANO</strong><small>Scan recommended</small></span></button></div></section>
@@ -32,6 +39,7 @@ try{
     await page.setContent(markup);
     await page.addStyleTag({content:styles});
     await page.addStyleTag({content:themes});
+    await page.addStyleTag({content:rail});
     for(const theme of names){
       await page.evaluate(name=>{document.documentElement.dataset.theme=name},theme);
       const values=await page.evaluate(()=>{
@@ -49,10 +57,19 @@ try{
           targetBlur:css('.target-card').backdropFilter,
           beforeMotion:pseudo('body','::before').animationName,
           afterMotion:pseudo('body','::after').animationName,
+          buttonRadius:css('.orb.blue').borderTopLeftRadius,
+          buttonHeight:parseFloat(css('.orb.blue').minHeight),
+          navRadius:css('.nav-menu-trigger').borderRadius,
+          buttonAccent:css('.orb.blue').borderLeftColor,
+          warningAccent:css('.orb.red').borderLeftColor,
         };
       });
       assert.ok(values.accent,theme+' missing accent');
       assert.ok(values.overflow<=1,theme+' overflows '+size.name+' by '+values.overflow+'px');
+      assert.equal(values.buttonRadius,'0px',theme+' primary action loses Connected Rail shape');
+      assert.equal(values.navRadius,'0px',theme+' navigation loses Connected Rail shape');
+      assert.ok(values.buttonHeight>=32,theme+' controls are too small');
+      assert.notEqual(values.buttonAccent,values.warningAccent,theme+' warning actions need a distinct rail');
       assert.notEqual(values.ready,values.picked,theme+' ready and picked look alike');
       assert.notEqual(values.picked,values.cleared,theme+' picked and cleared look alike');
       assert.equal(values.beforeMotion,'none',theme+' animates a full screen layer');
@@ -71,6 +88,12 @@ try{
       hashes.add(hash);
       if(size.name==='desktop')accents.add(values.accent);
       await writeFile(join(output,theme+'-'+size.name+'.png'),png);
+      await page.locator('.nav-menu').first().evaluate(el=>{el.open=true});
+      const dropdown=await page.locator('.nav-menu-panel').first().boundingBox();
+      assert.ok(dropdown&&dropdown.x>=0&&dropdown.x+dropdown.width<=size.width+1,theme+' dropdown escapes '+size.name);
+      await page.locator('.nav-menu-panel .app-tab').nth(1).click();
+      await page.screenshot({path:join(output,theme+'-'+size.name+'-menu.png'),animations:'disabled',fullPage:true});
+      await page.locator('.nav-menu').first().evaluate(el=>{el.open=false});
     }
     await page.close();
   }
