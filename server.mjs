@@ -48,7 +48,7 @@ const PUBLIC_URL = String(process.env.PUBLIC_URL || '').trim().replace(/\/$/, ''
 const JLR_SHARE_ORIGIN = String(process.env.JLR_SHARE_ORIGIN || '').trim().replace(/\/$/, '');
 const EVE_CLIENT_ID = String(process.env.EVE_CLIENT_ID || '').trim();
 const EVE_CLIENT_SECRET = String(process.env.EVE_CLIENT_SECRET || '').trim();
-const ESI_USER_AGENT = String(process.env.ESI_USER_AGENT || 'JLR-Miner-Tracker/2.10.15').trim();
+const ESI_USER_AGENT = String(process.env.ESI_USER_AGENT || 'JLR-Miner-Tracker/2.10.16').trim();
 const ESI_COMPAT_DATE = String(process.env.ESI_COMPATIBILITY_DATE || '2026-09-16').trim();
 const TRACKER_SUPPORT_SHARED_SECRET = String(process.env.TRACKER_SUPPORT_SHARED_SECRET || '').trim();
 const trackerSupport = createTrackerSupportClient({
@@ -84,7 +84,6 @@ const CEO_SCOPES = Object.freeze([
   'esi-corporations.read_corporation_membership.v1',
   'esi-corporations.track_members.v1',
   'esi-industry.read_corporation_mining.v1',
-  CEO_WALLET_SCOPE,
   'esi-corporations.read_divisions.v1',
   'esi-assets.read_corporation_assets.v1',
   'esi-corporations.read_structures.v1',
@@ -643,6 +642,8 @@ function freshState() {
       financeJournal: {},
       financeUpdatedAt: null,
       loyaltyLedger: {},
+      walletLastError: null,
+      walletLastCheckedAt: null,
     },
     trackerIntel: {
       regionCatalog: [],
@@ -699,6 +700,8 @@ async function loadState() {
     if(!Array.isArray(parsed.ceoAdmin.scopes))parsed.ceoAdmin.scopes=[];
     if(!parsed.ceoAdmin.financeJournal||typeof parsed.ceoAdmin.financeJournal!=='object'||Array.isArray(parsed.ceoAdmin.financeJournal))parsed.ceoAdmin.financeJournal={};
     if(!parsed.ceoAdmin.loyaltyLedger||typeof parsed.ceoAdmin.loyaltyLedger!=='object'||Array.isArray(parsed.ceoAdmin.loyaltyLedger))parsed.ceoAdmin.loyaltyLedger={};
+    parsed.ceoAdmin.walletLastError ||= null;
+    parsed.ceoAdmin.walletLastCheckedAt ||= null;
     delete parsed.forge;
     parsed.trackerIntel = { ...base.trackerIntel, ...(parsed.trackerIntel || {}) };
     if(!Array.isArray(parsed.trackerIntel.regionCatalog))parsed.trackerIntel.regionCatalog=[];
@@ -943,16 +946,20 @@ function ceoStatusForUser(user){
   const granted=Array.isArray(admin.scopes)?admin.scopes:[];
   const missingScopes=CEO_SCOPES.filter(scope=>!granted.includes(scope));
   const connected=Boolean(admin.refreshTokenEnc&&admin.characterId&&String(admin.characterName||'').toLowerCase()===CEO_CHARACTER_NAME.toLowerCase());
-  const walletScopeUpgradeRequired=granted.includes(CEO_LEGACY_WALLET_SCOPE)&&!granted.includes(CEO_WALLET_SCOPE);
   const authorizationUpgradeRequired=connected&&missingScopes.length>0;
+  const walletScopeGranted=granted.includes(CEO_WALLET_SCOPE);
+  const legacyWalletScopeGranted=granted.includes(CEO_LEGACY_WALLET_SCOPE);
   return {
     ...access,
     backendReady:true,
     connected,
     authorizationUpgradeRequired,
-    walletScopeUpgradeRequired,
     walletScope:CEO_WALLET_SCOPE,
     legacyWalletScope:CEO_LEGACY_WALLET_SCOPE,
+    walletScopeGranted,
+    legacyWalletScopeGranted,
+    walletLastError:admin.walletLastError||null,
+    walletLastCheckedAt:admin.walletLastCheckedAt||null,
     oauthClientId:EVE_CLIENT_ID,
     authorizedAt:admin.authorizedAt||null,
     authorizedCharacterId:admin.characterId||null,
@@ -960,6 +967,7 @@ function ceoStatusForUser(user){
     corporationId:admin.corporationId||null,
     corporationName:admin.corporationName||null,
     requestedScopes:[...CEO_SCOPES],
+    optionalScopes:[CEO_WALLET_SCOPE],
     grantedScopes:granted,
     missingScopes,
     authorizeUrl:access.canAuthorize?'/auth/eve/ceo/start?character='+encodeURIComponent(String(access.authorizeCharacterId||'')):null,
@@ -990,11 +998,8 @@ async function ceoAccessToken(){
   if(String(identity.characterId)!==String(admin.characterId))throw new Error('CEO refresh token changed character');
   if(String(identity.characterName||'').trim().toLowerCase()!==CEO_CHARACTER_NAME.toLowerCase())throw new Error('CEO token is not Renius');
   for(const scope of CEO_SCOPES)if(!identity.scopes.includes(scope)){
-    const legacyWalletOnly=scope===CEO_WALLET_SCOPE&&identity.scopes.includes(CEO_LEGACY_WALLET_SCOPE);
-    const error=new Error(legacyWalletOnly
-      ?'CEO ESI needs reauthorization with '+CEO_WALLET_SCOPE+'. The legacy '+CEO_LEGACY_WALLET_SCOPE+' token cannot read current corporation wallet endpoints.'
-      :'CEO scope missing: '+scope);
-    error.code=legacyWalletOnly?'CEO_SCOPE_UPGRADE_REQUIRED':'CEO_SCOPE_MISSING';
+    const error=new Error('CEO scope missing: '+scope);
+    error.code='CEO_SCOPE_MISSING';
     throw error;
   }
   if(tokens.refresh_token)admin.refreshTokenEnc=encrypt(tokens.refresh_token);
@@ -1171,10 +1176,14 @@ async function ceoFinanceSnapshot({force=false}={}){
       ceoTry('membertracking',async()=>(await esiGet(base+'/membertracking/?datasource=tranquility',access)).data,errors,[]),
       ceoTry('roles',async()=>(await esiGet('https://esi.evetech.net/latest/characters/'+admin.characterId+'/roles/?datasource=tranquility',access)).data,errors,{}),
     ]);
-    const journalParts=await Promise.all(Array.from({length:7},(_,index)=>index+1).map(async division=>{
+    const walletListError=errors.find(row=>row.section==='wallets')||null;
+    const journalParts=walletListError?[]:await Promise.all(Array.from({length:7},(_,index)=>index+1).map(async division=>{
       const result=await ceoTry('wallet-journal-'+division,()=>ceoPagedGet(base+'/wallets/'+division+'/journal/?datasource=tranquility',access,{maxPages:20}),errors,{rows:[],truncated:false});
       return(result.rows||[]).map(row=>({...row,_division:division}));
     }));
+    const walletErrors=errors.filter(row=>row.section==='wallets'||String(row.section||'').startsWith('wallet-journal-'));
+    state.ceoAdmin.walletLastCheckedAt=now();
+    state.ceoAdmin.walletLastError=walletErrors.length?walletErrors.map(row=>row.message).filter(Boolean).join(' | ').slice(0,600):null;
     const latestJournal=journalParts.flat();
     ceoRememberFinanceJournal(latestJournal);
     state.ceoAdmin.financeUpdatedAt=now();
@@ -1200,6 +1209,14 @@ async function ceoFinanceSnapshot({force=false}={}){
       corporationName:admin.corporationName||null,
       finance:ceoFinanceSummary(wallets,divisions,remembered),
       roleHealth:ceoRoleHealth(characterRoles,errors),
+      walletAccess:{
+        currentScope:CEO_WALLET_SCOPE,
+        legacyScope:CEO_LEGACY_WALLET_SCOPE,
+        granted:Array.isArray(admin.scopes)&&admin.scopes.includes(CEO_WALLET_SCOPE),
+        legacyGranted:Array.isArray(admin.scopes)&&admin.scopes.includes(CEO_LEGACY_WALLET_SCOPE),
+        available:!walletErrors.length,
+        lastError:state.ceoAdmin.walletLastError||null,
+      },
       members:{
         count:memberIds.length,
         tracking:sortedTracking,
@@ -1633,7 +1650,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Miner Tracker',version:'2.10.15',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
+    app:{name:'JLR Miner Tracker',version:'2.10.16',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}])),wormholes:{reports:wormholeGasPublicReports(),reportHours:WORMHOLE_GAS_REPORT_TTL/3600000}},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans,
@@ -9770,7 +9787,7 @@ async function routeApi(req,res,url) {
       return json(res,502,{error:'SUPPORT_APPRAISAL_FAILED',message:String(err.message||err)});
     }
   }
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.10.15',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME,ceoCharacterName:CEO_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Miner Tracker',version:'2.10.16',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME,ceoCharacterName:CEO_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/ceo/status'){
     const viewer=requireCeoViewer(req,res);
     if(!viewer)return;
@@ -10880,7 +10897,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.10.15 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Miner Tracker v2.10.16 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
 setInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': tracker-heartbeat\n\n')}catch{trackerLiveClients.delete(res)}}},20_000).unref();
 setInterval(()=>resetExpired(true),15_000).unref();
