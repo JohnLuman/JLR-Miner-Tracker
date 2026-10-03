@@ -4002,6 +4002,30 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .ceo-wallet-repair{padding:16px;border:1px solid #806338;color:#e8cb98;font-size:13px;line-height:1.6}
 .ceo-wallet-repair p{margin:8px 0}
 .ceo-wallet-repair ol{margin:8px 0 0;padding-left:22px}
+/* v2.10.19 — CEO Fountain sov hub snapshot */
+.ceo-sov-map-card{grid-column:1/-1;min-width:0}
+.ceo-sov-map-card p,.ceo-sov-map-card small{font-size:12px;line-height:1.5}
+.ceo-sov-map-open{text-decoration:none;white-space:nowrap}
+.ceo-sov-legend{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin:13px 0 10px;padding:9px 10px;border:1px solid var(--border,#3c4051);border-radius:8px;background:rgba(8,10,15,.55);font:800 10px/1.2 "Share Tech Mono",monospace;color:#c9ceda}
+.ceo-sov-legend>span{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.ceo-sov-dot{width:8px;height:8px;border-radius:50%;display:inline-block;box-shadow:0 0 0 1px #0007}
+.ceo-sov-dot.online{background:#15b89a}
+.ceo-sov-dot.pending{background:#2c94c5}
+.ceo-sov-dot.offline{background:#e99a13}
+.ceo-sov-dot.low{background:#e74b3c}
+.ceo-sov-dot.nonhub{background:#35b6ae}
+.ceo-sov-jump{display:inline-block;width:22px;border-top:2px dashed #54758b;transform:translateY(-1px)}
+.ceo-sov-alert{display:inline-grid;place-items:center;width:14px;height:14px;border-radius:50%;background:#e74b3c;color:#fff;font-style:normal;font:1000 9px/1 "Share Tech Mono",monospace}
+.ceo-sov-map-frame{display:block;overflow:auto;max-height:72vh;margin-top:10px;border:1px solid var(--border,#3c4051);border-radius:9px;background:#fff;cursor:zoom-in}
+.ceo-sov-map-frame img{display:block;width:max(100%,1241px);height:auto;max-width:none}
+.ceo-sov-map-note{display:block;margin-top:8px;color:var(--muted,#9299a8)}
+@media(max-width:680px){
+  .ceo-sov-map-card .ceo-card-title{align-items:stretch;flex-direction:column}
+  .ceo-sov-map-open{align-self:flex-start}
+  .ceo-sov-legend{gap:7px 10px}
+  .ceo-sov-map-frame{max-height:62vh}
+}
+
 .ceo-moon-card{grid-column:1/-1;min-width:0}
 .ceo-moon-card p,.ceo-moon-card small{font-size:12px;line-height:1.5}
 .ceo-moon-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:16px 0}
