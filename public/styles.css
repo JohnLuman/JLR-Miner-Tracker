@@ -4105,3 +4105,9 @@ html[data-theme] .field-board .system-node.map-field-node.tier-2{background:line
 html[data-theme] .field-board .system-node.ice-system-node{background:linear-gradient(180deg,var(--card),var(--card));border-color:#59d4ff;box-shadow:inset 0 -3px 0 #59d4ff}
 .field-board .ice-system-node .sys-ice-coverage{font-size:6px;font-weight:900;color:var(--muted)}
 .field-board .ice-system-node .sys-ice-coverage.missing{color:#ffd27a}
+
+/* A system-level activity marker; field status colors keep their meaning. */
+.mining-activity-icon{display:inline-flex;vertical-align:middle;width:17px;height:17px;margin-left:6px;color:#f2e8c9}
+.mining-activity-icon svg{width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;transform-origin:60% 65%;animation:mining-pick 1.6s ease-in-out infinite}
+@keyframes mining-pick{0%,55%,100%{transform:rotate(-12deg)}30%{transform:rotate(20deg)}}
+@media(prefers-reduced-motion:reduce){.mining-activity-icon svg{animation:none}}

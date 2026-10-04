@@ -4953,7 +4953,9 @@
       }
     }
 
+    window.JlrFieldMiningActivity?.paint({querySelectorAll:()=>cards},state);
     syncBoardNodes(board,cards);
+    window.JlrFieldMiningActivity?.paint(board,state);
     window.JlrFieldUpdateFeedback?.paint(board,()=>{if(!document.hidden)sfx('fieldUpdate')});
     const mapSummary=state.source?.mapFieldSnapshot?.summary||{};
     $('statusCounts').textContent=`${counts.ready} green • ${counts.picked} picked • ${counts.cleared} respawning • ${counts.cherry} cherry • ${Number(mapSummary.tier2||0)} T2 arrays • ${Number(mapSummary.tier3||0)} T3 map arrays • ${iceFields.length} ice • ${a0Fields.length} A0 • ${a0Due} need update`;
