@@ -1,7 +1,7 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.10.20-alarm-diag2';
-  const CORE_URL='/tracker-core.js?v=2.10.20-alarm-diag2';
+  const ALARM_VERSION='2.10.26-alarm-diag3';
+  const CORE_URL='/tracker-core.js?v=2.10.26-alarm-diag3';
 
   let alarmContext=null;
   let alarmNodes=[];
@@ -53,11 +53,16 @@
     return alarmContext;
   }
 
+  async function resumeAlarmContext(context){
+    if(!context||context.state!=='suspended')return;
+    let timeout;
+    try{
+      await Promise.race([context.resume(),new Promise(resolve=>{timeout=setTimeout(resolve,1000);})]);
+    }catch(error){}finally{clearTimeout(timeout);}
+  }
   async function unlockAlarm(){
     const context=ensureAlarmContext();
-    if(context&&context.state==='suspended'){
-      try{await context.resume()}catch(error){}
-    }
+    await resumeAlarmContext(context);
     return Boolean(context&&context.state==='running');
   }
 
@@ -163,9 +168,7 @@
   async function playFighterAlarm(loss){
     stopAlarmNodes();
     const context=ensureAlarmContext();
-    if(context&&context.state==='suspended'){
-      try{await context.resume()}catch(error){}
-    }
+    const generation=alarmGeneration;
 
     // Always surface the visual alarm, even when browser autoplay policy keeps
     // the AudioContext suspended. Only a tab that can actually play sound may
@@ -180,13 +183,15 @@
       audioReady:Boolean(context&&context.state==='running'),
       playing:false,
     };
+    await resumeAlarmContext(context);
+    if(generation!==alarmGeneration)return false; // STOP/new loss wins over pending resume.
+    alarmLastTrigger={...alarmLastTrigger,audioReady:Boolean(context&&context.state==='running')};
     if(!context||context.state!=='running'){
       if(!loss?.test)releaseAlarmLease();
       return false;
     }
     if(!loss?.test&&!claimAlarmLease())return false;
 
-    const generation=alarmGeneration;
     playAlarmCycle(context,generation);
     alarmLastTrigger={...alarmLastTrigger,playing:true};
     return true;
