@@ -4145,12 +4145,12 @@
     const due=start+12*60*60*1000;
     return{text:Date.now()>=due?'SCAN • UPDATE DUE':'SCAN IN '+timer(new Date(due).toISOString()),stale:Date.now()>=due,title:'Reminder started manually; awaiting a real scan'};
   }
-  function boardScanLine(system,scanOverride=null){
+  function boardScanLine(system,scanOverride=null,useMapReminder=true){
     const row=scanOverride||state?.scans?.[system]||null;
     const at=row?.lastScanAt||null;
     const ms=Date.parse(at||'');
     const reminder=mapFields().find(row=>Number(row.tier)===3&&row.system===system&&row.scanReminderStartedAt);
-    if(reminder&&(!Number.isFinite(ms)||Date.parse(reminder.scanReminderStartedAt)>ms))return mapScanReminderLine(reminder);
+    if(useMapReminder&&reminder&&(!Number.isFinite(ms)||Date.parse(reminder.scanReminderStartedAt)>ms))return mapScanReminderLine(reminder);
     if(!Number.isFinite(ms)){
       return{text:'SCAN • NEVER',stale:true,title:'No Probe Scanner update recorded yet'};
     }
@@ -4798,17 +4798,30 @@
       if(favorites.has(key))favorites.delete(key);else favorites.add(key);
       boardPrefs.favorites=[...favorites];saveBoardPrefs();renderBoards();sfx('select');
     });
-    for(const item of rows.filter(item=>Number(item.tier)===2&&item.status!=='cleared')){
-      const clear=document.createElement('button');clear.type='button';clear.className='map-clear-control';
-      clear.textContent='CLEAR '+(item.ore==='Awaiting scan'?item.mineral:item.ore);
-      clear.addEventListener('click',async e=>{
-        e.preventDefault();e.stopPropagation();
-        if(!window.confirm('Mark '+item.system+' T2 '+item.ore+' mined out? This starts its 10-hour respawn timer.'))return;
-        clear.disabled=true;
-        try{await api('/api/fields/map/'+encodeURIComponent(item.id)+'/clear',{method:'POST',body:JSON.stringify({confirm:true})});toast(item.ore+' marked cleared.');}
-        catch(error){clear.disabled=false;toast(error.message);}
-      });card.appendChild(clear);
-    }
+    card.setAttribute('role','button');card.tabIndex=0;
+    const openControls=()=>{
+      if(boardArrangeMode||Date.now()<boardSuppressClickUntil)return;
+      const dialog=document.createElement('dialog');dialog.className='map-field-controls';
+      dialog.innerHTML='<h3>'+esc(row.system)+' • T'+Number(row.tier)+' FIELDS</h3>';
+      for(const item of rows){
+        const line=document.createElement('div');line.className='map-field-control-row';
+        const label=document.createElement('span');label.textContent=item.ore+(item.status==='cleared'?' • CLEARED • '+timer(item.timerEndsAt):'');line.appendChild(label);
+        if(Number(item.tier)===2&&item.status!=='cleared'){
+          const clear=document.createElement('button');clear.type='button';clear.className='orb';clear.textContent='CLEAR + 10H';
+          clear.addEventListener('click',async()=>{
+            if(!window.confirm('Mark '+item.system+' T2 '+item.ore+' mined out? This starts its 10-hour respawn timer.'))return;
+            clear.disabled=true;
+            try{await api('/api/fields/map/'+encodeURIComponent(item.id)+'/clear',{method:'POST',body:JSON.stringify({confirm:true})});dialog.close();toast(item.ore+' marked cleared.');}
+            catch(error){clear.disabled=false;toast(error.message);}
+          });line.appendChild(clear);
+        }
+        dialog.appendChild(line);
+      }
+      const close=document.createElement('button');close.type='button';close.className='orb';close.textContent='CLOSE';close.addEventListener('click',()=>dialog.close());dialog.appendChild(close);
+      dialog.addEventListener('close',()=>dialog.remove());document.body.appendChild(dialog);dialog.showModal();
+    };
+    card.addEventListener('click',e=>{if(!e.target.closest('.favorite-toggle'))openControls()});
+    card.addEventListener('keydown',e=>{if(e.target===card&&(e.key==='Enter'||e.key===' ')){e.preventDefault();openControls()}});
     attachBoardDrag(card,key);
     return card;
   }
@@ -4827,7 +4840,7 @@
     card.setAttribute('role','group');
     const fields=Math.max(1,Number(row.iceBelts)||1);
     const distance=Number(row.distanceLy);
-    const scanLine=boardScanLine(row.system);
+    const scanLine=boardScanLine(row.system,null,false);
     const iceScan=state?.scans?.[row.system]?.ice||null;
     const seen=iceScan?Math.min(fields,Math.max(0,Number(iceScan.seen)||0)):null;
     const missing=seen==null?null:Math.max(0,fields-seen);
