@@ -359,5 +359,17 @@
       "expectedCycleReduction": 0.615234375,
       "expectedEfficiencyBoost": 2.05078125
     }
+  },
+  "fieldMapSnapshot": {
+    "source": "User-supplied Fountain Sovereignty Hub map/key",
+    "capturedAt": "2026-10-02",
+    "extractionStatus": "in-progress",
+    "key": {
+      "online": "Online",
+      "pending": "Pending",
+      "offline": "Offline",
+      "low": "Low"
+    },
+    "fields": []
   }
 }
