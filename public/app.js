@@ -4140,10 +4140,11 @@
   function field(system){return state?.fields?.[system]||null}
   function def(system){return definitions().find(x=>x.system===system)||null}
   function mapScanReminderLine(row){
-    const start=Date.parse(row?.scanReminderStartedAt||'');
-    if(!Number.isFinite(start))return{text:'SCAN • AWAITING SCAN',stale:true,title:'Awaiting a Probe Scanner report'};
+    const real=Date.parse(state?.scans?.[row?.system]?.lastScanAt||'');
+    const start=Math.max(Number.isFinite(real)?real:0,Date.parse(row?.scanReminderStartedAt||'')||0);
+    if(!start)return{text:'SCAN • UPDATE',stale:true,title:'Awaiting a Probe Scanner report'};
     const due=start+12*60*60*1000;
-    return{text:Date.now()>=due?'SCAN • UPDATE DUE':'SCAN IN '+timer(new Date(due).toISOString()),stale:Date.now()>=due,title:'Reminder started manually; awaiting a real scan'};
+    return{text:Date.now()>=due?'SCAN • UPDATE':'',stale:Date.now()>=due,title:Date.now()>=due?'Probe Scanner update requested':'Scan reminder current'};
   }
   function boardScanLine(system,scanOverride=null,useMapReminder=true){
     const row=scanOverride||state?.scans?.[system]||null;
@@ -4714,9 +4715,9 @@
     b.classList.toggle('arrange-mode',boardArrangeMode);
     b.draggable=boardArrangeMode;
     if(d.system===selectedSystem)b.classList.add('selected');
-    const line=f.status==='cleared'?`RESPAWN ${timer(f.timerEndsAt)}`:f.status==='picked'?(f.autoReopenedAt?'PICKED • ESI':'PICKED'):'MINEABLE';
+    const line=f.status==='cleared'?`RESPAWN ${timer(f.timerEndsAt)}`:f.status==='picked'?(f.autoReopenedAt?'PICKED • ESI':'PICKED'):'';
     const distance=d.distanceLy==null?NaN:Number(d.distanceLy);
-    const distanceText=Number.isFinite(distance)?` • ${distance.toFixed(2)} LY`:'';
+    const distanceText=Number.isFinite(distance)?`${line?' • ':''}${distance.toFixed(2)} LY`:'';
     const scanLine=boardScanLine(d.system);
     const evidence=boardEvidenceLine(d.system);
     const evidenceHtml=evidence?`<span class="sys-evidence ${esc(evidence.tone||'')}">${esc(evidence.text)}</span>`:'';
@@ -4939,7 +4940,7 @@
 
     window.JlrFieldUpdateFeedback?.paint(board,()=>{if(!document.hidden)sfx('fieldUpdate')});
     const mapSummary=state.source?.mapFieldSnapshot?.summary||{};
-    $('statusCounts').textContent=`${counts.ready} mineable • ${counts.picked} picked • ${counts.cleared} respawning • ${counts.cherry} cherry • ${Number(mapSummary.tier2||0)} T2 arrays • ${Number(mapSummary.tier3||0)} T3 map arrays • ${iceFields.length} ice • ${a0Fields.length} A0 • ${a0Due} need update`;
+    $('statusCounts').textContent=`${counts.ready} green • ${counts.picked} picked • ${counts.cleared} respawning • ${counts.cherry} cherry • ${Number(mapSummary.tier2||0)} T2 arrays • ${Number(mapSummary.tier3||0)} T3 map arrays • ${iceFields.length} ice • ${a0Fields.length} A0 • ${a0Due} need update`;
     $('systemCountLabel').textContent=`${definitions().length} T3 • ${mapRows.length} MAP ARRAYS • ${iceFields.length} ICE • ${a0Fields.length} A0`;
     if(filter==='map'&&!mapRows.length)board.innerHTML='<div class="target-empty"><strong>No private arrays are configured.</strong><span>Field locations are loaded from private server configuration.</span></div>';
     if(filter==='a0'&&!a0Fields.length)board.innerHTML='<div class="target-empty"><strong>No A0 systems found within 6 LY.</strong><span>The server scans Fountain star spectral classes through ESI. Active rare-asteroid anomalies themselves are not exposed remotely.</span></div>';

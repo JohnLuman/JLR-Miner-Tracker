@@ -1,4 +1,4 @@
-import {mapFieldReport,clearMapField} from './lib/map-field-report.mjs';
+import {mapFieldReport,clearMapField,applyMapScanReminders} from './lib/map-field-report.mjs';
 import {initFieldAccess, redactFieldState, fieldRouteRequiresInit} from './lib/init-field-access.mjs';
 import http from 'node:http';
 import fs from 'node:fs';
@@ -1722,7 +1722,7 @@ function scanActivityPublic() {
       if(row.ledger.confidence==='inferred-depletion')row.ledger.confidence='ledger-history';
     }
   }
-  return out;
+  return applyMapScanReminders(FIELD_MAP_SNAPSHOT.fields,out,at);
 }
 function a0PublicFields() {
   const latestSite=latestA0Site(state.market?.a0Reports);
@@ -4097,11 +4097,12 @@ async function scoutLocationSnapshot(ch,user=null,activity=null){
   const t3=SYSTEM_MAP.get(system)||null;
   const ice=(state.market?.iceFields||[]).find(row=>row.system===system)||null;
   const a0=(state.market?.a0Fields||[]).find(row=>row.system===system)||state.market?.a0Reports?.[system]||null;
-  const tracked=Boolean(t3||ice||a0);
+  const t2=FIELD_MAP_SNAPSHOT.fields.some(row=>Number(row.tier)===2&&row.system===system);
+  const tracked=Boolean(t3||t2||ice||a0);
   const scan=(activity||scanActivityPublic())[system]||null;
   const ledger=scan?.ledger||null;
   const lastScanAt=scan?.lastScanAt||null;
-  const scanMs=Date.parse(lastScanAt||'');
+  const scanMs=Date.parse(scan?.reminderStartedAt||lastScanAt||'');
   const stale=!Number.isFinite(scanMs)||Date.now()-scanMs>=A0_REPORT_TTL;
   const ledgerNeedsScan=actionableLedgerScanWarning(scan);
   const respawning=t3&&!ice&&!a0&&state.fields?.[system]?.status==='cleared'&&Date.parse(state.fields[system].timerEndsAt||'')>Date.now();
@@ -4112,7 +4113,7 @@ async function scoutLocationSnapshot(ch,user=null,activity=null){
     systemId,
     system,
     tracked,
-    kinds:[t3?'t3':null,ice?'ice':null,a0?'a0':null].filter(Boolean),
+    kinds:[t3?'t3':null,t2?'t2':null,ice?'ice':null,a0?'a0':null].filter(Boolean),
     lastScanAt,
     scanDue:stale,
     needsScan,
@@ -4511,9 +4512,10 @@ async function trackerBrainCharacterLocation(ch,user=null){
 async function trackerBrainNearestSystems(originSystemId,{updatesOnly=false,excludeSystem='',limit=1,fieldOnly=false,availableOnly=false}={}){
   const activity=scanActivityPublic();
   const names=new Set((fieldOnly
-    ?SYSTEM_DEFS.map(row=>row.system)
+    ?[...SYSTEM_DEFS.map(row=>row.system),...FIELD_MAP_SNAPSHOT.fields.map(row=>row.system)]
     :[
       ...SYSTEM_DEFS.map(row=>row.system),
+      ...FIELD_MAP_SNAPSHOT.fields.map(row=>row.system),
       ...(state.market?.iceFields||[]).map(row=>row.system),
       ...(state.market?.a0Fields||[]).map(row=>row.system),
       ...Object.keys(state.market?.a0Reports||{}),
@@ -4627,7 +4629,7 @@ async function trackerBrainRouteAnswer(user,raw,options){
     if(!fountain.has(String(targetId)))return{handled:true,topic:'route-outside-fountain',text:destination+' is outside Fountain. Give me a destination in Fountain.',generatedAt:now()};
     const {data:route}=await esiGet(`https://esi.evetech.net/latest/route/${origin.systemId}/${targetId}/?datasource=tranquility&flag=shortest`);
     if(!Array.isArray(route)||!route.length)throw new Error('ESI did not return a gate route');
-    const trackedNames=[...new Set([...SYSTEM_DEFS.map(row=>row.system),...(state.market?.iceFields||[]).map(row=>row.system),...(state.market?.a0Fields||[]).map(row=>row.system),...Object.keys(state.market?.a0Reports||{})])].filter(Boolean);
+    const trackedNames=[...new Set([...SYSTEM_DEFS.map(row=>row.system),...FIELD_MAP_SNAPSHOT.fields.map(row=>row.system),...(state.market?.iceFields||[]).map(row=>row.system),...(state.market?.a0Fields||[]).map(row=>row.system),...Object.keys(state.market?.a0Reports||{})])].filter(Boolean);
     const ids=await resolveUniverseIds(trackedNames);
     const activity=scanActivityPublic();
     const byId=new Map();
@@ -5162,7 +5164,7 @@ function trackerBrainContextualQuestion(question,currentTab,context){
   return out;
 }
 function trackerTrackedSystemNames(){
-  return [...new Set([...SYSTEM_DEFS.map(row=>row.system),...(state.market?.iceFields||[]).map(row=>row.system),...(state.market?.a0Fields||[]).map(row=>row.system),...Object.keys(state.market?.a0Reports||{}),...Object.keys(state.scans||{})])].filter(Boolean);
+  return [...new Set([...SYSTEM_DEFS.map(row=>row.system),...FIELD_MAP_SNAPSHOT.fields.map(row=>row.system),...(state.market?.iceFields||[]).map(row=>row.system),...(state.market?.a0Fields||[]).map(row=>row.system),...Object.keys(state.market?.a0Reports||{}),...Object.keys(state.scans||{})])].filter(Boolean);
 }
 function explicitSystemFromQuestion(value){
   if(resolveAdamSystem(value,trackerTrackedSystemNames()).explicit)return true;
@@ -5581,6 +5583,9 @@ function recordBoardScan({system,text,a0,t3Scan=null,definition=null}){
   const iceParsed=parseIceScan(text);
   const kinds=[];
   if(SYSTEM_MAP.has(system))kinds.push('t3');
+  const t2Tracked=FIELD_MAP_SNAPSHOT.fields.some(row=>Number(row.tier)===2&&row.system===system);
+  if(t2Tracked)kinds.push('t2');
+  const t2Scan=t2Tracked?parseProbeScan(text,''):null;
   const iceField=(state.market?.iceFields||[]).find(row=>row.system===system)||null;
   if(iceField)kinds.push('ice');
   const a0Tracked=(state.market?.a0Fields||[]).some(row=>row.system===system)||Boolean(a0?.tracked);
@@ -5591,10 +5596,11 @@ function recordBoardScan({system,text,a0,t3Scan=null,definition=null}){
   const t3Valid=Boolean(definition&&t3Scan?.valid);
   const iceValid=Boolean(iceField&&iceParsed?.valid);
   const a0Valid=Boolean(a0Tracked&&a0Parsed?.valid);
-  const valid=Boolean(t3Valid||iceValid||a0Valid);
+  const valid=Boolean(t3Valid||iceValid||a0Valid||t2Scan?.valid);
   const scannerRowCount=Math.max(
     0,
     Number(t3Scan?.scannerRowCount)||0,
+    Number(t2Scan?.scannerRowCount)||0,
     Number(iceParsed?.scannerRowCount)||0,
     Number(a0Parsed?.scannerRowCount)||0,
   );

@@ -4088,14 +4088,14 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .ceo-metenox-survey{grid-column:1/-1}.ceo-metenox-survey textarea{width:100%;min-height:110px;background:var(--panel);color:inherit;border:1px solid var(--line);border-radius:8px;padding:10px;font:inherit}.ceo-metenox-output{overflow-x:auto}.ceo-metenox-output table{width:100%;text-align:left}.ceo-metenox-output td,.ceo-metenox-output th{padding:8px}
 
 /* Tier remains visible independently of infrastructure power status. */
-.field-board .system-node.map-field-node.tier-2{background:linear-gradient(180deg,#482914,#26180d);border-color:#ff9a4e;box-shadow:inset 0 -3px 0 #ff9a4e}
-.map-field-node.tier-2 .sys-ore{color:#ffd0a6}
+.field-board .system-node.map-field-node.tier-2{background:linear-gradient(180deg,var(--card),var(--card));border-color:#a78bfa;box-shadow:inset 0 -3px 0 #a78bfa}
+.map-field-node.tier-2 .sys-ore{color:#d7c7ff}
 
-html[data-theme] .field-board .system-node.map-field-node.tier-2{background:linear-gradient(180deg,#482914,#26180d);border-color:#ff9a4e;box-shadow:inset 0 -3px 0 #ff9a4e}
+html[data-theme] .field-board .system-node.map-field-node.tier-2{background:linear-gradient(180deg,var(--card),var(--card));border-color:#a78bfa;box-shadow:inset 0 -3px 0 #a78bfa}
 
 .map-field-node .sys-ore{white-space:normal;overflow:visible;text-overflow:clip}
 .map-clear-control{border:1px solid var(--line);border-radius:4px;background:transparent;color:var(--muted);font:inherit;font-size:7px;padding:2px 4px;cursor:pointer}
 
-.map-field-controls{background:var(--card);color:var(--text);border:1px solid #ff9a4e;border-radius:12px;padding:18px;min-width:280px}
+.map-field-controls{background:var(--card);color:var(--text);border:1px solid #a78bfa;border-radius:12px;padding:18px;min-width:280px}
 .map-field-controls::backdrop{background:#000a}
 .map-field-control-row{display:flex;align-items:center;justify-content:space-between;gap:20px;margin:12px 0}
