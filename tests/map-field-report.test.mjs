@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import {clearMapField,mapFieldReport} from '../lib/map-field-report.mjs';
+import {clearMapField,mapFieldReport,applyMapScanReminders} from '../lib/map-field-report.mjs';
+import {needsScanUpdate,actionableLedgerScanWarning} from '../lib/brain-location.mjs';
 const at=Date.parse('2026-10-04T17:00:00Z');
 const a={id:'a',tier:2,scanReminderStartedAt:'2026-10-04T16:00:00Z'},b={...a,id:'b'};
 assert.throws(()=>clearMapField(a,null,{at}),/Confirm/);
@@ -12,4 +13,13 @@ assert.throws(()=>clearMapField(a,report,{confirm:true,at:at+1}),/already runnin
 assert.equal(mapFieldReport(a,{a:report},at+10*3600000).status,'ready');
 assert.equal(mapFieldReport(a,{a:report},at).scanReminderStartedAt,report.updatedAt);
 assert.equal(mapFieldReport({...a,scanReminderStartedAt:new Date(at+1).toISOString()},{a:report},at).scanReminderStartedAt,new Date(at+1).toISOString());
+const rows=[{...a,system:'A'},{...b,system:'A'},{...a,id:'c',system:'B'}];
+let activity=applyMapScanReminders(rows,{},at);
+assert.equal(activity.A.lastScanAt,null,'a manual reminder must not invent a scan');
+assert.equal(needsScanUpdate(activity.A),false);
+assert.equal(needsScanUpdate(applyMapScanReminders(rows,{},at+11*3600000).A),true,'request a scan exactly twelve hours after baseline');
+const actual={lastScanAt:new Date(at+1).toISOString(),kinds:['t2'],due:false};
+assert.equal(applyMapScanReminders(rows,{A:actual},at+2).A,actual,'newer actual scans win');
+activity=applyMapScanReminders(rows,{A:{lastScanAt:'2026-10-01T00:00:00Z',kinds:['t2'],ledger:{needsScan:true,lastActivityAt:'2026-10-02T00:00:00Z'}}},at);
+assert.equal(actionableLedgerScanWarning(activity.A),false,'older evidence does not defeat today’s manual reset');
 console.log('Independent T2 clear reports and timer boundaries passed.');

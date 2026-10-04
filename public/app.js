@@ -4140,17 +4140,18 @@
   function field(system){return state?.fields?.[system]||null}
   function def(system){return definitions().find(x=>x.system===system)||null}
   function mapScanReminderLine(row){
-    const start=Date.parse(row?.scanReminderStartedAt||'');
-    if(!Number.isFinite(start))return{text:'SCAN • AWAITING SCAN',stale:true,title:'Awaiting a Probe Scanner report'};
+    const real=Date.parse(state?.scans?.[row?.system]?.lastScanAt||'');
+    const start=Math.max(Number.isFinite(real)?real:0,Date.parse(row?.scanReminderStartedAt||'')||0);
+    if(!start)return{text:'SCAN • UPDATE',stale:true,title:'Awaiting a Probe Scanner report'};
     const due=start+12*60*60*1000;
-    return{text:Date.now()>=due?'SCAN • UPDATE DUE':'SCAN IN '+timer(new Date(due).toISOString()),stale:Date.now()>=due,title:'Reminder started manually; awaiting a real scan'};
+    return{text:Date.now()>=due?'SCAN • UPDATE':'',stale:Date.now()>=due,title:Date.now()>=due?'Probe Scanner update requested':'Scan reminder current'};
   }
-  function boardScanLine(system,scanOverride=null){
+  function boardScanLine(system,scanOverride=null,useMapReminder=true){
     const row=scanOverride||state?.scans?.[system]||null;
     const at=row?.lastScanAt||null;
     const ms=Date.parse(at||'');
     const reminder=mapFields().find(row=>Number(row.tier)===3&&row.system===system&&row.scanReminderStartedAt);
-    if(reminder&&(!Number.isFinite(ms)||Date.parse(reminder.scanReminderStartedAt)>ms))return mapScanReminderLine(reminder);
+    if(useMapReminder&&reminder&&(!Number.isFinite(ms)||Date.parse(reminder.scanReminderStartedAt)>ms))return mapScanReminderLine(reminder);
     if(!Number.isFinite(ms)){
       return{text:'SCAN • NEVER',stale:true,title:'No Probe Scanner update recorded yet'};
     }
@@ -4714,9 +4715,9 @@
     b.classList.toggle('arrange-mode',boardArrangeMode);
     b.draggable=boardArrangeMode;
     if(d.system===selectedSystem)b.classList.add('selected');
-    const line=f.status==='cleared'?`RESPAWN ${timer(f.timerEndsAt)}`:f.status==='picked'?(f.autoReopenedAt?'PICKED • ESI':'PICKED'):'MINEABLE';
+    const line=f.status==='cleared'?`RESPAWN ${timer(f.timerEndsAt)}`:f.status==='picked'?(f.autoReopenedAt?'PICKED • ESI':'PICKED'):'';
     const distance=d.distanceLy==null?NaN:Number(d.distanceLy);
-    const distanceText=Number.isFinite(distance)?` • ${distance.toFixed(2)} LY`:'';
+    const distanceText=Number.isFinite(distance)?`${line?' • ':''}${distance.toFixed(2)} LY`:'';
     const scanLine=boardScanLine(d.system);
     const evidence=boardEvidenceLine(d.system);
     const evidenceHtml=evidence?`<span class="sys-evidence ${esc(evidence.tone||'')}">${esc(evidence.text)}</span>`:'';
@@ -4798,17 +4799,30 @@
       if(favorites.has(key))favorites.delete(key);else favorites.add(key);
       boardPrefs.favorites=[...favorites];saveBoardPrefs();renderBoards();sfx('select');
     });
-    for(const item of rows.filter(item=>Number(item.tier)===2&&item.status!=='cleared')){
-      const clear=document.createElement('button');clear.type='button';clear.className='map-clear-control';
-      clear.textContent='CLEAR '+(item.ore==='Awaiting scan'?item.mineral:item.ore);
-      clear.addEventListener('click',async e=>{
-        e.preventDefault();e.stopPropagation();
-        if(!window.confirm('Mark '+item.system+' T2 '+item.ore+' mined out? This starts its 10-hour respawn timer.'))return;
-        clear.disabled=true;
-        try{await api('/api/fields/map/'+encodeURIComponent(item.id)+'/clear',{method:'POST',body:JSON.stringify({confirm:true})});toast(item.ore+' marked cleared.');}
-        catch(error){clear.disabled=false;toast(error.message);}
-      });card.appendChild(clear);
-    }
+    card.setAttribute('role','button');card.tabIndex=0;
+    const openControls=()=>{
+      if(boardArrangeMode||Date.now()<boardSuppressClickUntil)return;
+      const dialog=document.createElement('dialog');dialog.className='map-field-controls';
+      dialog.innerHTML='<h3>'+esc(row.system)+' • T'+Number(row.tier)+' FIELDS</h3>';
+      for(const item of rows){
+        const line=document.createElement('div');line.className='map-field-control-row';
+        const label=document.createElement('span');label.textContent=item.ore+(item.status==='cleared'?' • CLEARED • '+timer(item.timerEndsAt):'');line.appendChild(label);
+        if(Number(item.tier)===2&&item.status!=='cleared'){
+          const clear=document.createElement('button');clear.type='button';clear.className='orb';clear.textContent='CLEAR + 10H';
+          clear.addEventListener('click',async()=>{
+            if(!window.confirm('Mark '+item.system+' T2 '+item.ore+' mined out? This starts its 10-hour respawn timer.'))return;
+            clear.disabled=true;
+            try{await api('/api/fields/map/'+encodeURIComponent(item.id)+'/clear',{method:'POST',body:JSON.stringify({confirm:true})});dialog.close();toast(item.ore+' marked cleared.');}
+            catch(error){clear.disabled=false;toast(error.message);}
+          });line.appendChild(clear);
+        }
+        dialog.appendChild(line);
+      }
+      const close=document.createElement('button');close.type='button';close.className='orb';close.textContent='CLOSE';close.addEventListener('click',()=>dialog.close());dialog.appendChild(close);
+      dialog.addEventListener('close',()=>dialog.remove());document.body.appendChild(dialog);dialog.showModal();
+    };
+    card.addEventListener('click',e=>{if(!e.target.closest('.favorite-toggle'))openControls()});
+    card.addEventListener('keydown',e=>{if(e.target===card&&(e.key==='Enter'||e.key===' ')){e.preventDefault();openControls()}});
     attachBoardDrag(card,key);
     return card;
   }
@@ -4827,7 +4841,7 @@
     card.setAttribute('role','group');
     const fields=Math.max(1,Number(row.iceBelts)||1);
     const distance=Number(row.distanceLy);
-    const scanLine=boardScanLine(row.system);
+    const scanLine=boardScanLine(row.system,null,false);
     const iceScan=state?.scans?.[row.system]?.ice||null;
     const seen=iceScan?Math.min(fields,Math.max(0,Number(iceScan.seen)||0)):null;
     const missing=seen==null?null:Math.max(0,fields-seen);
@@ -4926,7 +4940,7 @@
 
     window.JlrFieldUpdateFeedback?.paint(board,()=>{if(!document.hidden)sfx('fieldUpdate')});
     const mapSummary=state.source?.mapFieldSnapshot?.summary||{};
-    $('statusCounts').textContent=`${counts.ready} mineable • ${counts.picked} picked • ${counts.cleared} respawning • ${counts.cherry} cherry • ${Number(mapSummary.tier2||0)} T2 arrays • ${Number(mapSummary.tier3||0)} T3 map arrays • ${iceFields.length} ice • ${a0Fields.length} A0 • ${a0Due} need update`;
+    $('statusCounts').textContent=`${counts.ready} green • ${counts.picked} picked • ${counts.cleared} respawning • ${counts.cherry} cherry • ${Number(mapSummary.tier2||0)} T2 arrays • ${Number(mapSummary.tier3||0)} T3 map arrays • ${iceFields.length} ice • ${a0Fields.length} A0 • ${a0Due} need update`;
     $('systemCountLabel').textContent=`${definitions().length} T3 • ${mapRows.length} MAP ARRAYS • ${iceFields.length} ICE • ${a0Fields.length} A0`;
     if(filter==='map'&&!mapRows.length)board.innerHTML='<div class="target-empty"><strong>No private arrays are configured.</strong><span>Field locations are loaded from private server configuration.</span></div>';
     if(filter==='a0'&&!a0Fields.length)board.innerHTML='<div class="target-empty"><strong>No A0 systems found within 6 LY.</strong><span>The server scans Fountain star spectral classes through ESI. Active rare-asteroid anomalies themselves are not exposed remotely.</span></div>';
