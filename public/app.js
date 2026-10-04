@@ -4142,9 +4142,10 @@
   function mapScanReminderLine(row){
     const real=Date.parse(state?.scans?.[row?.system]?.lastScanAt||'');
     const start=Math.max(Number.isFinite(real)?real:0,Date.parse(row?.scanReminderStartedAt||'')||0);
-    if(!start)return{text:'SCAN • UPDATE',stale:true,title:'Awaiting a Probe Scanner report'};
+    if(!start)return{text:'NEEDS A SCAN',stale:true,title:'Awaiting a Probe Scanner report'};
+    if(row?.needsScan&&(!Number.isFinite(real)||real<Date.parse(row.cycleStartedAt||'')))return{text:'NEEDS A SCAN',stale:true,title:'Respawn timer finished; confirm the new field with a scan'};
     const due=start+12*60*60*1000;
-    return{text:Date.now()>=due?'SCAN • UPDATE':'',stale:Date.now()>=due,title:Date.now()>=due?'Probe Scanner update requested':'Scan reminder current'};
+    return{text:Date.now()>=due?'NEEDS A SCAN':'',stale:Date.now()>=due,title:Date.now()>=due?'Probe Scanner update requested':'Scan reminder current'};
   }
   function boardScanLine(system,scanOverride=null,useMapReminder=true){
     const row=scanOverride||state?.scans?.[system]||null;
@@ -4153,12 +4154,12 @@
     const reminder=mapFields().find(row=>Number(row.tier)===3&&row.system===system&&row.scanReminderStartedAt);
     if(useMapReminder&&reminder&&(!Number.isFinite(ms)||Date.parse(reminder.scanReminderStartedAt)>ms))return mapScanReminderLine(reminder);
     if(!Number.isFinite(ms)){
-      return{text:'SCAN • NEVER',stale:true,title:'No Probe Scanner update recorded yet'};
+      return{text:'NEEDS A SCAN',stale:true,title:'No Probe Scanner update recorded yet'};
     }
     const stale=row?.due||Date.now()-ms>=12*60*60*1000;
     const age=ago(at).toUpperCase();
     return{
-      text:stale?`SCAN • ${age} • UPDATE`:`SCAN • ${age}`,
+      text:stale?'NEEDS A SCAN':'',
       stale,
       title:stale?`Last Probe Scanner update ${ago(at)}; update requested after 12 hours`:`Last Probe Scanner update ${ago(at)}`,
     };
@@ -4777,7 +4778,7 @@
     const rows=row.rows||[row];
     const reminder=mapScanReminderLine(rows.reduce((old,item)=>Date.parse(item.scanReminderStartedAt||'')<Date.parse(old.scanReminderStartedAt||'')?item:old,row));
     card.className='system-node map-field-node tier-'+Number(row.tier);
-    card.dataset.status='map';
+    card.dataset.status=(row.rows||[row]).every(item=>item.status==='cleared')?'cleared':'map';
     card.dataset.powerState=power;
     card.dataset.system=row.system;
     card.dataset.boardKey=key;
@@ -4788,9 +4789,10 @@
     card.innerHTML='<button class="favorite-toggle" type="button" aria-pressed="'+favorite+'" title="'+(favorite?'Remove from favorites':'Favorite this array')+'">'+(favorite?'★':'☆')+'</button>'+
       (boardArrangeMode?'<span class="drag-grip" aria-hidden="true">⠿</span>':'')+
       '<span class="sys-name">'+esc(row.system)+'</span>'+
-      rows.map(item=>'<span class="sys-ore">T'+Number(item.tier)+' '+esc(item.ore==='Awaiting scan'?item.mineral:item.ore)+
+      rows.map(item=>'<span class="sys-ore'+(item.status==='cleared'?' cleared':'')+'">T'+Number(item.tier)+' '+esc(item.ore==='Awaiting scan'?item.mineral:item.ore)+
         (item.status==='cleared'?' • CLEARED • '+esc(timer(item.timerEndsAt)):'')+'</span>').join('')+ 
-      '<span class="sys-state">'+Number(row.distanceLy).toFixed(2)+' LY</span>'+ 
+      '<span class="sys-state">'+Number(row.distanceLy).toFixed(2)+' LY</span>'+
+      '<span class="sys-evidence">'+fmt(rows.reduce((sum,item)=>sum+(Number(item.minedM3)||0),0),'m3')+' / '+fmt(rows.reduce((sum,item)=>sum+(Number(item.siteM3)||0),0),'m3')+' m³</span>'+ 
       '<span class="sys-scan'+(reminder.stale?' stale':'')+'" title="'+esc(reminder.title)+'">'+esc(reminder.text)+'</span>';
     card.title=row.system+' • T'+Number(row.tier)+' '+row.mineral+' • '+Number(row.distanceLy).toFixed(2)+' LY from C-N4OD • Awaiting scan';
     card.querySelector('.favorite-toggle').addEventListener('click',e=>{
@@ -4806,11 +4808,11 @@
       dialog.innerHTML='<h3>'+esc(row.system)+' • T'+Number(row.tier)+' FIELDS</h3>';
       for(const item of rows){
         const line=document.createElement('div');line.className='map-field-control-row';
-        const label=document.createElement('span');label.textContent=item.ore+(item.status==='cleared'?' • CLEARED • '+timer(item.timerEndsAt):'');line.appendChild(label);
+        const label=document.createElement('span');label.textContent=item.ore+' • '+fmt(Number(item.minedM3)||0,'m3')+' / '+fmt(Number(item.siteM3)||0,'m3')+' m³'+(item.status==='cleared'?' • CLEARED • '+timer(item.timerEndsAt):'');line.appendChild(label);
         if(Number(item.tier)===2&&item.status!=='cleared'){
-          const clear=document.createElement('button');clear.type='button';clear.className='orb';clear.textContent='CLEAR + 10H';
+          const clear=document.createElement('button');clear.type='button';clear.className='orb';clear.textContent='CLEAR + 4H';
           clear.addEventListener('click',async()=>{
-            if(!window.confirm('Mark '+item.system+' T2 '+item.ore+' mined out? This starts its 10-hour respawn timer.'))return;
+            if(!window.confirm('Mark '+item.system+' T2 '+item.ore+' mined out? This starts its 4-hour respawn timer.'))return;
             clear.disabled=true;
             try{await api('/api/fields/map/'+encodeURIComponent(item.id)+'/clear',{method:'POST',body:JSON.stringify({confirm:true})});dialog.close();toast(item.ore+' marked cleared.');}
             catch(error){clear.disabled=false;toast(error.message);}

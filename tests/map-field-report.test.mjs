@@ -6,11 +6,11 @@ const a={id:'a',tier:2,scanReminderStartedAt:'2026-10-04T16:00:00Z'},b={...a,id:
 assert.throws(()=>clearMapField(a,null,{at}),/Confirm/);
 assert.throws(()=>clearMapField({...a,tier:3},null,{confirm:true,at}),/Unknown/);
 const report=clearMapField(a,null,{confirm:true,at});
-assert.equal(Date.parse(report.timerEndsAt)-at,10*3600000);
+assert.equal(Date.parse(report.timerEndsAt)-at,4*3600000);
 assert.equal(mapFieldReport(a,{a:report},at).status,'cleared');
 assert.equal(mapFieldReport(b,{a:report},at).status,'ready');
 assert.throws(()=>clearMapField(a,report,{confirm:true,at:at+1}),/already running/);
-assert.equal(mapFieldReport(a,{a:report},at+10*3600000).status,'ready');
+assert.equal(mapFieldReport(a,{a:report},at+4*3600000).status,'ready');
 assert.equal(mapFieldReport(a,{a:report},at).scanReminderStartedAt,report.updatedAt);
 assert.equal(mapFieldReport({...a,scanReminderStartedAt:new Date(at+1).toISOString()},{a:report},at).scanReminderStartedAt,new Date(at+1).toISOString());
 const rows=[{...a,system:'A'},{...b,system:'A'},{...a,id:'c',system:'B'}];
