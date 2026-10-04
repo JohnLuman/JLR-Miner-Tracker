@@ -4105,7 +4105,7 @@ async function scoutLocationSnapshot(ch,user=null,activity=null){
   const scanMs=Date.parse(scan?.reminderStartedAt||lastScanAt||'');
   const stale=!Number.isFinite(scanMs)||Date.now()-scanMs>=A0_REPORT_TTL;
   const ledgerNeedsScan=actionableLedgerScanWarning(scan);
-  const respawning=t3&&!ice&&!a0&&state.fields?.[system]?.status==='cleared'&&Date.parse(state.fields[system].timerEndsAt||'')>Date.now();
+  const respawning=t3&&!t2&&!ice&&!a0&&state.fields?.[system]?.status==='cleared'&&Date.parse(state.fields[system].timerEndsAt||'')>Date.now();
   const needsScan=tracked&&needsScanUpdate(scan)&&(!respawning||ledgerNeedsScan);
   return{
     characterId:String(ch.characterId),
@@ -4638,7 +4638,7 @@ async function trackerBrainRouteAnswer(user,raw,options){
       if(!id||!fountain.has(String(id)))continue;
       const status=activity[name]||{};
       const field=state.fields?.[name];
-      byId.set(String(id),{system:name,kinds:[SYSTEM_MAP.has(name)?'T3':null,(state.market?.iceFields||[]).some(row=>row.system===name)?'ice':null,(state.market?.a0Fields||[]).some(row=>row.system===name)?'A0':null].filter(Boolean),needsScan:Boolean(status.due!==false||status.ledger?.needsScan||status.ledger?.likelyDepleted),ledgerNeedsScan:Boolean(status.ledger?.needsScan||status.ledger?.likelyDepleted),clearedUntil:field?.status==='cleared'?field.timerEndsAt:null});
+      byId.set(String(id),{system:name,kinds:[SYSTEM_MAP.has(name)?'T3':null,FIELD_MAP_SNAPSHOT.fields.some(row=>row.system===name&&Number(row.tier)===2)?'T2':null,(state.market?.iceFields||[]).some(row=>row.system===name)?'ice':null,(state.market?.a0Fields||[]).some(row=>row.system===name)?'A0':null].filter(Boolean),needsScan:Boolean(status.due!==false||status.ledger?.needsScan||status.ledger?.likelyDepleted),ledgerNeedsScan:Boolean(status.ledger?.needsScan||status.ledger?.likelyDepleted),clearedUntil:field?.status==='cleared'?field.timerEndsAt:null});
     }
     const stops=dueRouteStops(route,byId,{limit:3});
     const prefix='E S I gate route for '+ch.name+': '+origin.system+' to '+destination+' ('+(route.length-1)+' jumps). ';
