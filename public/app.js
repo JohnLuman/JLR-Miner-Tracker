@@ -2160,25 +2160,10 @@
           <article class="glass ceo-command-card ceo-journal-card" id="ceoJournalCard"><div class="ceo-card-title"><div><span class="eyebrow">WALLET JOURNAL</span><h3>TRANSACTION EXPLORER</h3></div><button id="ceoJournalRefresh" class="board-tool" type="button">REFRESH VIEW</button></div><p>Inspect saved ESI journal entries. Use REFRESH CEO DATA to pull new entries from EVE. History contains entries observed by JLR, rather than a complete corporation accounting record. Member filtering matches either party exactly. These are corporation wallet amounts, not personal earnings.</p><small id="ceoJournalStamp"></small><div id="ceoJournalWarning" class="ceo-wallet-note blocked hidden"></div><div id="ceoJournalSummary" class="ceo-operation-summary"></div><div class="ceo-journal-filters"><input id="ceoJournalSearch" type="search" maxlength="160" aria-label="Search wallet journal" placeholder="Search reason, reference type, journal or party ID…"><select id="ceoJournalParty" aria-label="Wallet journal member"><option value="">All parties / members</option></select><select id="ceoJournalMonth" aria-label="Wallet journal month"><option value="">All observed months</option></select><select id="ceoJournalDivision" aria-label="Wallet journal division"><option value="">All divisions</option>${Array.from({length:7},(_,i)=>'<option value="'+(i+1)+'">Division '+(i+1)+'</option>').join('')}</select><select id="ceoJournalDirection" aria-label="Wallet journal direction"><option value="">All entries</option><option value="in">Money in</option><option value="out">Money out</option><option value="zero">Zero amount</option></select></div><div class="ceo-operation-pager"><small id="ceoJournalCount"></small><button id="ceoJournalPrev" class="board-tool" type="button" disabled>PREVIOUS</button><button id="ceoJournalNext" class="board-tool" type="button" disabled>NEXT</button></div><div id="ceoJournalRecords" class="ceo-operation-records"></div></article>
           <article class="glass ceo-command-card ceo-member-card"><span class="eyebrow">MEMBERS</span><h3>MEMBER WALLET TRANSACTIONS</h3><p>Money into and out of corporation wallets involving each member. Choose a month, then open a member to inspect the matching journal entries.</p><div class="ceo-member-head"><div class="ceo-big-number"><small>CORP MEMBERS</small><strong id="ceoMemberCount">—</strong></div><div id="ceoRoleHealth" class="ceo-role-health"></div></div><details class="ceo-optional-loyalty"><summary>Optional manual loyalty points</summary><p>Separate reward points, unrelated to ISK transactions.</p><div class="ceo-loyalty-controls"><select id="ceoLoyaltyMember" aria-label="Corporation member"><option value="">Choose member…</option></select><input id="ceoLoyaltyPoints" type="number" step="1" min="-100000" max="100000" placeholder="+/- points"><input id="ceoLoyaltyNote" maxlength="160" placeholder="Reason / note"><button id="ceoLoyaltyAdjust" class="board-tool" type="button">ADJUST POINTS</button></div></details><div class="ceo-member-filters"><input id="ceoMemberSearch" type="search" aria-label="Search corporation members" placeholder="Search member name or character ID…"><select id="ceoMemberMonth" aria-label="Member transaction month"><option value="">All observed months</option></select><select id="ceoMemberActivity" aria-label="Filter member login dates"><option value="all">All members</option><option value="recent">Logged in within 7 days</option><option value="older">Last login over 30 days ago</option><option value="unknown">Login date not reported</option></select><select id="ceoMemberSort" aria-label="Sort corporation members"><option value="name">Name A–Z</option><option value="login">Most recent login</option><option value="joined">Most recently joined</option><option value="deposits">Largest deposits</option><option value="withdrawals">Largest withdrawals</option></select></div><small id="ceoMemberResultCount"></small><p>Expand a member for join and login dates. Dates reflect the ESI snapshot and do not indicate who is online now.</p><div class="ceo-member-table-head"><span>MEMBER</span><span>TO CORP</span><span>FROM CORP</span><span>NET TO CORP</span><span>ENTRIES</span></div><div id="ceoMemberFinanceRows" class="ceo-member-finance"><div class="visual-empty">Waiting for corporation roster…</div></div></article>
 
-          <article class="glass ceo-command-card ceo-sov-map-card">
-            <div class="ceo-card-title">
-              <div><span class="eyebrow">FOUNTAIN INFRASTRUCTURE</span><h3>SOV HUB STATUS MAP</h3></div>
-              <a class="board-tool ceo-sov-map-open" href="/assets/fountain-sov-hub-map-2026-10-02.png?v=1" target="_blank" rel="noopener">OPEN FULL SIZE</a>
-            </div>
-            <p>Operational snapshot supplied 2026-10-02. This is a map snapshot, not a live ESI feed.</p>
-            <div class="ceo-sov-legend" aria-label="Sovereignty hub map legend">
-              <span><i class="ceo-sov-dot online"></i>Online</span>
-              <span><i class="ceo-sov-dot pending"></i>Pending</span>
-              <span><i class="ceo-sov-dot offline"></i>Offline</span>
-              <span><i class="ceo-sov-dot low"></i>Low</span>
-              <span><i class="ceo-sov-dot nonhub"></i>Non-hub system</span>
-              <span><i class="ceo-sov-jump"></i>Jump Bridge</span>
-              <span><i class="ceo-sov-alert">!</i>Mercenary den anarchy &gt;40%</span>
-            </div>
-            <a class="ceo-sov-map-frame" href="/assets/fountain-sov-hub-map-2026-10-02.png?v=1" target="_blank" rel="noopener" aria-label="Open Fountain Sovereignty Hub status map full size">
-              <img src="/assets/fountain-sov-hub-map-2026-10-02.png?v=1" loading="lazy" decoding="async" alt="Fountain sovereignty hub status map snapshot dated 2026-10-02">
-            </a>
-            <small class="ceo-sov-map-note">Use the built-in key above when reading hub upgrade states, non-hub systems, jump bridge links, and mercenary den alerts.</small>
+          <article class="glass ceo-command-card ceo-sov-source-card">
+            <span class="eyebrow">FOUNTAIN FIELD DATA</span>
+            <h3>USER MAP TRANSCRIPTION</h3>
+            <p>The Fields board uses a private INIT map snapshot, restricted to verified locations within 6 LY of C-N4OD. T2 arrays are cyan and labeled T2. Infrastructure status is separate from scanned site availability.</p>
           </article>
           <article class="glass ceo-command-card ceo-moon-card"><div class="ceo-card-title"><div><span class="eyebrow">CORPORATION ESI</span><h3>METENOX + STRUCTURES</h3></div><button id="ceoMoonRefresh" class="board-tool" type="button">REFRESH METENOX + STRUCTURES</button></div><p id="ceoMoonSource">Loading current Metenox drills…</p><div id="ceoMoonSummary" class="ceo-moon-summary"></div><small id="ceoMoonCount"></small><div id="ceoMoonRecords" class="ceo-moon-records"></div><div class="ceo-live-head"><h3>CORPORATION STRUCTURES</h3><small id="ceoStructuresStamp"></small></div><div id="ceoStructuresWarning" class="ceo-wallet-note blocked hidden"></div><p id="ceoStructureSummary"></p><div class="ceo-structure-filters"><input id="ceoStructureSearch" type="search" aria-label="Search corporation structures" placeholder="Search system, type, service or structure ID…"><select id="ceoStructureFilter" aria-label="Filter structure upkeep"><option value="all">All structures</option><option value="fuel">Low fuel / expiry passed</option><option value="offline">Offline services</option><option value="unknown">Fuel expiry not reported</option></select></div><small id="ceoStructureCount"></small><div id="ceoLiveStructures"></div></article>
           <article class="glass ceo-command-card ceo-operations-card"><div class="ceo-card-title"><div><span class="eyebrow">CORPORATION OPERATIONS</span><h3>ASSETS • JOBS • CONTRACTS • ORDERS</h3></div><button id="ceoOperationRefresh" class="board-tool" type="button">REFRESH ASSETS</button></div><div class="ceo-operation-tabs" role="tablist" aria-label="Corporation operations"><button type="button" role="tab" aria-selected="true" data-ceo-operation-tab="assets">ASSETS</button><button type="button" role="tab" aria-selected="false" data-ceo-operation-tab="jobs">INDUSTRY JOBS</button><button type="button" role="tab" aria-selected="false" data-ceo-operation-tab="contracts">CONTRACTS</button><button type="button" role="tab" aria-selected="false" data-ceo-operation-tab="orders">MARKET ORDERS</button></div><p id="ceoOperationStamp">Loading corporation operations…</p><div id="ceoOperationWarning" class="ceo-wallet-note blocked hidden"></div><div id="ceoOperationSummary" class="ceo-operation-summary"></div><div class="ceo-operation-filters"><input id="ceoOperationSearch" type="search" aria-label="Search corporation operations" placeholder="Search items, names, locations or IDs…"><select id="ceoOperationFilter" aria-label="Filter corporation operations"><option value="">All storage</option></select><select id="ceoOperationSort" aria-label="Sort corporation operations"><option value="name">Name A–Z</option><option value="amount">Most units</option></select></div><p id="ceoOperationNote"></p><div class="ceo-operation-pager"><small id="ceoOperationCount"></small><button id="ceoOperationPrev" class="board-tool" type="button" disabled>PREVIOUS</button><button id="ceoOperationNext" class="board-tool" type="button" disabled>NEXT</button></div><div id="ceoOperationRecords" class="ceo-operation-records"></div></article>
@@ -4063,13 +4048,23 @@
   }
 
   function definitions(){return [...(state?.source?.systems||[])].sort((a,b)=>a.rank-b.rank||a.order-b.order||a.system.localeCompare(b.system))}
+  function mapFields(){return Array.isArray(state?.source?.mapFields)?state.source.mapFields:[]}
+  function mapFieldForT3(d){return mapFields().find(row=>Number(row.tier)===3&&String(row.system)===String(d?.system)&&String(row.ore)===String(d?.ore))||null}
   function boardKey(kind,system){return `${kind}:${system}`}
   function saveBoardPrefs(){localStorage.setItem('jlrFieldBoard',JSON.stringify(boardPrefs))}
   function favoriteBoardKeys(){return new Set(boardPrefs.favorites)}
   function isBoardFavorite(kind,system){return favoriteBoardKeys().has(boardKey(kind,system))}
   function boardEntries(){
     const entries=[];
-    for(const d of definitions())entries.push({kind:'t3',key:boardKey('t3',d.system),system:d.system,d,f:field(d.system)});
+    const liveT3=new Set();
+    for(const d of definitions()){
+      entries.push({kind:'t3',key:boardKey('t3',d.system),system:d.system,d,f:field(d.system)});
+      liveT3.add(String(d.system)+'|'+String(d.ore));
+    }
+    for(const row of mapFields()){
+      if(Number(row.tier)===3&&liveT3.has(String(row.system)+'|'+String(row.ore)))continue;
+      entries.push({kind:'map',key:boardKey('map',row.id||[row.system,row.mineral,row.tier].join('|')),system:row.system,row});
+    }
     for(const row of Array.isArray(state?.source?.iceFields)?state.source.iceFields:[])entries.push({kind:'ice',key:boardKey('ice',row.system),system:row.system,row});
     for(const row of Array.isArray(state?.source?.a0Fields)?state.source.a0Fields:[])entries.push({kind:'a0',key:boardKey('a0',row.system),system:row.system,row});
     return entries;
@@ -4098,7 +4093,7 @@
       arrange.textContent=boardArrangeMode?'✓ ARRANGING':'↕ ARRANGE';
     }
     if(size)size.textContent=`BOX SIZE • ${boardPrefs.size==='small'?'S':boardPrefs.size==='large'?'L':'M'}`;
-    if(hint)hint.textContent=boardArrangeMode?'Drag any T3, ICE or A0 box to reorder • favorites stay pinned first':'☆ favorite any T3, ICE or A0 system to pin it to the front';
+    if(hint)hint.textContent=boardArrangeMode?'Drag any T3, ARRAY, ICE or A0 box to reorder • favorites stay pinned first':'☆ favorite any T3, ARRAY, ICE or A0 box to pin it to the front';
   }
   function toggleBoardFavorite(kind,system){
     const key=boardKey(kind,system),favorites=favoriteBoardKeys();
@@ -4710,7 +4705,9 @@
     const scanLine=boardScanLine(d.system);
     const evidence=boardEvidenceLine(d.system);
     const evidenceHtml=evidence?`<span class="sys-evidence ${esc(evidence.tone||'')}">${esc(evidence.text)}</span>`:'';
-    b.innerHTML=`${f.cherryPicked?'<span class="cherry-pin">🍒</span>':''}<button class="favorite-toggle" type="button" aria-pressed="${favorite}" title="${favorite?'Remove from favorites':'Favorite this system'}">${favorite?'★':'☆'}</button>${boardArrangeMode?'<span class="drag-grip" aria-hidden="true">⠿</span>':''}<span class="sys-name">${esc(d.system)}</span><span class="sys-ore">#${d.rank} ${esc(d.ore)}</span>${includeTimer?`<span class="sys-state">${line}${distanceText}</span>`:''}<span class="sys-scan${scanLine.stale?' stale':''}">${esc(scanLine.text)}</span>${evidenceHtml}`;
+    const mapRow=mapFieldForT3(d);
+    const mapHtml=mapRow?`<span class="sys-map-state ${esc(mapRow.powerState||'unknown')}">T3 ARRAY • MAP ${esc(String(mapRow.powerState||'unknown').toUpperCase())}</span>`:'';
+    b.innerHTML=`${f.cherryPicked?'<span class="cherry-pin">🍒</span>':''}<button class="favorite-toggle" type="button" aria-pressed="${favorite}" title="${favorite?'Remove from favorites':'Favorite this system'}">${favorite?'★':'☆'}</button>${boardArrangeMode?'<span class="drag-grip" aria-hidden="true">⠿</span>':''}<span class="sys-name">${esc(d.system)}</span><span class="sys-ore">#${d.rank} ${esc(d.ore)}</span>${includeTimer?`<span class="sys-state">${line}${distanceText}</span>`:''}${mapHtml}<span class="sys-scan${scanLine.stale?' stale':''}">${esc(scanLine.text)}</span>${evidenceHtml}`;
     b.title=`${d.system} • ${d.ore} • ${statusText[f.status]}${favorite?' • Favorite':''}${f.autoReopenedAt?` • ESI mining detected ${ago(f.autoReopenedAt)}`:''}${Number.isFinite(distance)?` • ${distance.toFixed(2)} LY from C-N4OD`:''} • ${scanLine.title}${evidence?' • '+evidence.title:''}${f.cherryPicked?' • Cherry Picked':''}${f.notes?.length?` • ${f.notes.length} notes`:''}`;
 
     b.querySelector('.favorite-toggle').addEventListener('click',e=>{
@@ -4754,6 +4751,39 @@
       boardSuppressClickUntil=Date.now()+180;
       document.querySelectorAll('.system-node.dragging,.system-node.drag-over').forEach(node=>node.classList.remove('dragging','drag-over'));
     });
+  }
+
+  function mapFieldBoardNode(row){
+    const card=document.createElement('div');
+    const key=boardKey('map',row.id||[row.system,row.mineral,row.tier].join('|'));
+    const favorite=favoriteBoardKeys().has(key);
+    const power=String(row.powerState||'unknown').toLowerCase();
+    card.className='system-node map-field-node tier-'+Number(row.tier);
+    card.dataset.status='map';
+    card.dataset.powerState=power;
+    card.dataset.system=row.system;
+    card.dataset.boardKey=key;
+    card.classList.toggle('favorite',favorite);
+    card.classList.toggle('arrange-mode',boardArrangeMode);
+    card.draggable=boardArrangeMode;
+    card.setAttribute('role','group');
+    card.innerHTML='<button class="favorite-toggle" type="button" aria-pressed="'+favorite+'" title="'+(favorite?'Remove from favorites':'Favorite this array')+'">'+(favorite?'★':'☆')+'</button>'+
+      (boardArrangeMode?'<span class="drag-grip" aria-hidden="true">⠿</span>':'')+
+      '<span class="sys-name">'+esc(row.system)+'</span>'+
+      '<span class="sys-ore">T'+Number(row.tier)+' • '+esc(row.ore)+'</span>'+
+      '<span class="sys-state">'+esc(row.mineral)+' PROSPECTING ARRAY</span>'+
+      '<span class="sys-scan">Awaiting scan • '+Number(row.distanceLy).toFixed(2)+' LY</span>'+
+      '<span class="sys-map-state '+esc(power)+'">MAP • '+esc(power.toUpperCase())+'</span>'+
+      '<span class="sys-scan">SOURCE • '+esc(String(row.capturedAt||state?.source?.mapFieldSnapshot?.capturedAt||'unknown date'))+'</span>';
+    card.title=row.system+' • Tier '+Number(row.tier)+' '+row.mineral+' Prospecting Array • user-supplied map '+power+' • snapshot '+String(row.capturedAt||'unknown date')+'. This card is infrastructure data; JLR does not invent site volume or respawn timing from the map.';
+    card.querySelector('.favorite-toggle').addEventListener('click',e=>{
+      e.preventDefault();e.stopPropagation();
+      const favorites=favoriteBoardKeys();
+      if(favorites.has(key))favorites.delete(key);else favorites.add(key);
+      boardPrefs.favorites=[...favorites];saveBoardPrefs();renderBoards();sfx('select');
+    });
+    attachBoardDrag(card,key);
+    return card;
   }
 
   function iceBoardNode(row){
@@ -4836,6 +4866,11 @@
     window.JlrFieldUpdateFeedback?.observe(state);
     board.innerHTML='';
     let counts={ready:0,picked:0,cleared:0,cherry:0};
+    if(state.fieldAccess&&!state.fieldAccess.allowed){
+      board.innerHTML='<div class="target-empty"><strong>INIT members only</strong><span>Link a character currently in INIT to view field locations and reports.</span></div>';
+      $('systemCountLabel').textContent='FIELDS LOCKED';$('statusCounts').textContent='INIT access required';return;
+    }
+    const mapRows=mapFields();
     const iceFields=Array.isArray(state.source?.iceFields)?state.source.iceFields:[];
     const a0Fields=Array.isArray(state.source?.a0Fields)?state.source.a0Fields:[];
     const a0Due=a0Fields.filter(row=>!row.scan?.superseded).filter(row=>row.scan?.due||!row.scan?.lastCheckedAt||Date.now()-Date.parse(row.scan.lastCheckedAt)>=12*60*60*1000).length;
@@ -4850,7 +4885,9 @@
 
     for(const entry of orderedBoardEntries()){
       if(entry.kind==='t3'){
-        if(filter==='all'||filter===entry.f.status||(filter==='cherry'&&entry.f.cherryPicked))board.appendChild(node(entry.d,entry.f,true));
+        if(filter==='all'||filter===entry.f.status||(filter==='cherry'&&entry.f.cherryPicked)||(filter==='map'&&mapFieldForT3(entry.d)))board.appendChild(node(entry.d,entry.f,true));
+      }else if(entry.kind==='map'&&(filter==='all'||filter==='map')){
+        board.appendChild(mapFieldBoardNode(entry.row));
       }else if(entry.kind==='ice'&&(filter==='all'||filter==='ice')){
         board.appendChild(iceBoardNode(entry.row));
       }else if(entry.kind==='a0'&&!entry.row.scan?.superseded&&(filter==='a0'||(filter==='all'&&entry.row.scan?.detected))){
@@ -4861,8 +4898,10 @@
     }
 
     window.JlrFieldUpdateFeedback?.paint(board,()=>{if(!document.hidden)sfx('fieldUpdate')});
-    $('statusCounts').textContent=`${counts.ready} mineable • ${counts.picked} picked • ${counts.cleared} respawning • ${counts.cherry} cherry • ${iceFields.length} ice • ${a0Fields.length} A0 • ${a0Due} need update`;
-    $('systemCountLabel').textContent=`${definitions().length} T3 • ${iceFields.length} ICE • ${a0Fields.length} A0`;
+    const mapSummary=state.source?.mapFieldSnapshot?.summary||{};
+    $('statusCounts').textContent=`${counts.ready} mineable • ${counts.picked} picked • ${counts.cleared} respawning • ${counts.cherry} cherry • ${Number(mapSummary.tier2||0)} T2 arrays • ${Number(mapSummary.tier3||0)} T3 map arrays • ${iceFields.length} ice • ${a0Fields.length} A0 • ${a0Due} need update`;
+    $('systemCountLabel').textContent=`${definitions().length} T3 • ${mapRows.length} MAP ARRAYS • ${iceFields.length} ICE • ${a0Fields.length} A0`;
+    if(filter==='map'&&!mapRows.length)board.innerHTML='<div class="target-empty"><strong>No private arrays are configured.</strong><span>Field locations are loaded from private server configuration.</span></div>';
     if(filter==='a0'&&!a0Fields.length)board.innerHTML='<div class="target-empty"><strong>No A0 systems found within 6 LY.</strong><span>The server scans Fountain star spectral classes through ESI. Active rare-asteroid anomalies themselves are not exposed remotely.</span></div>';
   }
   function renderHits(){

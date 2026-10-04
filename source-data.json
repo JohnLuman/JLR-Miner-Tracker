@@ -359,5 +359,10 @@
       "expectedCycleReduction": 0.615234375,
       "expectedEfficiencyBoost": 2.05078125
     }
+  },
+  "fieldMapSnapshot": {
+    "source": "Private INIT field catalog",
+    "extractionStatus": "private-server-config",
+    "fields": []
   }
 }
