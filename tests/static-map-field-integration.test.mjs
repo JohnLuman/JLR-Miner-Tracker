@@ -12,7 +12,7 @@ assert.match(server,/normalizeMapFieldSnapshot/);
 assert.match(server,/mapFields:FIELD_MAP_SNAPSHOT.fields/);
 assert.match(app,/function mapFieldBoardNode/);
 assert.match(app,/function mapFieldForT3/);
-assert.match(index,/data-filter="map"[^>]*>ARRAYS</button>/);
+assert.match(index,/data-filter="map"[^>]*>ARRAYS<\\/button>/);
 assert.doesNotMatch(app,/SOV HUB STATUS MAP/,'the supplied map is data source material, not a CEO dashboard image');
 assert.doesNotMatch(app,/fountain-sov-hub-map-2026-10-02/,'the supplied map asset is no longer embedded in CEO Command');
 assert.doesNotMatch(server,/esi-structures.read_corporation.v1/,'field import must not require a new Renius ESI scope');
