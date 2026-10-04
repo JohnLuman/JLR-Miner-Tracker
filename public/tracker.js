@@ -1,7 +1,7 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.10.20-alarm3';
-  const CORE_URL='/tracker-core.js?v=2.10.20-alarm-sim1';
+  const ALARM_VERSION='2.10.20-alarm-diag1';
+  const CORE_URL='/tracker-core.js?v=2.10.20-alarm-diag1';
 
   let alarmContext=null;
   let alarmNodes=[];
@@ -117,6 +117,7 @@
   function stopFighterAlarm(){
     const stopped=stopAlarmNodes();
     releaseAlarmLease();
+    window.dispatchEvent(new Event('jlr-alarm-stopped'));
     return stopped;
   }
 
@@ -175,6 +176,7 @@
       killmailId:loss?.killmailId==null?null:String(loss.killmailId),
       simulated:Boolean(loss?.simulated),
       localTest:Boolean(loss?.test),
+      simulationRunId:String(loss?.simulationRunId||''),
       audioReady:Boolean(context&&context.state==='running'),
       playing:false,
     };
@@ -192,6 +194,7 @@
 
   function alarmRuntimeStatus(){
     return{
+      overlayVisible:Boolean(alarmOverlay&&!alarmOverlay.classList.contains('hidden')),
       spokenVoice:false,
       alarmVersion:ALARM_VERSION,
       audioContext:alarmContext?.state||'none',

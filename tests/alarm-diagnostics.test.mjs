@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import '../public/alarm-diagnostics.js';
+const {create,result,snapshot}=globalThis.jlrAlarmDiagnostics;
+const report=create();
+assert.equal(result(report),'INCOMPLETE');
+for(const key of Object.keys(report.stages))report.stages[key]='ok';
+assert.equal(result(report),'PASS');
+report.stages.heardSound='pending';
+assert.equal(result(report),'INCOMPLETE','technical playback cannot prove heard sound');
+report.stages.browserReceipt='fail';
+assert.equal(result(report),'FAIL');
+report.secret='must not export';report.stages.cookie='must not export';report.runId='secret/raw';
+const exported=snapshot(report);
+assert.equal(exported.secret,undefined);assert.equal(exported.stages.cookie,undefined);assert.equal(exported.runId,'');
+report.runId='sim_test-123';assert.equal(snapshot(report).runId,report.runId);
+report.stages.audio='garbage';assert.equal(snapshot(report).stages.audio,'unknown');
+console.log('Alarm diagnostic completeness and export allowlist tests passed.');
