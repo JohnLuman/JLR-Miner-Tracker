@@ -44,12 +44,13 @@ assert.doesNotMatch(tracker,/tracker-intel-valuebar/,'Hot Zones does not render 
 assert.match(trackerCss,/tracker-region-picker/,'region selector is styled');
 
 assert.match(pkg.version,/^2\.10\.\d+$/,'Tracker integration stays on the current JLR version line');
-assert.ok(index.includes('/tracker.css?v=2.10.12-hotzones1'),'browser loads Tracker intel CSS');
-assert.ok(index.includes('/tracker.js?v=2.10.12-hotzones1'),'browser loads the cache-busted Tracker alarm loader');
+assert.ok(index.includes('/tracker.css?v=2.10.20-alarm-sim1-hotzones1'),'browser loads Tracker intel CSS');
+assert.ok(index.includes('/tracker.js?v=2.10.20-alarm-sim1'),'browser loads the cache-busted Tracker alarm loader');
 assert.ok(index.includes('/app.js?v='+pkg.version),'browser app cache key matches package version');
-assert.match(trackerLoader,/tracker-core\.js\?v=2\.10\.12-hotzones1/,'Tracker core alarm cache is busted');
+assert.match(trackerLoader,/tracker-core\.js\?v=2\.10\.20-alarm-sim1/,'Tracker core alarm cache is busted');
 
-assert.match(tracker,/TEST LOSS ALARM/,'Heavy Fighter Tracker exposes the redesigned local loss alarm test');
+assert.match(tracker,/LOCAL ALARM TEST/,'Heavy Fighter Tracker exposes the owner-only local loss alarm test');
+assert.match(tracker,/SIMULATE LOSS/,'Heavy Fighter Tracker exposes the owner-only end-to-end simulation test');
 assert.doesNotMatch(tracker,/TEST JLR CUSTOM VOICE/,'Heavy Fighter alarm no longer depends on custom voice');
 assert.match(trackerLoader,/Dedicated local two-tone alarm/,'loss alarm stays local without TTS latency');
 assert.match(trackerLoader,/ACKNOWLEDGE \/ STOP/,'loss alarm requires an explicit acknowledge/stop action');
