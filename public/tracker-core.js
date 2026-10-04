@@ -507,7 +507,7 @@
         :false;
       syncTrackerStream();
       if('Notification' in window&&Notification.permission==='default'){
-        try{await Notification.requestPermission();}catch(e){}
+        try{void Notification.requestPermission().catch(()=>{});}catch(e){}
       }
       if(!trackerData)loadTracker(false,false);
       else schedule(5000);
@@ -574,7 +574,7 @@
       trackerDiagnostic.stages.victimFilter=row?(row.reportable?'ok':'fail'):'unknown';
       trackerDiagnostic.timing=row?.timing||null;
       // Alarm playback resumes asynchronously; inspect the matching run after it settles.
-      await new Promise(resolve=>setTimeout(resolve,500));diagnosticRuntime();
+      await new Promise(resolve=>setTimeout(resolve,1200));diagnosticRuntime();
       if(!row)throw new Error('This tab did not receive the matching simulated loss within 10 seconds.');
       toast('Diagnostic recorded. Confirm whether you heard sound, stop the alarm, then export the log.');
     }catch(error){

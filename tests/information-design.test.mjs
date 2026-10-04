@@ -103,8 +103,8 @@ assert.match(pkg.version,/^2\.10\.\d+$/,'information-design release remains on t
 assert.ok(index.includes('/styles.css?v='+pkg.version),'main information-design CSS follows the package version');
 assert.ok(index.includes('/tracker.css?v=2.10.20-alarm-sim1-hotzones1'),'Tracker information-design CSS is cache-busted');
 assert.ok(index.includes('/app.js?v='+pkg.version+'-threat-fast1'),'dashboard JS cache key follows the package version and keeps the threat speed suffix');
-assert.ok(index.includes('/tracker.js?v=2.10.20-alarm-diag2'),'Tracker alarm loader is cache-busted');
-assert.match(trackerLoader,/tracker-core\.js\?v=2\.10\.20-alarm-diag2/,'Tracker core alarm client is cache-busted');
+assert.ok(index.includes('/tracker.js?v=2.10.26-alarm-diag3'),'Tracker alarm loader is cache-busted');
+assert.match(trackerLoader,/tracker-core\.js\?v=2\.10\.26-alarm-diag3/,'Tracker core alarm client is cache-busted');
 assert.match(trackerLoader,/expiresAt:now\+20_000/,'cross-tab alarm lease expires quickly when an owner tab dies');
 assert.match(trackerLoader,/},5_000\);/,'cross-tab alarm lease refreshes every five seconds');
 assert.match(trackerLoader,/showAlarmOverlay\(loss\|\|\{\}\);[\s\S]*context\.state!=='running'/,'visual Heavy Fighter alarm still appears when browser sound is locked');
