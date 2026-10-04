@@ -4848,10 +4848,10 @@
     const seen=iceScan?Math.min(fields,Math.max(0,Number(iceScan.seen)||0)):null;
     const missing=seen==null?null:Math.max(0,fields-seen);
     const coverage=seen==null
-      ?`? / ${fields} FIELDS`
+      ?'UNCONFIRMED'
       :missing>0
-        ?`${seen} / ${fields} FIELDS • ${missing} MISSING`
-        :`${seen} / ${fields} FIELDS`;
+        ?seen===0?'FIELD DOWN / CLEARED':`${seen} UP • ${missing} DOWN / CLEARED`
+        :'FIELD UP';
     card.innerHTML='<button class="favorite-toggle" type="button" aria-pressed="'+favorite+'" title="'+(favorite?'Remove from favorites':'Favorite this system')+'">'+(favorite?'★':'☆')+'</button>'+
       (boardArrangeMode?'<span class="drag-grip" aria-hidden="true">⠿</span>':'')+
       '<span class="sys-name">'+esc(row.system)+'</span>'+
