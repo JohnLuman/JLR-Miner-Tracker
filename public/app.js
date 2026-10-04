@@ -4061,9 +4061,14 @@
       entries.push({kind:'t3',key:boardKey('t3',d.system),system:d.system,d,f:field(d.system)});
       liveT3.add(String(d.system)+'|'+String(d.ore));
     }
+    const mapGroups=new Map();
     for(const row of mapFields()){
       if(Number(row.tier)===3&&liveT3.has(String(row.system)+'|'+String(row.ore)))continue;
-      entries.push({kind:'map',key:boardKey('map',row.id||[row.system,row.mineral,row.tier].join('|')),system:row.system,row});
+      const id=Number(row.tier)===2?'t2|'+row.system:row.id||[row.system,row.mineral,row.tier].join('|');
+      if(mapGroups.has(id)){mapGroups.get(id).rows.push(row);continue}
+      const grouped={...row,id,rows:[row]};
+      mapGroups.set(id,grouped);
+      entries.push({kind:'map',key:boardKey('map',id),system:row.system,row:grouped});
     }
     for(const row of Array.isArray(state?.source?.iceFields)?state.source.iceFields:[])entries.push({kind:'ice',key:boardKey('ice',row.system),system:row.system,row});
     for(const row of Array.isArray(state?.source?.a0Fields)?state.source.a0Fields:[])entries.push({kind:'a0',key:boardKey('a0',row.system),system:row.system,row});
@@ -4144,9 +4149,9 @@
     const row=scanOverride||state?.scans?.[system]||null;
     const at=row?.lastScanAt||null;
     const ms=Date.parse(at||'');
+    const reminder=mapFields().find(row=>Number(row.tier)===3&&row.system===system&&row.scanReminderStartedAt);
+    if(reminder&&(!Number.isFinite(ms)||Date.parse(reminder.scanReminderStartedAt)>ms))return mapScanReminderLine(reminder);
     if(!Number.isFinite(ms)){
-      const reminder=mapFields().find(row=>Number(row.tier)===3&&row.system===system&&row.scanReminderStartedAt);
-      if(reminder)return mapScanReminderLine(reminder);
       return{text:'SCAN • NEVER',stale:true,title:'No Probe Scanner update recorded yet'};
     }
     const stale=row?.due||Date.now()-ms>=12*60*60*1000;
@@ -4716,7 +4721,7 @@
     const evidence=boardEvidenceLine(d.system);
     const evidenceHtml=evidence?`<span class="sys-evidence ${esc(evidence.tone||'')}">${esc(evidence.text)}</span>`:'';
     const mapRow=mapFieldForT3(d);
-    const mapHtml=mapRow?`<span class="sys-map-state ${esc(mapRow.powerState||'unknown')}">T3 ARRAY • MAP ${esc(String(mapRow.powerState||'unknown').toUpperCase())}</span>`:'';
+    const mapHtml='';
     b.innerHTML=`${f.cherryPicked?'<span class="cherry-pin">🍒</span>':''}<button class="favorite-toggle" type="button" aria-pressed="${favorite}" title="${favorite?'Remove from favorites':'Favorite this system'}">${favorite?'★':'☆'}</button>${boardArrangeMode?'<span class="drag-grip" aria-hidden="true">⠿</span>':''}<span class="sys-name">${esc(d.system)}</span><span class="sys-ore">T3 ${esc(d.ore)}</span>${includeTimer?`<span class="sys-state">${line}${distanceText}</span>`:''}${mapHtml}<span class="sys-scan${scanLine.stale?' stale':''}">${esc(scanLine.text)}</span>${evidenceHtml}`;
     b.title=`${d.system} • ${d.ore} • ${statusText[f.status]}${favorite?' • Favorite':''}${f.autoReopenedAt?` • ESI mining detected ${ago(f.autoReopenedAt)}`:''}${Number.isFinite(distance)?` • ${distance.toFixed(2)} LY from C-N4OD`:''} • ${scanLine.title}${evidence?' • '+evidence.title:''}${f.cherryPicked?' • Cherry Picked':''}${f.notes?.length?` • ${f.notes.length} notes`:''}`;
 
@@ -4768,7 +4773,8 @@
     const key=boardKey('map',row.id||[row.system,row.mineral,row.tier].join('|'));
     const favorite=favoriteBoardKeys().has(key);
     const power=String(row.powerState||'unknown').toLowerCase();
-    const reminder=mapScanReminderLine(row);
+    const rows=row.rows||[row];
+    const reminder=mapScanReminderLine(rows.reduce((old,item)=>Date.parse(item.scanReminderStartedAt||'')<Date.parse(old.scanReminderStartedAt||'')?item:old,row));
     card.className='system-node map-field-node tier-'+Number(row.tier);
     card.dataset.status='map';
     card.dataset.powerState=power;
@@ -4781,16 +4787,28 @@
     card.innerHTML='<button class="favorite-toggle" type="button" aria-pressed="'+favorite+'" title="'+(favorite?'Remove from favorites':'Favorite this array')+'">'+(favorite?'★':'☆')+'</button>'+
       (boardArrangeMode?'<span class="drag-grip" aria-hidden="true">⠿</span>':'')+
       '<span class="sys-name">'+esc(row.system)+'</span>'+
-      '<span class="sys-ore">T'+Number(row.tier)+' '+esc(row.ore==='Awaiting scan'?row.mineral:row.ore)+'</span>'+ 
-      '<span class="sys-state">'+esc(power.toUpperCase())+' • '+Number(row.distanceLy).toFixed(2)+' LY</span>'+ 
+      rows.map(item=>'<span class="sys-ore">T'+Number(item.tier)+' '+esc(item.ore==='Awaiting scan'?item.mineral:item.ore)+
+        (item.status==='cleared'?' • CLEARED • '+esc(timer(item.timerEndsAt)):'')+'</span>').join('')+ 
+      '<span class="sys-state">'+Number(row.distanceLy).toFixed(2)+' LY</span>'+ 
       '<span class="sys-scan'+(reminder.stale?' stale':'')+'" title="'+esc(reminder.title)+'">'+esc(reminder.text)+'</span>';
-    card.title=row.system+' • T'+Number(row.tier)+' '+row.mineral+' array • '+power+' • '+Number(row.distanceLy).toFixed(2)+' LY from C-N4OD • Awaiting scan';
+    card.title=row.system+' • T'+Number(row.tier)+' '+row.mineral+' • '+Number(row.distanceLy).toFixed(2)+' LY from C-N4OD • Awaiting scan';
     card.querySelector('.favorite-toggle').addEventListener('click',e=>{
       e.preventDefault();e.stopPropagation();
       const favorites=favoriteBoardKeys();
       if(favorites.has(key))favorites.delete(key);else favorites.add(key);
       boardPrefs.favorites=[...favorites];saveBoardPrefs();renderBoards();sfx('select');
     });
+    for(const item of rows.filter(item=>Number(item.tier)===2&&item.status!=='cleared')){
+      const clear=document.createElement('button');clear.type='button';clear.className='map-clear-control';
+      clear.textContent='CLEAR '+(item.ore==='Awaiting scan'?item.mineral:item.ore);
+      clear.addEventListener('click',async e=>{
+        e.preventDefault();e.stopPropagation();
+        if(!window.confirm('Mark '+item.system+' T2 '+item.ore+' mined out? This starts its 10-hour respawn timer.'))return;
+        clear.disabled=true;
+        try{await api('/api/fields/map/'+encodeURIComponent(item.id)+'/clear',{method:'POST',body:JSON.stringify({confirm:true})});toast(item.ore+' marked cleared.');}
+        catch(error){clear.disabled=false;toast(error.message);}
+      });card.appendChild(clear);
+    }
     attachBoardDrag(card,key);
     return card;
   }
