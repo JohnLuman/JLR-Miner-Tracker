@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import '../public/tracker-clock.js';
+const origin=Date.parse('2026-10-04T10:00:00Z');let wall=origin-120000,tick=0;
+const clock=globalThis.jlrTrackerClock.create({wallNow:()=>wall,tickNow:()=>tick});
+assert.equal(clock.inspect(new Date(origin).toISOString()).fresh,false);
+assert.equal(clock.observe(new Date(origin).toISOString()),true);
+assert.equal(clock.inspect(new Date(origin).toISOString()).fresh,true,'server clock corrects slow PC');
+assert.equal(clock.inspect(new Date(origin).toISOString()).rawAgeMs,-120000);
+wall=origin+3600000;tick=1000;
+assert.equal(clock.inspect(new Date(origin).toISOString()).adjustedAgeMs,1000,'PC clock jump does not change elapsed time');
+assert.equal(clock.inspect(new Date(origin-60000).toISOString()).fresh,false,'stale events stay rejected');
+assert.equal(clock.inspect(new Date(origin+6001).toISOString()).fresh,false,'future beyond five seconds stays rejected');
+assert.equal(clock.inspect(new Date(origin+6000).toISOString()).fresh,true,'transport uncertainty is bounded to five seconds');
+assert.equal(clock.observe('invalid'),false);assert.equal(clock.inspect('invalid').fresh,false);
+tick=60000;assert.equal(clock.inspect(new Date(origin).toISOString()).fresh,true);tick=60001;assert.equal(clock.inspect(new Date(origin).toISOString()).fresh,false);
+console.log('Server clock correction, monotonic elapsed time, freshness bounds and invalid timestamps passed.');

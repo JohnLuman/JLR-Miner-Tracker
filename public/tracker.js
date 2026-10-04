@@ -1,7 +1,7 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.10.20-alarm-diag1';
-  const CORE_URL='/tracker-core.js?v=2.10.20-alarm-diag1';
+  const ALARM_VERSION='2.10.20-alarm-diag2';
+  const CORE_URL='/tracker-core.js?v=2.10.20-alarm-diag2';
 
   let alarmContext=null;
   let alarmNodes=[];

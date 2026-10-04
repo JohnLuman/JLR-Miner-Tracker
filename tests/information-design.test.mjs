@@ -87,7 +87,7 @@ assert.match(trackerCss,/\.fighter-loss-alarm-overlay/,'Heavy Fighter loss alarm
 assert.match(tracker,/const ALERT_MAX_AGE_MS=60\*1000/,'Heavy Fighter alert window is capped at 60 seconds');
 assert.match(tracker,/const ALERT_FALLBACK_POLL_SECONDS=20/,'armed Heavy Fighter alerts have a 20-second polling safety net');
 assert.match(tracker,/Math\.min\(serverSeconds,ALERT_FALLBACK_POLL_SECONDS\)/,'armed polling fallback stays inside the alert freshness window');
-assert.match(tracker,/Date\.parse\(String\(row\?\.receivedAt\|\|''\)\)/,'Heavy Fighter alert freshness is based on JLR receive time');
+assert.match(tracker,/trackerClock\.inspect\(row\?\.receivedAt\)\.fresh/,'Heavy Fighter alert freshness uses receive time against the sampled server clock');
 assert.match(tracker,/filter\(isAlertFresh\)/,'polling cannot alarm on historical losses that merely look unseen');
 assert.match(index,/id="scoutGlobalAlert"/,'Scout update requests are visible outside the Scout tab');
 assert.doesNotMatch(app,/NO MICROPHONE REQUIRED/,'Scout omits redundant microphone copy');
@@ -103,8 +103,8 @@ assert.match(pkg.version,/^2\.10\.\d+$/,'information-design release remains on t
 assert.ok(index.includes('/styles.css?v='+pkg.version),'main information-design CSS follows the package version');
 assert.ok(index.includes('/tracker.css?v=2.10.20-alarm-sim1-hotzones1'),'Tracker information-design CSS is cache-busted');
 assert.ok(index.includes('/app.js?v='+pkg.version+'-threat-fast1'),'dashboard JS cache key follows the package version and keeps the threat speed suffix');
-assert.ok(index.includes('/tracker.js?v=2.10.20-alarm-diag1'),'Tracker alarm loader is cache-busted');
-assert.match(trackerLoader,/tracker-core\.js\?v=2\.10\.20-alarm-diag1/,'Tracker core alarm client is cache-busted');
+assert.ok(index.includes('/tracker.js?v=2.10.20-alarm-diag2'),'Tracker alarm loader is cache-busted');
+assert.match(trackerLoader,/tracker-core\.js\?v=2\.10\.20-alarm-diag2/,'Tracker core alarm client is cache-busted');
 assert.match(trackerLoader,/expiresAt:now\+20_000/,'cross-tab alarm lease expires quickly when an owner tab dies');
 assert.match(trackerLoader,/},5_000\);/,'cross-tab alarm lease refreshes every five seconds');
 assert.match(trackerLoader,/showAlarmOverlay\(loss\|\|\{\}\);[\s\S]*context\.state!=='running'/,'visual Heavy Fighter alarm still appears when browser sound is locked');
