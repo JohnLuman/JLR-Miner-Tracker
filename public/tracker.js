@@ -1,7 +1,7 @@
 'use strict';
 (function(){
   const ALARM_VERSION='2.10.20-alarm3';
-  const CORE_URL='/tracker-core.js?v=2.10.12-hotzones1';
+  const CORE_URL='/tracker-core.js?v=2.10.20-alarm-sim1';
 
   let alarmContext=null;
   let alarmNodes=[];
