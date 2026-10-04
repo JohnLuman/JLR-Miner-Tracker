@@ -27,6 +27,29 @@
   let trackerStreamState='offline';
   let trackerStreamStatus=null;
   let trackerTestState={requestedAt:null,receivedAt:null,runId:'',killmailId:'',deliveredClients:0,error:''};
+  let trackerDiagnostic=null;
+  let trackerDiagnosticRunning=false;
+  const trackerDiagnosticRows=new Map();
+  function diagnosticRuntime(){
+    if(!trackerDiagnostic||!window.jlrTestAccess)return;
+    const status=typeof window.jlrAlarmRuntimeStatus==='function'?window.jlrAlarmRuntimeStatus():null;
+    if(!status||status.lastTrigger?.simulationRunId!==trackerDiagnostic.runId)return;
+    trackerDiagnostic.stages.overlay=status.overlayVisible?'ok':'fail';
+    trackerDiagnostic.stages.audio=status.audioContext==='running'&&status.alarmActive&&status.lastTrigger.playing?'ok':'fail';
+  }
+  function exportDiagnostic(){
+    if(!window.jlrTestAccess||!trackerDiagnostic)return;
+    const blob=new Blob([JSON.stringify(window.jlrAlarmDiagnostics.snapshot(trackerDiagnostic),null,2)],{type:'application/json'});
+    const url=URL.createObjectURL(blob),link=document.createElement('a');
+    link.href=url;link.download='jlr-alarm-diagnostic.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
+  window.addEventListener('jlr-alarm-stopped',function(){
+    if(!window.jlrTestAccess||!trackerDiagnostic||!trackerDiagnostic.runId)return;
+    const status=window.jlrAlarmRuntimeStatus?.();
+    if(status?.lastTrigger?.simulationRunId===trackerDiagnostic.runId){
+      trackerDiagnostic.stages.silence=!status.alarmActive&&!status.overlayVisible?'ok':'fail';render();
+    }
+  });
   let trackerIntel=null;
   let trackerIntelLoading=false;
   let trackerIntelError='';
@@ -244,7 +267,11 @@
   function mergeClientLosses(rows){
     const merged=new Map();
     (Array.isArray(rows)?rows:[]).forEach(function(row){
-      if(!isReportableLoss(row))return;
+      if(trackerDiagnosticRunning&&row?.simulated&&window.jlrTestAccess&&row.simulationRunId){
+      if(trackerDiagnosticRows.size>=20)trackerDiagnosticRows.delete(trackerDiagnosticRows.keys().next().value);
+      trackerDiagnosticRows.set(String(row.simulationRunId),{fresh:isAlertFresh(row),reportable:isReportableLoss(row)});
+    }
+    if(!isReportableLoss(row))return;
       const id=String(row&&row.killmailId||'');
       if(id&&!merged.has(id))merged.set(id,row);
     });
@@ -519,31 +546,42 @@
   }
   async function simulateLoss(){
     if(!window.jlrTestAccess){toast('JLR owner test access required.');return}
+    if(trackerDiagnosticRunning)return;
+    trackerDiagnosticRunning=true;trackerDiagnosticRows.clear();
+    trackerDiagnostic=window.jlrAlarmDiagnostics.create();
     trackerTestState={requestedAt:new Date().toISOString(),receivedAt:null,runId:'',killmailId:'',deliveredClients:0,error:''};
     render();
     try{
+      // Unlock audio during the user's click, before waiting for the stream or HTTP.
+      if(typeof window.jlrUnlockFighterAlarm==='function')await window.jlrUnlockFighterAlarm();
       if(!trackerArmed)await setArmed(true);
-      await waitForTrackerStream();
-      const result=await api('/api/tracker/heavy-fighters/test-loss',{method:'POST'});
-      trackerTestState={
-        ...trackerTestState,
-        runId:String(result?.runId||''),
-        killmailId:String(result?.loss?.killmailId||''),
-        deliveredClients:Number(result?.deliveredClients)||0,
-        error:Number(result?.deliveredClients)>0?'':'No account-scoped live Tracker stream received the simulation.',
-      };
-      render();
-      if(Number(result?.deliveredClients)>0){
-        toast('Simulated Heavy Fighter loss sent through your live Tracker stream.');
-      }else{
-        toast('Simulation created, but no live Tracker stream was connected. Test marked failed.');
+      if(!await waitForTrackerStream()){
+        trackerDiagnostic.stages.stream='fail';throw new Error('Live stream connection timed out.');
       }
-      setTimeout(function(){render();},300);
+      trackerDiagnostic.stages.stream='ok';
+      const abort=new AbortController();
+      const requestTimeout=setTimeout(()=>abort.abort(),15000);
+      let result;
+      try{result=await api('/api/tracker/heavy-fighters/test-loss',{method:'POST',signal:abort.signal});}
+      finally{clearTimeout(requestTimeout);}
+      trackerDiagnostic.runId=String(result?.runId||'');
+      trackerDiagnostic.stages.ownerRequest='ok'; // Successful response from the owner-guarded route.
+      trackerDiagnostic.stages.serverSend=Number(result?.deliveredClients)>0?'ok':'fail';
+      trackerTestState={...trackerTestState,runId:trackerDiagnostic.runId,killmailId:String(result?.loss?.killmailId||''),deliveredClients:Number(result?.deliveredClients)||0};
+      const until=Date.now()+10000;
+      while(!trackerDiagnosticRows.has(trackerDiagnostic.runId)&&Date.now()<until)await new Promise(resolve=>setTimeout(resolve,100));
+      const row=trackerDiagnosticRows.get(trackerDiagnostic.runId);
+      trackerDiagnostic.stages.browserReceipt=row?'ok':'fail';
+      trackerDiagnostic.stages.freshness=row?(row.fresh&&row.reportable?'ok':'fail'):'unknown';
+      // Alarm playback resumes asynchronously; inspect the matching run after it settles.
+      await new Promise(resolve=>setTimeout(resolve,500));diagnosticRuntime();
+      if(!row)throw new Error('This tab did not receive the matching simulated loss within 10 seconds.');
+      toast('Diagnostic recorded. Confirm whether you heard sound, stop the alarm, then export the log.');
     }catch(error){
-      trackerTestState={...trackerTestState,error:String(error?.message||error||'Simulation failed.')};
-      render();
-      toast('Heavy Fighter simulation failed: '+trackerTestState.error);
-    }
+      if(trackerDiagnostic.stages.ownerRequest==='pending')trackerDiagnostic.stages.ownerRequest='unknown';
+      trackerTestState={...trackerTestState,error:'Diagnostic could not complete. Check the stage results.'};
+      toast('Alarm diagnostic incomplete. Export the log for review.');
+    }finally{trackerDiagnosticRunning=false;render();}
   }
   function stopAlarm(){
     const stopped=typeof window.jlrStopFighterAlarm==='function'
@@ -755,6 +793,18 @@
         '</section>'+
       '</div>';
 
+    if(window.jlrTestAccess&&trackerDiagnostic){
+      const lab=trackerPanel.querySelector('.tracker-test-lab');
+      if(lab){
+        const box=document.createElement('div');
+        box.innerHTML='<strong>DIAGNOSTIC: '+window.jlrAlarmDiagnostics.result(trackerDiagnostic)+'</strong><small>'+Object.entries(trackerDiagnostic.stages).map(([key,value])=>esc(key)+': '+esc(value)).join(' • ')+'</small><button id="trackerHeard" type="button">I HEARD SOUND</button><button id="trackerNotHeard" type="button">NO SOUND</button><button id="trackerExportDiagnostic" type="button">EXPORT DIAGNOSTIC LOG</button>';
+        lab.appendChild(box);
+        for(const id of ['#trackerHeard','#trackerNotHeard'])box.querySelector(id).disabled=trackerDiagnosticRunning||trackerDiagnostic.stages.browserReceipt!=='ok';
+        box.querySelector('#trackerHeard').onclick=()=>{if(!trackerDiagnosticRunning&&trackerDiagnostic.stages.browserReceipt==='ok'){trackerDiagnostic.stages.heardSound='ok';render();}};
+        box.querySelector('#trackerNotHeard').onclick=()=>{if(!trackerDiagnosticRunning&&trackerDiagnostic.stages.browserReceipt==='ok'){trackerDiagnostic.stages.heardSound='fail';render();}};
+        box.querySelector('#trackerExportDiagnostic').onclick=exportDiagnostic;
+      }
+    }
     const arm=document.getElementById('trackerArm');
     const test=document.getElementById('trackerTest');
     const simulate=document.getElementById('trackerSimulate');
