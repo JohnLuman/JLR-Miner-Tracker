@@ -4770,12 +4770,10 @@
     card.innerHTML='<button class="favorite-toggle" type="button" aria-pressed="'+favorite+'" title="'+(favorite?'Remove from favorites':'Favorite this array')+'">'+(favorite?'★':'☆')+'</button>'+
       (boardArrangeMode?'<span class="drag-grip" aria-hidden="true">⠿</span>':'')+
       '<span class="sys-name">'+esc(row.system)+'</span>'+
-      '<span class="sys-ore">T'+Number(row.tier)+' • '+esc(row.ore)+'</span>'+
-      '<span class="sys-state">'+esc(row.mineral)+' PROSPECTING ARRAY</span>'+
-      '<span class="sys-scan">Awaiting scan • '+Number(row.distanceLy).toFixed(2)+' LY</span>'+
-      '<span class="sys-map-state '+esc(power)+'">MAP • '+esc(power.toUpperCase())+'</span>'+
-      '<span class="sys-scan">SOURCE • '+esc(String(row.capturedAt||state?.source?.mapFieldSnapshot?.capturedAt||'unknown date'))+'</span>';
-    card.title=row.system+' • Tier '+Number(row.tier)+' '+row.mineral+' Prospecting Array • user-supplied map '+power+' • snapshot '+String(row.capturedAt||'unknown date')+'. This card is infrastructure data; JLR does not invent site volume or respawn timing from the map.';
+      '<span class="sys-ore">T'+Number(row.tier)+' • '+esc(row.ore==='Awaiting scan'?row.mineral:row.ore)+'</span>'+ 
+      '<span class="sys-state">'+esc(power.toUpperCase())+' • '+Number(row.distanceLy).toFixed(2)+' LY</span>'+ 
+      '<span class="sys-scan">SCAN • AWAITING SCAN</span>';
+    card.title=row.system+' • T'+Number(row.tier)+' '+row.mineral+' array • '+power+' • '+Number(row.distanceLy).toFixed(2)+' LY from C-N4OD • Awaiting scan';
     card.querySelector('.favorite-toggle').addEventListener('click',e=>{
       e.preventDefault();e.stopPropagation();
       const favorites=favoriteBoardKeys();
