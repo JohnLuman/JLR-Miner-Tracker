@@ -4088,7 +4088,7 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .ceo-metenox-survey{grid-column:1/-1}.ceo-metenox-survey textarea{width:100%;min-height:110px;background:var(--panel);color:inherit;border:1px solid var(--line);border-radius:8px;padding:10px;font:inherit}.ceo-metenox-output{overflow-x:auto}.ceo-metenox-output table{width:100%;text-align:left}.ceo-metenox-output td,.ceo-metenox-output th{padding:8px}
 
 /* Tier remains visible independently of infrastructure power status. */
-.field-board .system-node.map-field-node.tier-2{background:linear-gradient(180deg,#143c4c,#0b1f29);border-color:#47c5cf;box-shadow:inset 0 -3px 0 #47c5cf}
-.map-field-node.tier-2 .sys-ore{color:#7de6ec}
+.field-board .system-node.map-field-node.tier-2{background:linear-gradient(180deg,#482914,#26180d);border-color:#ff9a4e;box-shadow:inset 0 -3px 0 #ff9a4e}
+.map-field-node.tier-2 .sys-ore{color:#ffd0a6}
 
-html[data-theme] .field-board .system-node.map-field-node.tier-2{background:linear-gradient(180deg,#143c4c,#0b1f29);border-color:#47c5cf;box-shadow:inset 0 -3px 0 #47c5cf}
+html[data-theme] .field-board .system-node.map-field-node.tier-2{background:linear-gradient(180deg,#482914,#26180d);border-color:#ff9a4e;box-shadow:inset 0 -3px 0 #ff9a4e}

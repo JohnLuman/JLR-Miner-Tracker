@@ -4134,11 +4134,21 @@
   }
   function field(system){return state?.fields?.[system]||null}
   function def(system){return definitions().find(x=>x.system===system)||null}
+  function mapScanReminderLine(row){
+    const start=Date.parse(row?.scanReminderStartedAt||'');
+    if(!Number.isFinite(start))return{text:'SCAN • AWAITING SCAN',stale:true,title:'Awaiting a Probe Scanner report'};
+    const due=start+12*60*60*1000;
+    return{text:Date.now()>=due?'SCAN • UPDATE DUE':'SCAN IN '+timer(new Date(due).toISOString()),stale:Date.now()>=due,title:'Reminder started manually; awaiting a real scan'};
+  }
   function boardScanLine(system,scanOverride=null){
     const row=scanOverride||state?.scans?.[system]||null;
     const at=row?.lastScanAt||null;
     const ms=Date.parse(at||'');
-    if(!Number.isFinite(ms))return{text:'SCAN • NEVER',stale:true,title:'No Probe Scanner update recorded yet'};
+    if(!Number.isFinite(ms)){
+      const reminder=mapFields().find(row=>Number(row.tier)===3&&row.system===system&&row.scanReminderStartedAt);
+      if(reminder)return mapScanReminderLine(reminder);
+      return{text:'SCAN • NEVER',stale:true,title:'No Probe Scanner update recorded yet'};
+    }
     const stale=row?.due||Date.now()-ms>=12*60*60*1000;
     const age=ago(at).toUpperCase();
     return{
@@ -4707,7 +4717,7 @@
     const evidenceHtml=evidence?`<span class="sys-evidence ${esc(evidence.tone||'')}">${esc(evidence.text)}</span>`:'';
     const mapRow=mapFieldForT3(d);
     const mapHtml=mapRow?`<span class="sys-map-state ${esc(mapRow.powerState||'unknown')}">T3 ARRAY • MAP ${esc(String(mapRow.powerState||'unknown').toUpperCase())}</span>`:'';
-    b.innerHTML=`${f.cherryPicked?'<span class="cherry-pin">🍒</span>':''}<button class="favorite-toggle" type="button" aria-pressed="${favorite}" title="${favorite?'Remove from favorites':'Favorite this system'}">${favorite?'★':'☆'}</button>${boardArrangeMode?'<span class="drag-grip" aria-hidden="true">⠿</span>':''}<span class="sys-name">${esc(d.system)}</span><span class="sys-ore">#${d.rank} ${esc(d.ore)}</span>${includeTimer?`<span class="sys-state">${line}${distanceText}</span>`:''}${mapHtml}<span class="sys-scan${scanLine.stale?' stale':''}">${esc(scanLine.text)}</span>${evidenceHtml}`;
+    b.innerHTML=`${f.cherryPicked?'<span class="cherry-pin">🍒</span>':''}<button class="favorite-toggle" type="button" aria-pressed="${favorite}" title="${favorite?'Remove from favorites':'Favorite this system'}">${favorite?'★':'☆'}</button>${boardArrangeMode?'<span class="drag-grip" aria-hidden="true">⠿</span>':''}<span class="sys-name">${esc(d.system)}</span><span class="sys-ore">T3 ${esc(d.ore)}</span>${includeTimer?`<span class="sys-state">${line}${distanceText}</span>`:''}${mapHtml}<span class="sys-scan${scanLine.stale?' stale':''}">${esc(scanLine.text)}</span>${evidenceHtml}`;
     b.title=`${d.system} • ${d.ore} • ${statusText[f.status]}${favorite?' • Favorite':''}${f.autoReopenedAt?` • ESI mining detected ${ago(f.autoReopenedAt)}`:''}${Number.isFinite(distance)?` • ${distance.toFixed(2)} LY from C-N4OD`:''} • ${scanLine.title}${evidence?' • '+evidence.title:''}${f.cherryPicked?' • Cherry Picked':''}${f.notes?.length?` • ${f.notes.length} notes`:''}`;
 
     b.querySelector('.favorite-toggle').addEventListener('click',e=>{
@@ -4758,6 +4768,7 @@
     const key=boardKey('map',row.id||[row.system,row.mineral,row.tier].join('|'));
     const favorite=favoriteBoardKeys().has(key);
     const power=String(row.powerState||'unknown').toLowerCase();
+    const reminder=mapScanReminderLine(row);
     card.className='system-node map-field-node tier-'+Number(row.tier);
     card.dataset.status='map';
     card.dataset.powerState=power;
@@ -4770,9 +4781,9 @@
     card.innerHTML='<button class="favorite-toggle" type="button" aria-pressed="'+favorite+'" title="'+(favorite?'Remove from favorites':'Favorite this array')+'">'+(favorite?'★':'☆')+'</button>'+
       (boardArrangeMode?'<span class="drag-grip" aria-hidden="true">⠿</span>':'')+
       '<span class="sys-name">'+esc(row.system)+'</span>'+
-      '<span class="sys-ore">T'+Number(row.tier)+' • '+esc(row.ore==='Awaiting scan'?row.mineral:row.ore)+'</span>'+ 
+      '<span class="sys-ore">T'+Number(row.tier)+' '+esc(row.ore==='Awaiting scan'?row.mineral:row.ore)+'</span>'+ 
       '<span class="sys-state">'+esc(power.toUpperCase())+' • '+Number(row.distanceLy).toFixed(2)+' LY</span>'+ 
-      '<span class="sys-scan">SCAN • AWAITING SCAN</span>';
+      '<span class="sys-scan'+(reminder.stale?' stale':'')+'" title="'+esc(reminder.title)+'">'+esc(reminder.text)+'</span>';
     card.title=row.system+' • T'+Number(row.tier)+' '+row.mineral+' array • '+power+' • '+Number(row.distanceLy).toFixed(2)+' LY from C-N4OD • Awaiting scan';
     card.querySelector('.favorite-toggle').addEventListener('click',e=>{
       e.preventDefault();e.stopPropagation();
