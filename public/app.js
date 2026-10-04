@@ -6197,7 +6197,7 @@
 
   function renderAll(){if(!state)return;renderFleet();renderTop();renderTrackerBrain();renderSelect();renderBoards();renderHits();renderFleetPerformance();renderMiningVisuals();renderIceMining();renderGasHuffing();renderRanking();renderTimers();renderSelected();renderNotes();renderScanCharacters();renderCharacters();renderCalculator();renderMerIntel();if(activeTab==='ceo')renderCeoCommand();}
 
-  async function refreshMe(){const p=await api('/api/me');me=p.user;if(me){window.jlrAlarmAccountId=String(me.id||'');$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;syncDoctrineTabAccess();syncTrackerTabAccess();syncCeoTabAccess()}return p.authenticated}
+  async function refreshMe(){const p=await api('/api/me');me=p.user;if(me){window.jlrAlarmAccountId=String(me.id||'');window.jlrTestAccess=Boolean(me?.jlrTestAccess?.allowed);$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;syncDoctrineTabAccess();syncTrackerTabAccess();syncCeoTabAccess()}return p.authenticated}
   async function loadState(){
     const [nextState,myLedger]=await Promise.all([
       api('/api/state'),
@@ -6957,7 +6957,7 @@
       if(!config.ssoConfigured){$('setupWarning').classList.remove('hidden');$('setupWarning').textContent='Login is not configured yet.';}
       const auth=await fetch('/api/me',{credentials:'same-origin'}).then(r=>r.json());
       if(!auth.authenticated){showLogin();return}
-      me=auth.user;window.jlrAlarmAccountId=String(me.id||'');syncDoctrineTabAccess();syncTrackerTabAccess();syncCeoTabAccess();initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');await loadMerIntel();await loadState();await refreshFleetPerformanceSnapshot(true);renderFleetPerformance();connectSse();connectCompanionClipboardStream();startScoutLocationWatch();
+      me=auth.user;window.jlrAlarmAccountId=String(me.id||'');window.jlrTestAccess=Boolean(me?.jlrTestAccess?.allowed);syncDoctrineTabAccess();syncTrackerTabAccess();syncCeoTabAccess();initTabs();showApp();$('userName').textContent=me.displayName;$('userPortrait').src=me.portrait;applyMode(localStorage.getItem('jlrMode')==='expanded'?'expanded':'compact');await loadMerIntel();await loadState();await refreshFleetPerformanceSnapshot(true);renderFleetPerformance();connectSse();connectCompanionClipboardStream();startScoutLocationWatch();
       const params=new URLSearchParams(location.search);if(params.get('linked'))toast('Toon connected.');if(params.get('login'))toast('Logged in.');if(params.get('market')==='authorized')toast('John market access authorized.');if(params.get('ceo')==='authorized'){toast('Renius CEO ESI authorized.');void loadCeoCommand(true);}if(params.get('error'))toast(decodeURIComponent(params.get('error')));if(params.toString())history.replaceState({},'',location.pathname);
     }catch(e){console.error(e);showLogin();$('setupWarning').classList.remove('hidden');$('setupWarning').textContent=`JLR could not load: ${e.message}`}
   }
