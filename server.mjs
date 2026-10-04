@@ -1,3 +1,4 @@
+import {initFieldAccess, redactFieldState, fieldRouteRequiresInit} from './lib/init-field-access.mjs';
 import http from 'node:http';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
@@ -26,6 +27,7 @@ import { explicitAdamHelpQuestion, adamOverviewQuestion, adamUnknownText } from 
 import { createTrackerSupportClient } from './lib/tracker-support-client.mjs';
 import { chooseRapidResponseRoutes, wandererRiskPenalty, wandererWarnings } from './lib/rapid-response-route.mjs';
 import { buildSimulatedHeavyFighterLoss } from './lib/heavy-fighter-alert.mjs';
+import { normalizeMapFieldSnapshot, mapFieldSummary } from './lib/static-map-field-catalog.mjs';
 import { parseThreatPaste, compactThreatStats, threatActivityLabels, fountainThreatTags, jlrThreatScore, threatIgnoreReason } from './lib/threat-scan.mjs';
 import { sharedScanKind, sharedScanLines, sharedLocalNames } from './lib/shared-scan.mjs';
 import { archivedBuildSharePublic, migrateLegacyBuildShares } from './lib/appraisal/legacy-share.mjs';
@@ -397,6 +399,16 @@ const FOUNTAIN_REGION_ID = 10000058;
 const CN_SYSTEM_NAME = 'C-N4OD';
 const MARKET_STRUCTURE_SEARCH = String(process.env.MARKET_STRUCTURE_SEARCH || CN_SYSTEM_NAME).trim();
 const source = JSON.parse(await fsp.readFile(SOURCE_FILE, 'utf8'));
+const privateFieldCatalog=process.env.JLR_PRIVATE_FIELD_CATALOG_JSON?JSON.parse(process.env.JLR_PRIVATE_FIELD_CATALOG_JSON):null;
+if(privateFieldCatalog){
+  if(privateFieldCatalog.origin!=='C-N4OD'||Number(privateFieldCatalog.maximumDistanceLy)!==6)throw new Error('Invalid private field origin/range');
+  for(const row of privateFieldCatalog.fields||[]){
+    if(!Number.isFinite(row.distanceLy)||row.distanceLy<0||row.distanceLy>6)throw new Error('Private field outside verified Titan range');
+  }
+  source.fieldMapSnapshot=privateFieldCatalog;
+  for(const ore of source.ores)ore.systems=(privateFieldCatalog.fields||[]).filter(row=>Number(row.tier)===3&&row.ore===ore.name).map(row=>row.system);
+}
+const FIELD_MAP_SNAPSHOT = normalizeMapFieldSnapshot(source.fieldMapSnapshot||{});
 const ORES = source.ores.map((o, rankIndex) => ({
   rank: rankIndex + 1,
   name: o.name,
@@ -925,6 +937,14 @@ function userHasLinkedCharacterName(user,name){
   if(!wanted)return false;
   return (user?.characterIds||[]).map(String).some(id=>String(state.characters?.[id]?.name||'').trim().toLowerCase()===wanted);
 }
+const initFieldAccessCache=new Map();
+async function fieldAccessForUser(user){
+  return initFieldAccess(user,{cache:initFieldAccessCache,lookup:async ids=>{
+    const {data}=await esiPost('https://esi.evetech.net/latest/characters/affiliation/?datasource=tranquility',ids);
+    return data;
+  }});
+}
+async function fieldStateForUser(user){return redactFieldState(publicState(),await fieldAccessForUser(user));}
 function jlrOwnerAccess(user){
   return userHasLinkedCharacterName(user,JLR_OWNER_CHARACTER_NAME);
 }
@@ -1826,8 +1846,8 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Tracker',version:'2.10.19',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
-    source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}])),wormholes:{reports:wormholeGasPublicReports(),reportHours:WORMHOLE_GAS_REPORT_TTL/3600000}},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
+    app:{name:'JLR Tracker',version:'2.10.22',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
+    source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,mapFields:FIELD_MAP_SNAPSHOT.fields,mapFieldSnapshot:{source:FIELD_MAP_SNAPSHOT.source,capturedAt:FIELD_MAP_SNAPSHOT.capturedAt,summary:mapFieldSummary(FIELD_MAP_SNAPSHOT),extractionStatus:String(source.fieldMapSnapshot?.extractionStatus||'')},ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}])),wormholes:{reports:wormholeGasPublicReports(),reportHours:WORMHOLE_GAS_REPORT_TTL/3600000}},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans,
     trackerBrain:trackerBrainSnapshot(scans,ledgerDebug),
@@ -1841,8 +1861,15 @@ function broadcast() {
     resetExpired(false);
     return;
   }
-  const msg=`event: state\ndata: ${JSON.stringify(publicState())}\n\n`;
-  for (const res of [...sseClients]) { try{res.write(msg)}catch{sseClients.delete(res)} }
+  const snapshot=publicState();
+  for(const res of [...sseClients]){
+    if(res.jlrFieldStatePending)continue;
+    res.jlrFieldStatePending=true;
+    void fieldAccessForUser(state.users[res.jlrFieldUserId]).then(access=>{
+      if(!sseClients.has(res))return;
+      res.write(`event: state\ndata: ${JSON.stringify(redactFieldState(snapshot,access))}\n\n`);
+    }).catch(()=>{sseClients.delete(res);res.end()}).finally(()=>{res.jlrFieldStatePending=false});
+  }
 }
 
 async function getSsoMetadata() {
@@ -4065,6 +4092,7 @@ async function scoutLocationSnapshot(ch,user=null,activity=null){
     }
   }
   const {systemId,system}=location;
+  if(user&&!(await fieldAccessForUser(user)).allowed)return{characterId:String(ch.characterId),characterName:String(ch.name||'Adam toon'),systemId,system,checkedAt:location.checkedAt,locationSource:location.source||'esi',fieldAccess:{allowed:false}};
   const t3=SYSTEM_MAP.get(system)||null;
   const ice=(state.market?.iceFields||[]).find(row=>row.system===system)||null;
   const a0=(state.market?.a0Fields||[]).find(row=>row.system===system)||state.market?.a0Reports?.[system]||null;
@@ -10000,7 +10028,7 @@ async function routeApi(req,res,url) {
       return json(res,502,{error:'SUPPORT_APPRAISAL_FAILED',message:String(err.message||err)});
     }
   }
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Tracker',version:'2.10.19',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME,ceoCharacterName:CEO_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Tracker',version:'2.10.22',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME,ceoCharacterName:CEO_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/ceo/status'){
     const viewer=requireCeoViewer(req,res);
     if(!viewer)return;
@@ -10326,6 +10354,7 @@ async function routeApi(req,res,url) {
         });
         event.survey={...survey,text:oreSurveySummaryText(survey)};
       }else if(kind==='probe-scan'){
+        if(!(await fieldAccessForUser(auth.user)).allowed)return json(res,403,{error:'INIT_FIELD_ACCESS_REQUIRED',message:'INIT membership is required for field reports.'});
         if(!ch)return json(res,404,{error:'CHARACTER_NOT_LINKED',message:'The foreground EVE character is not linked to this JLR account.'});
         if(!(Array.isArray(ch.scopes)&&ch.scopes.includes(LOCATION_SCOPE)))return json(res,409,{error:'LOCATION_SCOPE_REQUIRED',message:'Update this toon’s EVE location access before automatic scan imports.'});
         const preview=await probeScanPreview(ch,clipText,observedSystem||null);
@@ -10359,6 +10388,7 @@ async function routeApi(req,res,url) {
   if(req.method==='POST'&&url.pathname==='/api/companion/scan'){
     const auth=companionAuth(req);
     if(!auth)return json(res,401,{error:'COMPANION_AUTH_REQUIRED',message:'Companion pairing is missing or has been revoked.'});
+    if(!(await fieldAccessForUser(auth.user)).allowed)return json(res,403,{error:'INIT_FIELD_ACCESS_REQUIRED'});
     if(!jlrOwnerAccess(auth.user))return json(res,403,{error:'OBSERVER_NOT_ALLOWED',message:'Automatic Probe Scanner observation is enabled only for the JLR owner account.'});
     let body;
     try{body=await readBody(req,180_000)}
@@ -10412,6 +10442,7 @@ async function routeApi(req,res,url) {
   }
 
   const user=requireUser(req,res);if(!user)return;
+  if(fieldRouteRequiresInit(url.pathname)&&!(await fieldAccessForUser(user)).allowed)return json(res,403,{error:'INIT_FIELD_ACCESS_REQUIRED',message:'Field Tracker requires a linked character currently in INIT.'});
   if(url.pathname.startsWith('/api/voice/')||/^\/api\/tracker\/heavy-fighters\/voice(?:\/|$)/.test(url.pathname)){
     return json(res,410,{error:'VOICE_REMOVED',message:'Spoken voice output has been removed from JLR. The Heavy Fighter alarm tone remains available.'});
   }
@@ -10540,7 +10571,7 @@ async function routeApi(req,res,url) {
     }
   }
 
-  if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,publicState());
+  if(req.method==='GET'&&url.pathname==='/api/state')return json(res,200,await fieldStateForUser(user));
   if(req.method==='POST'&&url.pathname==='/api/fleet-performance'){
     if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
     let body;
@@ -10882,7 +10913,7 @@ async function routeApi(req,res,url) {
     req.on('close',()=>dropTrackerLiveClient(res));
     return;
   }
-  if(req.method==='GET'&&url.pathname==='/api/events'){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});res.write(`event: state\ndata: ${JSON.stringify(publicState())}\n\n`);sseClients.add(res);req.on('close',()=>sseClients.delete(res));return}
+  if(req.method==='GET'&&url.pathname==='/api/events'){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});res.write(`event: state\ndata: ${JSON.stringify(await fieldStateForUser(user))}\n\n`);res.jlrFieldUserId=String(user.id);sseClients.add(res);req.on('close',()=>sseClients.delete(res));return}
   if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
   if(req.method==='POST'&&url.pathname==='/api/tracker/heavy-fighters/test-loss'){
     if(!jlrOwnerAccess(user))return json(res,403,{
@@ -11227,7 +11258,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Tracker v2.10.20 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Tracker v2.10.22 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
 setInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': tracker-heartbeat\n\n')}catch{dropTrackerLiveClient(res)}}},20_000).unref();
 setInterval(()=>resetExpired(true),15_000).unref();
