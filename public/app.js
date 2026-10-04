@@ -88,6 +88,8 @@
   let threatShareEditError='';
   let ceoCommandStatus=null;
   let ceoCommandLoading=false;
+  let ceoSovFieldData=null;
+  let ceoSovFieldLoading=false;
   let ceoFinanceData=null;
   let ceoFinanceLoading=false;
   let ceoSelectedMonth='';
@@ -1762,20 +1764,22 @@
       return;
     }
     if(statusText){
-      statusText.textContent=status.authorizationUpgradeRequired
+      statusText.textContent=status.coreAuthorizationUpgradeRequired
         ?'Renius is verified as CEO, but this token needs a core CEO ESI scope refresh.'
-        :status.connected
-          ?'Renius CEO ESI is connected'+(status.corporationName?' • '+status.corporationName:'')+(status.walletScopeGranted?' • corp wallet connected':status.legacyWalletScopeGranted?' • core online; corp wallet scope is legacy':' • core online; corp wallet scope is separate')+'.'
-          :status.canAuthorize
-            ?'Backend is ready. Renius can authorize the corporation read scopes here.'
-            :'Backend is ready. Waiting for Renius to authorize the corporation read scopes.';
+        :status.connected&&!status.sovHubScopeGranted
+          ?'Renius CEO ESI core access is online. One new EVE read permission is needed so JLR can discover Prospecting Array II/III fields directly from Sovereignty Hubs.'
+          :status.connected
+            ?'Renius CEO ESI is connected'+(status.corporationName?' • '+status.corporationName:'')+(status.walletScopeGranted?' • corp wallet connected':status.legacyWalletScopeGranted?' • core online; corp wallet scope is legacy':' • core online; corp wallet scope is separate')+'.'
+            :status.canAuthorize
+              ?'Backend is ready. Renius can authorize the corporation read scopes here.'
+              :'Backend is ready. Waiting for Renius to authorize the corporation read scopes.';
     }
     if(auth){
       const showAuth=Boolean(status.canAuthorize);
       auth.classList.toggle('hidden',!showAuth);
       auth.disabled=!status.authorizeUrl;
       auth.dataset.authorizeUrl=status.authorizeUrl||'';
-      auth.textContent=status.connected&&!status.walletScopeGranted?'CONNECT CORP WALLET':status.connected||status.authorizationUpgradeRequired?'UPDATE RENIUS CEO ESI':'AUTHORIZE RENIUS CEO ESI';
+      auth.textContent=status.connected&&!status.walletScopeGranted&&!status.sovHubScopeGranted?'CONNECT WALLET + FIELD SYNC':status.connected&&!status.walletScopeGranted?'CONNECT CORP WALLET':status.connected&&!status.sovHubScopeGranted?'ENABLE LIVE FIELD SYNC':status.connected||status.authorizationUpgradeRequired?'UPDATE RENIUS CEO ESI':'AUTHORIZE RENIUS CEO ESI';
     }
     const repair=$('ceoWalletRepair');
     if(repair){
@@ -1805,6 +1809,59 @@
     }
   }
   function ceoMoney(value){return Math.round(Number(value)||0).toLocaleString()+' ISK'}
+  function renderCeoSovFields(){
+    const data=ceoSovFieldData;
+    const status=ceoCommandStatus;
+    const refresh=$('ceoSovFieldRefresh');
+    const state=$('ceoSovFieldState');
+    const summary=$('ceoSovFieldSummary');
+    const note=$('ceoSovFieldNote');
+    const stamp=$('ceoSovFieldStamp');
+    if(refresh){
+      refresh.disabled=ceoSovFieldLoading||!status?.connected||!status?.sovHubScopeGranted;
+      refresh.textContent=ceoSovFieldLoading?'SYNCING…':'REFRESH FIELD CATALOG';
+    }
+    if(state){
+      state.textContent=!status?.connected?'WAITING FOR RENIUS CEO ESI'
+        :!status?.sovHubScopeGranted?'EVE PERMISSION REQUIRED'
+        :ceoSovFieldLoading?'READING SOVEREIGNTY HUBS…'
+        :data?.available?'LIVE ESI FIELD CATALOG'
+        :data?.stale?'STALE CACHED FIELD CATALOG'
+        :'READY TO SYNC';
+      state.classList.toggle('connected',Boolean(data?.available));
+    }
+    if(note){
+      note.textContent=!status?.sovHubScopeGranted
+        ?'Approve the Sovereignty Hub corporation read permission above. JLR will then read installed Prospecting Array II/III upgrades and their EVE power states directly; the old map is no longer shown or used as a live data source.'
+        :data?.error||'This feed is authoritative for which T2/T3 mining arrays are installed in Fountain. Tier 2 site-volume and respawn math stays conservative until JLR has a reliable value instead of guessing.';
+    }
+    if(summary){
+      const s=data?.summary||{};
+      summary.innerHTML=
+        '<div><small>FIELDS FOUND</small><strong>'+Number(s.total||0).toLocaleString()+'</strong></div>'+
+        '<div><small>TIER 2</small><strong>'+Number(s.tier2||0).toLocaleString()+'</strong></div>'+
+        '<div><small>TIER 3</small><strong>'+Number(s.tier3||0).toLocaleString()+'</strong></div>'+
+        '<div><small>SYSTEMS</small><strong>'+Number(s.systems||0).toLocaleString()+'</strong></div>'+
+        '<div><small>ONLINE</small><strong>'+Number(s.online||0).toLocaleString()+'</strong></div>'+
+        '<div><small>OTHER POWER STATE</small><strong>'+Number((s.pending||0)+(s.offline||0)+(s.low||0)+(s.other||0)).toLocaleString()+'</strong></div>';
+    }
+    if(stamp)stamp.textContent=data?.updatedAt?'Last live field sync '+new Date(data.updatedAt).toLocaleString():(status?.sovHubScopeGranted?'No live field sync yet.':'Permission not granted yet.');
+  }
+  async function loadCeoSovFields(force=false){
+    if(!ceoAllowed()||!ceoCommandStatus?.connected||ceoSovFieldLoading)return;
+    if(!ceoCommandStatus?.sovHubScopeGranted){renderCeoSovFields();return}
+    if(ceoSovFieldData&&!force){renderCeoSovFields();return}
+    ceoSovFieldLoading=true;renderCeoSovFields();
+    try{
+      ceoSovFieldData=await api('/api/ceo/sovereignty-hubs'+(force?'?force=1':''));
+      renderCeoSovFields();
+      if(force&&ceoSovFieldData?.available)toast('Live T2/T3 Sovereignty Hub field catalog refreshed.');
+    }catch(error){
+      ceoSovFieldData={available:false,error:String(error.message||error),records:[],summary:{}};
+      renderCeoSovFields();
+      toast('Sovereignty Hub fields: '+String(error.message||error));
+    }finally{ceoSovFieldLoading=false;renderCeoSovFields()}
+  }
   const CEO_PIE_COLORS=['#9c5cff','#ff496c','#51d6ff','#ffc75a','#6bf09a','#ff8b4c','#7d8cff','#e66dff','#6fe6c0','#d9e36a'];
   function ceoPieStyle(rows){
     const list=(rows||[]).filter(row=>Number(row.value)>0);
@@ -1986,7 +2043,9 @@
     void window.JlrCeoDiscord?.load();
     if(ceoCommandStatus&&!force){
       renderCeoCommand();
-      if(ceoCommandStatus.connected&&!ceoCommandStatus.authorizationUpgradeRequired)void loadCeoFinance(false);
+      if(ceoCommandStatus.connected&&!ceoCommandStatus.coreAuthorizationUpgradeRequired)void loadCeoFinance(false);
+      if(ceoCommandStatus.connected&&ceoCommandStatus.sovHubScopeGranted)void loadCeoSovFields(false);
+      else renderCeoSovFields();
       return;
     }
     ceoCommandLoading=true;
@@ -1998,7 +2057,9 @@
     }finally{
       ceoCommandLoading=false;
       renderCeoCommand();
-      if(ceoCommandStatus?.connected&&!ceoCommandStatus?.authorizationUpgradeRequired)void loadCeoFinance(force);
+      if(ceoCommandStatus?.connected&&!ceoCommandStatus?.coreAuthorizationUpgradeRequired)void loadCeoFinance(force);
+      if(ceoCommandStatus?.connected&&ceoCommandStatus?.sovHubScopeGranted)void loadCeoSovFields(force);
+      else renderCeoSovFields();
     }
   }
   function syncTrackerTabAccess(){
@@ -2160,25 +2221,16 @@
           <article class="glass ceo-command-card ceo-journal-card" id="ceoJournalCard"><div class="ceo-card-title"><div><span class="eyebrow">WALLET JOURNAL</span><h3>TRANSACTION EXPLORER</h3></div><button id="ceoJournalRefresh" class="board-tool" type="button">REFRESH VIEW</button></div><p>Inspect saved ESI journal entries. Use REFRESH CEO DATA to pull new entries from EVE. History contains entries observed by JLR, rather than a complete corporation accounting record. Member filtering matches either party exactly. These are corporation wallet amounts, not personal earnings.</p><small id="ceoJournalStamp"></small><div id="ceoJournalWarning" class="ceo-wallet-note blocked hidden"></div><div id="ceoJournalSummary" class="ceo-operation-summary"></div><div class="ceo-journal-filters"><input id="ceoJournalSearch" type="search" maxlength="160" aria-label="Search wallet journal" placeholder="Search reason, reference type, journal or party ID…"><select id="ceoJournalParty" aria-label="Wallet journal member"><option value="">All parties / members</option></select><select id="ceoJournalMonth" aria-label="Wallet journal month"><option value="">All observed months</option></select><select id="ceoJournalDivision" aria-label="Wallet journal division"><option value="">All divisions</option>${Array.from({length:7},(_,i)=>'<option value="'+(i+1)+'">Division '+(i+1)+'</option>').join('')}</select><select id="ceoJournalDirection" aria-label="Wallet journal direction"><option value="">All entries</option><option value="in">Money in</option><option value="out">Money out</option><option value="zero">Zero amount</option></select></div><div class="ceo-operation-pager"><small id="ceoJournalCount"></small><button id="ceoJournalPrev" class="board-tool" type="button" disabled>PREVIOUS</button><button id="ceoJournalNext" class="board-tool" type="button" disabled>NEXT</button></div><div id="ceoJournalRecords" class="ceo-operation-records"></div></article>
           <article class="glass ceo-command-card ceo-member-card"><span class="eyebrow">MEMBERS</span><h3>MEMBER WALLET TRANSACTIONS</h3><p>Money into and out of corporation wallets involving each member. Choose a month, then open a member to inspect the matching journal entries.</p><div class="ceo-member-head"><div class="ceo-big-number"><small>CORP MEMBERS</small><strong id="ceoMemberCount">—</strong></div><div id="ceoRoleHealth" class="ceo-role-health"></div></div><details class="ceo-optional-loyalty"><summary>Optional manual loyalty points</summary><p>Separate reward points, unrelated to ISK transactions.</p><div class="ceo-loyalty-controls"><select id="ceoLoyaltyMember" aria-label="Corporation member"><option value="">Choose member…</option></select><input id="ceoLoyaltyPoints" type="number" step="1" min="-100000" max="100000" placeholder="+/- points"><input id="ceoLoyaltyNote" maxlength="160" placeholder="Reason / note"><button id="ceoLoyaltyAdjust" class="board-tool" type="button">ADJUST POINTS</button></div></details><div class="ceo-member-filters"><input id="ceoMemberSearch" type="search" aria-label="Search corporation members" placeholder="Search member name or character ID…"><select id="ceoMemberMonth" aria-label="Member transaction month"><option value="">All observed months</option></select><select id="ceoMemberActivity" aria-label="Filter member login dates"><option value="all">All members</option><option value="recent">Logged in within 7 days</option><option value="older">Last login over 30 days ago</option><option value="unknown">Login date not reported</option></select><select id="ceoMemberSort" aria-label="Sort corporation members"><option value="name">Name A–Z</option><option value="login">Most recent login</option><option value="joined">Most recently joined</option><option value="deposits">Largest deposits</option><option value="withdrawals">Largest withdrawals</option></select></div><small id="ceoMemberResultCount"></small><p>Expand a member for join and login dates. Dates reflect the ESI snapshot and do not indicate who is online now.</p><div class="ceo-member-table-head"><span>MEMBER</span><span>TO CORP</span><span>FROM CORP</span><span>NET TO CORP</span><span>ENTRIES</span></div><div id="ceoMemberFinanceRows" class="ceo-member-finance"><div class="visual-empty">Waiting for corporation roster…</div></div></article>
 
-          <article class="glass ceo-command-card ceo-sov-map-card">
+          <article class="glass ceo-command-card ceo-sov-field-card">
             <div class="ceo-card-title">
-              <div><span class="eyebrow">FOUNTAIN INFRASTRUCTURE</span><h3>SOV HUB STATUS MAP</h3></div>
-              <a class="board-tool ceo-sov-map-open" href="/assets/fountain-sov-hub-map-2026-10-02.png?v=1" target="_blank" rel="noopener">OPEN FULL SIZE</a>
+              <div><span class="eyebrow">FOUNTAIN INFRASTRUCTURE</span><h3>LIVE T2/T3 FIELD DISCOVERY</h3></div>
+              <button id="ceoSovFieldRefresh" class="board-tool" type="button">REFRESH FIELD CATALOG</button>
             </div>
-            <p>Operational snapshot supplied 2026-10-02. This is a map snapshot, not a live ESI feed.</p>
-            <div class="ceo-sov-legend" aria-label="Sovereignty hub map legend">
-              <span><i class="ceo-sov-dot online"></i>Online</span>
-              <span><i class="ceo-sov-dot pending"></i>Pending</span>
-              <span><i class="ceo-sov-dot offline"></i>Offline</span>
-              <span><i class="ceo-sov-dot low"></i>Low</span>
-              <span><i class="ceo-sov-dot nonhub"></i>Non-hub system</span>
-              <span><i class="ceo-sov-jump"></i>Jump Bridge</span>
-              <span><i class="ceo-sov-alert">!</i>Mercenary den anarchy &gt;40%</span>
-            </div>
-            <a class="ceo-sov-map-frame" href="/assets/fountain-sov-hub-map-2026-10-02.png?v=1" target="_blank" rel="noopener" aria-label="Open Fountain Sovereignty Hub status map full size">
-              <img src="/assets/fountain-sov-hub-map-2026-10-02.png?v=1" loading="lazy" decoding="async" alt="Fountain sovereignty hub status map snapshot dated 2026-10-02">
-            </a>
-            <small class="ceo-sov-map-note">Use the built-in key above when reading hub upgrade states, non-hub systems, jump bridge links, and mercenary den alerts.</small>
+            <p>JLR reads Renius corporation Sovereignty Hubs and converts installed Prospecting Array II/III upgrades into structured Field Tracker data. The old screenshot is no longer displayed here.</p>
+            <span id="ceoSovFieldState" class="status-pill">READY TO SYNC</span>
+            <div id="ceoSovFieldSummary" class="ceo-operation-summary"></div>
+            <p id="ceoSovFieldNote">Waiting for CEO ESI status…</p>
+            <small id="ceoSovFieldStamp"></small>
           </article>
           <article class="glass ceo-command-card ceo-moon-card"><div class="ceo-card-title"><div><span class="eyebrow">CORPORATION ESI</span><h3>METENOX + STRUCTURES</h3></div><button id="ceoMoonRefresh" class="board-tool" type="button">REFRESH METENOX + STRUCTURES</button></div><p id="ceoMoonSource">Loading current Metenox drills…</p><div id="ceoMoonSummary" class="ceo-moon-summary"></div><small id="ceoMoonCount"></small><div id="ceoMoonRecords" class="ceo-moon-records"></div><div class="ceo-live-head"><h3>CORPORATION STRUCTURES</h3><small id="ceoStructuresStamp"></small></div><div id="ceoStructuresWarning" class="ceo-wallet-note blocked hidden"></div><p id="ceoStructureSummary"></p><div class="ceo-structure-filters"><input id="ceoStructureSearch" type="search" aria-label="Search corporation structures" placeholder="Search system, type, service or structure ID…"><select id="ceoStructureFilter" aria-label="Filter structure upkeep"><option value="all">All structures</option><option value="fuel">Low fuel / expiry passed</option><option value="offline">Offline services</option><option value="unknown">Fuel expiry not reported</option></select></div><small id="ceoStructureCount"></small><div id="ceoLiveStructures"></div></article>
           <article class="glass ceo-command-card ceo-operations-card"><div class="ceo-card-title"><div><span class="eyebrow">CORPORATION OPERATIONS</span><h3>ASSETS • JOBS • CONTRACTS • ORDERS</h3></div><button id="ceoOperationRefresh" class="board-tool" type="button">REFRESH ASSETS</button></div><div class="ceo-operation-tabs" role="tablist" aria-label="Corporation operations"><button type="button" role="tab" aria-selected="true" data-ceo-operation-tab="assets">ASSETS</button><button type="button" role="tab" aria-selected="false" data-ceo-operation-tab="jobs">INDUSTRY JOBS</button><button type="button" role="tab" aria-selected="false" data-ceo-operation-tab="contracts">CONTRACTS</button><button type="button" role="tab" aria-selected="false" data-ceo-operation-tab="orders">MARKET ORDERS</button></div><p id="ceoOperationStamp">Loading corporation operations…</p><div id="ceoOperationWarning" class="ceo-wallet-note blocked hidden"></div><div id="ceoOperationSummary" class="ceo-operation-summary"></div><div class="ceo-operation-filters"><input id="ceoOperationSearch" type="search" aria-label="Search corporation operations" placeholder="Search items, names, locations or IDs…"><select id="ceoOperationFilter" aria-label="Filter corporation operations"><option value="">All storage</option></select><select id="ceoOperationSort" aria-label="Sort corporation operations"><option value="name">Name A–Z</option><option value="amount">Most units</option></select></div><p id="ceoOperationNote"></p><div class="ceo-operation-pager"><small id="ceoOperationCount"></small><button id="ceoOperationPrev" class="board-tool" type="button" disabled>PREVIOUS</button><button id="ceoOperationNext" class="board-tool" type="button" disabled>NEXT</button></div><div id="ceoOperationRecords" class="ceo-operation-records"></div></article>
@@ -2197,6 +2249,7 @@
       if(url)window.location.assign(url);
     });
     $('ceoFinanceRefresh')?.addEventListener('click',()=>{void loadCeoFinance(true);void window.JlrCeoMoons?.load(true);void window.JlrCeoOperations?.refreshAll();void window.JlrCeoDiscord?.load();});
+    $('ceoSovFieldRefresh')?.addEventListener('click',()=>void loadCeoSovFields(true));
     $('ceoLoyaltyAdjust')?.addEventListener('click',()=>void adjustCeoLoyalty());
     $('ceoMemberSearch')?.addEventListener('input',renderCeoFinance);
     $('ceoMemberActivity')?.addEventListener('change',renderCeoFinance);
