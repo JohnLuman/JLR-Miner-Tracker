@@ -4848,16 +4848,16 @@
     const seen=iceScan?Math.min(fields,Math.max(0,Number(iceScan.seen)||0)):null;
     const missing=seen==null?null:Math.max(0,fields-seen);
     const coverage=seen==null
-      ?`ICE ?/${fields} • NEED SCAN`
+      ?`? / ${fields} FIELDS`
       :missing>0
-        ?`ICE ${seen}/${fields} SEEN • ${missing} MISSING`
-        :`ICE ${seen}/${fields} SEEN • ALL PRESENT`;
+        ?`${seen} / ${fields} FIELDS • ${missing} MISSING`
+        :`${seen} / ${fields} FIELDS`;
     card.innerHTML='<button class="favorite-toggle" type="button" aria-pressed="'+favorite+'" title="'+(favorite?'Remove from favorites':'Favorite this system')+'">'+(favorite?'★':'☆')+'</button>'+
       (boardArrangeMode?'<span class="drag-grip" aria-hidden="true">⠿</span>':'')+
       '<span class="sys-name">'+esc(row.system)+'</span>'+
       '<span class="sys-ore">'+fields+' ICE FIELD'+(fields===1?'':'S')+'</span>'+
-      '<span class="sys-state">IN TITAN RANGE'+(Number.isFinite(distance)?' • '+distance.toFixed(2)+' LY':'')+'</span>'+
-      '<span class="sys-ice-coverage'+(missing>0||seen==null?' missing':'')+'">'+esc(coverage)+'</span>'+
+      '<span class="sys-state">'+(Number.isFinite(distance)?distance.toFixed(2)+' LY':'')+'</span>'+
+      '<span class="sys-evidence sys-ice-coverage'+(missing>0||seen==null?' missing':'')+'">'+esc(coverage)+'</span>'+
       '<span class="sys-scan'+(scanLine.stale?' stale':'')+'">'+esc(scanLine.text)+'</span>';
     card.title=row.system+' • '+fields+' ice field'+(fields===1?'':'s')+(favorite?' • Favorite':'')+(Number.isFinite(distance)?' • '+distance.toFixed(2)+' LY from C-N4OD':'')+' • '+coverage+' • '+scanLine.title+' • within configured Titan bridge range';
     card.querySelector('.favorite-toggle').addEventListener('click',e=>{
@@ -4902,12 +4902,25 @@
     return card;
   }
 
+  function syncBoardNodes(board,cards){
+    const previous=new Map(Array.from(board.children).map(card=>[card.dataset.boardKey,card]));
+    cards.forEach((fresh,index)=>{
+      const old=previous.get(fresh.dataset.boardKey);
+      // Keep hovered/focused cards attached so their native tooltip does not restart.
+      // Latest data is painted on the next tick after the pointer/focus leaves.
+      const keep=old&&(old.outerHTML===fresh.outerHTML||old.matches(':hover')||old.contains(document.activeElement));
+      const card=keep?old:fresh;
+      if(board.children[index]!==card)board.insertBefore(card,board.children[index]||null);
+    });
+    while(board.children.length>cards.length)board.removeChild(board.lastElementChild);
+  }
+
   function renderBoards(){
     if(!state)return;
     const board=$('fieldBoard');
     syncBoardControls();
     window.JlrFieldUpdateFeedback?.observe(state);
-    board.innerHTML='';
+    const cards=[];
     let counts={ready:0,picked:0,cleared:0,cherry:0};
     if(state.fieldAccess&&!state.fieldAccess.allowed){
       board.innerHTML='<div class="target-empty"><strong>INIT members only</strong><span>Link a character currently in INIT to view field locations and reports.</span></div>';
@@ -4928,18 +4941,19 @@
 
     for(const entry of orderedBoardEntries()){
       if(entry.kind==='t3'){
-        if(filter==='all'||filter===entry.f.status||(filter==='cherry'&&entry.f.cherryPicked)||(filter==='map'&&mapFieldForT3(entry.d)))board.appendChild(node(entry.d,entry.f,true));
+        if(filter==='all'||filter===entry.f.status||(filter==='cherry'&&entry.f.cherryPicked)||(filter==='map'&&mapFieldForT3(entry.d)))cards.push(node(entry.d,entry.f,true));
       }else if(entry.kind==='map'&&(filter==='all'||filter==='map')){
-        board.appendChild(mapFieldBoardNode(entry.row));
+        cards.push(mapFieldBoardNode(entry.row));
       }else if(entry.kind==='ice'&&(filter==='all'||filter==='ice')){
-        board.appendChild(iceBoardNode(entry.row));
+        cards.push(iceBoardNode(entry.row));
       }else if(entry.kind==='a0'&&!entry.row.scan?.superseded&&(filter==='a0'||(filter==='all'&&entry.row.scan?.detected))){
         // Only the latest confirmed A0 site stays on the main board.
         // Its own A0 report supplies both freshness status and scan age.
-        board.appendChild(a0BoardNode(entry.row));
+        cards.push(a0BoardNode(entry.row));
       }
     }
 
+    syncBoardNodes(board,cards);
     window.JlrFieldUpdateFeedback?.paint(board,()=>{if(!document.hidden)sfx('fieldUpdate')});
     const mapSummary=state.source?.mapFieldSnapshot?.summary||{};
     $('statusCounts').textContent=`${counts.ready} green • ${counts.picked} picked • ${counts.cleared} respawning • ${counts.cherry} cherry • ${Number(mapSummary.tier2||0)} T2 arrays • ${Number(mapSummary.tier3||0)} T3 map arrays • ${iceFields.length} ice • ${a0Fields.length} A0 • ${a0Due} need update`;
