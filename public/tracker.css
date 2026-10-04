@@ -308,3 +308,19 @@
   .tracker-closest{align-items:flex-start;flex-direction:column;gap:3px}
   .tracker-closest strong{white-space:normal;overflow:visible}
 }
+
+
+/* Owner-only Heavy Fighter alarm integration test lab. */
+.tracker-test-lab{
+  display:grid;
+  grid-template-columns:minmax(0,1.6fr) minmax(250px,.9fr);
+  gap:16px;
+  align-items:center;
+  padding:16px 18px;
+  border-color:rgba(255,96,96,.45);
+}
+.tracker-test-lab>div{display:grid;gap:5px}
+.tracker-test-lab strong{font-size:15px;letter-spacing:.06em}
+.tracker-test-lab b{font-size:13px;letter-spacing:.08em}
+.tracker-test-lab small{line-height:1.45;opacity:.82}
+@media(max-width:760px){.tracker-test-lab{grid-template-columns:1fr}}

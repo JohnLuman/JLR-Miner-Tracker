@@ -25,6 +25,7 @@ import { resolveAdamSystem, answerAdamFieldQuestion } from './lib/adam-fields.mj
 import { explicitAdamHelpQuestion, adamOverviewQuestion, adamUnknownText } from './lib/adam-prompts.mjs';
 import { createTrackerSupportClient } from './lib/tracker-support-client.mjs';
 import { chooseRapidResponseRoutes, wandererRiskPenalty, wandererWarnings } from './lib/rapid-response-route.mjs';
+import { buildSimulatedHeavyFighterLoss } from './lib/heavy-fighter-alert.mjs';
 import { parseThreatPaste, compactThreatStats, threatActivityLabels, fountainThreatTags, jlrThreatScore, threatIgnoreReason } from './lib/threat-scan.mjs';
 import { sharedScanKind, sharedScanLines, sharedLocalNames } from './lib/shared-scan.mjs';
 import { archivedBuildSharePublic, migrateLegacyBuildShares } from './lib/appraisal/legacy-share.mjs';
@@ -436,6 +437,7 @@ const ledgerSnapshotAtByCharacter = restoredLedgerCache.snapshotAtByCharacter;
 if(ledgerRowsByCharacter.size)rebuildDailyFleetFromLedgerCache();
 const universeNameCache = new Map();
 const trackerLiveClients = new Set();
+const trackerLiveClientUsers = new Map();
 let heavyFighterTypeIdsCache = {at:0,ids:null,promise:null};
 let trackerLiveLosses = [];
 let fountainRouteSystemsCache = {at:0,ids:null,promise:null};
@@ -7347,17 +7349,30 @@ function trackerLiveStatus(){
 function trackerEventMessage(event,payload){
   return `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
 }
+function dropTrackerLiveClient(res){
+  trackerLiveClients.delete(res);
+  trackerLiveClientUsers.delete(res);
+}
 function sendTrackerEventTo(res,event,payload){
   try{
     res.write(trackerEventMessage(event,payload));
     return true;
   }catch{
-    trackerLiveClients.delete(res);
+    dropTrackerLiveClient(res);
     return false;
   }
 }
 function sendTrackerEvent(event,payload){
   for(const res of [...trackerLiveClients])sendTrackerEventTo(res,event,payload);
+}
+function sendTrackerEventForUser(userId,event,payload){
+  const wanted=String(userId||'');
+  let delivered=0;
+  for(const res of [...trackerLiveClients]){
+    if(String(trackerLiveClientUsers.get(res)||'')!==wanted)continue;
+    if(sendTrackerEventTo(res,event,payload))delivered++;
+  }
+  return delivered;
 }
 function freshTrackerLiveLosses(maxAgeMs=TRACKER_ALERT_REPLAY_MS){
   const cutoff=Date.now()-Math.max(0,Number(maxAgeMs)||0);
@@ -10119,6 +10134,11 @@ async function routeApi(req,res,url) {
     profile.trackerAccess=await trackerAccessForUser(u).catch(err=>({
       allowed:false,reason:'ACCESS_CHECK_FAILED',message:String(err.message||err),
     }));
+    profile.jlrTestAccess={
+      allowed:jlrOwnerAccess(u),
+      role:jlrOwnerAccess(u)?'JLR_OWNER':null,
+      ownerCharacterName:jlrOwnerAccess(u)?JLR_OWNER_CHARACTER_NAME:null,
+    };
     profile.doctrineMarketAccess=await doctrineAccessForUser(u).catch(err=>({
       allowed:false,reason:'ACCESS_CHECK_FAILED',message:String(err.message||err),checkedAt:now(),
     }));
@@ -10853,16 +10873,56 @@ async function routeApi(req,res,url) {
     });
     res.write('retry: 2000\n');
     trackerLiveClients.add(res);
+    trackerLiveClientUsers.set(res,String(user.id||''));
     sendTrackerEventTo(res,'ready',{...trackerLiveStatus(),corporationName:access.corporationName});
     // Railway/proxies can recycle long-lived SSE connections. On every
     // reconnect, replay only Heavy Fighter rows received in JLR's 60-second
     // alert window. Client killmail-ID dedupe prevents duplicate alarms.
     for(const loss of freshTrackerLiveLosses())sendTrackerEventTo(res,'loss',loss);
-    req.on('close',()=>trackerLiveClients.delete(res));
+    req.on('close',()=>dropTrackerLiveClient(res));
     return;
   }
   if(req.method==='GET'&&url.pathname==='/api/events'){res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});res.write(`event: state\ndata: ${JSON.stringify(publicState())}\n\n`);sseClients.add(res);req.on('close',()=>sseClients.delete(res));return}
   if(!sameOrigin(req))return json(res,403,{error:'BAD_ORIGIN'});
+  if(req.method==='POST'&&url.pathname==='/api/tracker/heavy-fighters/test-loss'){
+    if(!jlrOwnerAccess(user))return json(res,403,{
+      error:'JLR_OWNER_REQUIRED',
+      message:'Heavy Fighter simulation tools are restricted to the JLR owner account.',
+    });
+    try{
+      const typeIds=await heavyFighterTypeIds();
+      const shipTypeId=[...typeIds][0]||0;
+      if(!shipTypeId)throw new Error('No Heavy Fighter type is available for simulation.');
+      const systemId=await trackerRouteOriginId().catch(()=>0);
+      const names=await resolveUniverseNames([shipTypeId,systemId].filter(id=>id>0));
+      const stamp=Date.now();
+      const suffix=Math.floor(Math.random()*1000);
+      const killmailId=Number(String(stamp)+String(suffix).padStart(3,'0'));
+      const runId='sim_'+randomId(10);
+      const loss=buildSimulatedHeavyFighterLoss({
+        killmailId,
+        nowIso:now(),
+        shipTypeId,
+        shipTypeName:names.get(shipTypeId)||'Heavy Fighter',
+        systemId,
+        systemName:names.get(systemId)||TRACKER_ROUTE_ORIGIN||'JLR TEST SYSTEM',
+        totalValue:987654321,
+        runId,
+      });
+      const deliveredClients=sendTrackerEventForUser(user.id,'loss',loss);
+      return json(res,200,{
+        ok:true,
+        simulated:true,
+        runId,
+        deliveredClients,
+        loss,
+        note:deliveredClients?'Simulation delivered through the account-scoped live stream.':'No live Tracker stream was connected for this account.',
+      });
+    }catch(err){
+      console.warn('Heavy Fighter owner simulation failed',String(err?.message||err));
+      return json(res,500,{error:'HEAVY_FIGHTER_TEST_FAILED',message:String(err?.message||err)});
+    }
+  }
   if(req.method==='POST'&&url.pathname==='/api/doctrine-market/refresh'){
     const access=await doctrineAccessForUser(user,{force:true});
     if(!access.allowed)return json(res,403,{error:'INIT_BLUE_REQUIRED',message:access.message||'INIT or INIT-blue character required.'});
@@ -11167,9 +11227,9 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Tracker v2.10.19 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Tracker v2.10.20 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
-setInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': tracker-heartbeat\n\n')}catch{trackerLiveClients.delete(res)}}},20_000).unref();
+setInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': tracker-heartbeat\n\n')}catch{dropTrackerLiveClient(res)}}},20_000).unref();
 setInterval(()=>resetExpired(true),15_000).unref();
 async function runAutomaticSyncLoop(){
   const startedAt=Date.now();

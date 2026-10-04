@@ -1,7 +1,7 @@
 'use strict';
 (function(){
-  const ALARM_VERSION='2.10.11-alarm2';
-  const CORE_URL='/tracker-core.js?v=2.10.12-hotzones1';
+  const ALARM_VERSION='2.10.20-alarm3';
+  const CORE_URL='/tracker-core.js?v=2.10.20-alarm-sim1';
 
   let alarmContext=null;
   let alarmNodes=[];
@@ -10,6 +10,7 @@
   let alarmGeneration=0;
   const alarmTabId=Math.random().toString(36).slice(2)+Date.now().toString(36);
   let alarmLeaseKey='';
+  let alarmLastTrigger=null;
 
   function claimAlarmLease(){
     const account=String(window.jlrAlarmAccountId||'global').trim()||'global';
@@ -80,7 +81,7 @@
     const el=ensureAlarmOverlay();
     const title=el.querySelector('#fighterLossAlarmTitle');
     const detail=el.querySelector('#fighterLossAlarmDetail');
-    if(title)title.textContent=loss?.test?'HEAVY FIGHTER ALARM TEST':String(loss?.shipTypeName||'Heavy Fighter').toUpperCase()+' DOWN';
+    if(title)title.textContent=loss?.test?'HEAVY FIGHTER ALARM TEST':loss?.simulated?'SIMULATED HEAVY FIGHTER LOSS':String(loss?.shipTypeName||'Heavy Fighter').toUpperCase()+' DOWN';
     if(detail){
       const system=String(loss?.systemName||'').trim();
       const value=Math.max(0,Number(loss?.totalValue)||0);
@@ -92,7 +93,7 @@
       const closest=closestName?' • Closest: '+closestName+closestDistance:'';
       detail.textContent=loss?.test
         ?'Dedicated local two-tone alarm • no spoken voice'
-        :(system||'Unknown system')+closest+(value?' • '+Math.round(value).toLocaleString()+' ISK':'');
+        :(loss?.simulated?'OWNER TEST • ':'')+(system||'Unknown system')+closest+(value?' • '+Math.round(value).toLocaleString()+' ISK':'');
     }
     el.classList.remove('hidden');
   }
@@ -169,6 +170,14 @@
     // the AudioContext suspended. Only a tab that can actually play sound may
     // claim the cross-tab audio lease.
     showAlarmOverlay(loss||{});
+    alarmLastTrigger={
+      at:new Date().toISOString(),
+      killmailId:loss?.killmailId==null?null:String(loss.killmailId),
+      simulated:Boolean(loss?.simulated),
+      localTest:Boolean(loss?.test),
+      audioReady:Boolean(context&&context.state==='running'),
+      playing:false,
+    };
     if(!context||context.state!=='running'){
       if(!loss?.test)releaseAlarmLease();
       return false;
@@ -177,6 +186,7 @@
 
     const generation=alarmGeneration;
     playAlarmCycle(context,generation);
+    alarmLastTrigger={...alarmLastTrigger,playing:true};
     return true;
   }
 
@@ -187,6 +197,7 @@
       audioContext:alarmContext?.state||'none',
       alarmActive:Boolean(alarmTimer||alarmNodes.length),
       leaseHeld:Boolean(alarmLeaseKey),
+      lastTrigger:alarmLastTrigger,
     };
   }
 

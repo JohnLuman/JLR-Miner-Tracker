@@ -26,6 +26,7 @@
   let trackerStreamConnected=false;
   let trackerStreamState='offline';
   let trackerStreamStatus=null;
+  let trackerTestState={requestedAt:null,receivedAt:null,runId:'',killmailId:'',deliveredClients:0,error:''};
   let trackerIntel=null;
   let trackerIntelLoading=false;
   let trackerIntelError='';
@@ -290,10 +291,22 @@
       count:losses.length,
       live:{...(data.live||{}),...(trackerStreamStatus||{}),caughtUp:true,lastHeavyFighterAt:row.receivedAt||new Date().toISOString()},
     };
+    if(row?.simulated&&window.jlrTestAccess){
+      trackerTestState={
+        ...trackerTestState,
+        receivedAt:new Date().toISOString(),
+        runId:String(row?.simulationRunId||trackerTestState.runId||''),
+        killmailId:id,
+        error:'',
+      };
+    }
     if(alertFresh){
       if(isActive())trackerUnread=0;
       else trackerUnread=Math.min(999,trackerUnread+1);
       notifyLosses([row]);
+    }
+    if(row?.simulated&&window.jlrTestAccess){
+      setTimeout(function(){render();},120);
     }
     setBadge();
     render();
@@ -488,11 +501,49 @@
     render();
   }
   async function testSiren(){
+    if(!window.jlrTestAccess){toast('JLR owner test access required.');return}
     if(typeof window.jlrUnlockFighterAlarm==='function')await window.jlrUnlockFighterAlarm();
     const played=typeof window.jlrPlayFighterAlarm==='function'
       ?await window.jlrPlayFighterAlarm({test:true})
       :false;
-    toast(played?'Heavy Fighter loss alarm test started.':'Alarm could not start. Click ARM ALERTS first to unlock browser audio.');
+    toast(played?'Local Heavy Fighter alarm test started.':'Alarm could not start. Click ARM ALERTS first to unlock browser audio.');
+    render();
+  }
+  async function waitForTrackerStream(timeoutMs=4000){
+    const started=Date.now();
+    syncTrackerStream();
+    while(!trackerStreamConnected&&Date.now()-started<timeoutMs){
+      await new Promise(resolve=>setTimeout(resolve,100));
+    }
+    return trackerStreamConnected;
+  }
+  async function simulateLoss(){
+    if(!window.jlrTestAccess){toast('JLR owner test access required.');return}
+    trackerTestState={requestedAt:new Date().toISOString(),receivedAt:null,runId:'',killmailId:'',deliveredClients:0,error:''};
+    render();
+    try{
+      if(!trackerArmed)await setArmed(true);
+      await waitForTrackerStream();
+      const result=await api('/api/tracker/heavy-fighters/test-loss',{method:'POST'});
+      trackerTestState={
+        ...trackerTestState,
+        runId:String(result?.runId||''),
+        killmailId:String(result?.loss?.killmailId||''),
+        deliveredClients:Number(result?.deliveredClients)||0,
+        error:Number(result?.deliveredClients)>0?'':'No account-scoped live Tracker stream received the simulation.',
+      };
+      render();
+      if(Number(result?.deliveredClients)>0){
+        toast('Simulated Heavy Fighter loss sent through your live Tracker stream.');
+      }else{
+        toast('Simulation created, but no live Tracker stream was connected. Test marked failed.');
+      }
+      setTimeout(function(){render();},300);
+    }catch(error){
+      trackerTestState={...trackerTestState,error:String(error?.message||error||'Simulation failed.')};
+      render();
+      toast('Heavy Fighter simulation failed: '+trackerTestState.error);
+    }
   }
   function stopAlarm(){
     const stopped=typeof window.jlrStopFighterAlarm==='function'
@@ -680,7 +731,7 @@
           '</div>'+
           '<div class="tracker-actions">'+
             '<button id="trackerArm" class="tracker-arm '+(trackerArmed?'armed':'off')+'" type="button" aria-pressed="'+String(trackerArmed)+'">'+(trackerArmed?'LOSS ALARM ARMED':'ARM LOSS ALARM')+'</button>'+
-            '<button id="trackerTest" class="orb red" type="button">▶ TEST LOSS ALARM</button>'+
+            (window.jlrTestAccess?'<button id="trackerTest" class="orb red" type="button">▶ LOCAL ALARM TEST</button><button id="trackerSimulate" class="orb red" type="button">⚠ SIMULATE LOSS</button>':'')+
             '<button id="trackerStop" class="orb silver" type="button">■ STOP ALARM</button>'+
             '<button id="trackerRefresh" class="orb silver" type="button" '+(trackerLoading?'disabled':'')+'>'+(trackerLoading?'CHECKING…':'REFRESH NOW')+'</button>'+
           '</div>'+
@@ -691,6 +742,7 @@
           '<article class="glass"><span>LATEST LOSS</span><strong>'+(latest?esc(ago(latest.killmailTime).toUpperCase()):'—')+'</strong><small>'+(latest?esc(latest.systemName||'Unknown system'):'waiting for a loss')+'</small></article>'+
           '<article class="glass"><span>LIVE INGEST</span><strong>'+esc(liveLabel)+'</strong><small>'+esc(liveDetail)+'</small></article>'+
         '</section>'+
+        (window.jlrTestAccess?'<section class="glass tracker-test-lab"><div><span class="tracker-eyebrow">OWNER TEST LAB // ACCOUNT SCOPED</span><strong>HEAVY FIGHTER ALARM PIPELINE</strong><small>SIMULATE LOSS runs a synthetic Heavy Fighter loss through your authenticated server endpoint and your account\'s live SSE stream before the normal freshness, dedupe and alarm logic.</small></div><div><b>'+(trackerTestState.error?'FAILED':trackerTestState.receivedAt?'EVENT RECEIVED':trackerTestState.requestedAt?'RUNNING':'READY')+'</b><small>'+(trackerTestState.error?esc(trackerTestState.error):trackerTestState.receivedAt?('Run '+esc(trackerTestState.runId||'—')+' • '+esc(ago(trackerTestState.receivedAt))+' • '+fmt(trackerTestState.deliveredClients)+' stream client'+(trackerTestState.deliveredClients===1?'':'s')):'No simulation run in this page session.')+'</small><small>Alarm: '+esc((typeof window.jlrAlarmRuntimeStatus==='function'&&window.jlrAlarmRuntimeStatus().lastTrigger)?((window.jlrAlarmRuntimeStatus().lastTrigger.playing?'PLAYING':'VISUAL ONLY')+' • '+(window.jlrAlarmRuntimeStatus().lastTrigger.audioReady?'AUDIO READY':'AUDIO BLOCKED')):'waiting')+'</small></div></section>':'')+
         trackerOverviewHtml(losses,status,sourceUrl)+
         '<section class="glass tracker-feed-head">'+
           '<div><strong>FULL 24H LOSS HISTORY</strong><span>'+esc(status)+'</span></div>'+
@@ -705,10 +757,12 @@
 
     const arm=document.getElementById('trackerArm');
     const test=document.getElementById('trackerTest');
+    const simulate=document.getElementById('trackerSimulate');
     const stop=document.getElementById('trackerStop');
     const refresh=document.getElementById('trackerRefresh');
     if(arm)arm.addEventListener('click',function(){setArmed(!trackerArmed);});
     if(test)test.addEventListener('click',testSiren);
+    if(simulate)simulate.addEventListener('click',simulateLoss);
     if(stop)stop.addEventListener('click',stopAlarm);
     if(refresh)refresh.addEventListener('click',function(){loadTracker(true,false);loadTrackerIntel(true);});
     document.querySelectorAll('.tracker-route-load').forEach(function(button){
