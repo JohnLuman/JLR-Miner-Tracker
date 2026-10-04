@@ -16,10 +16,10 @@
       icon.className='mining-activity-icon';
       icon.title='Recent mining in this system • new linked-toon ledger activity within 45 minutes. ESI updates are delayed; this does not identify a specific field.';
       icon.setAttribute('role','img');icon.setAttribute('aria-label','Recent mining in this system');
-      icon.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20 17 5M8 4c5-2 10 0 12 5M6 17l3 3"/></svg>';
-      card.querySelector('.sys-name')?.append(icon);
+      icon.innerHTML='<canvas width="200" height="200" aria-hidden="true"></canvas>';
+      card.append(icon);
     }
   }
   let receivedAt=performance.now(),lastState=null;
-  window.JlrFieldMiningActivity={recent,paint(board,state){if(state!==lastState){receivedAt=performance.now();lastState=state;}paint(board,state);}};
+  window.JlrFieldMiningActivity={recent,paint(board,state){if(state!==lastState){receivedAt=performance.now();lastState=state;}paint(board,state);window.JlrMiningScene?.refresh();}};
 })();

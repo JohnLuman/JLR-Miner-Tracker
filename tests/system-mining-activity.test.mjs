@@ -26,7 +26,7 @@ const document={createElement:()=>({setAttribute(){},remove(){icon=null;}})};
 vm.runInNewContext(fs.readFileSync(new URL('../public/field-mining-activity.js',import.meta.url),'utf8'),{window,document,performance:{now:()=>elapsed}});
 assert.equal(window.JlrFieldMiningActivity.recent(new Date(start).toISOString(),start+1),true);
 assert.equal(window.JlrFieldMiningActivity.recent(new Date(start).toISOString(),start+RECENT_MINING_MS),false);
-const card={dataset:{system:'TEST'},querySelector(selector){return selector==='.sys-name'?{append(node){icon=node;added++;}}:icon;}};
+const card={append(node){icon=node;added++;},dataset:{system:'TEST'},querySelector(selector){return selector==='.sys-name'?{append(node){icon=node;added++;}}:icon;}};
 const board={querySelectorAll:()=>[card]},state={serverNow:new Date(start).toISOString(),miningActivity:{TEST:new Date(start).toISOString()},fieldAccess:{allowed:true}};
 window.JlrFieldMiningActivity.paint(board,state);assert.equal(added,1);
 window.JlrFieldMiningActivity.paint(board,state);assert.equal(added,1,'repaint preserves animated icon');

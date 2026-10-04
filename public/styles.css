@@ -4106,8 +4106,13 @@ html[data-theme] .field-board .system-node.ice-system-node{background:linear-gra
 .field-board .ice-system-node .sys-ice-coverage{font-size:6px;font-weight:900;color:var(--muted)}
 .field-board .ice-system-node .sys-ice-coverage.missing{color:#ffd27a}
 
-/* A system-level activity marker; field status colors keep their meaning. */
-.mining-activity-icon{display:inline-flex;vertical-align:middle;width:17px;height:17px;margin-left:6px;color:#f2e8c9}
-.mining-activity-icon svg{width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;transform-origin:60% 65%;animation:mining-pick 1.6s ease-in-out infinite}
-@keyframes mining-pick{0%,55%,100%{transform:rotate(-12deg)}30%{transform:rotate(20deg)}}
-@media(prefers-reduced-motion:reduce){.mining-activity-icon svg{animation:none}}
+
+/* Large background mining scene: keep status colors and card dimensions. */
+.field-board .system-node{isolation:isolate}
+.field-board .system-node .mining-activity-icon{position:absolute;right:0;top:0;bottom:0;width:70%;max-width:160px;pointer-events:none;z-index:-1;opacity:.48;color:var(--theme-accent-hi,var(--theme-accent,#ce68ff));display:flex;align-items:center;justify-content:center}
+.mining-activity-icon canvas{display:block;width:100%;height:100%;object-fit:contain}
+.field-board .system-node:has(.mining-activity-icon)>.sys-name,
+.field-board .system-node:has(.mining-activity-icon)>.sys-ore,
+.field-board .system-node:has(.mining-activity-icon)>.sys-state,
+.field-board .system-node:has(.mining-activity-icon)>.sys-scan,
+.field-board .system-node:has(.mining-activity-icon)>.sys-evidence{text-shadow:0 1px 3px var(--card),0 0 5px var(--card)}
