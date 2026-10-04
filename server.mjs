@@ -26,6 +26,7 @@ import { explicitAdamHelpQuestion, adamOverviewQuestion, adamUnknownText } from 
 import { createTrackerSupportClient } from './lib/tracker-support-client.mjs';
 import { chooseRapidResponseRoutes, wandererRiskPenalty, wandererWarnings } from './lib/rapid-response-route.mjs';
 import { buildSimulatedHeavyFighterLoss } from './lib/heavy-fighter-alert.mjs';
+import { normalizeMapFieldSnapshot, mapFieldSummary } from './lib/static-map-field-catalog.mjs';
 import { parseThreatPaste, compactThreatStats, threatActivityLabels, fountainThreatTags, jlrThreatScore, threatIgnoreReason } from './lib/threat-scan.mjs';
 import { sharedScanKind, sharedScanLines, sharedLocalNames } from './lib/shared-scan.mjs';
 import { archivedBuildSharePublic, migrateLegacyBuildShares } from './lib/appraisal/legacy-share.mjs';
@@ -397,6 +398,7 @@ const FOUNTAIN_REGION_ID = 10000058;
 const CN_SYSTEM_NAME = 'C-N4OD';
 const MARKET_STRUCTURE_SEARCH = String(process.env.MARKET_STRUCTURE_SEARCH || CN_SYSTEM_NAME).trim();
 const source = JSON.parse(await fsp.readFile(SOURCE_FILE, 'utf8'));
+const FIELD_MAP_SNAPSHOT = normalizeMapFieldSnapshot(source.fieldMapSnapshot||{});
 const ORES = source.ores.map((o, rankIndex) => ({
   rank: rankIndex + 1,
   name: o.name,
@@ -1827,7 +1829,7 @@ function publicState() {
   const marketSystems=effectiveSystems(marketOres);
   return {
     app:{name:'JLR Tracker',version:'2.10.19',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
-    source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}])),wormholes:{reports:wormholeGasPublicReports(),reportHours:WORMHOLE_GAS_REPORT_TTL/3600000}},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
+    source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,mapFields:FIELD_MAP_SNAPSHOT.fields,mapFieldSnapshot:{source:FIELD_MAP_SNAPSHOT.source,capturedAt:FIELD_MAP_SNAPSHOT.capturedAt,summary:mapFieldSummary(FIELD_MAP_SNAPSHOT),extractionStatus:String(source.fieldMapSnapshot?.extractionStatus||'')},ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}])),wormholes:{reports:wormholeGasPublicReports(),reportHours:WORMHOLE_GAS_REPORT_TTL/3600000}},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     fields:state.fields,
     scans,
     trackerBrain:trackerBrainSnapshot(scans,ledgerDebug),
