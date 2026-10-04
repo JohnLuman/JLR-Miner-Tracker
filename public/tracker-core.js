@@ -6,6 +6,7 @@
   const ALERT_FALLBACK_POLL_SECONDS=20;
   const ALERT_PREF='jlrHeavyFighterAlerts';
   const ALERT_MAX_AGE_MS=60*1000;
+  const trackerClock=window.jlrTrackerClock.create();
 
   let trackerData=null;
   const trackerRouteByKill=new Map();
@@ -110,12 +111,7 @@
   function isActive(){
     return Boolean(trackerPanel&&trackerPanel.classList.contains('active'));
   }
-  function isAlertFresh(row){
-    const receivedMs=Date.parse(String(row?.receivedAt||''));
-    if(!Number.isFinite(receivedMs))return false;
-    const age=Date.now()-receivedMs;
-    return age>=0&&age<=ALERT_MAX_AGE_MS;
-  }
+  function isAlertFresh(row){return trackerClock.inspect(row?.receivedAt).fresh;}
   function toast(message){
     const el=document.getElementById('toast');
     if(!el)return;
@@ -267,10 +263,6 @@
   function mergeClientLosses(rows){
     const merged=new Map();
     (Array.isArray(rows)?rows:[]).forEach(function(row){
-      if(trackerDiagnosticRunning&&row?.simulated&&window.jlrTestAccess&&row.simulationRunId){
-      if(trackerDiagnosticRows.size>=20)trackerDiagnosticRows.delete(trackerDiagnosticRows.keys().next().value);
-      trackerDiagnosticRows.set(String(row.simulationRunId),{fresh:isAlertFresh(row),reportable:isReportableLoss(row)});
-    }
     if(!isReportableLoss(row))return;
       const id=String(row&&row.killmailId||'');
       if(id&&!merged.has(id))merged.set(id,row);
@@ -304,6 +296,10 @@
     render();
   }
   function handleLiveLoss(row){
+    if(trackerDiagnosticRunning&&row?.simulated&&window.jlrTestAccess&&row.simulationRunId){
+      if(trackerDiagnosticRows.size>=20)trackerDiagnosticRows.delete(trackerDiagnosticRows.keys().next().value);
+      trackerDiagnosticRows.set(String(row.simulationRunId),{timing:trackerClock.inspect(row.receivedAt),reportable:isReportableLoss(row)});
+    }
     if(!isReportableLoss(row))return;
     const id=String(row&&row.killmailId||'');
     if(!id||trackerSeenIds.has(id))return;
@@ -361,7 +357,7 @@
     stream.addEventListener('ready',function(event){
       if(trackerStream!==stream)return;
       trackerStreamConnected=true;
-      try{applyStreamStatus(JSON.parse(event.data||'{}'));}catch(e){render();}
+      try{const status=JSON.parse(event.data||'{}');trackerClock.observe(status.serverNow);applyStreamStatus(status);}catch(e){render();}
     });
     stream.addEventListener('status',function(event){
       if(trackerStream!==stream)return;
@@ -467,6 +463,7 @@
     render();
     try{
       const responseData=await api('/api/tracker/heavy-fighters'+(force?'?refresh=1':''));
+      trackerClock.observe(responseData?.serverNow);
       const responseLosses=Array.isArray(responseData&&responseData.losses)?responseData.losses:[];
       const existingLosses=Array.isArray(trackerData&&trackerData.losses)?trackerData.losses:[];
       const losses=mergeClientLosses(responseLosses.concat(existingLosses));
@@ -564,6 +561,7 @@
       let result;
       try{result=await api('/api/tracker/heavy-fighters/test-loss',{method:'POST',signal:abort.signal});}
       finally{clearTimeout(requestTimeout);}
+      trackerClock.observe(result?.serverNow);
       trackerDiagnostic.runId=String(result?.runId||'');
       trackerDiagnostic.stages.ownerRequest='ok'; // Successful response from the owner-guarded route.
       trackerDiagnostic.stages.serverSend=Number(result?.deliveredClients)>0?'ok':'fail';
@@ -572,7 +570,9 @@
       while(!trackerDiagnosticRows.has(trackerDiagnostic.runId)&&Date.now()<until)await new Promise(resolve=>setTimeout(resolve,100));
       const row=trackerDiagnosticRows.get(trackerDiagnostic.runId);
       trackerDiagnostic.stages.browserReceipt=row?'ok':'fail';
-      trackerDiagnostic.stages.freshness=row?(row.fresh&&row.reportable?'ok':'fail'):'unknown';
+      trackerDiagnostic.stages.freshness=row?(row.timing.fresh?'ok':'fail'):'unknown';
+      trackerDiagnostic.stages.victimFilter=row?(row.reportable?'ok':'fail'):'unknown';
+      trackerDiagnostic.timing=row?.timing||null;
       // Alarm playback resumes asynchronously; inspect the matching run after it settles.
       await new Promise(resolve=>setTimeout(resolve,500));diagnosticRuntime();
       if(!row)throw new Error('This tab did not receive the matching simulated loss within 10 seconds.');
