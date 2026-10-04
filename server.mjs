@@ -1,3 +1,4 @@
+import {recordSystemMining,recentSystemMining} from './lib/system-mining-activity.mjs';
 import {updateT2Ledger} from './lib/map-field-ledger.mjs';
 import {mapFieldReport,clearMapField,applyMapScanReminders} from './lib/map-field-report.mjs';
 import {initFieldAccess, redactFieldState, fieldRouteRequiresInit} from './lib/init-field-access.mjs';
@@ -1848,8 +1849,9 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Tracker',version:'2.10.28',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
+    app:{name:'JLR Tracker',version:'2.10.29',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,mapFields:FIELD_MAP_SNAPSHOT.fields.map(row=>mapFieldReport(row,state.market.mapFieldReports||{})),mapFieldSnapshot:{source:FIELD_MAP_SNAPSHOT.source,capturedAt:FIELD_MAP_SNAPSHOT.capturedAt,summary:mapFieldSummary(FIELD_MAP_SNAPSHOT),extractionStatus:String(source.fieldMapSnapshot?.extractionStatus||'')},ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}])),wormholes:{reports:wormholeGasPublicReports(),reportHours:WORMHOLE_GAS_REPORT_TTL/3600000}},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
+    miningActivity:recentSystemMining(state.esi.systemMiningActivity),
     fields:state.fields,
     scans,
     trackerBrain:trackerBrainSnapshot(scans,ledgerDebug),
@@ -6156,6 +6158,9 @@ async function applyLedgerResults(results,{fullCycle=false}={}){
       const type=state.esi.typeCache[String(row.type_id)]||{volume:0};
       totalM3+=Number(row.quantity||0)*Number(type.volume||0);
     }
+    state.esi.systemMiningSnapshots ||= {};
+    state.esi.systemMiningActivity ||= {};
+    recordSystemMining({characterId:ledger.characterId,rows:ledger.rows,snapshots:state.esi.systemMiningSnapshots,activity:state.esi.systemMiningActivity,systemCache:state.esi.systemCache,sampleAt});
     updateLedgerActivity(ledger.characterId,totalM3,sampleAt);
     state.market.mapFieldReports ||= {};
     state.esi.mapFieldLedgerSnapshots ||= {};
@@ -10039,7 +10044,7 @@ async function routeApi(req,res,url) {
       return json(res,502,{error:'SUPPORT_APPRAISAL_FAILED',message:String(err.message||err)});
     }
   }
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Tracker',version:'2.10.28',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME,ceoCharacterName:CEO_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Tracker',version:'2.10.29',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME,ceoCharacterName:CEO_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/ceo/status'){
     const viewer=requireCeoViewer(req,res);
     if(!viewer)return;
@@ -11281,7 +11286,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Tracker v2.10.28 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Tracker v2.10.29 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
 setInterval(()=>{for(const res of [...trackerLiveClients]){try{res.write(': tracker-heartbeat\n\n')}catch{dropTrackerLiveClient(res)}}},20_000).unref();
 setInterval(()=>resetExpired(true),15_000).unref();

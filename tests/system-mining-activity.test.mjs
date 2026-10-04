@@ -1,0 +1,35 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import {recordSystemMining,recentSystemMining,RECENT_MINING_MS} from '../lib/system-mining-activity.mjs';
+import {redactFieldState} from '../lib/init-field-access.mjs';
+const snapshots={},activity={},systemCache={'1':{name:'TEST'}};
+const start=Date.parse('2026-10-04T12:00:00Z');
+function sample(quantity,minutes,characterId='a',date='2026-10-04'){
+  recordSystemMining({characterId,rows:[{date,solar_system_id:1,type_id:9,quantity}],snapshots,activity,systemCache,sampleAt:new Date(start+minutes*60000).toISOString()});
+}
+sample(100,0);assert.deepEqual(activity,{},'initial daily totals are only a baseline');
+sample(100,1);assert.deepEqual(activity,{},'unchanged polling does not activate');
+sample(110,2);assert.equal(activity.TEST,new Date(start+120000).toISOString());
+sample(110,3);assert.equal(activity.TEST,new Date(start+120000).toISOString(),'polling never extends activity');
+sample(500,4,'b');assert.equal(activity.TEST,new Date(start+120000).toISOString(),'new toon is a baseline');
+sample(109,1);assert.equal(snapshots.a.at,new Date(start+180000).toISOString(),'out-of-order samples ignored');
+assert.equal(Object.keys(recentSystemMining(activity,start+120000+RECENT_MINING_MS-1)).length,1);
+assert.deepEqual(recentSystemMining(activity,start+120000+RECENT_MINING_MS),{});
+assert.deepEqual(recentSystemMining(activity,start),{},'future timestamp cannot activate');
+sample(150,60);assert.equal(activity.TEST,new Date(start+120000).toISOString(),'long reconnect gap does not claim recent mining');
+sample(160,61);assert.equal(activity.TEST,new Date(start+61*60000).toISOString());
+sample(300,24*60,'a','2026-10-05');assert.equal(activity.TEST,new Date(start+61*60000).toISOString(),'new UTC day resets baseline');
+assert.deepEqual(redactFieldState({miningActivity:activity},{allowed:false}).miningActivity,{},'non-INIT cannot see system activity');
+const window={};let elapsed=0,icon=null,added=0;
+const document={createElement:()=>({setAttribute(){},remove(){icon=null;}})};
+vm.runInNewContext(fs.readFileSync(new URL('../public/field-mining-activity.js',import.meta.url),'utf8'),{window,document,performance:{now:()=>elapsed}});
+assert.equal(window.JlrFieldMiningActivity.recent(new Date(start).toISOString(),start+1),true);
+assert.equal(window.JlrFieldMiningActivity.recent(new Date(start).toISOString(),start+RECENT_MINING_MS),false);
+const card={dataset:{system:'TEST'},querySelector(selector){return selector==='.sys-name'?{append(node){icon=node;added++;}}:icon;}};
+const board={querySelectorAll:()=>[card]},state={serverNow:new Date(start).toISOString(),miningActivity:{TEST:new Date(start).toISOString()},fieldAccess:{allowed:true}};
+window.JlrFieldMiningActivity.paint(board,state);assert.equal(added,1);
+window.JlrFieldMiningActivity.paint(board,state);assert.equal(added,1,'repaint preserves animated icon');
+elapsed=RECENT_MINING_MS;window.JlrFieldMiningActivity.paint(board,state);assert.equal(icon,null,'activity expires even without a new server event');
+window.JlrFieldMiningActivity.paint(board,{...state,fieldAccess:{allowed:false}});assert.equal(icon,null);
+console.log('System mining baseline, positive delta, expiry, reconnect, rollover and INIT isolation tests passed.');
