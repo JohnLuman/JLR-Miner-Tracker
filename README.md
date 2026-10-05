@@ -1,4 +1,4 @@
-# JLR Tracker v2.2 — Website Build
+# JLR Hub v2.10.34 — Website Build
 
 **Latest patch notes:** [September 23–24, 2026 release roundup (v2.9.124–v2.9.144)](PATCH-NOTES-2026-09-23-24.md) · [Full GitHub commit history](https://github.com/JohnLuman/JLR-Miner-Tracker/compare/93abba91ceeec13d39dbb3b7cd2d0e04aa43fa17...e7a1f62216290ccfcad66c3dedf5709b5eec3dd2)
 
@@ -144,13 +144,14 @@ Keep the EVE application Client Secret private. Do not put it in browser JavaScr
 Set these environment variables in the hosting provider's GUI/dashboard:
 
 ```text
-PUBLIC_URL=https://YOUR-DOMAIN
+PUBLIC_URL=https://jlrhub.com
+JLR_SHARE_ORIGIN=https://jlrhub.com
 EVE_CLIENT_ID=your-client-id
 EVE_CLIENT_SECRET=your-client-secret
 JANICE_API_KEY=your-personal-janice-api-key
 SESSION_SECRET=a-long-random-secret
 TOKEN_ENCRYPTION_KEY=another-long-random-secret
-ESI_USER_AGENT=JLR-Miner-Tracker/2.2 contact=your-contact
+ESI_USER_AGENT=JLRHub/2.10.34 contact=your-contact
 PORT=3187
 ```
 
