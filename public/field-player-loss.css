@@ -3,16 +3,50 @@
 .field-player-loss canvas{width:100%;height:100%;display:block}
 .field-player-loss .jh-fire,.field-player-loss .jh-debris{position:absolute;inset:0;pointer-events:none}
 .field-player-loss .jh-fire i{position:absolute;height:1px;background:#ff8268;box-shadow:0 0 3px #fd625d80;transform-origin:0 50%;opacity:.8}
-.field-player-loss .jh-fire i::after{content:'';position:absolute;left:0;top:-.5px;width:18%;height:2px;background:linear-gradient(90deg,transparent,#ffe8bb);animation:jlr-hostile-shot 2.4s linear infinite}
-.field-player-loss .jh-fire i:nth-child(2)::after{animation-delay:-.8s}
-.field-player-loss .jh-fire i:nth-child(3)::after{animation-delay:-1.6s}
-.field-player-loss .jh-fire b{position:absolute;left:34%;top:51%;width:6px;height:6px;border-radius:50%;background:#ffe2a9;box-shadow:0 0 5px #ffaf64,0 0 9px #e65246;transform:translate(-50%,-50%)}
-.field-player-loss .jh-debris i{position:absolute;left:34%;top:51%;width:3px;height:2px;background:#da9974;animation:jlr-hostile-fragment 3s ease-out infinite;--dx:-12px;--dy:-14px}
-.field-player-loss .jh-debris i:nth-child(2){--dx:17px;--dy:13px;animation-delay:-1s}
-.field-player-loss .jh-debris i:nth-child(3){--dx:-9px;--dy:19px;animation-delay:-2s}
+.field-player-loss .jh-fire i::after{content:'';position:absolute;left:0;top:-.5px;width:18%;height:2px;background:linear-gradient(90deg,transparent,#ffe8bb);animation:jlr-hostile-shot 3.6s linear infinite}
+.field-player-loss .jh-fire i:nth-child(2)::after{animation-delay:-1.2s}
+.field-player-loss .jh-fire i:nth-child(3)::after{animation-delay:-2.4s}
+.field-player-loss .jh-fire b{position:absolute;left:34%;top:51%;width:6px;height:6px;border-radius:50%;background:#ffe2a9;box-shadow:0 0 5px #ffaf64,0 0 9px #e65246;transform:translate(-50%,-50%);animation:jlr-hostile-impact 1.2s ease-in-out infinite}
+.field-player-loss .jh-debris i{position:absolute;left:34%;top:51%;width:3px;height:2px;background:#da9974;animation:jlr-hostile-fragment 3.6s linear infinite;--dx:-12px;--dy:-14px}
+.field-player-loss .jh-debris i:nth-child(2){--dx:17px;--dy:13px;animation-delay:-1.2s}
+.field-player-loss .jh-debris i:nth-child(3){--dx:-9px;--dy:19px;animation-delay:-2.4s}
 .field-player-loss .jh-alert{display:block;font-size:9px;line-height:1.5;font-weight:600;letter-spacing:.2px;color:#ffad99}
 .field-player-loss .jh-age-text{display:block;font-size:8px;color:var(--muted);line-height:1.5;margin:3px 0}
-.field-player-loss[data-paused=true] .jh-fire i::after,.field-player-loss[data-paused=true] .jh-debris i{animation-play-state:paused}
-@keyframes jlr-hostile-shot{0%{transform:translateX(0);opacity:0}15%,80%{opacity:.9}100%{transform:translateX(455%);opacity:0}}
-@keyframes jlr-hostile-fragment{0%{transform:translate(0,0);opacity:0}15%{opacity:.65}100%{transform:translate(var(--dx),var(--dy));opacity:0}}
-@media(prefers-reduced-motion:reduce){.field-player-loss .jh-fire i::after,.field-player-loss .jh-debris i{animation:none}}
+.field-player-loss[data-paused=true] .jh-fire i::after,.field-player-loss[data-paused=true] .jh-debris i,.field-player-loss[data-paused=true] .jh-fire b{animation-play-state:paused}
+/* Browser-interpolated frames: only transform/opacity change, never redraw the canvas.
+   Each effect fades out before returning to the identical first-frame pose. */
+@keyframes jlr-hostile-shot{
+  0%,100%{transform:translateX(0);opacity:0}
+  5%{transform:translateX(0);opacity:0}
+  12%{transform:translateX(40%);opacity:.25}
+  22%{transform:translateX(97%);opacity:.65}
+  32%{transform:translateX(154%);opacity:.9}
+  42%{transform:translateX(211%);opacity:.9}
+  52%{transform:translateX(268%);opacity:.9}
+  62%{transform:translateX(325%);opacity:.85}
+  72%{transform:translateX(382%);opacity:.6}
+  85%{transform:translateX(455%);opacity:0}
+  95%{transform:translateX(455%);opacity:0}
+}
+@keyframes jlr-hostile-fragment{
+  0%,100%{transform:translate(0,0) scale(.4);opacity:0}
+  5%{transform:translate(0,0) scale(.4);opacity:0}
+  12%{transform:translate(calc(var(--dx)*.12),calc(var(--dy)*.12)) scale(.7);opacity:.25}
+  22%{transform:translate(calc(var(--dx)*.3),calc(var(--dy)*.3)) scale(1);opacity:.65}
+  32%{transform:translate(calc(var(--dx)*.46),calc(var(--dy)*.46)) scale(.95);opacity:.6}
+  42%{transform:translate(calc(var(--dx)*.6),calc(var(--dy)*.6)) scale(.9);opacity:.5}
+  52%{transform:translate(calc(var(--dx)*.72),calc(var(--dy)*.72)) scale(.8);opacity:.4}
+  62%{transform:translate(calc(var(--dx)*.82),calc(var(--dy)*.82)) scale(.7);opacity:.25}
+  72%{transform:translate(calc(var(--dx)*.9),calc(var(--dy)*.9)) scale(.6);opacity:.1}
+  85%{transform:translate(var(--dx),var(--dy)) scale(.4);opacity:0}
+  95%{transform:translate(var(--dx),var(--dy)) scale(.4);opacity:0}
+}
+@keyframes jlr-hostile-impact{
+  0%,100%{transform:translate(-50%,-50%) scale(.75);opacity:.35}
+  20%{transform:translate(-50%,-50%) scale(.85);opacity:.5}
+  40%{transform:translate(-50%,-50%) scale(1);opacity:.7}
+  55%{transform:translate(-50%,-50%) scale(1.15);opacity:.9}
+  70%{transform:translate(-50%,-50%) scale(1);opacity:.7}
+  85%{transform:translate(-50%,-50%) scale(.85);opacity:.5}
+}
+@media(prefers-reduced-motion:reduce){.field-player-loss .jh-fire i::after,.field-player-loss .jh-debris i,.field-player-loss .jh-fire b{animation:none}}

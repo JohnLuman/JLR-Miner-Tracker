@@ -86,7 +86,7 @@ html[data-theme] .user-chip{border-color:color-mix(in srgb,var(--theme-accent,#9
   background:color-mix(in srgb,var(--theme-panel-lo,#101018) 92%,transparent);}
 .system-node[data-status="ready"],.target-card.green{--semantic-status:var(--green)}
 .system-node[data-status="picked"],.target-card.yellow{--semantic-status:var(--yellow)}
-.system-node[data-status="cleared"]{--semantic-status:var(--red)}
+.system-node[data-status="cleared"]{--semantic-status:var(--field-reset-color,#a78bfa)}
 .system-node[data-status="ice"],.ice-system-node{--semantic-status:#59d4ff}
 .target-card.cherry{--semantic-status:var(--cherry)}
 .target-card.priority-first{--semantic-status:#45d979}

@@ -370,8 +370,8 @@ html[data-theme] .field-board .system-node.a0-system-node[data-a0-state="needs-u
 .system-node .sys-evidence.active{color:#83efad}
 .system-node .sys-evidence.warning{color:#ffd071}
 .system-node .sys-evidence.danger{color:#ff8a94;text-shadow:0 0 7px #ff334455}
-.field-board .system-node[data-status="cleared"]{background:linear-gradient(180deg,#67202b,#391018);border:2px solid #ff5367;box-shadow:inset 0 0 0 1px #ff879955,0 0 12px #ff304455}
-.field-board .system-node[data-status="cleared"] .sys-state{color:#fff0f1;text-shadow:0 0 7px #ff5268}
+.field-board .system-node[data-status="cleared"]{background:var(--card);border:2px solid var(--field-reset-color,#a78bfa);box-shadow:inset 0 -3px var(--field-reset-color,#a78bfa)}
+.field-board .system-node[data-status="cleared"] .sys-state{color:var(--field-reset-color,#a78bfa);text-shadow:none}
 .field-board .system-node[data-status="cleared"] .sys-name{color:#fff}
 @media(min-width:761px){
   .field-board.board-size-small .system-node{min-height:48px}
@@ -4098,8 +4098,8 @@ html[data-theme] .field-board .system-node.map-field-node.tier-2{background:line
 .map-field-controls::backdrop{background:#000a}
 .map-field-control-row{display:flex;align-items:center;justify-content:space-between;gap:20px;margin:12px 0}
 
-.field-board .system-node.map-field-node.tier-2[data-status="cleared"]{background:linear-gradient(180deg,#67202b,#391018);border-color:#ff5367;box-shadow:inset 0 -3px 0 #ff5367}
-.map-field-node.tier-2 .sys-ore.cleared{color:#ff8a94}
+.field-board .system-node.map-field-node.tier-2[data-status="cleared"]{background:var(--card);border-color:var(--field-reset-color,#a78bfa);box-shadow:inset 0 -3px 0 var(--field-reset-color,#a78bfa)}
+.map-field-node.tier-2 .sys-ore.cleared{color:var(--field-reset-color,#a78bfa)}
 
 /* Ice uses the shared card surface and sizing, with its own blue accent. */
 html[data-theme] .field-board .system-node.ice-system-node{background:linear-gradient(180deg,var(--card),var(--card));border-color:#59d4ff;box-shadow:inset 0 -3px 0 #59d4ff}
