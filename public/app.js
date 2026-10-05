@@ -775,7 +775,7 @@
     $('appraisalShare').disabled=true;
     try{
       const payload=await api('/api/appraisal/share',{method:'POST',body:JSON.stringify({
-        title:String($('appraisalTitle')?.value||'').trim()||'JLR Appraisal',
+        title:String($('appraisalTitle')?.value||'').trim()||'JLR Hub Appraisal',
         text,
         market:Number($('appraisalMarket')?.value||2),
         pricing:String($('appraisalPricing')?.value||'split'),
@@ -784,8 +784,8 @@
       })});
       const url=String(payload?.shareUrl||payload?.directShareUrl||'');
       if(url){
-        try{await navigator.clipboard.writeText(url);toast('JLR appraisal link copied. Discord will build the appraisal preview from the link.')}
-        catch{toast('JLR appraisal created. Open it from the returned link.')}
+        try{await navigator.clipboard.writeText(url);toast('JLR Hub appraisal link copied. Discord will build the appraisal preview from the link.')}
+        catch{toast('JLR Hub appraisal created. Open it from the returned link.')}
       }
     }catch(error){
       toast('Could not create appraisal link: '+String(error.message||error));
@@ -1249,7 +1249,7 @@
           $('scoutGlobalAlert')?.classList.add('hidden');
           const scoutTab=document.querySelector('.app-tab[data-tab="brain"]');
           if(scoutTab)adamMarkCurrent();
-          document.title='JLR Tracker';
+          document.title='JLR Hub';
         }
         if(snapshot.needsScan){
           if(id===String(scanCharacterId)&&!scanBusy)setScanStatus(snapshot.system+': SCAN UPDATE NEEDED','warning');
@@ -2197,8 +2197,8 @@
         <section class="glass appraisal-panel">
           <div class="appraisal-head">
             <div>
-              <span class="eyebrow">JLR MARKET NETWORK // APPRAISAL</span>
-              <h2>JLR APPRAISAL</h2>
+              <span class="eyebrow">JLR HUB // APPRAISAL</span>
+              <h2>JLR HUB APPRAISAL</h2>
               <p>Paste inventory, cargo, ore, modules, loot, or a simple item list. JLR prices it, shows Buy / Split / Sell together, and can create a JLR share link.</p>
             </div>
             <span class="status-pill">● LIVE MARKET DATA</span>
@@ -2270,7 +2270,7 @@
         const text=await navigator.clipboard.readText();
         if(!text.trim())throw new Error('Clipboard is empty');
         $('appraisalPaste').value=text;
-        toast('Clipboard pasted into JLR Appraisal.');
+        toast('Clipboard pasted into JLR Hub Appraisal.');
       }catch(error){toast(String(error.message||'Clipboard unavailable'))}
     });
     for(const id of ['appraisalMarket','appraisalPricing','appraisalVariant']){
@@ -6703,7 +6703,7 @@
           $('brainScanPrompt')?.classList.add('hidden');
           $('scoutGlobalAlert')?.classList.add('hidden');
           adamMarkCurrent();
-          document.title='JLR Tracker';
+          document.title='JLR Hub';
         }
       }
       if(preview?.tracked&&preview?.scan?.valid){

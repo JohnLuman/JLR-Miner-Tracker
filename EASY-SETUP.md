@@ -1,4 +1,4 @@
-# JLR Tracker — Easy Web Setup (No Command Prompt)
+# JLR Hub — Easy Web Setup (No Command Prompt)
 
 Recommended beginner path: GitHub + Railway + EVE SSO.
 

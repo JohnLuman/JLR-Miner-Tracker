@@ -673,7 +673,7 @@
     if(!appraisal)return false;
     const summary=appraisal.summary||{};
     const payout=selectedSummary(summary)*(payoutPct/100);
-    const title=((document.getElementById('appraisalTitle')||{}).value||'JLR Appraisal').trim()||'JLR Appraisal';
+    const title=((document.getElementById('appraisalTitle')||{}).value||'JLR Hub Appraisal').trim()||'JLR Hub Appraisal';
     const lines=[
       title,
       (appraisal.market&&appraisal.market.name||'Jita 4-4')+' • '+variantLabel(appraisal.pricingVariant),

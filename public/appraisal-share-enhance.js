@@ -177,7 +177,7 @@
     const appraisal=share.appraisal||{},summary=appraisal.summary||{};
     const payout=selectedSummary(appraisal,summary)*(pct/100);
     const lines=[
-      share.title||'JLR Appraisal',
+      share.title||'JLR Hub Appraisal',
       (appraisal.market&&appraisal.market.name||'Jita 4-4')+' • '+String(appraisal.pricingVariant||'immediate').toUpperCase(),
       'Basis: '+String(appraisal.pricing||'split').replaceAll('-',' ').toUpperCase(),
       'Payout: '+pct.toFixed(1).replace(/\.0$/,'')+'%',
@@ -226,7 +226,7 @@
         await new Promise(resolve=>setTimeout(resolve,50));
       }
     }catch(error){
-      console.warn('JLR appraisal share enhancement unavailable',error);
+      console.warn('JLR Hub appraisal share enhancement unavailable',error);
     }
   })();
 })();

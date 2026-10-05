@@ -1,6 +1,6 @@
 {
-  "name": "jlr-miner-tracker-web",
-  "version": "2.10.33",
+  "name": "jlr-hub-web",
+  "version": "2.10.34",
   "private": true,
   "type": "module",
   "description": "EVE Online operations hub with field tracking, fleet performance, appraisals, threat intel, and corporation tools.",
