@@ -63,9 +63,11 @@ loadEnv(ENV_FILE);
 const PORT = num(process.env.PORT, 3187);
 const PUBLIC_URL = String(process.env.PUBLIC_URL || '').trim().replace(/\/$/, '');
 const JLR_SHARE_ORIGIN = String(process.env.JLR_SHARE_ORIGIN || '').trim().replace(/\/$/, '');
+const EVE_CALLBACK_URL = String(process.env.EVE_CALLBACK_URL || '').trim();
+const JLR_LEGACY_HOSTS = new Set(String(process.env.JLR_LEGACY_HOSTS || 'jlr-miner-tracker-production.up.railway.app,jlr.crabdance.com,jlrtracker.crabdance.com').split(',').map(value=>value.trim().toLowerCase()).filter(Boolean));
 const EVE_CLIENT_ID = String(process.env.EVE_CLIENT_ID || '').trim();
 const EVE_CLIENT_SECRET = String(process.env.EVE_CLIENT_SECRET || '').trim();
-const ESI_USER_AGENT = String(process.env.ESI_USER_AGENT || 'JLR-Miner-Tracker/2.10.19').trim();
+const ESI_USER_AGENT = String(process.env.ESI_USER_AGENT || 'JLRHub/2.10.34').trim();
 const ESI_COMPAT_DATE = String(process.env.ESI_COMPATIBILITY_DATE || '2026-09-16').trim();
 const TRACKER_SUPPORT_SHARED_SECRET = String(process.env.TRACKER_SUPPORT_SHARED_SECRET || '').trim();
 const trackerSupport = createTrackerSupportClient({
@@ -914,7 +916,19 @@ function dscanShareUrl(req,token){
   const origin=JLR_SHARE_ORIGIN||requestBaseUrl(req);
   return origin+'/d/'+encodeURIComponent(String(token||''));
 }
-function callbackUrl(req) { return `${requestBaseUrl(req)}/auth/eve/callback`; }
+function callbackUrl(req) { return EVE_CALLBACK_URL || `${requestBaseUrl(req)}/auth/eve/callback`; }
+function redirectLegacyPublicHost(req,res){
+  if(!PUBLIC_URL||!JLR_LEGACY_HOSTS.size)return false;
+  let canonical;
+  try{canonical=new URL(PUBLIC_URL)}catch{return false}
+  const rawHost=String(req.headers['x-forwarded-host']||req.headers.host||'').split(',')[0].trim().toLowerCase();
+  const host=rawHost.replace(/:\\d+$/,'');
+  if(!host||host===canonical.hostname.toLowerCase()||!JLR_LEGACY_HOSTS.has(host))return false;
+  const target=new URL(req.url||'/',canonical);
+  res.writeHead(308,{Location:target.toString(),'Cache-Control':'public, max-age=300'});
+  res.end();
+  return true;
+}
 function parseCookies(req) {
   const out = {}; for (const part of String(req.headers.cookie || '').split(';')) { const i = part.indexOf('='); if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim()); }
   return out;
@@ -1854,7 +1868,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Tracker',version:'2.10.33',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
+    app:{name:'JLR Hub',version:'2.10.34',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,mapFields:FIELD_MAP_SNAPSHOT.fields.map(row=>mapFieldReport(row,state.market.mapFieldReports||{})),mapFieldSnapshot:{source:FIELD_MAP_SNAPSHOT.source,capturedAt:FIELD_MAP_SNAPSHOT.capturedAt,summary:mapFieldSummary(FIELD_MAP_SNAPSHOT),extractionStatus:String(source.fieldMapSnapshot?.extractionStatus||'')},ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}])),wormholes:{reports:wormholeGasPublicReports(),reportHours:WORMHOLE_GAS_REPORT_TTL/3600000}},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     miningActivity:recentSystemMining(state.esi.systemMiningActivity),
     playerLosses:playerLossSnapshot(pvpDb.fieldPlayerLosses,fieldLossSystems),
@@ -4942,7 +4956,7 @@ const TRACKER_APP_KNOWLEDGE = {
     panels:['gas types','site types','regional availability','site quantities','value information','wormhole gas tracker','shared J-space probe scans','Fullerite signatures']
   },
   appraisal:{
-    label:'JLR Appraisal',
+    label:'JLR Hub Appraisal',
     aliases:['appraisal','jlr appraisal','price check','market appraisal','item appraisal'],
     description:'JLR Appraisal is JLR’s native market-value workspace. Static item names, type IDs, volumes, compression pairs and reprocessing materials are resolved from JLR’s persistent local copy of CCP’s official Static Data Export (SDE), with CCP ESI used as a fallback while the catalog is warming or for missing data. Live market orders and history still come from CCP ESI. JLR calculates Buy, Split and Sell values, supports Immediate and Top 5 percent volume-weighted pricing, compares raw/compressed/refined economics, shows data age and cache source, and can create a public JLR share link without exposing EVE tokens or private account data.',
     panels:['item-list paste','CCP SDE static catalog status','JLR native market selector','buy split sell pricing','immediate or top 5 percent basis','compression comparison','refine economics','market history and liquidity','data age and source','volume and value totals','item price table','public appraisal link']
@@ -6890,7 +6904,7 @@ function attachAppraisalRefine(appraisal,sdeMaterialRows=[]){
 function appraisalSharePublic(row){
   if(!row)return null;
   return{
-    id:String(row.id||''),token:String(row.token||''),title:String(row.title||'JLR Appraisal'),
+    id:String(row.id||''),token:String(row.token||''),title:String(row.title||'JLR Hub Appraisal'),
     owner:{name:String(row.owner?.name||'JLR Pilot')},
     createdAt:row.createdAt||null,
     appraisal:row.appraisal||null,
@@ -10083,7 +10097,7 @@ async function routeApi(req,res,url) {
       return json(res,502,{error:'SUPPORT_APPRAISAL_FAILED',message:String(err.message||err)});
     }
   }
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Tracker',version:'2.10.33',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME,ceoCharacterName:CEO_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Hub',version:'2.10.34',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME,ceoCharacterName:CEO_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/ceo/status'){
     const viewer=requireCeoViewer(req,res);
     if(!viewer)return;
@@ -11287,7 +11301,7 @@ async function routeApi(req,res,url) {
   return json(res,404,{error:'NOT_FOUND'});
 }
 
-const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const url=new URL(req.url,requestBaseUrl(req));
+const server=http.createServer(async(req,res)=>{securityHeaders(res);try{if(redirectLegacyPublicHost(req,res))return;const url=new URL(req.url,requestBaseUrl(req));
   if(req.method==='GET'&&url.pathname==='/auth/eve/market/start')return await startMarketSso(req,res,url);
   if(req.method==='GET'&&url.pathname==='/auth/eve/ceo/start')return await startCeoSso(req,res,url);
   if(req.method==='GET'&&url.pathname==='/auth/eve/start')return await startSso(req,res,url);
@@ -11325,7 +11339,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{const u
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Tracker v2.10.33 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Tracker v2.10.34 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
 setTimeout(()=>void refreshFieldPlayerLosses(),5_000).unref();
 setInterval(()=>void refreshFieldPlayerLosses(),120_000).unref();
