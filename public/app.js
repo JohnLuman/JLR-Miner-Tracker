@@ -4904,12 +4904,25 @@
 
   function syncBoardNodes(board,cards){
     const previous=new Map(Array.from(board.children).map(card=>[card.dataset.boardKey,card]));
+    // The scene hydrates after insertion. Its canvas/beam markup is presentation,
+    // not a field-data change, and must not force a new card on every refresh.
+    const fieldMarkup=card=>{
+      if(!card.querySelector('.mining-activity-icon'))return card.outerHTML;
+      const copy=card.cloneNode(true);
+      copy.querySelectorAll('.mining-activity-icon').forEach(icon=>icon.remove());
+      return copy.outerHTML;
+    };
     cards.forEach((fresh,index)=>{
       const old=previous.get(fresh.dataset.boardKey);
       // Keep hovered/focused cards attached so their native tooltip does not restart.
       // Latest data is painted on the next tick after the pointer/focus leaves.
-      const keep=old&&(old.outerHTML===fresh.outerHTML||old.matches(':hover')||old.contains(document.activeElement));
+      const keep=old&&(fieldMarkup(old)===fieldMarkup(fresh)||old.matches(':hover')||old.contains(document.activeElement));
       const card=keep?old:fresh;
+      if(old&&!keep){
+        const scene=old.querySelector('.mining-activity-icon');
+        const placeholder=fresh.querySelector('.mining-activity-icon');
+        if(scene&&placeholder)placeholder.replaceWith(scene);
+      }
       if(board.children[index]!==card)board.insertBefore(card,board.children[index]||null);
     });
     while(board.children.length>cards.length)board.removeChild(board.lastElementChild);
