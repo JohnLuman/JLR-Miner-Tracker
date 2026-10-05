@@ -36,7 +36,7 @@ const [server,core,alarm]=await Promise.all([
 ]);
 assert.match(server,/\/api\/tracker\/heavy-fighters\/test-loss/,'owner simulation endpoint is missing');
 assert.match(server,/jlrOwnerAccess\(user\)/,'simulation endpoint must enforce JLR owner access');
-assert.match(server,/sendTrackerEventForUser/,'simulated losses must be scoped to the owner account stream');
+assert.match(server,/const deliveredClients=sendTrackerEvent\('loss',loss\)/,'simulated losses must broadcast to every connected Tracker stream');
 assert.match(core,/SIMULATE LOSS/,'owner test lab must expose a simulated-loss control');
 assert.match(core,/window\.jlrTestAccess/,'test lab must be hidden unless owner test access is present');
 assert.match(core,/handleLiveLoss/,'simulated stream events must travel through normal client loss handling');

@@ -7449,7 +7449,11 @@ function sendTrackerEventTo(res,event,payload){
   }
 }
 function sendTrackerEvent(event,payload){
-  for(const res of [...trackerLiveClients])sendTrackerEventTo(res,event,payload);
+  let delivered=0;
+  for(const res of [...trackerLiveClients]){
+    if(sendTrackerEventTo(res,event,payload))delivered++;
+  }
+  return delivered;
 }
 function sendTrackerEventForUser(userId,event,payload){
   const wanted=String(userId||'');
@@ -11031,15 +11035,16 @@ async function routeApi(req,res,url) {
         totalValue:987654321,
         runId,
       });
-      const deliveredClients=sendTrackerEventForUser(user.id,'loss',loss);
+      const deliveredClients=sendTrackerEvent('loss',loss);
       return json(res,200,{
         ok:true,
         simulated:true,
+        broadcast:true,
         serverNow:now(),
         runId,
         deliveredClients,
         loss,
-        note:deliveredClients?'Simulation delivered through the account-scoped live stream.':'No live Tracker stream was connected for this account.',
+        note:deliveredClients?'Simulation broadcast to every connected live Tracker stream.':'No live Tracker streams were connected.',
       });
     }catch(err){
       console.warn('Heavy Fighter owner simulation failed',String(err?.message||err));
