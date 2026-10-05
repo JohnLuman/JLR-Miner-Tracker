@@ -4116,3 +4116,54 @@ html[data-theme] .field-board .system-node.ice-system-node{background:linear-gra
 .field-board .system-node:has(.mining-activity-icon)>.sys-state,
 .field-board .system-node:has(.mining-activity-icon)>.sys-scan,
 .field-board .system-node:has(.mining-activity-icon)>.sys-evidence{text-shadow:0 1px 3px var(--card),0 0 5px var(--card)}
+
+
+/* v2.10.35 — CEO corporation finance report */
+.ceo-finance-report-card{grid-column:1/-1;min-height:0;padding:14px}
+.ceo-finance-report-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.ceo-finance-report-head>div:first-child{max-width:720px}
+.ceo-finance-report-head h3{font-size:18px;margin:4px 0 7px}
+.ceo-finance-report-head p{font-size:10px;max-width:680px}
+.ceo-finance-report-actions{display:flex;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap}
+.ceo-finance-month-nav{display:flex;align-items:stretch;gap:5px;padding:5px;border:1px solid color-mix(in srgb,var(--border,#3c4051) 80%,transparent);border-radius:8px;background:color-mix(in srgb,var(--panel,#141720) 88%,#000 12%)}
+.ceo-finance-month-nav label{display:grid;gap:3px;min-width:145px}
+.ceo-finance-month-nav label span{color:var(--muted,#838b99);font:800 7px/1 "Share Tech Mono",monospace;letter-spacing:.08em}
+.ceo-finance-month-nav select{width:100%;background:transparent;color:var(--text,#edf0f8);border:0;padding:2px 4px;font:900 9px/1.2 "Share Tech Mono",monospace;outline:0}
+.ceo-finance-report-filters{display:grid;grid-template-columns:minmax(220px,1.4fr) minmax(150px,.7fr) minmax(150px,.7fr) auto;gap:8px;margin-top:13px}
+.ceo-finance-report-filters input,.ceo-finance-report-filters select{min-width:0;width:100%;border:1px solid var(--border,#3c4051);border-radius:7px;background:color-mix(in srgb,var(--panel,#141720) 94%,#000 6%);color:var(--text,#edf0f8);padding:9px 10px;font:800 9px/1.2 "Share Tech Mono",monospace}
+.ceo-finance-report-status{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:9px;padding:7px 9px;border:1px solid color-mix(in srgb,var(--border,#3c4051) 70%,transparent);border-radius:7px;background:color-mix(in srgb,var(--panel,#141720) 88%,transparent)}
+.ceo-finance-report-status small{color:var(--muted,#838b99);font-size:8px}
+.ceo-finance-report-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:10px}
+.ceo-finance-report-kpi{min-width:0;padding:11px;border:1px solid var(--border,#343944);border-radius:8px;background:linear-gradient(180deg,color-mix(in srgb,var(--panel,#141720) 90%,#fff 2%),color-mix(in srgb,var(--panel,#141720) 96%,#000 4%));box-shadow:inset 0 1px 0 #fff0d}
+.ceo-finance-report-kpi span,.ceo-finance-report-kpi small{display:block;color:var(--muted,#7f8795);font:800 7px/1.25 "Share Tech Mono",monospace;letter-spacing:.06em}
+.ceo-finance-report-kpi strong{display:block;margin:5px 0 4px;overflow-wrap:anywhere;font:900 15px/1.05 Oxanium,Segoe UI,sans-serif}
+.ceo-finance-report-kpi.kpi-1 strong,.ceo-finance-report-kpi.kpi-3 strong{color:#7cf0a2}
+.ceo-finance-report-kpi.kpi-2 strong{color:#ff9090}
+.ceo-finance-report-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px}
+.ceo-finance-report-panel,.ceo-finance-report-ledger{min-width:0;padding:11px;border:1px solid var(--border,#343944);border-radius:8px;background:color-mix(in srgb,var(--panel,#141720) 92%,#000 8%)}
+.ceo-finance-report-panel .visual-card-head,.ceo-finance-report-ledger .visual-card-head{margin-bottom:8px}
+.ceo-finance-breakdown-row{display:grid;grid-template-columns:8px minmax(0,1fr) auto 50px;gap:7px;align-items:center;padding:7px 2px;border-bottom:1px solid color-mix(in srgb,var(--border,#343944) 52%,transparent)}
+.ceo-finance-breakdown-row:last-child{border-bottom:0}
+.ceo-finance-breakdown-row i{width:7px;height:7px;border-radius:2px;background:var(--theme-accent,#8b5cff);box-shadow:0 0 8px color-mix(in srgb,var(--theme-accent,#8b5cff) 55%,transparent)}
+.ceo-finance-breakdown-row i[data-rank="1"]{opacity:.82}.ceo-finance-breakdown-row i[data-rank="2"]{opacity:.68}.ceo-finance-breakdown-row i[data-rank="3"]{opacity:.56}.ceo-finance-breakdown-row i[data-rank="4"]{opacity:.44}
+.ceo-finance-breakdown-row span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#c6cbd6;font-size:9px}
+.ceo-finance-breakdown-row strong{font-size:9px;text-align:right}.ceo-finance-breakdown-row small{color:var(--muted,#777e8d);font-size:8px;text-align:right}
+.ceo-finance-activity-row{display:grid;grid-template-columns:58px minmax(0,1fr) auto;gap:8px;align-items:center;padding:7px 2px;border-bottom:1px solid color-mix(in srgb,var(--border,#343944) 52%,transparent)}
+.ceo-finance-activity-row:last-child{border-bottom:0}
+.ceo-finance-activity-row>span{color:var(--muted,#777e8d);font-size:8px}.ceo-finance-activity-row strong{display:block;font-size:9px}.ceo-finance-activity-row small{display:block;margin-top:2px;color:var(--muted,#777e8d);font-size:7px}.ceo-finance-activity-row>b{text-align:right;font-size:9px}
+.ceo-finance-activity-row .positive,.ceo-finance-mom-row .positive,.ceo-finance-ledger-row .positive{color:#7cf0a2}.ceo-finance-activity-row .negative,.ceo-finance-mom-row .negative,.ceo-finance-ledger-row .negative{color:#ff8d8d}
+.ceo-finance-mom-row{display:grid;grid-template-columns:72px minmax(90px,1fr) auto auto;gap:8px;align-items:center;padding:9px 2px;border-bottom:1px solid color-mix(in srgb,var(--border,#343944) 52%,transparent)}
+.ceo-finance-mom-row:last-child{border-bottom:0}.ceo-finance-mom-row>span{font:900 8px/1 "Share Tech Mono",monospace}.ceo-finance-mom-row small{color:var(--muted,#777e8d);font-size:7px}.ceo-finance-mom-row b{font-size:8px}.ceo-finance-mom-row strong{text-align:right;font-size:9px}
+.ceo-finance-quality-panel{grid-column:1/-1}
+.ceo-finance-quality-row{display:grid;grid-template-columns:18px minmax(0,1fr);gap:7px;align-items:start;padding:6px 7px;margin-top:4px;border-radius:6px;border:1px solid color-mix(in srgb,var(--border,#343944) 60%,transparent)}
+.ceo-finance-quality-row>span{font-weight:1000;text-align:center}.ceo-finance-quality-row small{font-size:8px;line-height:1.45}
+.ceo-finance-quality-row.ok{background:#0d1b13;border-color:#245d37;color:#8be5a3}.ceo-finance-quality-row.warn{background:#21170c;border-color:#6c4d20;color:#f4c36d}
+.ceo-finance-report-ledger{margin-top:8px}
+.ceo-finance-ledger-head,.ceo-finance-ledger-row{display:grid;grid-template-columns:78px minmax(220px,1.6fr) 44px minmax(95px,.65fr) minmax(95px,.65fr);gap:8px;align-items:center}
+.ceo-finance-ledger-head{padding:0 6px 5px;color:var(--muted,#777e8d);font:900 7px/1 "Share Tech Mono",monospace;letter-spacing:.08em}
+.ceo-finance-ledger-row{padding:8px 6px;border-top:1px solid color-mix(in srgb,var(--border,#343944) 55%,transparent);font-size:8px}
+.ceo-finance-ledger-row>div{min-width:0}.ceo-finance-ledger-row strong{display:block;font-size:8px}.ceo-finance-ledger-row small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px;color:var(--muted,#777e8d);font-size:7px}.ceo-finance-ledger-row>b{text-align:right}.ceo-finance-ledger-row>span:last-child{text-align:right;color:#a9afbc}
+.ceo-finance-ledger-more{display:block;margin-top:9px;color:var(--muted,#777e8d);font-size:8px}
+@media(max-width:1050px){.ceo-finance-report-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.ceo-finance-report-head{flex-direction:column}.ceo-finance-report-actions{justify-content:flex-start}}
+@media(max-width:780px){.ceo-finance-report-grid,.ceo-finance-report-filters{grid-template-columns:1fr}.ceo-finance-report-kpis{grid-template-columns:1fr 1fr}.ceo-finance-ledger-head{display:none}.ceo-finance-ledger-row{grid-template-columns:1fr 1fr}.ceo-finance-ledger-row>div{grid-column:1/-1}.ceo-finance-ledger-row>b,.ceo-finance-ledger-row>span:last-child{text-align:left}}
+@media(max-width:520px){.ceo-finance-report-kpis{grid-template-columns:1fr}.ceo-finance-report-actions{display:grid;grid-template-columns:1fr 1fr}.ceo-finance-month-nav{grid-column:1/-1}.ceo-finance-report-actions .board-tool{width:100%}}
