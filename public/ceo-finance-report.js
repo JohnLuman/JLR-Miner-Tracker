@@ -385,14 +385,16 @@
   function printReport(){
     if(!state.report)return;
     const report=state.report,filters=report.filters,balances=reconstructBalances(state.snapshot,filters.month);
-    const income=aggregate(report.records,'income'),expenses=aggregate(report.records,'expense');
-    const breakdown=rows=>rows.map(row=>'<tr><td>'+esc(row.name)+'</td><td>'+esc(money(row.value))+'</td></tr>').join('');
-    const ledger=report.records.map(row=>'<tr><td>'+esc(String(row.date||'').slice(0,10))+'</td><td>'+esc(String(row.division||''))+'</td><td>'+esc(classify(row).category)+'</td><td>'+esc(readable(row.refType))+'</td><td>'+esc(money(row.amount))+'</td></tr>').join('');
-    const html='<!doctype html><html><head><title>JLR Hub Corp Finance '+esc(filters.month)+'</title><style>body{font-family:Arial,sans-serif;margin:28px;color:#111}h1{margin:0 0 4px}small{color:#555}.k{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:20px 0}.k div{border:1px solid #bbb;padding:10px}.k b,.k span{display:block}.two{display:grid;grid-template-columns:1fr 1fr;gap:20px}table{border-collapse:collapse;width:100%;font-size:11px}th,td{border-bottom:1px solid #ddd;padding:6px;text-align:left}th{background:#eee}@media print{button{display:none}.two{break-inside:avoid}}</style></head><body>'+
-      '<h1>JLR HUB — CEO COMMAND / CORP FINANCE REPORT</h1><small>'+esc(state.snapshot?.corporationName||'Corporation')+' • '+esc(monthLabel(filters.month))+' • '+esc(filterLabel(filters))+'</small>'+
-      '<div class="k"><div><span>Opening</span><b>'+esc(money(balances.opening))+'</b></div><div><span>Income</span><b>'+esc(money(report.totals.income))+'</b></div><div><span>Expenses</span><b>'+esc(money(report.totals.expenses))+'</b></div><div><span>Net</span><b>'+esc(money(report.totals.net))+'</b></div><div><span>Closing</span><b>'+esc(money(balances.closing))+'</b></div></div>'+
-      '<div class="two"><section><h2>Income Breakdown</h2><table>'+breakdown(income)+'</table></section><section><h2>Expense Breakdown</h2><table>'+breakdown(expenses)+'</table></section></div>'+
-      '<h2>Filtered Ledger</h2><table><thead><tr><th>Date</th><th>Div</th><th>Category</th><th>Type</th><th>Amount</th></tr></thead><tbody>'+ledger+'</tbody></table>'+
+    const month=(state.snapshot?.finance?.months||[]).find(row=>String(row.month)===String(filters.month))||null;
+    const totals={
+      income:Number.isFinite(Number(month?.income))?Number(month.income):Number(report.totals.income)||0,
+      expenses:Number.isFinite(Number(month?.expenses))?Number(month.expenses):Number(report.totals.expenses)||0,
+      net:Number.isFinite(Number(month?.net))?Number(month.net):Number(report.totals.net)||0,
+    };
+    const html='<!doctype html><html><head><title>JLR Hub Final Finance '+esc(filters.month)+'</title><style>'+
+      'body{font-family:Arial,sans-serif;margin:36px;color:#111}h1{margin:0 0 5px;font-size:26px}small{color:#555}.k{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin:28px 0}.k div{border:1px solid #aaa;padding:14px}.k span{display:block;font-size:10px;color:#555;text-transform:uppercase}.k b{display:block;margin-top:6px;font-size:16px}@media print{body{margin:20px}.k{break-inside:avoid}}</style></head><body>'+
+      '<h1>JLR HUB — FINAL FINANCE NUMBERS</h1><small>'+esc(state.snapshot?.corporationName||'Corporation')+' • '+esc(monthLabel(filters.month))+'</small>'+
+      '<div class="k"><div><span>Opening Balance</span><b>'+esc(money(balances.opening))+'</b></div><div><span>Total Income</span><b>'+esc(money(totals.income))+'</b></div><div><span>Total Expenses</span><b>'+esc(money(totals.expenses))+'</b></div><div><span>Net Change</span><b>'+esc(money(totals.net))+'</b></div><div><span>Closing Balance</span><b>'+esc(money(balances.closing))+'</b></div></div>'+
       '</body></html>';
     document.getElementById('jlrFinancePrintFrame')?.remove();
     const frame=document.createElement('iframe');
