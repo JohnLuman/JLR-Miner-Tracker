@@ -14,10 +14,10 @@ assert.equal(decodeFinanceBaseline(encode({...fixture,months:[{...fixture.months
 const app=fs.readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
 const start=app.indexOf('  function renderCeoFinance(){'),end=app.indexOf('    async function adjustCeoLoyalty()',start);
 const elements=new Map();const $=id=>{if(!elements.has(id))elements.set(id,{value:'',innerHTML:'',style:{},classList:{toggle(){}}});return elements.get(id);};
-const context={window:{},$,ceoFinanceData:{walletAccess:{available:false},finance:{months:[],imported:baseline},errors:[{section:'wallets'}]},ceoFinanceLoading:false,ceoCommandStatus:{connected:true},ceoSelectedMonth:'',ceoLoyaltyBusy:false,esc:String,ceoMoney:n=>n+' ISK',ceoPieStyle:()=>'valid-pie',ceoLegend:rows=>rows.map(row=>row.name).join(',')};
+let reportPayload=null;const context={window:{JlrCeoFinanceReport:{setData:payload=>reportPayload=payload}},$,ceoFinanceData:{walletAccess:{available:false},finance:{months:[],imported:baseline},errors:[{section:'wallets'}]},ceoFinanceLoading:false,ceoCommandStatus:{connected:true},ceoSelectedMonth:'',ceoLoyaltyBusy:false,esc:String,ceoMoney:n=>n+' ISK',ceoPieStyle:()=>'valid-pie',ceoLegend:rows=>rows.map(row=>row.name).join(',')};
 vm.createContext(context);vm.runInContext(app.slice(start,end),context);context.renderCeoFinance();
-assert.match($('ceoIncomeSource').textContent,/ESI JOURNAL/);assert.doesNotMatch($('ceoIncomeMonth').innerHTML,/2024|sheet:/);
-assert.equal($('ceoIncomeMonth').disabled,true);assert.doesNotMatch($('ceoIncomeTotals').innerHTML,/80 ISK/);
+assert.doesNotMatch($('ceoIncomeMonth').innerHTML,/2024|sheet:/);
+assert.equal($('ceoIncomeMonth').disabled,true);assert.equal(reportPayload.walletBlocked,true);assert.equal(reportPayload.selectedMonth,'');
 assert.match($('ceoWalletTotal').textContent,/UNAVAILABLE/,'Historical income never becomes a current wallet balance');
 assert.match($('ceoOverviewMonths').textContent,/0 ESI months/);
 const server=fs.readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
