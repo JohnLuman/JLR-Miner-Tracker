@@ -96,6 +96,8 @@ const MARKET_SCOPES = [MARKET_STRUCTURE_SCOPE, SEARCH_STRUCTURES_SCOPE, READ_STR
 const MARKET_CHARACTER_NAME = String(process.env.MARKET_CHARACTER_NAME || 'John Leman Raholan').trim();
 const JLR_OWNER_CHARACTER_NAME = String(process.env.JLR_OWNER_CHARACTER_NAME || 'John Leman Raholan').trim();
 const CEO_CHARACTER_NAME = String(process.env.CEO_CHARACTER_NAME || 'Renius').trim();
+const CEO_COMMAND_VIEWER_NAMES = Object.freeze(String(process.env.CEO_COMMAND_VIEWER_NAMES || 'Asanas Mikakka').split(',').map(value=>value.trim()).filter(Boolean));
+const CEO_COMMAND_VIEWER_NAME_SET = new Set(CEO_COMMAND_VIEWER_NAMES.map(value=>value.toLowerCase()));
 const CEO_WALLET_SCOPE = 'esi-wallet.read_corporation_wallets.v1';
 const CEO_LEGACY_WALLET_SCOPE = 'esi-wallet.read_corporation_wallet.v1';
 const CEO_SCOPES = Object.freeze([
@@ -975,15 +977,22 @@ function ceoLinkedCharacter(user){
     .map(id=>state.characters?.[id])
     .find(ch=>String(ch?.name||'').trim().toLowerCase()===CEO_CHARACTER_NAME.toLowerCase())||null;
 }
+function ceoCommandViewerCharacter(user){
+  return (user?.characterIds||[]).map(String)
+    .map(id=>state.characters?.[id])
+    .find(ch=>CEO_COMMAND_VIEWER_NAME_SET.has(String(ch?.name||'').trim().toLowerCase()))||null;
+}
 function ceoAccessForUser(user){
   const owner=jlrOwnerAccess(user);
   const ceoCharacter=ceoLinkedCharacter(user);
-  const allowed=Boolean(owner||ceoCharacter);
+  const delegatedViewer=ceoCommandViewerCharacter(user);
+  const allowed=Boolean(owner||ceoCharacter||delegatedViewer);
   return {
     allowed,
-    role:owner?(ceoCharacter?'OWNER_AND_CEO':'OWNER'):(ceoCharacter?'CEO':null),
+    role:owner?(ceoCharacter?'OWNER_AND_CEO':'OWNER'):(ceoCharacter?'CEO':(delegatedViewer?'CEO_VIEWER':null)),
     ownerCharacterName:JLR_OWNER_CHARACTER_NAME,
     ceoCharacterName:CEO_CHARACTER_NAME,
+    viewerCharacterName:delegatedViewer?.name||null,
     canAuthorize:Boolean(ceoCharacter),
     authorizeCharacterId:ceoCharacter?String(ceoCharacter.characterId):null,
   };
@@ -993,7 +1002,7 @@ function requireCeoViewer(req,res){
   if(!user)return null;
   const access=ceoAccessForUser(user);
   if(!access.allowed){
-    json(res,403,{error:'CEO_COMMAND_FORBIDDEN',message:'CEO Command is restricted to the JLR owner and Renius.'});
+    json(res,403,{error:'CEO_COMMAND_FORBIDDEN',message:'CEO Command is restricted to approved JLR CEO Command viewers.'});
     return null;
   }
   return{user,access};
@@ -5000,7 +5009,7 @@ const TRACKER_APP_KNOWLEDGE = {
   ceo:{
     label:'CEO Command',
     aliases:['ceo','ceo command','corp command','corporation command','corp finance'],
-    description:'CEO Command is a private corporation administration workspace restricted on the server to the JLR owner and Renius. Renius uses a dedicated corporation ESI authorization that is separate from normal linked-toon access. The workspace is designed for monthly corporation income, wallet divisions, member finance and loyalty tracking, moon and structure administration, corporation assets, jobs, contracts and market orders. Discord activity requires a separate bot connection and is intended to store participation totals rather than message contents or voice recordings.',
+    description:'CEO Command is a private corporation administration workspace restricted on the server to approved JLR CEO Command viewers. Renius remains the dedicated CEO ESI authorization character. Renius uses a dedicated corporation ESI authorization that is separate from normal linked-toon access. The workspace is designed for monthly corporation income, wallet divisions, member finance and loyalty tracking, moon and structure administration, corporation assets, jobs, contracts and market orders. Discord activity requires a separate bot connection and is intended to store participation totals rather than message contents or voice recordings.',
     panels:['monthly income sources','corporation wallet breakdown','member finance and loyalty','current moon extractions and structures','corporation assets, industry, contracts and orders','Discord participation totals','CEO ESI permission health']
   },
   feedback:{
