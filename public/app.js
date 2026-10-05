@@ -4744,20 +4744,35 @@
     b.querySelector('.favorite-toggle').addEventListener('click',e=>{
       e.preventDefault();e.stopPropagation();toggleBoardFavorite('t3',d.system);sfx('select');
     });
-    b.addEventListener('click',e=>{
-      if(e.target.closest('.favorite-toggle'))return;
-      if(Date.now()<boardSuppressClickUntil)return;
-      chooseSystem(d.system);
-    });
-    b.addEventListener('keydown',e=>{
-      if(e.target!==b)return;
-      if(e.key==='Enter'||e.key===' '){e.preventDefault();chooseSystem(d.system)}
-    });
     attachBoardDrag(b,key);
     return b;
   }
 
+  let fieldStatusConnected=false;
+  function fieldStatusSnapshot(key){
+    const entries=boardEntries(),entry=entries.find(item=>item.key===key);
+    if(!entry)return {state,entry:null};
+    const scanHint=entry.kind==='map'
+      ?(entry.row.rows||[entry.row]).map(mapScanReminderLine).find(hint=>hint.stale)||mapScanReminderLine(entry.row)
+      :boardScanLine(entry.system,entry.kind==='a0'?{lastScanAt:entry.row.scan?.lastCheckedAt,due:entry.row.scan?.due}:null,entry.kind==='t3');
+    return {state,entry,scanHint,nearest:scoutNearestScan,connected:fieldStatusConnected,
+      systemEntryCount:entries.filter(item=>item.system===entry.system).length,
+      controls:entry.kind==='map'?()=>openMapFieldControls(entry.row):null};
+  }
   function attachBoardDrag(card,key){
+    card.setAttribute('role','button');card.tabIndex=0;
+    card.setAttribute('aria-haspopup','dialog');
+    const openStatus=event=>{
+      if(event.target.closest('.favorite-toggle'))return;
+      if(event.type==='keydown'&&(event.target!==card||!['Enter',' '].includes(event.key)))return;
+      event.preventDefault();
+      if(boardArrangeMode||Date.now()<boardSuppressClickUntil)return;
+      const entry=boardEntries().find(item=>item.key===key);
+      if(entry?.kind==='t3')chooseSystem(entry.system);
+      window.JlrFieldStatus?.open(()=>fieldStatusSnapshot(key),card);
+    };
+    card.addEventListener('click',openStatus);
+    card.addEventListener('keydown',openStatus);
     card.addEventListener('dragstart',e=>{
       if(!boardArrangeMode){e.preventDefault();return}
       boardDragKey=key;
@@ -4816,7 +4831,11 @@
       boardPrefs.favorites=[...favorites];saveBoardPrefs();renderBoards();sfx('select');
     });
     card.setAttribute('role','button');card.tabIndex=0;
-    const openControls=()=>{
+    attachBoardDrag(card,key);
+    return card;
+  }
+  function openMapFieldControls(row){
+      const rows=row.rows||[row];
       if(boardArrangeMode||Date.now()<boardSuppressClickUntil)return;
       const dialog=document.createElement('dialog');dialog.className='map-field-controls';
       dialog.innerHTML='<h3>'+esc(row.system)+' • T'+Number(row.tier)+' FIELDS</h3>';
@@ -4836,11 +4855,6 @@
       }
       const close=document.createElement('button');close.type='button';close.className='orb';close.textContent='CLOSE';close.addEventListener('click',()=>dialog.close());dialog.appendChild(close);
       dialog.addEventListener('close',()=>dialog.remove());document.body.appendChild(dialog);dialog.showModal();
-    };
-    card.addEventListener('click',e=>{if(!e.target.closest('.favorite-toggle'))openControls()});
-    card.addEventListener('keydown',e=>{if(e.target===card&&(e.key==='Enter'||e.key===' ')){e.preventDefault();openControls()}});
-    attachBoardDrag(card,key);
-    return card;
   }
 
   function iceBoardNode(row){
@@ -4946,6 +4960,8 @@
 
   function renderBoards(){
     if(!state)return;
+    window.JlrFieldStatus?.observe(state);
+    window.JlrFieldStatus?.update();
     const board=$('fieldBoard');
     syncBoardControls();
     window.JlrFieldUpdateFeedback?.observe(state);
@@ -6383,6 +6399,9 @@
       const nextState=JSON.parse(e.data);
       const syncChanged=Boolean(nextState?.esi?.lastSyncAt&&nextState.esi.lastSyncAt!==previousSync);
       state=nextState;
+      fieldStatusConnected=true;
+      window.JlrFieldStatus?.observe(state);
+      window.JlrFieldStatus?.update();
       if(syncChanged){
         refreshMe()
           .then(()=>refreshFleetPerformanceSnapshot(true))
@@ -6392,7 +6411,7 @@
         scheduleStateRender();
       }
     });
-    eventSource.onerror=()=>{$('liveBadge').textContent='⚠ DATA CONNECTION LOST';$('liveBadge').title='Live dashboard updates disconnected; the page is attempting to reconnect.'};
+    eventSource.onerror=()=>{fieldStatusConnected=false;window.JlrFieldStatus?.update();$('liveBadge').textContent='⚠ DATA CONNECTION LOST';$('liveBadge').title='Live dashboard updates disconnected; the page is attempting to reconnect.'};
   }
 
   document.addEventListener('change',async event=>{

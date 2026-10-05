@@ -1,0 +1,17 @@
+.field-status-dialog{width:min(460px,calc(100vw - 24px));max-height:calc(100dvh - 32px);overflow:auto;margin:auto;padding:18px;border:1px solid var(--line);border-radius:10px;background:var(--theme-panel-lo,var(--panel));color:var(--text);box-shadow:0 18px 65px #0009;font-size:12px;line-height:1.45}
+.field-status-dialog::backdrop{background:#0009}
+.field-status-dialog header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.field-status-dialog h2{margin:0;font:800 22px Oxanium,Segoe UI,sans-serif;overflow-wrap:anywhere}
+.field-status-type{margin:3px 0 0;color:var(--muted);overflow-wrap:anywhere}
+.field-status-dialog .board-tool{flex-shrink:0;min-height:32px}
+.field-status-dialog button:focus-visible{outline:2px solid var(--theme-accent,var(--purple));outline-offset:3px}
+.field-status-live{font-size:11px;color:var(--yellow);margin:12px 0}
+.field-status-live[data-live="true"]{color:var(--green)}
+.field-status-dialog dl{display:grid;grid-template-columns:112px minmax(0,1fr);gap:9px 14px;margin:0}
+.field-status-dialog dt{color:var(--muted)}
+.field-status-dialog dd{margin:0;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.field-status-activity{border-top:1px solid var(--line);margin-top:14px;padding-top:5px;font-size:11px}
+.field-status-activity p{margin:8px 0;overflow-wrap:anywhere}
+.field-status-alert{color:var(--yellow)}
+.field-status-dialog>button{margin-top:14px}
+@media(max-width:380px){.field-status-dialog{padding:14px}.field-status-dialog dl{grid-template-columns:94px minmax(0,1fr);gap:8px 10px}}
