@@ -40,7 +40,7 @@
           <section><h2>MATERIAL SHOPPING LIST</h2><div class="list">${materials.length?materials.map(row=>`<div class="row"><div><strong>${esc(row.name)}</strong><small>MATERIAL</small></div><span>${Number(row.quantity||0).toLocaleString()} • ${isk(row.cost)} ISK</span></div>`).join(''):'<div class="row">No manufacturing materials.</div>'}</div></section>
         </div>
         ${share.notes?`<div class="notes">${esc(share.notes)}</div>`:''}
-        <div class="footer">Archived JLR build snapshot • values were calculated when this link was created. <a href="/">Open JLR Appraisal</a> for current prices.</div>
+        <div class="footer">Archived JLR build snapshot • values were calculated when this link was created. <a href="/">Open JLR Hub Appraisal</a> for current prices.</div>
       `;
     }catch(error){
       root.innerHTML='<h1>Build unavailable</h1><p class="error">'+esc(error.message||error)+'</p>';
