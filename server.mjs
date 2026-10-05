@@ -4958,7 +4958,7 @@ const TRACKER_APP_KNOWLEDGE = {
   appraisal:{
     label:'JLR Hub Appraisal',
     aliases:['appraisal','jlr appraisal','price check','market appraisal','item appraisal'],
-    description:'JLR Appraisal is JLR’s native market-value workspace. Static item names, type IDs, volumes, compression pairs and reprocessing materials are resolved from JLR’s persistent local copy of CCP’s official Static Data Export (SDE), with CCP ESI used as a fallback while the catalog is warming or for missing data. Live market orders and history still come from CCP ESI. JLR calculates Buy, Split and Sell values, supports Immediate and Top 5 percent volume-weighted pricing, compares raw/compressed/refined economics, shows data age and cache source, and can create a public JLR share link without exposing EVE tokens or private account data.',
+    description:'JLR Hub Appraisal is JLR Hub’s native market-value workspace. Static item names, type IDs, volumes, compression pairs and reprocessing materials are resolved from JLR’s persistent local copy of CCP’s official Static Data Export (SDE), with CCP ESI used as a fallback while the catalog is warming or for missing data. Live market orders and history still come from CCP ESI. JLR calculates Buy, Split and Sell values, supports Immediate and Top 5 percent volume-weighted pricing, compares raw/compressed/refined economics, shows data age and cache source, and can create a public JLR share link without exposing EVE tokens or private account data.',
     panels:['item-list paste','CCP SDE static catalog status','JLR native market selector','buy split sell pricing','immediate or top 5 percent basis','compression comparison','refine economics','market history and liquidity','data age and source','volume and value totals','item price table','public appraisal link']
   },
   doctrine:{
@@ -11339,7 +11339,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{if(redi
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Tracker v2.10.34 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Hub v2.10.34 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
 setTimeout(()=>void refreshFieldPlayerLosses(),5_000).unref();
 setInterval(()=>void refreshFieldPlayerLosses(),120_000).unref();
