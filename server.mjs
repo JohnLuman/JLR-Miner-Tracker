@@ -67,7 +67,7 @@ const EVE_CALLBACK_URL = String(process.env.EVE_CALLBACK_URL || '').trim();
 const JLR_LEGACY_HOSTS = new Set(String(process.env.JLR_LEGACY_HOSTS || 'jlr-miner-tracker-production.up.railway.app,jlr.crabdance.com,jlrtracker.crabdance.com').split(',').map(value=>value.trim().toLowerCase()).filter(Boolean));
 const EVE_CLIENT_ID = String(process.env.EVE_CLIENT_ID || '').trim();
 const EVE_CLIENT_SECRET = String(process.env.EVE_CLIENT_SECRET || '').trim();
-const ESI_USER_AGENT = String(process.env.ESI_USER_AGENT || 'JLRHub/2.10.37').trim();
+const ESI_USER_AGENT = String(process.env.ESI_USER_AGENT || 'JLRHub/2.10.38').trim();
 const ESI_COMPAT_DATE = String(process.env.ESI_COMPATIBILITY_DATE || '2026-09-16').trim();
 const TRACKER_SUPPORT_SHARED_SECRET = String(process.env.TRACKER_SUPPORT_SHARED_SECRET || '').trim();
 const trackerSupport = createTrackerSupportClient({
@@ -96,6 +96,8 @@ const MARKET_SCOPES = [MARKET_STRUCTURE_SCOPE, SEARCH_STRUCTURES_SCOPE, READ_STR
 const MARKET_CHARACTER_NAME = String(process.env.MARKET_CHARACTER_NAME || 'John Leman Raholan').trim();
 const JLR_OWNER_CHARACTER_NAME = String(process.env.JLR_OWNER_CHARACTER_NAME || 'John Leman Raholan').trim();
 const CEO_CHARACTER_NAME = String(process.env.CEO_CHARACTER_NAME || 'Renius').trim();
+const CEO_COMMAND_VIEWER_NAMES = Object.freeze(String(process.env.CEO_COMMAND_VIEWER_NAMES || 'Asanas Mikakka').split(',').map(value=>value.trim()).filter(Boolean));
+const CEO_COMMAND_VIEWER_NAME_SET = new Set(CEO_COMMAND_VIEWER_NAMES.map(value=>value.toLowerCase()));
 const CEO_WALLET_SCOPE = 'esi-wallet.read_corporation_wallets.v1';
 const CEO_LEGACY_WALLET_SCOPE = 'esi-wallet.read_corporation_wallet.v1';
 const CEO_SCOPES = Object.freeze([
@@ -975,15 +977,22 @@ function ceoLinkedCharacter(user){
     .map(id=>state.characters?.[id])
     .find(ch=>String(ch?.name||'').trim().toLowerCase()===CEO_CHARACTER_NAME.toLowerCase())||null;
 }
+function ceoCommandViewerCharacter(user){
+  return (user?.characterIds||[]).map(String)
+    .map(id=>state.characters?.[id])
+    .find(ch=>CEO_COMMAND_VIEWER_NAME_SET.has(String(ch?.name||'').trim().toLowerCase()))||null;
+}
 function ceoAccessForUser(user){
   const owner=jlrOwnerAccess(user);
   const ceoCharacter=ceoLinkedCharacter(user);
-  const allowed=Boolean(owner||ceoCharacter);
+  const delegatedViewer=ceoCommandViewerCharacter(user);
+  const allowed=Boolean(owner||ceoCharacter||delegatedViewer);
   return {
     allowed,
-    role:owner?(ceoCharacter?'OWNER_AND_CEO':'OWNER'):(ceoCharacter?'CEO':null),
+    role:owner?(ceoCharacter?'OWNER_AND_CEO':'OWNER'):(ceoCharacter?'CEO':(delegatedViewer?'CEO_VIEWER':null)),
     ownerCharacterName:JLR_OWNER_CHARACTER_NAME,
     ceoCharacterName:CEO_CHARACTER_NAME,
+    viewerCharacterName:delegatedViewer?.name||null,
     canAuthorize:Boolean(ceoCharacter),
     authorizeCharacterId:ceoCharacter?String(ceoCharacter.characterId):null,
   };
@@ -993,7 +1002,7 @@ function requireCeoViewer(req,res){
   if(!user)return null;
   const access=ceoAccessForUser(user);
   if(!access.allowed){
-    json(res,403,{error:'CEO_COMMAND_FORBIDDEN',message:'CEO Command is restricted to the JLR owner and Renius.'});
+    json(res,403,{error:'CEO_COMMAND_FORBIDDEN',message:'CEO Command is restricted to approved JLR CEO Command viewers.'});
     return null;
   }
   return{user,access};
@@ -1868,7 +1877,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Hub',version:'2.10.37',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
+    app:{name:'JLR Hub',version:'2.10.38',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,mapFields:FIELD_MAP_SNAPSHOT.fields.map(row=>mapFieldReport(row,state.market.mapFieldReports||{})),mapFieldSnapshot:{source:FIELD_MAP_SNAPSHOT.source,capturedAt:FIELD_MAP_SNAPSHOT.capturedAt,summary:mapFieldSummary(FIELD_MAP_SNAPSHOT),extractionStatus:String(source.fieldMapSnapshot?.extractionStatus||'')},ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}])),wormholes:{reports:wormholeGasPublicReports(),reportHours:WORMHOLE_GAS_REPORT_TTL/3600000}},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     miningActivity:recentSystemMining(state.esi.systemMiningActivity),
     playerLosses:playerLossSnapshot(pvpDb.fieldPlayerLosses,fieldLossSystems),
@@ -5000,7 +5009,7 @@ const TRACKER_APP_KNOWLEDGE = {
   ceo:{
     label:'CEO Command',
     aliases:['ceo','ceo command','corp command','corporation command','corp finance'],
-    description:'CEO Command is a private corporation administration workspace restricted on the server to the JLR owner and Renius. Renius uses a dedicated corporation ESI authorization that is separate from normal linked-toon access. The workspace is designed for monthly corporation income, wallet divisions, member finance and loyalty tracking, moon and structure administration, corporation assets, jobs, contracts and market orders. Discord activity requires a separate bot connection and is intended to store participation totals rather than message contents or voice recordings.',
+    description:'CEO Command is a private corporation administration workspace restricted on the server to approved JLR CEO Command viewers. Renius remains the dedicated CEO ESI authorization character. Renius uses a dedicated corporation ESI authorization that is separate from normal linked-toon access. The workspace is designed for monthly corporation income, wallet divisions, member finance and loyalty tracking, moon and structure administration, corporation assets, jobs, contracts and market orders. Discord activity requires a separate bot connection and is intended to store participation totals rather than message contents or voice recordings.',
     panels:['monthly income sources','corporation wallet breakdown','member finance and loyalty','current moon extractions and structures','corporation assets, industry, contracts and orders','Discord participation totals','CEO ESI permission health']
   },
   feedback:{
@@ -10097,7 +10106,7 @@ async function routeApi(req,res,url) {
       return json(res,502,{error:'SUPPORT_APPRAISAL_FAILED',message:String(err.message||err)});
     }
   }
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Hub',version:'2.10.37',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME,ceoCharacterName:CEO_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Hub',version:'2.10.38',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME,ceoCharacterName:CEO_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/ceo/status'){
     const viewer=requireCeoViewer(req,res);
     if(!viewer)return;
@@ -11339,7 +11348,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{if(redi
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Hub v2.10.37 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Hub v2.10.38 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
 setTimeout(()=>void refreshFieldPlayerLosses(),5_000).unref();
 setInterval(()=>void refreshFieldPlayerLosses(),120_000).unref();
