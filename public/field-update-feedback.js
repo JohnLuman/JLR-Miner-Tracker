@@ -3,7 +3,7 @@
   const pulses = new Map();
   const sounded = new Map();
   let initialized = false;
-  const duration = 2400;
+  const duration = 15000;
   function observe(state) {
     const current = new Map();
     for (const [system, field] of Object.entries(state.fields || {})) {
@@ -38,7 +38,7 @@
         { boxShadow: 'inset 0 0 0 0 transparent', offset: 0 },
         { boxShadow: 'inset 0 0 0 3px ' + color + ', 0 0 14px ' + color, offset: 0.35 },
         { boxShadow: 'inset 0 0 0 0 transparent', offset: 1 },
-      ], { duration: 800, iterations: 3, easing: 'ease-in-out' });
+      ], { duration: 2500, iterations: 6, easing: 'ease-in-out' });
       animation.currentTime = Date.now() - started;
     }
     if (playSound) notify?.();
