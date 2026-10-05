@@ -226,7 +226,7 @@
         await new Promise(resolve=>setTimeout(resolve,50));
       }
     }catch(error){
-      console.warn('JLR appraisal share enhancement unavailable',error);
+      console.warn('JLR Hub appraisal share enhancement unavailable',error);
     }
   })();
 })();
