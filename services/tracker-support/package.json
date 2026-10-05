@@ -3,7 +3,7 @@
   "version": "2.3.0",
   "private": true,
   "type": "module",
-  "description": "Shared context and support service for JLR Tracker chat sessions.",
+  "description": "Shared context and support service for JLR Hub chat sessions.",
   "scripts": {
     "start": "node server.mjs",
     "test": "node --check server.mjs && node --check core.mjs"
