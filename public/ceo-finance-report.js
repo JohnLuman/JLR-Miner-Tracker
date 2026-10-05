@@ -393,10 +393,29 @@
       '<div class="k"><div><span>Opening</span><b>'+esc(money(balances.opening))+'</b></div><div><span>Income</span><b>'+esc(money(report.totals.income))+'</b></div><div><span>Expenses</span><b>'+esc(money(report.totals.expenses))+'</b></div><div><span>Net</span><b>'+esc(money(report.totals.net))+'</b></div><div><span>Closing</span><b>'+esc(money(balances.closing))+'</b></div></div>'+
       '<div class="two"><section><h2>Income Breakdown</h2><table>'+breakdown(income)+'</table></section><section><h2>Expense Breakdown</h2><table>'+breakdown(expenses)+'</table></section></div>'+
       '<h2>Filtered Ledger</h2><table><thead><tr><th>Date</th><th>Div</th><th>Category</th><th>Type</th><th>Amount</th></tr></thead><tbody>'+ledger+'</tbody></table>'+
-      '<script>window.onload=function(){window.print();}<\/script></body></html>';
-    const win=window.open('','_blank','noopener,noreferrer');
-    if(!win)return;
-    win.document.open();win.document.write(html);win.document.close();
+      '</body></html>';
+    document.getElementById('jlrFinancePrintFrame')?.remove();
+    const frame=document.createElement('iframe');
+    frame.id='jlrFinancePrintFrame';
+    frame.setAttribute('aria-hidden','true');
+    frame.style.cssText='position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none';
+    document.body.appendChild(frame);
+    const win=frame.contentWindow;
+    const doc=frame.contentDocument||win?.document;
+    if(!win||!doc){frame.remove();return}
+    let printed=false;
+    const cleanup=()=>setTimeout(()=>frame.remove(),0);
+    const runPrint=()=>{
+      if(printed)return;
+      printed=true;
+      try{win.focus();win.print()}
+      catch(error){console.error('JLR Hub finance print failed',error);cleanup()}
+    };
+    win.addEventListener('afterprint',cleanup,{once:true});
+    doc.open();doc.write(html);doc.close();
+    if(doc.readyState==='complete')setTimeout(runPrint,50);
+    else frame.addEventListener('load',()=>setTimeout(runPrint,50),{once:true});
+    setTimeout(()=>{if(frame.isConnected&&!printed)runPrint()},500);
   }
 
   function moveMonth(delta){
