@@ -1,6 +1,6 @@
 {
   "name": "jlr-hub-web",
-  "version": "2.10.38",
+  "version": "2.10.39",
   "private": true,
   "type": "module",
   "description": "EVE Online operations hub with field tracking, fleet performance, appraisals, threat intel, and corporation tools.",
