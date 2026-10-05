@@ -1,4 +1,5 @@
 import {recordSystemMining,recentSystemMining} from './lib/system-mining-activity.mjs';
+import {fieldMiningTargets} from './lib/field-mining-target.mjs';
 import {recordPlayerLoss,prunePlayerLosses,playerLossSnapshot} from './lib/field-player-loss.mjs';
 import {updateT2Ledger} from './lib/map-field-ledger.mjs';
 import {mapFieldReport,clearMapField,applyMapScanReminders} from './lib/map-field-report.mjs';
@@ -67,7 +68,7 @@ const EVE_CALLBACK_URL = String(process.env.EVE_CALLBACK_URL || '').trim();
 const JLR_LEGACY_HOSTS = new Set(String(process.env.JLR_LEGACY_HOSTS || 'jlr-miner-tracker-production.up.railway.app,jlr.crabdance.com,jlrtracker.crabdance.com').split(',').map(value=>value.trim().toLowerCase()).filter(Boolean));
 const EVE_CLIENT_ID = String(process.env.EVE_CLIENT_ID || '').trim();
 const EVE_CLIENT_SECRET = String(process.env.EVE_CLIENT_SECRET || '').trim();
-const ESI_USER_AGENT = String(process.env.ESI_USER_AGENT || 'JLRHub/2.10.38').trim();
+const ESI_USER_AGENT = String(process.env.ESI_USER_AGENT || 'JLRHub/2.10.39').trim();
 const ESI_COMPAT_DATE = String(process.env.ESI_COMPATIBILITY_DATE || '2026-09-16').trim();
 const TRACKER_SUPPORT_SHARED_SECRET = String(process.env.TRACKER_SUPPORT_SHARED_SECRET || '').trim();
 const trackerSupport = createTrackerSupportClient({
@@ -433,6 +434,18 @@ const SYSTEM_DEFS = ORES.flatMap((o) => o.systems.map((system, order) => ({
 })));
 const SYSTEM_MAP = new Map(SYSTEM_DEFS.map((x) => [x.system, x]));
 const SYSTEM_ORE_BY_NAME = Object.freeze(Object.fromEntries(SYSTEM_DEFS.map(x=>[x.system,x.ore])));
+function miningBoardTargetsForLedger({system,typeId}){
+  const cached=state?.esi?.typeCache?.[String(typeId)]||{};
+  return fieldMiningTargets({
+    system,
+    typeId,
+    typeName:String(cached.name||''),
+    t3Definition:SYSTEM_MAP.get(system)||null,
+    mapFields:FIELD_MAP_SNAPSHOT.fields,
+    iceSystems:(state?.market?.iceFields||[]).map(row=>row.system),
+    iceNames:Object.keys(ICE_REPROCESSING),
+  });
+}
 const oauthStates = new Map();
 const sseClients = new Set();
 let ssoMetadata = null;
@@ -1877,7 +1890,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Hub',version:'2.10.38',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
+    app:{name:'JLR Hub',version:'2.10.39',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,mapFields:FIELD_MAP_SNAPSHOT.fields.map(row=>mapFieldReport(row,state.market.mapFieldReports||{})),mapFieldSnapshot:{source:FIELD_MAP_SNAPSHOT.source,capturedAt:FIELD_MAP_SNAPSHOT.capturedAt,summary:mapFieldSummary(FIELD_MAP_SNAPSHOT),extractionStatus:String(source.fieldMapSnapshot?.extractionStatus||'')},ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}])),wormholes:{reports:wormholeGasPublicReports(),reportHours:WORMHOLE_GAS_REPORT_TTL/3600000}},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     miningActivity:recentSystemMining(state.esi.systemMiningActivity),
     playerLosses:playerLossSnapshot(pvpDb.fieldPlayerLosses,fieldLossSystems),
@@ -6189,7 +6202,7 @@ async function applyLedgerResults(results,{fullCycle=false}={}){
     }
     state.esi.systemMiningSnapshots ||= {};
     state.esi.systemMiningActivity ||= {};
-    recordSystemMining({characterId:ledger.characterId,rows:ledger.rows,snapshots:state.esi.systemMiningSnapshots,activity:state.esi.systemMiningActivity,systemCache:state.esi.systemCache,sampleAt});
+    recordSystemMining({characterId:ledger.characterId,rows:ledger.rows,snapshots:state.esi.systemMiningSnapshots,activity:state.esi.systemMiningActivity,systemCache:state.esi.systemCache,sampleAt,resolveTargets:miningBoardTargetsForLedger});
     updateLedgerActivity(ledger.characterId,totalM3,sampleAt);
     state.market.mapFieldReports ||= {};
     state.esi.mapFieldLedgerSnapshots ||= {};
@@ -10106,7 +10119,7 @@ async function routeApi(req,res,url) {
       return json(res,502,{error:'SUPPORT_APPRAISAL_FAILED',message:String(err.message||err)});
     }
   }
-  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Hub',version:'2.10.38',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME,ceoCharacterName:CEO_CHARACTER_NAME});
+  if(req.method==='GET'&&url.pathname==='/api/config')return json(res,200,{name:'JLR Hub',version:'2.10.39',ssoConfigured:Boolean(EVE_CLIENT_ID),callbackUrl:callbackUrl(req),publicUrl:requestBaseUrl(req),miningScope:MINING_SCOPE,skillsScope:SKILLS_SCOPE,fittingsScope:FITTINGS_SCOPE,assetsScope:ASSETS_SCOPE,locationScope:LOCATION_SCOPE,contactsScope:CONTACTS_SCOPE,corporationContactsScope:CORPORATION_CONTACTS_SCOPE,allianceContactsScope:ALLIANCE_CONTACTS_SCOPE,scopes:ESI_SCOPES,marketCharacterName:MARKET_CHARACTER_NAME,ceoCharacterName:CEO_CHARACTER_NAME});
   if(req.method==='GET'&&url.pathname==='/api/ceo/status'){
     const viewer=requireCeoViewer(req,res);
     if(!viewer)return;
@@ -11348,7 +11361,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{if(redi
   if(req.method==='GET'&&await serveStatic(req,res,url.pathname))return;
   text(res,404,'Not found');
 }catch(err){console.error(err);if(!res.headersSent)json(res,500,{error:'SERVER_ERROR',message:String(err.message||err)});else res.end()}});
-server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Hub v2.10.38 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
+server.listen(PORT,'0.0.0.0',()=>{console.log(`JLR Hub v2.10.39 listening on port ${PORT}`);console.log(`Website SSO: ${EVE_CLIENT_ID?'configured':'not configured'}`);console.log(`Tracked T3 systems: ${SYSTEM_DEFS.length}`)});
 setTimeout(()=>runTrackerR2z2Loop().catch(err=>console.error('Tracker R2Z2 loop stopped',err)),3_000).unref();
 setTimeout(()=>void refreshFieldPlayerLosses(),5_000).unref();
 setInterval(()=>void refreshFieldPlayerLosses(),120_000).unref();
