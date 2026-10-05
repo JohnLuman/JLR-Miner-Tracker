@@ -96,7 +96,7 @@ assert.match(longPreview.description,/9\. Item 9 ×9 …$/,'when more items exis
 assert.doesNotMatch(longPreview.description,/Item 10/,'items after line nine are omitted');
 
 const previewHtml=renderAppraisalShareHtml(
-  '<!doctype html><html><head><title>JLR Appraisal</title></head><body></body></html>',
+  '<!doctype html><html><head><title>JLR Hub Appraisal</title></head><body></body></html>',
   {...share,title:'Fleet <Loot>'},
   {payoutPercent:95,canonicalUrl:'https://example.test/appraisal/token?p=95',imageUrl:'https://example.test/assets/jlr-appraisal-preview.png'}
 );
@@ -160,6 +160,6 @@ assert.match(app,/data-appraisal-copy=/,'Appraisal renders click-to-copy values'
 assert.match(app,/copyAppraisalValue/,'Appraisal wires copy-to-clipboard behavior');
 assert.match(shareClient,/REFINE ESTIMATE/,'shared appraisals render the saved refine estimate');
 assert.match(shareClient,/REFINED SELL/,'shared appraisals render refined sell value');
-assert.match(shareClient,/JLR MARKET NETWORK/,'shared appraisal carries JLR presentation');
+assert.match(shareClient,/JLR HUB \/\/ MARKET/,'shared appraisal carries JLR presentation');
 
 console.log('JLR Native Appraisal tests passed.');
