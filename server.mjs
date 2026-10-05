@@ -1,4 +1,5 @@
 import {recordSystemMining,recentSystemMining} from './lib/system-mining-activity.mjs';
+import {fieldMiningTargets} from './lib/field-mining-target.mjs';
 import {recordPlayerLoss,prunePlayerLosses,playerLossSnapshot} from './lib/field-player-loss.mjs';
 import {updateT2Ledger} from './lib/map-field-ledger.mjs';
 import {mapFieldReport,clearMapField,applyMapScanReminders} from './lib/map-field-report.mjs';
@@ -433,6 +434,18 @@ const SYSTEM_DEFS = ORES.flatMap((o) => o.systems.map((system, order) => ({
 })));
 const SYSTEM_MAP = new Map(SYSTEM_DEFS.map((x) => [x.system, x]));
 const SYSTEM_ORE_BY_NAME = Object.freeze(Object.fromEntries(SYSTEM_DEFS.map(x=>[x.system,x.ore])));
+function miningBoardTargetsForLedger({system,typeId}){
+  const cached=state?.esi?.typeCache?.[String(typeId)]||{};
+  return fieldMiningTargets({
+    system,
+    typeId,
+    typeName:String(cached.name||''),
+    t3Definition:SYSTEM_MAP.get(system)||null,
+    mapFields:FIELD_MAP_SNAPSHOT.fields,
+    iceSystems:(state?.market?.iceFields||[]).map(row=>row.system),
+    iceNames:Object.keys(ICE_REPROCESSING),
+  });
+}
 const oauthStates = new Map();
 const sseClients = new Set();
 let ssoMetadata = null;
@@ -6189,7 +6202,7 @@ async function applyLedgerResults(results,{fullCycle=false}={}){
     }
     state.esi.systemMiningSnapshots ||= {};
     state.esi.systemMiningActivity ||= {};
-    recordSystemMining({characterId:ledger.characterId,rows:ledger.rows,snapshots:state.esi.systemMiningSnapshots,activity:state.esi.systemMiningActivity,systemCache:state.esi.systemCache,sampleAt});
+    recordSystemMining({characterId:ledger.characterId,rows:ledger.rows,snapshots:state.esi.systemMiningSnapshots,activity:state.esi.systemMiningActivity,systemCache:state.esi.systemCache,sampleAt,resolveTargets:miningBoardTargetsForLedger});
     updateLedgerActivity(ledger.characterId,totalM3,sampleAt);
     state.market.mapFieldReports ||= {};
     state.esi.mapFieldLedgerSnapshots ||= {};
