@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-const window={matchMedia:()=>({matches:false,addEventListener(){}}),addEventListener(){}};
-const document={addEventListener(){},hidden:true};
+const window={},listeners={};
+const document={hidden:true,addEventListener(name,fn){listeners[name]=fn},querySelectorAll(){return []}};
 vm.runInNewContext(fs.readFileSync(new URL('../public/mining-scene.js',import.meta.url),'utf8'),{window,document});
-const {frame,period}=window.JlrMiningScene;
-assert.equal(frame(0),0);
-assert.equal(frame(period-1),47);
-assert.equal(frame(period),0,'one full turn meets the start without a rotation reset');
-assert.equal(frame(period*5+period/2),24);
-assert.equal(frame(period/2,true),0,'reduced motion freezes the scene');
-window.JlrMiningScene.refresh(); // Hidden tabs must not schedule animation work.
-console.log('Mining scene loop, full-turn timing, reduced motion and hidden-tab suspension passed.');
+const {kindFor,refresh}=window.JlrMiningScene;
+const card=(...classes)=>({classList:{contains:name=>classes.includes(name)}});
+assert.equal(kindFor(card()),'t3');
+assert.equal(kindFor(card('map-field-node','tier-2')),'t2');
+assert.equal(kindFor(card('ice-system-node')),'ice');
+assert.equal(kindFor(card('a0-system-node')),'a0');
+refresh();listeners.visibilitychange(); // No timer or animation-frame API is required.
+console.log('Mining material routing and idle/hidden scene lifecycle passed.');
