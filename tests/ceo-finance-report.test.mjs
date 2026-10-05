@@ -60,6 +60,8 @@ assert.doesNotMatch(app,/id="ceoIncomePie"/,'legacy monthly income pie is remove
 assert.match(app,/EXPORT PDF/);
 assert.match(app,/EXPORT CSV/);
 assert.match(app,/PRINT REPORT/);
+assert.match(source,/createElement\('iframe'\)/,'print report uses an in-page print frame');
+assert.doesNotMatch(source,/window\.open\(/,'print report no longer depends on popup windows');
 
 const server=fs.readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
 assert.match(server,/pageSize:url\.searchParams\.get\('pageSize'\)/,'CEO journal report endpoint accepts bounded page size');
