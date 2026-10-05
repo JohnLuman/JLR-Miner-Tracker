@@ -4907,9 +4907,9 @@
     // The scene hydrates after insertion. Its canvas/beam markup is presentation,
     // not a field-data change, and must not force a new card on every refresh.
     const fieldMarkup=card=>{
-      if(!card.querySelector('.mining-activity-icon'))return card.outerHTML;
+      if(!card.querySelector('.mining-activity-icon,.field-player-loss'))return card.outerHTML;
       const copy=card.cloneNode(true);
-      copy.querySelectorAll('.mining-activity-icon').forEach(icon=>icon.remove());
+      copy.querySelectorAll('.mining-activity-icon,.field-player-loss').forEach(icon=>icon.remove());
       return copy.outerHTML;
     };
     cards.forEach((fresh,index)=>{
@@ -4919,9 +4919,11 @@
       const keep=old&&(fieldMarkup(old)===fieldMarkup(fresh)||old.matches(':hover')||old.contains(document.activeElement));
       const card=keep?old:fresh;
       if(old&&!keep){
-        const scene=old.querySelector('.mining-activity-icon');
-        const placeholder=fresh.querySelector('.mining-activity-icon');
-        if(scene&&placeholder)placeholder.replaceWith(scene);
+        for(const selector of ['.mining-activity-icon','.field-player-loss']){
+          const scene=old.querySelector(selector);
+          const placeholder=fresh.querySelector(selector);
+          if(scene&&placeholder)placeholder.replaceWith(scene);
+        }
       }
       if(board.children[index]!==card)board.insertBefore(card,board.children[index]||null);
     });
@@ -4966,8 +4968,10 @@
       }
     }
 
+    window.JlrFieldPlayerLoss?.paint({querySelectorAll:()=>cards},state);
     window.JlrFieldMiningActivity?.paint({querySelectorAll:()=>cards},state);
     syncBoardNodes(board,cards);
+    window.JlrFieldPlayerLoss?.paint(board,state);
     window.JlrFieldMiningActivity?.paint(board,state);
     window.JlrFieldUpdateFeedback?.paint(board,()=>{if(!document.hidden)sfx('fieldUpdate')});
     const mapSummary=state.source?.mapFieldSnapshot?.summary||{};

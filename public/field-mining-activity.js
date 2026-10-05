@@ -8,7 +8,7 @@
     const sampled=Date.parse(state.serverNow);
     const at=Number.isFinite(sampled)?sampled+Math.max(0,performance.now()-receivedAt):Date.now();
     for(const card of board.querySelectorAll('.system-node')){
-      const active=state.fieldAccess?.allowed!==false&&recent(state.miningActivity?.[card.dataset.system],at);
+      const active=state.fieldAccess?.allowed!==false&&recent(state.miningActivity?.[card.dataset.system],at)&&!window.JlrFieldPlayerLoss?.recent(state.playerLosses?.[card.dataset.system],at);
       const existing=card.querySelector('.mining-activity-icon');
       if(!active){existing?.remove();continue;}
       if(existing)continue;

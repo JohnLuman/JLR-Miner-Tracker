@@ -17,7 +17,7 @@ ctx.syncBoardNodes(root,[]);assert.equal(root.children.length,0);
 function miningCard(key,version,scene){
   const node=card(key,version+' '+scene.markup);
   node.scene=scene;
-  node.querySelector=()=>node.scene;
+  node.querySelector=selector=>selector==='.field-player-loss'?null:node.scene;
   node.cloneNode=()=>({outerHTML:version,querySelectorAll:()=>[{remove(){}}]});
   return node;
 }
