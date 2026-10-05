@@ -784,8 +784,8 @@
       })});
       const url=String(payload?.shareUrl||payload?.directShareUrl||'');
       if(url){
-        try{await navigator.clipboard.writeText(url);toast('JLR appraisal link copied. Discord will build the appraisal preview from the link.')}
-        catch{toast('JLR appraisal created. Open it from the returned link.')}
+        try{await navigator.clipboard.writeText(url);toast('JLR Hub appraisal link copied. Discord will build the appraisal preview from the link.')}
+        catch{toast('JLR Hub appraisal created. Open it from the returned link.')}
       }
     }catch(error){
       toast('Could not create appraisal link: '+String(error.message||error));
