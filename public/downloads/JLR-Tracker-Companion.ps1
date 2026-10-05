@@ -108,7 +108,7 @@ function Set-JlrScanMode([string]$Mode,[bool]$Persist=$true) {
   $next = ([string]$Mode).Trim().ToLowerInvariant()
   if($next -notin @("off","copy","screen","hybrid")){ $next = "hybrid" }
   if(($next -eq "screen" -or $next -eq "hybrid") -and -not $script:ObserverAllowed -and $script:ScanModeItem){
-    Show-JlrBalloon "JLR Creator Scan Mode" "Screen Watch is owner-only. Pair this companion to the JLR owner account first."
+    Show-JlrBalloon "JLR Screen Watch" "Screen Watch is limited to approved JLR observer accounts. Pair this companion to an approved observer account first."
     return
   }
   $script:ScanMode = $next
@@ -192,11 +192,22 @@ function Update-JlrObserverPermission($Reply) {
   if(-not $property){ return }
   $wasAllowed = $script:ObserverAllowed
   $script:ObserverAllowed = [bool]$property.Value
+  $suggested = $Reply.PSObject.Properties["observerCharacterName"]
+  if($script:ObserverAllowed -and $suggested -and -not [string]::IsNullOrWhiteSpace([string]$suggested.Value)){
+    $currentTarget = ([string]$script:ObserverCharacter).Trim()
+    if([string]::IsNullOrWhiteSpace($currentTarget) -or $currentTarget -eq "Yeda Parmala"){
+      $script:ObserverCharacter = [string]$suggested.Value
+      if($script:Config){
+        $script:Config.observerCharacter = $script:ObserverCharacter
+        Save-JlrConfig
+      }
+    }
+  }
   if($script:ObserverAllowed){ Initialize-JlrObserverOcr | Out-Null }
   Update-JlrScanModeUi
   if($script:ObserverAllowed -and -not $wasAllowed){
     $target = if($script:ObserverCharacter -eq "*"){"any foreground EVE toon"}else{$script:ObserverCharacter}
-    Show-JlrBalloon "JLR Probe Observer" ("Owner-only Screen Watch ready for " + $target + ". It locks to that EVE window and never sends clicks or keys.") 6500
+    Show-JlrBalloon "JLR Probe Observer" ("Approved Screen Watch ready for " + $target + ". It locks to that EVE window and never sends clicks or keys.") 6500
   }
 }
 

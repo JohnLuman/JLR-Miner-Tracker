@@ -8,8 +8,10 @@ const cmd=fs.readFileSync(new URL('../public/downloads/INSTALL-JLR-TRACKER-COMPA
 
 assert.match(server,/\/api\/companion\/pair\/claim/);
 assert.match(server,/\/api\/companion\/location/);
-assert.match(server,/\/api\/companion\/scan/,'owner companion can submit observed Probe Scanner text');
-assert.match(server,/OBSERVER_NOT_ALLOWED/,'observer endpoint is owner-gated');
+assert.match(server,/\/api\/companion\/scan/,'approved companion can submit observed Probe Scanner text');
+assert.match(server,/COMPANION_OBSERVER_NAMES/,'trusted screen observers are configured separately from admin access');
+assert.match(server,/companionObserverAccess\(auth\.user\)/,'observer endpoint accepts only owner or trusted screen observers');
+assert.match(server,/OBSERVER_NOT_ALLOWED/,'observer endpoint rejects unapproved accounts');
 assert.match(server,/OBSERVER_SYSTEM_CHANGED/,'observer rejects a frame after the toon changes systems');
 assert.doesNotMatch(server,/\/api\/companion\/tracker-map/,'removed ESS/interference watch endpoint stays disabled');
 assert.match(server,/source:'companion'/);
@@ -38,7 +40,9 @@ assert.match(ps,/Creator Scan Mode:/,'companion exposes creator scan modes in th
 assert.match(ps,/COPY AUTO-IMPORT/,'creator can choose clipboard-only scanning');
 assert.match(ps,/SCREEN WATCH/,'creator can choose passive screen OCR');
 assert.match(ps,/HYBRID \(COPY \+ SCREEN\)/,'creator can run clipboard and screen watch together');
-assert.match(ps,/Yeda Parmala/,'screen watch defaults to the creator scouting toon');
+assert.match(ps,/Yeda Parmala/,'owner screen watch keeps the creator scouting toon default');
+assert.match(ps,/observerCharacterName/,'delegated observer pairing can target its approved EVE toon automatically');
+assert.match(ps,/approved JLR observer accounts/i,'screen-watch UI explains the delegated observer gate');
 assert.match(ps,/observerCharacter/,'screen watch can be targeted to a chosen EVE toon');
 assert.match(ps,/\/api\/companion\/clipboard/,'EVE clipboard copies are sent through companion auth');
 assert.match(ps,/Get-JlrForegroundEveIdentity/,'clipboard imports are gated to the foreground EVE client');

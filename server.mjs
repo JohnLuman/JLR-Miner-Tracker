@@ -96,6 +96,8 @@ const ESI_SCOPES = [MINING_SCOPE, SKILLS_SCOPE, FITTINGS_SCOPE, ASSETS_SCOPE, LO
 const MARKET_SCOPES = [MARKET_STRUCTURE_SCOPE, SEARCH_STRUCTURES_SCOPE, READ_STRUCTURES_SCOPE];
 const MARKET_CHARACTER_NAME = String(process.env.MARKET_CHARACTER_NAME || 'John Leman Raholan').trim();
 const JLR_OWNER_CHARACTER_NAME = String(process.env.JLR_OWNER_CHARACTER_NAME || 'John Leman Raholan').trim();
+const COMPANION_OBSERVER_NAMES = Object.freeze(String(process.env.COMPANION_OBSERVER_NAMES || 'Galadran').split(',').map(value=>value.trim()).filter(Boolean));
+const COMPANION_OBSERVER_NAME_SET = new Set(COMPANION_OBSERVER_NAMES.map(value=>value.toLowerCase()));
 const CEO_CHARACTER_NAME = String(process.env.CEO_CHARACTER_NAME || 'Renius').trim();
 const CEO_COMMAND_VIEWER_NAMES = Object.freeze(String(process.env.CEO_COMMAND_VIEWER_NAMES || 'Asanas Mikakka').split(',').map(value=>value.trim()).filter(Boolean));
 const CEO_COMMAND_VIEWER_NAME_SET = new Set(CEO_COMMAND_VIEWER_NAMES.map(value=>value.toLowerCase()));
@@ -984,6 +986,17 @@ async function fieldAccessForUser(user){
 async function fieldStateForUser(user){return redactFieldState(publicState(),await fieldAccessForUser(user));}
 function jlrOwnerAccess(user){
   return userHasLinkedCharacterName(user,JLR_OWNER_CHARACTER_NAME);
+}
+function delegatedCompanionObserverCharacter(user){
+  return (user?.characterIds||[]).map(String)
+    .map(id=>state.characters?.[id])
+    .find(ch=>COMPANION_OBSERVER_NAME_SET.has(String(ch?.name||'').trim().toLowerCase()))||null;
+}
+function companionObserverAccess(user){
+  return Boolean(jlrOwnerAccess(user)||delegatedCompanionObserverCharacter(user));
+}
+function companionObserverCharacterName(user){
+  return delegatedCompanionObserverCharacter(user)?.name||null;
 }
 function ceoLinkedCharacter(user){
   return (user?.characterIds||[]).map(String)
@@ -10291,7 +10304,7 @@ async function routeApi(req,res,url) {
     };
     companionPairCodes.delete(code);
     await save();
-    return json(res,200,{paired:true,token,account:pairUser.displayName||'JLR pilot',server:requestBaseUrl(req),observerAllowed:jlrOwnerAccess(pairUser)});
+    return json(res,200,{paired:true,token,account:pairUser.displayName||'JLR pilot',server:requestBaseUrl(req),observerAllowed:companionObserverAccess(pairUser),observerCharacterName:companionObserverCharacterName(pairUser)});
   }
   if(req.method==='POST'&&url.pathname==='/api/companion/locations'){
     const auth=companionAuth(req);
@@ -10374,7 +10387,7 @@ async function routeApi(req,res,url) {
         });
       }
     }
-    return json(res,200,{ok:errors.length===0,results,errors,checkedAt,observerAllowed:jlrOwnerAccess(auth.user)});
+    return json(res,200,{ok:errors.length===0,results,errors,checkedAt,observerAllowed:companionObserverAccess(auth.user),observerCharacterName:companionObserverCharacterName(auth.user)});
   }
 
   if(req.method==='POST'&&url.pathname==='/api/companion/location'){
@@ -10412,7 +10425,7 @@ async function routeApi(req,res,url) {
       await save();
     }
     const snapshot=await scoutLocationSnapshot(ch,auth.user);
-    return json(res,200,{ok:true,...snapshot,observerAllowed:jlrOwnerAccess(auth.user)});
+    return json(res,200,{ok:true,...snapshot,observerAllowed:companionObserverAccess(auth.user),observerCharacterName:companionObserverCharacterName(auth.user)});
   }
 
   if(req.method==='POST'&&url.pathname==='/api/companion/clipboard'){
@@ -10484,7 +10497,7 @@ async function routeApi(req,res,url) {
     const auth=companionAuth(req);
     if(!auth)return json(res,401,{error:'COMPANION_AUTH_REQUIRED',message:'Companion pairing is missing or has been revoked.'});
     if(!(await fieldAccessForUser(auth.user)).allowed)return json(res,403,{error:'INIT_FIELD_ACCESS_REQUIRED'});
-    if(!jlrOwnerAccess(auth.user))return json(res,403,{error:'OBSERVER_NOT_ALLOWED',message:'Automatic Probe Scanner observation is enabled only for the JLR owner account.'});
+    if(!companionObserverAccess(auth.user))return json(res,403,{error:'OBSERVER_NOT_ALLOWED',message:'Automatic Probe Scanner observation is enabled only for approved JLR screen observers.'});
     let body;
     try{body=await readBody(req,180_000)}
     catch(err){return json(res,400,{error:'BAD_OBSERVER_SCAN',message:String(err.message||err)})}
