@@ -433,7 +433,7 @@
         const body=count===1
           ?fighter+' • '+system+(closest?' • '+closest:'')+' • '+fmt(newest.totalValue||0)+' ISK'
           :count+' new Heavy Fighter losses • newest in '+system+(closest?' • '+closest:'');
-        new Notification(count===1?'JLR Tracker — Heavy Fighter Down':'JLR Tracker — '+count+' Heavy Fighters Down',{
+        new Notification(count===1?'JLR Hub — Heavy Fighter Down':'JLR Hub — '+count+' Heavy Fighters Down',{
           body:body,
           tag:'jlr-heavy-fighter-tracker'
         });
