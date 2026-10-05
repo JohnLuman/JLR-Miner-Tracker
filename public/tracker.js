@@ -244,6 +244,6 @@
   core.src=CORE_URL;
   core.async=false;
   core.dataset.jlrTrackerCore='1';
-  core.onerror=function(){console.error('JLR Tracker core failed to load.')};
+  core.onerror=function(){console.error('JLR Hub tracker core failed to load.')};
   document.head.appendChild(core);
 })();
