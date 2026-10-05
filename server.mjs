@@ -4976,7 +4976,7 @@ const TRACKER_APP_KNOWLEDGE = {
   tracker:{
     label:'Heavy Fighter Tracker',
     aliases:['tracker tab','heavy fighter tracker','heavy fighters','fighter losses'],
-    description:'Heavy Fighter Tracker watches the live R2Z2 kill feed for Heavy Fighter losses. Qualifying losses can trigger a JLR alert with fighter type, system, value and kill details. The live feed and its access controls are separate from Adam even though both are part of JLR Tracker.',
+    description:'Heavy Fighter Tracker watches the live R2Z2 kill feed for Heavy Fighter losses. Qualifying losses can trigger a JLR alert with fighter type, system, value and kill details. The live feed and its access controls are separate from Adam even though both are part of JLR Hub.',
     panels:['live Heavy Fighter losses','alert state','loss details','system and value','killboard links']
   },
   threat:{
@@ -5275,7 +5275,7 @@ function trackerBrainAnswer(user,question,options={}){
     };
   };
 
-  if(!q)return answer('help','Ask me a question about JLR Tracker.');
+  if(!q)return answer('help','Ask me a question about JLR Hub.');
 
   if(/\b(?:explain recent fleet performance variance|why is this low|why is it low|why did this drop|what changed in fleet performance)\b/.test(q)){
     const p=context.performance||{};
@@ -5331,7 +5331,7 @@ function trackerBrainAnswer(user,question,options={}){
   }
 
   if(/\b(version|build|release)\b/.test(q)){
-    return answer('version','JLR Tracker is running version '+appVersion+'.');
+    return answer('version','JLR Hub is running version '+appVersion+'.');
   }
 
   if(/\b(?:voice|sound|speak|speaking)\b/.test(q)&&/\b(?:scan|scanner|paste)\b/.test(q)){
