@@ -1,5 +1,5 @@
 param(
-  [string]$Server = "https://jlr-miner-tracker-production.up.railway.app"
+  [string]$Server = "https://jlrhub.com"
 )
 
 $ErrorActionPreference = "Stop"
@@ -448,8 +448,8 @@ function Invoke-JlrClipboardWatcher {
 
 function Pair-JlrCompanion {
   $nl = [Environment]::NewLine
-  $message = "In JLR Tracker open BRAIN > DESKTOP COMPANION and click CREATE PAIR CODE." + $nl + $nl + "Paste the 10-character code here."
-  $code = [Microsoft.VisualBasic.Interaction]::InputBox($message,"Pair JLR Tracker Companion","")
+  $message = "In JLR Hub open ADAM > DESKTOP COMPANION and click CREATE PAIR CODE." + $nl + $nl + "Paste the 10-character code here."
+  $code = [Microsoft.VisualBasic.Interaction]::InputBox($message,"Pair JLR Hub Companion","")
   if([string]::IsNullOrWhiteSpace($code)){ return $false }
   $body = @{ code=$code.Trim().ToUpperInvariant(); deviceName=$env:COMPUTERNAME } | ConvertTo-Json
   try {
@@ -462,12 +462,12 @@ function Pair-JlrCompanion {
     Save-JlrConfig
     Update-JlrObserverPermission $reply
     $script:StatusItem.Text = "Status: paired"
-    Show-JlrBalloon "JLR Tracker Companion" "Paired. Local EVE system changes will now feed Tracker."
+    Show-JlrBalloon "JLR Hub Companion" "Paired. Local EVE system changes will now feed JLR Hub."
     return $true
   } catch {
     [System.Windows.Forms.MessageBox]::Show(
       "Pairing failed." + $nl + $nl + $_.Exception.Message,
-      "JLR Tracker Companion",
+      "JLR Hub Companion",
       [System.Windows.Forms.MessageBoxButtons]::OK,
       [System.Windows.Forms.MessageBoxIcon]::Error
     ) | Out-Null
@@ -584,7 +584,7 @@ function Handle-JlrLocationReply($Reply) {
   if($Reply.needsScan){
     if($script:LastNotice[$noticeKey] -ne [string]$Reply.system){
       $script:LastNotice[$noticeKey] = [string]$Reply.system
-      Show-JlrBalloon "JLR Tracker - scan update needed" ($Reply.characterName + " entered " + $Reply.system + ". Tracker needs a fresh Probe Scanner copy.") 7000
+      Show-JlrBalloon "JLR Hub - scan update needed" ($Reply.characterName + " entered " + $Reply.system + ". JLR Hub needs a fresh Probe Scanner copy.") 7000
     }
   } else {
     $script:LastNotice.Remove($noticeKey)
@@ -599,14 +599,14 @@ function Handle-JlrSendFailure($ErrorRecord) {
     $script:Config.tokenProtected = ""
     Save-JlrConfig
     $script:StatusItem.Text = "Status: pairing revoked"
-    Show-JlrBalloon "JLR Tracker Companion" "Pairing was revoked. Use Pair / Re-pair from the tray menu."
+    Show-JlrBalloon "JLR Hub Companion" "Pairing was revoked. Use Pair / Re-pair from the tray menu."
     return
   }
   $script:NextServerRetryAt = (Get-Date).AddSeconds(5)
   $script:StatusItem.Text = "Status: server unavailable"
   if(((Get-Date) - $script:ServerOfflineNoticeAt).TotalMinutes -ge 10){
     $script:ServerOfflineNoticeAt = Get-Date
-    Show-JlrBalloon "JLR Tracker Companion" "JLR server is temporarily unreachable. Tracking will retry automatically."
+    Show-JlrBalloon "JLR Hub Companion" "JLR server is temporarily unreachable. Tracking will retry automatically."
   }
 }
 
@@ -718,7 +718,7 @@ $script:AuthToken = Unprotect-JlrToken ([string]$script:Config.tokenProtected)
 
 $script:Tray = New-Object System.Windows.Forms.NotifyIcon
 $script:Tray.Icon = [System.Drawing.SystemIcons]::Information
-$script:Tray.Text = "JLR Tracker Companion"
+$script:Tray.Text = "JLR Hub Companion"
 $script:Tray.Visible = $true
 
 $menu = New-Object System.Windows.Forms.ContextMenuStrip
@@ -726,7 +726,7 @@ $script:StatusItem = New-Object System.Windows.Forms.ToolStripMenuItem
 $script:StatusItem.Text = "Status: starting"
 $script:StatusItem.Enabled = $false
 $menu.Items.Add($script:StatusItem) | Out-Null
-$openItem = $menu.Items.Add("Open JLR Tracker")
+$openItem = $menu.Items.Add("Open JLR Hub")
 $pairItem = $menu.Items.Add("Pair / Re-pair")
 $script:ScanModeItem = New-Object System.Windows.Forms.ToolStripMenuItem
 $script:ScanModeItem.Text = "Creator Scan Mode: checking"
@@ -756,7 +756,7 @@ if([string]::IsNullOrWhiteSpace($script:AuthToken)){
   Pair-JlrCompanion | Out-Null
 }
 
-Show-JlrBalloon "JLR Tracker Companion" "Running in the Windows tray. Creator Scan Mode supports OFF, COPY, SCREEN and HYBRID. Screen Watch is owner-only and passive."
+Show-JlrBalloon "JLR Hub Companion" "Running in the Windows tray. Creator Scan Mode supports OFF, COPY, SCREEN and HYBRID. Screen Watch is owner-only and passive."
 
 try {
   while(-not $script:ExitRequested){
