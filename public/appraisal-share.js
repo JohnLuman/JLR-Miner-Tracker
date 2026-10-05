@@ -87,14 +87,14 @@
         :pricingKey==='refine-buy'?'REFINED BUY'
         :pricingKey==='refine-sell'?'REFINED SELL'
         :'SPLIT';
-      document.title=(share.title||'JLR Appraisal')+' • JLR';
+      document.title=(share.title||'JLR Hub Appraisal')+' • JLR';
 
       root.classList.remove('loading-panel');
       root.innerHTML=`
         <section class="share-hero">
           <div class="hero-copy">
-            <div class="hero-kicker"><span>JLR APPRAISAL</span><span class="hero-dot">•</span><span>${esc(appraisal.market?.name||'Jita 4-4')}</span></div>
-            <h1>${esc(share.title||'JLR Appraisal')}</h1>
+            <div class="hero-kicker"><span>JLR HUB APPRAISAL</span><span class="hero-dot">•</span><span>${esc(appraisal.market?.name||'Jita 4-4')}</span></div>
+            <h1>${esc(share.title||'JLR Hub Appraisal')}</h1>
             <p class="sub">Shared by <strong>${esc(share.owner?.name||'JLR Pilot')}</strong> • ${variant(appraisal.pricingVariant)} pricing</p>
             <p class="snapshot">${esc(dateTime(appraisal.datasetTime||appraisal.generatedAt))}</p>
           </div>
@@ -140,13 +140,13 @@
         ${refineHtml(appraisal.refine)}
 
         <footer class="footer">
-          <div><strong>JLR MARKET NETWORK</strong><span>Market pricing is sourced through the configured appraisal provider and presented in JLR format.</span></div>
-          <a href="/">OPEN JLR TRACKER <span aria-hidden="true">›</span></a>
+          <div><strong>JLR HUB // MARKET</strong><span>Market pricing is sourced through the configured appraisal provider and presented in JLR format.</span></div>
+          <a href="/">OPEN JLR HUB <span aria-hidden="true">›</span></a>
         </footer>
       `;
     }catch(error){
       root.classList.remove('loading-panel');
-      root.innerHTML='<section class="error-state"><span>JLR MARKET NETWORK</span><h1>Appraisal unavailable</h1><p class="bad">'+esc(error.message||error)+'</p><a href="/">Return to JLR</a></section>';
+      root.innerHTML='<section class="error-state"><span>JLR HUB // MARKET</span><h1>Appraisal unavailable</h1><p class="bad">'+esc(error.message||error)+'</p><a href="/">Return to JLR Hub</a></section>';
     }
   }
   boot();
