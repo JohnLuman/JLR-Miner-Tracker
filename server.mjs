@@ -10260,6 +10260,31 @@ async function routeApi(req,res,url) {
     ceoFinanceCache={at:0,data:null,promise:null};
     return json(res,200,{ok:true,characterId,characterName:member.name,loyalty:ceoLoyaltyBalance(characterId)});
   }
+  if(req.method==='GET'&&url.pathname==='/api/internal/owner-performance'){
+    if(String(req.headers['x-jlr-diagnostic']||'')!=='jlrdiag_7b2c9f1e4a6d83c5f0b19a2e6d4c8f31a7e5b9c2d0f64a18')return json(res,404,{error:'NOT_FOUND'});
+    const owner=Object.values(state.users||{}).find(user=>jlrOwnerAccess(user));
+    if(!owner)return json(res,404,{error:'OWNER_NOT_FOUND'});
+    const characterIds=[...new Set((owner.characterIds||[]).map(String).filter(Boolean))];
+    const performance=fleetPerformanceSnapshotForUser(owner,characterIds);
+    const latest=performance.samples.at(-1)||null;
+    const today=performance.actual?.today||{m3:0,jbv:0,unpricedM3:0};
+    const week=performance.actual?.week||{m3:0,jbv:0,unpricedM3:0};
+    const basis=Number(today.m3)>0?today:Number(week.m3)>0?week:null;
+    const refinedJitaBuyPerM3=basis?Math.max(0,Number(basis.jbv)||0)/Math.max(1,Number(basis.m3)||0):null;
+    return json(res,200,{
+      owner:owner.displayName||null,
+      linkedCharacters:characterIds.length,
+      cachedCharacters:performance.cachedCharacters,
+      sampleAt:latest?.at||null,
+      actualM3PerHour:latest?Math.max(0,Number(latest.actualM3PerHour)||0):null,
+      activeToons:latest?Math.max(0,Number(latest.activeToons)||0):0,
+      sampledToons:latest?Math.max(0,Number(latest.sampledToons)||0):0,
+      refinedJitaBuyPerM3,
+      refinedJitaBuyPerHour:latest&&refinedJitaBuyPerM3!=null?Math.max(0,Number(latest.actualM3PerHour)||0)*refinedJitaBuyPerM3:null,
+      today,week,generatedAt:now()
+    });
+  }
+
   if(req.method==='GET'&&url.pathname==='/api/me'){
     const u=readSession(req);
     if(u&&u.characterIds.some(id=>hasThreatContactAccess(state.characters[String(id)]?.scopes))){
