@@ -10306,6 +10306,39 @@ async function routeApi(req,res,url) {
     await save();
     return json(res,200,{paired:true,token,account:pairUser.displayName||'JLR pilot',server:requestBaseUrl(req),observerAllowed:companionObserverAccess(pairUser),observerCharacterName:companionObserverCharacterName(pairUser)});
   }
+  if(req.method==='GET'&&url.pathname==='/api/companion/performance'){
+    const auth=companionAuth(req);
+    if(!auth)return json(res,401,{error:'COMPANION_AUTH_REQUIRED',message:'Companion pairing is missing or has been revoked.'});
+    const characterIds=[...new Set((auth.user.characterIds||[]).map(String).filter(Boolean))];
+    const performance=fleetPerformanceSnapshotForUser(auth.user,characterIds);
+    const latest=performance.samples.at(-1)||null;
+    const today=performance.actual?.today||{m3:0,jbv:0,unpricedM3:0};
+    const week=performance.actual?.week||{m3:0,jbv:0,unpricedM3:0};
+    const basis=Number(today.m3)>0?today:Number(week.m3)>0?week:null;
+    const refinedJitaBuyPerM3=basis?Math.max(0,Number(basis.jbv)||0)/Math.max(1,Number(basis.m3)||0):null;
+    const refinedJitaBuyPerHour=latest&&refinedJitaBuyPerM3!=null
+      ?Math.max(0,Number(latest.actualM3PerHour)||0)*refinedJitaBuyPerM3
+      :null;
+    const requestedPayout=Number(url.searchParams.get('payoutPct'));
+    const payoutPct=Number.isFinite(requestedPayout)?Math.min(100,Math.max(1,requestedPayout)):95;
+    return json(res,200,{
+      scope:'companion-user-fleet',
+      linkedCharacters:characterIds.length,
+      cachedCharacters:performance.cachedCharacters,
+      sampleAt:latest?.at||null,
+      actualM3PerHour:latest?Math.max(0,Number(latest.actualM3PerHour)||0):null,
+      activeToons:latest?Math.max(0,Number(latest.activeToons)||0):0,
+      sampledToons:latest?Math.max(0,Number(latest.sampledToons)||0):0,
+      refinedJitaBuyPerM3,
+      refinedJitaBuyPerHour,
+      payoutPct,
+      payoutPerHour:refinedJitaBuyPerHour==null?null:refinedJitaBuyPerHour*(payoutPct/100),
+      today,
+      week,
+      generatedAt:now(),
+    });
+  }
+
   if(req.method==='POST'&&url.pathname==='/api/companion/locations'){
     const auth=companionAuth(req);
     if(!auth)return json(res,401,{error:'COMPANION_AUTH_REQUIRED',message:'Companion pairing is missing or has been revoked.'});
