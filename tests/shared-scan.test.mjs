@@ -47,6 +47,13 @@ assert.match(app,/saveThreatShareEditor/,'JLR Threat Scan can update the same sh
 assert.match(app,/manualRecons:threatShareReconRows/,'JLR editor saves manual recon rows');
 assert.match(app,/dscanText:\$\('threatShareDscan'\)/,'JLR editor updates D-scan separately');
 assert.match(app,/localText:\$\('threatShareLocal'\)/,'JLR editor updates Local separately');
-assert.match(html,/dscan-share\.js\?v=3/,'public viewer cache-busts the read-only client');
+assert.match(html,/dscan-share\.js\?v=4/,'public viewer cache-busts the read-only client');
+
+assert.match(html,/id="scanHighlights"/,'public D-scan leads with a composition summary');
+assert.match(html,/id="dscanObjectsDetails"/,'individual objects expand on demand');
+assert.match(html,/id="copySummary"/,'copyable fleet composition is available');
+assert.match(viewer,/snapshot \(not live\)/,'shared intel summary is marked as a snapshot');
+assert.match(viewer,/mass:15000/,'known Hulk mass can be totaled');
+assert.match(viewer,/unclassified/,'unknown objects are not assumed to be ships');
 
 console.log('shared scan tests passed');
