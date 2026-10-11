@@ -96,7 +96,15 @@
   let threatIgnoreOwn=localStorage.getItem('jlrThreatIgnoreOwn')!=='false';
   let threatShareLoading=false;
   let threatShareNewSystem='';
-  let threatShareUrl=localStorage.getItem('jlrThreatShareUrl')||'';
+  function versionDiscordScanLink(value){
+    try{
+      const url=new URL(String(value||''),location.origin);
+      if(!url.pathname.startsWith('/d/')||!/^[A-Za-z0-9_-]{8,}$/.test(url.pathname.slice(3)))return String(value||'');
+      url.searchParams.set('card','shiplist1');
+      return url.toString();
+    }catch{return String(value||'')}
+  }
+  let threatShareUrl=versionDiscordScanLink(localStorage.getItem('jlrThreatShareUrl')||'');
   let threatShareError='';
   let threatShareEditOpen=false;
   let threatShareEditLoading=false;
@@ -3980,7 +3988,7 @@
     renderThreatScan();
     try{
       const result=await api('/api/threat-share',{method:'POST',body:JSON.stringify({text:value,system:selectedFountainSystem})});
-      threatShareUrl=String(result?.url||'');
+      threatShareUrl=versionDiscordScanLink(result?.url||'');
       if(!threatShareUrl)throw new Error('JLR did not return a shared scan link.');
       threatShareRecord=result?.share||null;
       localStorage.setItem('jlrThreatShareUrl',threatShareUrl);
