@@ -79,19 +79,23 @@
   }
   function shipReport(rows){
     const classes=new Map(),types=groupDscan(rows);
-    let ships=0,mass=0,massComplete=true;
+    let ships=0,combatShips=0,combatMass=0,combatMassComplete=true;
     for(const row of rows){
       const data=SHIP_TYPES.get(String(row.type||'').toLowerCase().trim());
       if(!data)continue;
       ships++;
       classes.set(data.group,(classes.get(data.group)||0)+1);
-      if(Number.isFinite(data.mass))mass+=data.mass;
-      else massComplete=false;
+      // Only PvP/combat-class hulls contribute to displayed mass. Mining hulls,
+      // mining support, haulers and unknown objects never enter this total.
+      if(shipRoleByType(row.type)!=='combat')continue;
+      combatShips++;
+      if(Number.isFinite(data.mass)&&data.mass>0)combatMass+=data.mass;
+      else combatMassComplete=false;
     }
     return {
-      ships, types,
+      ships, types, combatShips,
       classes:[...classes.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])),
-      mass:ships===rows.length&&massComplete&&ships>0?mass:null,
+      combatMass:combatShips>0&&combatMassComplete?combatMass:null,
     };
   }
   function briefSummary(){
@@ -110,7 +114,7 @@
     ];
     if(classified.length>25)lines.push('• …and '+(classified.length-25)+' more hull types');
     if(extra)lines.push('Other/unclassified objects: '+extra);
-    if(report.mass!==null)lines.push('⚖️ Fleet mass: '+report.mass.toLocaleString('en-US',{maximumFractionDigits:1})+' t');
+    if(report.combatMass!==null)lines.push('⚖️ Known combat ship mass: '+report.combatMass.toLocaleString('en-US',{maximumFractionDigits:1})+' t (mining/support excluded)');
     lines.push('🕒 Snapshot — Not Live');
     return lines.join('\n');
   }
@@ -277,7 +281,7 @@
       ['IDENTIFIED SHIPS',report.ships.toLocaleString(),report.ships===filtered.length?'All objects recognized':'Unknown types remain unclassified'],
       ['SHIP TYPES',report.classes.length?new Set(filtered.filter(row=>SHIP_TYPES.has(String(row.type||'').toLowerCase().trim())).map(row=>row.type)).size.toLocaleString():'—',report.classes.length?report.classes.length+' known ship classes':'No known ship classes'],
     ];
-    if(report.mass!==null)highlights.push(['KNOWN SHIP MASS',report.mass.toLocaleString()+' t','All scanned hulls identified']);
+    if(report.combatMass!==null)highlights.push(['KNOWN COMBAT MASS',report.combatMass.toLocaleString('en-US',{maximumFractionDigits:1})+' t','Identified combat hulls only • excludes mining/support']);
     const host=$('scanHighlights');
     host.replaceChildren(...highlights.map(([label,value,note])=>{
       const item=document.createElement('div');item.className='scan-highlight';
