@@ -3,6 +3,50 @@
   const $=id=>document.getElementById(id);
   let share=null;
   let dscanRows=[];
+  // Classification is intentionally conservative: unknown object types remain unclassified,
+  // rather than being incorrectly counted as ships. Mass is shown only for fully-known scans.
+  const SHIP_TYPES=new Map([
+    ['hulk',{group:'Exhumer',mass:15000}],
+    ['mackinaw',{group:'Exhumer'}],
+    ['skiff',{group:'Exhumer'}],
+    ['covetor',{group:'Mining Barge'}],
+    ['retriever',{group:'Mining Barge'}],
+    ['procurer',{group:'Mining Barge'}],
+    ['rorqual',{group:'Capital Industrial Ship'}],
+    ['orca',{group:'Industrial Command Ship'}],
+    ['porpoise',{group:'Industrial Command Ship'}],
+  ]);
+
+  function shipReport(rows){
+    const classes=new Map(),types=groupDscan(rows);
+    let ships=0,mass=0,massComplete=true;
+    for(const row of rows){
+      const data=SHIP_TYPES.get(String(row.type||'').toLowerCase().trim());
+      if(!data)continue;
+      ships++;
+      classes.set(data.group,(classes.get(data.group)||0)+1);
+      if(Number.isFinite(data.mass))mass+=data.mass;
+      else massComplete=false;
+    }
+    return {
+      ships, types,
+      classes:[...classes.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])),
+      mass:ships===rows.length&&massComplete&&ships>0?mass:null,
+    };
+  }
+  function briefSummary(){
+    const report=shipReport(dscanRows);
+    const system=String(share?.system||'').trim()||'Unknown system';
+    const types=report.types.map(([name,n])=>n+' × '+name).join(', ');
+    const classes=report.classes.map(([name,n])=>n+' × '+name).join(', ');
+    return [
+      'JLR D-SCAN • '+system+' • snapshot (not live)',
+      dscanRows.length+' objects • '+report.ships+' identified ships',
+      'Types: '+types,
+      classes?'Classes: '+classes:'',
+      report.mass!==null?'Known ship mass: '+report.mass.toLocaleString()+' t':'',
+    ].filter(Boolean).join('\n');
+  }
 
   function tokenFromPath(){
     return location.pathname.split('/').filter(Boolean).at(-1)||'';
@@ -107,16 +151,19 @@
     const updated=share?.updatedAt?new Date(share.updatedAt):null;
     const createdText=created&&!Number.isNaN(created.getTime())?'created '+created.toLocaleString():'created through JLR';
     const updatedText=updated&&!Number.isNaN(updated.getTime())?'updated '+updated.toLocaleString():'';
-    $('scanMeta').textContent=[createdText,updatedText].filter(Boolean).join(' • ');
+    $('scanMeta').textContent=['SNAPSHOT • NOT LIVE',createdText,updatedText].filter(Boolean).join(' • ');
     document.title=(system?system+' • ':'')+'JLR Shared Intel';
   }
   function renderStats(){
     $('dscanObjectCount').textContent=dscanRows.length.toLocaleString();
     const local=share?.local||{};
     const pilots=Number(local.pilotCount)||rawLines(share?.localText||'').length;
-    $('localPilotCount').textContent=pilots.toLocaleString();
+    const hasLocal=Boolean(String(share?.localText||'').trim());
+    $('localPilotCount').textContent=hasLocal?pilots.toLocaleString():'—';
+    $('localStatus').textContent=hasLocal?'Local scan attached':'Not provided';
     const recons=(share?.manualRecons||[]).reduce((sum,row)=>sum+Math.max(0,Number(row?.count)||0),0);
-    $('reconCount').textContent=recons.toLocaleString();
+    $('reconCount').textContent=recons?recons.toLocaleString():'—';
+    $('reconStatus').textContent=recons?'Manually reported':'Not added';
   }
   function renderRecons(){
     const rows=Array.isArray(share?.manualRecons)?share.manualRecons:[];
@@ -134,30 +181,56 @@
     }));
   }
   function renderDscan(){
-    const text=String(share?.dscanText||'');
-    $('dscanPanel').classList.toggle('hidden',!text);
-    $('copyDscan').disabled=!text;
-    $('rawDscan').textContent=text;
-    if(!text)return;
+    const scanText=String(share?.dscanText||'');
+    $('dscanPanel').classList.toggle('hidden',!scanText);
+    $('copyDscan').disabled=!scanText;
+    $('copySummary').disabled=!scanText;
+    $('rawDscan').textContent=scanText;
+    if(!scanText)return;
     const q=String($('dscanFilter').value||'').trim().toLowerCase();
     const filtered=q?dscanRows.filter(row=>[row.name,row.type,row.distance].some(v=>String(v||'').toLowerCase().includes(q))):dscanRows;
+    const report=shipReport(filtered);
+    const highlights=[
+      ['OBJECTS',filtered.length.toLocaleString(),q?'Filtered scan':'Total D-scan entries'],
+      ['IDENTIFIED SHIPS',report.ships.toLocaleString(),report.ships===filtered.length?'All objects recognized':'Unknown types remain unclassified'],
+      ['SHIP TYPES',report.classes.length?new Set(filtered.filter(row=>SHIP_TYPES.has(String(row.type||'').toLowerCase().trim())).map(row=>row.type)).size.toLocaleString():'—',report.classes.length?report.classes.length+' known ship classes':'No known ship classes'],
+    ];
+    if(report.mass!==null)highlights.push(['KNOWN SHIP MASS',report.mass.toLocaleString()+' t','All scanned hulls identified']);
+    const host=$('scanHighlights');
+    host.replaceChildren(...highlights.map(([label,value,note])=>{
+      const item=document.createElement('div');item.className='scan-highlight';
+      const title=document.createElement('span');title.textContent=label;
+      const count=document.createElement('strong');count.textContent=value;
+      const hint=document.createElement('small');hint.textContent=note;
+      item.append(title,count,hint);return item;
+    }));
+    $('typeBreakdownLabel').textContent=report.types.length+' types'+(q?' • filtered':'');
     const summary=$('dscanSummary');
-    summary.replaceChildren(...groupDscan(filtered).map(([type,count])=>{
-      const el=document.createElement('div'); el.className='group';
-      const n=document.createElement('strong'); n.textContent=String(count);
-      const t=document.createElement('span'); t.textContent=type;
-      el.append(n,t); return el;
+    summary.replaceChildren(...report.types.map(([type,count])=>{
+      const el=document.createElement('div');el.className='group';
+      const n=document.createElement('strong');n.textContent=String(count);
+      const t=document.createElement('span');t.textContent=type;
+      el.append(n,t);return el;
+    }));
+    $('classBreakdown').classList.toggle('hidden',!report.classes.length);
+    $('classBreakdownLabel').textContent=report.ships+' identified ships';
+    $('dscanClasses').replaceChildren(...report.classes.map(([group,count])=>{
+      const el=document.createElement('div');el.className='group class-group';
+      const n=document.createElement('strong');n.textContent=String(count);
+      const t=document.createElement('span');t.textContent=group;
+      el.append(n,t);return el;
     }));
     $('dscanRows').replaceChildren(...filtered.map((row,index)=>{
       const tr=document.createElement('tr');
       [String(index+1),row.name,row.type,row.distance||'—'].forEach(value=>{
-        const td=document.createElement('td'); td.textContent=value; tr.append(td);
+        const td=document.createElement('td');td.textContent=value;tr.append(td);
       });
       return tr;
     }));
     $('dscanShownCount').textContent=filtered.length===dscanRows.length
       ?filtered.length+' objects'
       :filtered.length+' of '+dscanRows.length+' objects';
+    if(q)$('dscanObjectsDetails').open=true;
   }
   function renderLocal(){
     const text=String(share?.localText||'');
@@ -237,6 +310,7 @@
 
   $('copyLink').addEventListener('click',()=>copyText(location.href,$('copyLink'),'LINK COPIED'));
   $('copyDscan').addEventListener('click',()=>copyText(share?.dscanText||'',$('copyDscan'),'D-SCAN COPIED'));
+  $('copySummary').addEventListener('click',()=>copyText(briefSummary(),$('copySummary'),'SUMMARY COPIED'));
   $('dscanFilter').addEventListener('input',renderDscan);
   $('localFilter').addEventListener('input',renderLocal);
   load();
