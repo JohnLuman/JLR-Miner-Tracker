@@ -91,8 +91,7 @@ const nodes={
   allOreTrendWindowLabel:{textContent:''},
   allOreLineCount:{textContent:''},
 };
-const renderOre=new Function('
-,'document','allOreTrendSeries','marketHistoryPoints',
+const renderOre=new Function(String.fromCharCode(36),'document','allOreTrendSeries','marketHistoryPoints',
   'marketTrendDays','allOrePriceMarket','allOrePriceMode','chartDateLabel','esc',
   app.slice(rendererStart,rendererEnd)+'\nreturn renderAllOrePriceChart;'
 )(
