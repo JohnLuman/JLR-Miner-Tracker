@@ -30,7 +30,7 @@ const localColorExample={
   local:{pilots:[{standingStatus:'friendly'},{standingStatus:'friendly'},{standingStatus:'hostile'},{standingStatus:'neutral'},{standingStatus:'unknown'}]},
 };
 const summary=discordScanDescription(localColorExample);
-assert.equal(summary,'30x Mackinaw','Discord description should show ships only, even when Local standings are attached');
+assert.equal(summary,'30× Mackinaw','Discord description should show ships only, even when Local standings are attached');
 assert.doesNotMatch(summary,/Hostility|unverified|friendly|hostile|neutral/i,'hide standing commentary and count banners');
 // A multi-ship D-scan should fit the compact embed line without wrapping into
 // a paragraph. Omitted ship types are represented by a trailing ellipsis.
@@ -65,6 +65,24 @@ assert.match(miningSvg,/Exhumer/);
 assert.match(miningSvg,/filter="url\(#glow\)"/,'logo and outer borders use high-end neon glows');
 assert.match(miningSvg,/SHIP INTELLIGENCE/,'metadata graphic includes polished ship table');
 assert.match(miningSvg,/>30<\/text>/);
+// The approved Discord card fits eight distinct hulls in the image, and
+// reports overflow when a ninth hull is present (not eight individual ships).
+const eightTypes=[
+  'Sabre','Loki','Falcon','Pilgrim','Rapier','Vagabond','Raven','Arazu'
+];
+const eightRowScan={system:'C-N4OD',dscanText:eightTypes.map(name=>name+'\t'+name+'\t10 km').join('\n')};
+const eightSvg=renderDiscordScanSvg(eightRowScan);
+assert.match(eightSvg,/slice\\(0,8\\)/===true?/never/:/Sabre/); // actual rendered hull names
+for(const name of eightTypes)assert.match(eightSvg,new RegExp('>'+name+'<\/text>'),'visible eighth hull: '+name);
+assert.match(eightSvg,/8 HULL TYPES/,'counter reports eight different hulls');
+assert.doesNotMatch(eightSvg,/MORE SHIP TYPES/,'there is no overflow at exactly eight types');
+assert.match(eightSvg,/y="524"[^>]*height="34"/,'eighth row starts at 524, above the footer');
+const ninthScan={...eightRowScan,dscanText:eightRowScan.dscanText+'\nMackinaw\tMackinaw\t15 km'};
+const nineSvg=renderDiscordScanSvg(ninthScan);
+assert.doesNotMatch(nineSvg,/>Mackinaw<\/text>/,'ninth ship type does not overlap the footer');
+assert.match(nineSvg,/1 MORE SHIP TYPE/,'ninth type is indicated as overflow');
+assert.match(nineSvg,/OPEN LINK FOR FULL LIST/,'overflow links to full intel');
+assert.equal((nineSvg.match(/<text[^>]*>.*<\/text>/g)||[]).length>0,true,'generated SVG includes labels');
 const png=await renderDiscordScanPng(example);
 assert.equal(png.subarray(0,8).toString('hex'),'89504e470d0a1a0a','renderer returns Discord-compatible PNG');
 assert.ok(png.length>2000,'PNG has visible content');
