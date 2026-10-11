@@ -99,7 +99,7 @@
   function versionDiscordScanLink(value){
     try{
       const url=new URL(String(value||''),location.origin);
-      if(!/^\\/d\\/[A-Za-z0-9_-]{8,}$/.test(url.pathname))return String(value||'');
+      if(!url.pathname.startsWith('/d/')||!/^[A-Za-z0-9_-]{8,}$/.test(url.pathname.slice(3)))return String(value||'');
       url.searchParams.set('card','shiplist1');
       return url.toString();
     }catch{return String(value||'')}
