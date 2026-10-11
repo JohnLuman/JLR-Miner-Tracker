@@ -111,6 +111,22 @@
   let threatShareSaving=false;
   let threatShareRecord=null;
   let threatShareEditError='';
+  let threatShareGeneration=0;
+  function resetThreatShare(){
+    // CLEAR TEXT and NEW SHARE must both end the active share session.
+    // Do not delete a previously published server share; only detach the UI.
+    threatShareGeneration++;
+    threatShareUrl='';
+    threatShareRecord=null;
+    threatShareNewSystem='';
+    threatShareLoading=false;
+    threatShareSaving=false;
+    threatShareEditOpen=false;
+    threatShareEditLoading=false;
+    threatShareError='';
+    threatShareEditError='';
+    localStorage.removeItem('jlrThreatShareUrl');
+  }
   let ceoCommandStatus=null;
   let ceoCommandLoading=false;
   let ceoFinanceData=null;
@@ -3749,7 +3765,7 @@
             <span>${threatStatus}${threatShareError?` • ${esc(threatShareError)}`:''}</span>
             <div class="threat-input-foot-actions">
               ${data?.scannedAt?`<small>updated ${ago(data.scannedAt)}</small>`:''}
-              <button id="threatClearScan" class="threat-clear-text" type="button" ${threatScanText?'':'disabled'}>CLEAR TEXT</button>
+              <button id="threatClearScan" class="threat-clear-text" type="button" ${threatScanText||threatShareUrl?'':'disabled'}>CLEAR TEXT</button>
             </div>
           </div>
           ${threatShareUrl?`<div class="threat-share-ready">
@@ -3834,10 +3850,14 @@
     });
     $('threatUpdateAccess')?.addEventListener('click',()=>{location.href='/auth/eve/start?intent=link'});
     $('threatClearScan')?.addEventListener('click',()=>{
+      ++threatScanRequestSeq; // Ignore any in-flight scan that was just cleared.
+      if(threatScanPoll){clearTimeout(threatScanPoll);threatScanPoll=null}
+      threatScanLoading=false;
+      threatScanPollCount=0;
       threatScanText='';
       threatScanData=null;
       threatScanError='';
-      threatShareError='';
+      resetThreatShare();
       renderThreatScan();
     });
     $('threatEditShare')?.addEventListener('click',async()=>{
@@ -3847,12 +3867,7 @@
       if(threatShareEditOpen&&!threatShareRecord)await loadThreatShareEditor();
     });
     $('threatNewShare')?.addEventListener('click',()=>{
-      threatShareUrl='';
-      threatShareRecord=null;
-      threatShareEditOpen=false;
-      threatShareEditError='';
-      localStorage.removeItem('jlrThreatShareUrl');
-      threatShareNewSystem='';
+      resetThreatShare();
       renderThreatScan();
     });
     $('threatSaveShareEdit')?.addEventListener('click',()=>saveThreatShareEditor());
@@ -3887,18 +3902,22 @@
   async function loadThreatShareEditor(){
     const token=threatShareToken();
     if(!token)return;
+    const generation=threatShareGeneration;
     threatShareEditLoading=true;
     threatShareEditError='';
     renderThreatScan();
     try{
       const result=await api('/api/dscan-share/'+encodeURIComponent(token));
+      if(generation!==threatShareGeneration)return;
       if(!result?.share?.canEdit)throw new Error('This share is not editable by the current JLR account.');
       threatShareRecord=result.share;
     }catch(error){
-      threatShareEditError=String(error?.message||error||'Could not load the shared link.');
+      if(generation===threatShareGeneration)threatShareEditError=String(error?.message||error||'Could not load the shared link.');
     }finally{
-      threatShareEditLoading=false;
-      renderThreatScan();
+      if(generation===threatShareGeneration){
+        threatShareEditLoading=false;
+        renderThreatScan();
+      }
     }
   }
   async function saveThreatShareEditor(){
@@ -3918,6 +3937,7 @@
       localText:$('threatShareLocal')?.value||'',
       manualRecons:threatShareReconRows($('threatShareRecon')?.value||''),
     };
+    const generation=threatShareGeneration;
     threatShareSaving=true;
     threatShareEditError='';
     try{
@@ -3925,13 +3945,16 @@
         method:'POST',
         body:JSON.stringify(draft),
       });
+      if(generation!==threatShareGeneration)return;
       threatShareRecord=result?.share||threatShareRecord;
       toast('Shared intel updated on the same JLR link.');
     }catch(error){
-      threatShareEditError=String(error?.message||error||'Could not update the shared link.');
+      if(generation===threatShareGeneration)threatShareEditError=String(error?.message||error||'Could not update the shared link.');
     }finally{
-      threatShareSaving=false;
-      renderThreatScan();
+      if(generation===threatShareGeneration){
+        threatShareSaving=false;
+        renderThreatScan();
+      }
     }
   }
   async function copyThreatShareUrl(){
@@ -3983,11 +4006,13 @@
       $('threatShareNewSystem')?.focus();
       return;
     }
+    const generation=threatShareGeneration;
     threatShareLoading=true;
     threatShareError='';
     renderThreatScan();
     try{
       const result=await api('/api/threat-share',{method:'POST',body:JSON.stringify({text:value,system:selectedFountainSystem})});
+      if(generation!==threatShareGeneration)return; // Clear may have happened during creation.
       threatShareUrl=versionDiscordScanLink(result?.url||'');
       if(!threatShareUrl)throw new Error('JLR did not return a shared scan link.');
       threatShareRecord=result?.share||null;
@@ -3995,10 +4020,12 @@
       renderThreatScan();
       await copyThreatShareUrl();
     }catch(error){
-      threatShareError=String(error?.message||error||'Could not create the intel link.');
+      if(generation===threatShareGeneration)threatShareError=String(error?.message||error||'Could not create the intel link.');
     }finally{
-      threatShareLoading=false;
-      renderThreatScan();
+      if(generation===threatShareGeneration){
+        threatShareLoading=false;
+        renderThreatScan();
+      }
     }
   }
   async function runThreatScan(text,backgroundPoll=false,requestSeq=null){
