@@ -11435,7 +11435,12 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{if(redi
     const row=Object.values(state.dscanShares||{}).find(item=>String(item?.token||'')===scanPreviewMatch[1]);
     if(!row)return text(res,404,'Shared scan not found');
     normalizeJlrSharedScan(row);
-    const png=renderDiscordScanPng(row);
+    let png;
+    try{png=await renderDiscordScanPng(row)}
+    catch(error){
+      console.error('Discord D-scan PNG unavailable',String(error?.message||error));
+      return text(res,503,'Discord scan preview temporarily unavailable');
+    }
     res.writeHead(200,{
       'Content-Type':'image/png',
       'Content-Length':png.length,

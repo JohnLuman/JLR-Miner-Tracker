@@ -33,7 +33,7 @@ assert.doesNotMatch(miningSvg,/<text[^>]+>.*HOSTILE SHIPS/,'miners must not be t
 assert.match(miningSvg,/Mackinaw/);
 assert.match(miningSvg,/Exhumer/);
 assert.match(miningSvg,/>30<\/text>/);
-const png=renderDiscordScanPng(example);
+const png=await renderDiscordScanPng(example);
 assert.equal(png.subarray(0,8).toString('hex'),'89504e470d0a1a0a','renderer returns Discord-compatible PNG');
 assert.ok(png.length>2000,'PNG has visible content');
 const combat=summarizeDiscordScan({
