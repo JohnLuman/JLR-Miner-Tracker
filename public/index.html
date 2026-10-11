@@ -25,7 +25,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700&family=Rajdhani:wght@600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=2.10.39-reset-loop1-t2orange3-sovmap1-ceo15-fieldblink1-a0single1-adamnav2-dscan-system2">
+  <link rel="stylesheet" href="/styles.css?v=2.10.39-reset-loop1-t2orange3-sovmap1-ceo15-fieldblink1-a0single1-adamnav2-dscan-system2-long-trends1">
   <link rel="stylesheet" href="/themes.css?v=2.10.11-reset1">
   <link rel="stylesheet" href="/appraisal-enhance.css?v=5">
   <link rel="stylesheet" href="/tracker.css?v=2.10.20-alarm-sim1-hotzones1">
@@ -375,8 +375,17 @@
       <div class="mining-visual-grid mining-visual-grid-single">
         <article class="mining-visual-card fleet-trend-card">
           <div class="visual-card-head trend-head">
-            <div><strong>MARKET VALUE TREND</strong><small>selected ore • Jita vs C-N • 30 days</small></div>
-            <select id="oreTrendSelect" aria-label="Ore value trend"></select>
+            <div><strong>MARKET VALUE TREND</strong><small>selected ore • Jita vs C-N • <span id="oreTrendWindowLabel">30 days • daily</span></small></div>
+            <div class="market-trend-tools">
+              <select id="oreTrendSelect" aria-label="Ore value trend"></select>
+              <div class="market-trend-ranges" aria-label="Market history time range">
+                <button class="market-range active" data-market-days="30" type="button">30D</button>
+                <button class="market-range" data-market-days="90" type="button">90D</button>
+                <button class="market-range" data-market-days="180" type="button">180D</button>
+                <button class="market-range" data-market-days="365" type="button">1Y</button>
+                <button class="market-range" data-market-days="all" type="button">ALL</button>
+              </div>
+            </div>
           </div>
           <div class="visual-legend"><span class="legend-jita">JITA</span><span class="legend-cn">C-N</span></div>
           <div id="oreValueChart" class="market-line-chart"></div>
@@ -406,7 +415,16 @@
 
       <div class="ice-layout">
         <article class="ice-chart-card">
-          <div class="visual-card-head"><strong>REFINED ICE VALUE TREND</strong><small>Jita vs C-N • last 30 days • Heavy Water excluded</small></div>
+          <div class="visual-card-head market-trend-head">
+            <div><strong>REFINED ICE VALUE TREND</strong><small>Jita vs C-N • <span id="iceTrendWindowLabel">30 days • daily</span> • Heavy Water excluded</small></div>
+            <div class="market-trend-ranges" aria-label="Ice price history time range">
+              <button class="market-range active" data-market-days="30" type="button">30D</button>
+              <button class="market-range" data-market-days="90" type="button">90D</button>
+              <button class="market-range" data-market-days="180" type="button">180D</button>
+              <button class="market-range" data-market-days="365" type="button">1Y</button>
+              <button class="market-range" data-market-days="all" type="button">ALL</button>
+            </div>
+          </div>
           <div class="visual-legend"><span class="legend-jita">JITA</span><span class="legend-cn">C-N</span></div>
           <div id="iceValueChart" class="market-line-chart ice-value-chart"></div>
         </article>
@@ -589,7 +607,7 @@
   <script src="/field-status.js?v=1" defer></script>
   <script src="/field-update-feedback.js?v=3-t2" defer></script>
   <script src="/adam-navigation.js?v=2" defer></script>
-  <script src="/app.js?v=2.10.39-threat-fast1-initfields2-alarm-sim1-grouped3-sovmap1-ceo15-fieldblink1-a0single1-adamnav2-brand1-rail2-field-status1-dscan-system3" defer></script>
+  <script src="/app.js?v=2.10.39-threat-fast1-initfields2-alarm-sim1-grouped3-sovmap1-ceo15-fieldblink1-a0single1-adamnav2-brand1-rail2-field-status1-dscan-system3-long-trends1" defer></script>
   <script src="/appraisal-enhance.js?v=6" defer></script>
   <script src="/tracker-clock.js?v=1" defer></script>
   <script src="/alarm-diagnostics.js?v=2" defer></script>
