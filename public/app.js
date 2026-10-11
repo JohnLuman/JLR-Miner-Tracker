@@ -3568,7 +3568,7 @@
       options=matchingFountainSystems(input.value);
       list.innerHTML=options.length
         ?options.map((name,index)=>{
-          const status=fountainStandingRecords?.[name]?.standing||'unknown';
+          const status=(typeof fountainStandingRecords==='undefined'?null:fountainStandingRecords?.[name])?.standing||'unknown';
           const label=status==='friendly'?'INIT / ALLY':status==='hostile'?'HOSTILE':
             status==='neutral'?'NEUTRAL':status==='unclaimed'?'UNCLAIMED':'UNVERIFIED';
           return '<button type="button" role="option" tabindex="-1" aria-selected="false" id="'+esc(inputId)+'Suggestion'+index+'" data-system="'+esc(name)+'" class="sov-'+esc(status)+'"><span>'+esc(name)+'</span><small>'+label+'</small></button>';
