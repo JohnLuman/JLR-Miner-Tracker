@@ -81,7 +81,7 @@ assert.match(viewer,/shipRoleByGroup\(group\)/,'ship classes use matching role c
 assert.match(viewer,/ship-type-tag role-/,'individual hull rows use role badges');
 const roleSource=viewer.slice(viewer.indexOf('  const MINING_GROUPS='),viewer.indexOf('  async function loadShipCatalog(){'));
 assert.ok(roleSource.includes('function shipRoleByType'), 'role classifier must exist');
-const roles=new Function('SHIP_TYPES',roleSource+'\\nreturn {shipRoleByType,roleTotals};')(
+const roles=new Function('SHIP_TYPES',roleSource+String.fromCharCode(10)+'return {shipRoleByType,roleTotals};')(
   new Map(catalog.ships.map(([name,group])=>[name.toLowerCase(),{group}])),
 );
 for(const type of ['Hulk','Orca','Porpoise','Rorqual','Miasmos']){
