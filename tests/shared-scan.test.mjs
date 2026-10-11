@@ -135,7 +135,7 @@ const initShipNameCache=new Function('fs','path','PUBLIC_DIR','console',
   server.slice(catalogBlockStart,catalogBlockEnd)+String.fromCharCode(10)+'return universeNameCache;'
 );
 const cachedShipNames=initShipNameCache(fs,(await import('node:path')).default,
-  new URL('../public/',import.meta.url).pathname,console);
+  (await import('node:url')).fileURLToPath(new URL('../public/',import.meta.url)),console);
 assert.equal(cachedShipNames.get(28352),'Rorqual','Rorqual 28352 resolves immediately even in quick Threat Scan');
 assert.equal(cachedShipNames.get(32880),'Venture','Venture 32880 resolves by name');
 assert.ok(cachedShipNames.size>=500,'all ships receive fast-name lookups');
