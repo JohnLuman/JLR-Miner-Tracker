@@ -54,12 +54,25 @@ const longer=[
 ];
 assert.equal(processOre(longer,'30','jita','price',new Set(),today).lines[0].pricedCount,1);
 assert.equal(processOre(longer,'all','jita','price',new Set(),today).lines[0].pricedCount,2);
-assert.equal(processOre(longer,'365','jita','price',new Set(),today).granularity,'month');
-assert.equal(processOre(inputs,'90','jita','price',new Set(),today).granularity,'week');
+assert.equal(processOre(longer,'365','jita','price',new Set(),today).granularity,'day','do not average sparse years into misleading monthly flat lines');
+assert.equal(processOre(inputs,'90','jita','price',new Set(),today).granularity,'day','90D shows actual daily observations when fewer than 35 dates recorded');
+const dense=Array.from({length:60},(_,i)=>({
+  date:new Date(Date.parse(today+'T00:00:00Z')-(59-i)*86400000).toISOString().slice(0,10),
+  jita:100+i,cn:150+i,
+}));
+assert.equal(processOre([{name:'Dense',points:dense}],'90','jita','price',new Set(),today).granularity,'week',
+  '90D uses weekly averages once 35+ valid observed dates exist');
+assert.equal(processOre(inputs,'30','jita','price',new Set(),today).lines[0].changePct,50);
+assert.equal(processOre([{name:'Flat',points:[{date:'2026-10-09',jita:100},{date:today,jita:100}]}],
+  '30','jita','price',new Set(),today).lines[0].distinctPrices,1,'truly unchanged quotes identified explicitly');
 const aggregate=processOre(inputs,'30','jita','price',new Set(),today);
 assert.equal(aggregate.lines[0].color!==aggregate.lines[1].color,true,'separate line colors');
 assert.match(html,/id="allOrePriceChart"/,'combined chart has dedicated panel');
 assert.match(html,/id="allOreLegend"/,'legend contains per-ore line switches');
+assert.ok(html.indexOf('id="allOreLegend"')<html.indexOf('id="allOrePriceChart"'),'named color legend comes before all-ore lines');
+assert.match(html,/COLORED LINES = ORE TYPES/,'legend explains color meaning without threat-role confusion');
+assert.match(html,/id="allOreDataNotice"/,'available data coverage and stale refresh warning shown');
+assert.match(html,/refined mineral value per m³, not raw ore sell orders/i,'market metric accurately described');
 assert.match(html,/data-all-ore-market="jita"/,'Jita market selection available');
 assert.match(html,/data-all-ore-market="cn"/,'C-N market selection available');
 assert.match(html,/data-all-ore-mode="change"/,'relative percentage comparisons available');
@@ -90,9 +103,10 @@ const nodes={
   allOreLegend:{innerHTML:''},
   allOreTrendWindowLabel:{textContent:''},
   allOreLineCount:{textContent:''},
+  allOreDataNotice:{textContent:'',classList:{toggle:()=>{}}},
 };
 const renderOre=new Function(String.fromCharCode(36),'document','allOreTrendSeries','marketHistoryPoints',
-  'marketTrendDays','allOrePriceMarket','allOrePriceMode','chartDateLabel','esc',
+  'marketTrendDays','allOrePriceMarket','allOrePriceMode','chartDateLabel','esc','state',
   app.slice(rendererStart,rendererEnd)+'\nreturn renderAllOrePriceChart;'
 )(
   key=>nodes[key]||null,
@@ -103,6 +117,7 @@ const renderOre=new Function(String.fromCharCode(36),'document','allOreTrendSeri
   '90','jita','price',
   value=>value,
   value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;'),
+  {market:{lastUpdatedAt:new Date().toISOString()}},
 );
 renderOre([{name:'Beryl'},{name:'Garnet'}]);
 const markup=nodes.allOrePriceChart.innerHTML;
@@ -113,7 +128,25 @@ assert.match(markup,/fill="transparent" stroke="none" class="all-ore-point"/,'ho
 assert.match(markup,/r="3" fill="#72d6ff"/,'a single-price point has visible fill without theme styles');
 const paths=[...markup.matchAll(/<path d="([^"]+)" fill="none" stroke="[^"]+" stroke-width="2.8"/g)];
 assert.equal(paths.length,2);
-assert.ok(paths.every(match=>match[1].includes(' L ')),'adjacent observations draw connected lines, not disconnected dots');
+assert.ok(paths.every(match=>!match[1].includes(' L ')),'weekly-spaced prices remain separate observations at low data coverage, not invented continuous flat lines');
 assert.equal(nodes.allOreTrendWindowLabel.textContent.includes('collected since'),true);
+assert.match(nodes.allOreDataNotice.textContent,/4 actual recorded pricing days/,'honest data coverage displayed');
+assert.match(nodes.allOreDataNotice.textContent,/daily detail/,'sparse 90D uses daily point resolution');
+assert.match(nodes.allOreLegend.innerHTML,/Beryl/, 'legend shows ore names and matching swatches');
+assert.match(nodes.allOreLegend.innerHTML,/Garnet/, 'legend lists more than one ore');
+const helperStart=app.indexOf('  function marketHistoryPoints(');
+const helperEnd=app.indexOf('  function marketTrendView(',helperStart);
+const getMarketHistory=new Function('state',app.slice(helperStart,helperEnd)+'\nreturn marketHistoryPoints;');
+const yesterday=priorDate(1);
+const staleHistory=getMarketHistory({market:{
+  lastUpdatedAt:yesterday+'T10:00:00Z',
+  history:{ore:{Beryl:[{date:yesterday,jita:100,cn:90}]}},
+}})('ore','Beryl',100,90);
+assert.equal(staleHistory.length,1,'stale yesterday value must never be redated as a fabricated today's observation');
+const freshHistory=getMarketHistory({market:{
+  lastUpdatedAt:todayGenerated+'T10:00:00Z',
+  history:{ore:{Beryl:[{date:yesterday,jita:100,cn:90}]}},
+}})('ore','Beryl',101,91);
+assert.equal(freshHistory.length,2,'new daily observation only added if fresh market update actually completed today');
 
 console.log('All-ore price trend lines, normalization, market switching and filtering passed.');
