@@ -68,4 +68,52 @@ assert.match(html,/id="allOreHideAll"/,'all ore lines can be temporarily hidden'
 assert.match(app,/renderAllOrePriceChart\(trendOres\)/,'combined chart renders on the Fleet Performance panel');
 assert.match(app,/marketTrendView\(ore.points/,'combined chart uses existing adaptive 30D/90D/1Y trend engine');
 assert.match(css,/\.all-ore-line-svg/,'combined line chart has layout');
+
+// Visual regression: explicit SVG paint is essential because some cached themes
+// style unrelated chart series differently; hover hit areas must never turn black.
+const cssText=css;
+assert.match(cssText,/\.fleet-trend-card \.all-ore-line-svg\{[\s\S]*?height:325px!important/,'full-height chart overrides old 205px performance rule');
+assert.match(cssText,/\.all-ore-line-svg \.all-ore-point\{[\s\S]*?fill:transparent!important/,'hover targets stay transparent');
+const rendererStart=app.indexOf('  function renderAllOrePriceChart(');
+const rendererEnd=app.indexOf('  function updateSoundStatus()',rendererStart);
+assert.ok(rendererStart>0&&rendererEnd>rendererStart);
+const todayGenerated=new Date().toISOString().slice(0,10);
+const priorDate=delta=>new Date(Date.parse(todayGenerated+'T00:00:00Z')-delta*86400000).toISOString().slice(0,10);
+const sourceRows={
+  Beryl:[{date:priorDate(21),jita:50,cn:60},{date:priorDate(14),jita:55,cn:65},
+    {date:priorDate(7),jita:60,cn:70},{date:todayGenerated,jita:65,cn:75}],
+  Garnet:[{date:priorDate(21),jita:100,cn:110},{date:priorDate(14),jita:105,cn:115},
+    {date:priorDate(7),jita:110,cn:120},{date:todayGenerated,jita:115,cn:125}],
+};
+const nodes={
+  allOrePriceChart:{clientWidth:1400,innerHTML:''},
+  allOreLegend:{innerHTML:''},
+  allOreTrendWindowLabel:{textContent:''},
+  allOreLineCount:{textContent:''},
+};
+const renderOre=new Function(String.fromCharCode(36),'document','allOreTrendSeries','marketHistoryPoints',
+  'marketTrendDays','allOrePriceMarket','allOrePriceMode','chartDateLabel','esc',
+  app.slice(rendererStart,rendererEnd)+'\nreturn renderAllOrePriceChart;'
+)(
+  key=>nodes[key]||null,
+  {querySelectorAll:()=>[]},
+  // Reuse actual data processing with empty hidden selection and 90D window.
+  (ores)=>processOre(ores,'90','jita','price',new Set(),todayGenerated),
+  (_bucket,key)=>sourceRows[key]||[],
+  '90','jita','price',
+  value=>value,
+  value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;'),
+);
+renderOre([{name:'Beryl'},{name:'Garnet'}]);
+const markup=nodes.allOrePriceChart.innerHTML;
+assert.match(markup,/viewBox="0 0 1400 325"/,'chart uses its visible width instead of a 960x310 chart compressed to 205px');
+assert.match(markup,/fill="none" stroke="#72d6ff" stroke-width="2.8"/,'first ore line has explicit SVG color');
+assert.match(markup,/fill="none" stroke="#ffc875" stroke-width="2.8"/,'second ore line is distinct and visible');
+assert.match(markup,/fill="transparent" stroke="none" class="all-ore-point"/,'hover targets cannot appear as opaque black circles');
+assert.match(markup,/r="3" fill="#72d6ff"/,'a single-price point has visible fill without theme styles');
+const paths=[...markup.matchAll(/<path d="([^"]+)" fill="none" stroke="[^"]+" stroke-width="2.8"/g)];
+assert.equal(paths.length,2);
+assert.ok(paths.every(match=>match[1].includes(' L ')),'adjacent observations draw connected lines, not disconnected dots');
+assert.equal(nodes.allOreTrendWindowLabel.textContent.includes('collected since'),true);
+
 console.log('All-ore price trend lines, normalization, market switching and filtering passed.');

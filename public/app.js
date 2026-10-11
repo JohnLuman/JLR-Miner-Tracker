@@ -1490,7 +1490,11 @@
     const visible=lines.filter(line=>line.visible);
     const dates=visible.flatMap(line=>line.points.filter(point=>point.price!==null).map(point=>point.date));
     const allView=marketTrendView(oreInputs?.flatMap(ore=>ore.points||[])||[],range,todayISO);
-    const start=allView.days===null?(dates.length?dates.sort()[0]:todayISO):allView.windowStart;
+    // Older chart windows may have only a few weeks of collected prices. Zoom the
+    // plotted axis to actual observations rather than leaving months of blank space.
+    const earliest=dates.length?[...dates].sort()[0]:todayISO;
+    const requestedStart=allView.windowStart;
+    const start=allView.days===null?earliest:(earliest>requestedStart?earliest:requestedStart);
     return {
       lines,visible,market:key,mode,granularity:allView.granularity,
       range:allView.range,windowStart:start,windowEnd:allView.windowEnd,
@@ -1529,7 +1533,8 @@
     });
     if($('allOreTrendWindowLabel'))$('allOreTrendWindowLabel').textContent=
       (data.range==='all'?'all recorded history':data.range+' days')+' • '+
-      (data.granularity==='day'?'daily':data.granularity==='week'?'weekly averages':'monthly averages');
+      (data.granularity==='day'?'daily':data.granularity==='week'?'weekly averages':'monthly averages')+
+      (data.firstDate?' • collected since '+chartDateLabel(data.firstDate):'');
     if($('allOreLineCount'))$('allOreLineCount').textContent=data.activeLines+' OF '+data.availableLines+' PRICED ORES SHOWN';
     legend.innerHTML=data.lines.map(line=>{
       const hidden=!line.visible,available=line.pricedCount>0;
@@ -1545,7 +1550,9 @@
       return;
     }
 
-    const W=960,H=310,L=81,R=24,T=23,B=35,pw=W-L-R,ph=H-T-B;
+    // This is a wide comparison chart: use its real container width so a
+    // forced 205px SVG height can't compress all strokes and labels into dots.
+    const W=Math.max(720,Math.round(chart.clientWidth)||960),H=325,L=88,R=30,T=27,B=42,pw=W-L-R,ph=H-T-B;
     const values=data.visible.flatMap(line=>line.points.map(p=>p.value).filter(v=>v!==null&&Number.isFinite(v)));
     if(!values.length){chart.innerHTML='<div class="visual-empty">No priced ore observations in this range.</div>';return}
     let min=Math.min(...values),max=Math.max(...values);
@@ -1565,13 +1572,13 @@
     let grid='';
     for(let i=0;i<=4;i++){
       const v=max-i/4*span,yy=T+i/4*ph;
-      grid+='<line x1="'+L+'" y1="'+yy.toFixed(1)+'" x2="'+(W-R)+'" y2="'+yy.toFixed(1)+'" class="market-grid"/>'+
-        '<text x="'+(L-8)+'" y="'+(yy+3).toFixed(1)+'" text-anchor="end" class="all-ore-axis">'+esc(displayValue(v))+'</text>';
+      grid+='<line x1="'+L+'" y1="'+yy.toFixed(1)+'" x2="'+(W-R)+'" y2="'+yy.toFixed(1)+'" stroke="#314554" stroke-width="1" opacity=".7"/>'+
+        '<text x="'+(L-10)+'" y="'+(yy+4).toFixed(1)+'" text-anchor="end" font-size="12" fill="#b5ccdf" class="all-ore-axis">'+esc(displayValue(v))+'</text>';
     }
     const axis=Array.from({length:6},(_,i)=>{
       const ms=startMs+(endMs-startMs)*i/5;
       const date=new Date(ms).toISOString().slice(0,10);
-      return '<text x="'+xDate(ms).toFixed(1)+'" y="'+(H-10)+'" text-anchor="middle" class="all-ore-axis">'+esc(chartDateLabel(date))+'</text>';
+      return '<text x="'+xDate(ms).toFixed(1)+'" y="'+(H-11)+'" text-anchor="middle" font-size="12" fill="#b5ccdf" class="all-ore-axis">'+esc(chartDateLabel(date))+'</text>';
     }).join('');
     const maxGap=data.granularity==='month'?45:data.granularity==='week'?15:3;
     const lines=data.visible.map(line=>{
@@ -1588,10 +1595,10 @@
         const details=line.name+' • '+period+' • '+fmtPrice(row.price)+
           (percent?' • change '+displayValue(row.value):'')+
           ' • '+row.days+' recorded day'+(row.days===1?'':'s');
-        dots.push('<circle cx="'+xDateRow(row).toFixed(1)+'" cy="'+y(row.value).toFixed(1)+'" r="2.4" class="all-ore-dot" style="fill:'+line.color+'"/>');
-        dots.push('<circle cx="'+xDateRow(row).toFixed(1)+'" cy="'+y(row.value).toFixed(1)+'" r="7" class="all-ore-point" tabindex="0" aria-label="'+esc(details)+'" style="--ore-line-color:'+line.color+'"><title>'+esc(details)+'</title></circle>');
+        dots.push('<circle cx="'+xDateRow(row).toFixed(1)+'" cy="'+y(row.value).toFixed(1)+'" r="3" fill="'+line.color+'" stroke="#06121c" stroke-width=".8" class="all-ore-dot"/>');
+        dots.push('<circle cx="'+xDateRow(row).toFixed(1)+'" cy="'+y(row.value).toFixed(1)+'" r="10" fill="transparent" stroke="none" class="all-ore-point" tabindex="0" aria-label="'+esc(details)+'"><title>'+esc(details)+'</title></circle>');
       }
-      return '<path d="'+d.trim()+'" style="stroke:'+line.color+'" class="all-ore-series" aria-label="'+esc(line.name)+'"/>'+
+      return '<path d="'+d.trim()+'" fill="none" stroke="'+line.color+'" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round" class="all-ore-series" aria-label="'+esc(line.name)+'"/>'+
         dots.join('');
     }).join('');
     const foot=data.firstDate
@@ -1600,7 +1607,7 @@
       :'No recorded dates';
     chart.innerHTML='<div class="market-chart-shell">'+
       '<svg class="market-line-svg all-ore-line-svg" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+esc((percent?'Percentage changes':'Market prices')+' for all selected ores in '+(data.market==='cn'?'C-N':'Jita'))+'">'+
-        grid+axis+lines+'<text x="'+L+'" y="'+(T-8)+'" class="market-unit-label">'+(percent?'CHANGE %':'ISK/M³')+'</text>'+
+        grid+axis+lines+'<text x="'+L+'" y="'+(T-11)+'" fill="#cfdfed" font-size="12" class="market-unit-label">'+(percent?'CHANGE %':'ISK/M³')+'</text>'+
       '</svg><div class="market-trend-foot">'+foot+' • Missing historical dates are not filled in.</div></div>';
   }
 
