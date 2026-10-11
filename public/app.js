@@ -79,6 +79,7 @@
   let threatIgnorePositive=localStorage.getItem('jlrThreatIgnorePositive')!=='false';
   let threatIgnoreOwn=localStorage.getItem('jlrThreatIgnoreOwn')!=='false';
   let threatShareLoading=false;
+  let threatShareNewSystem='';
   let threatShareUrl=localStorage.getItem('jlrThreatShareUrl')||'';
   let threatShareError='';
   let threatShareEditOpen=false;
@@ -3366,6 +3367,7 @@
               <button id="threatClearScan" class="threat-clear-text" type="button" ${threatScanText?'':'disabled'}>CLEAR TEXT</button>
             </div>
           </div>
+          ${!threatShareUrl?`<label class="threat-share-system-setup"><span>SCAN SYSTEM <small>OPTIONAL • automatically filled if your connected EVE companion reports one clear system</small></span><input id="threatShareNewSystem" maxlength="80" autocomplete="off" placeholder="Example: C-N4OD" value="${esc(threatShareNewSystem)}"></label>` :''}
           ${threatShareUrl?`<div class="threat-share-ready">
             <span>JLR SHARE LINK READY</span>
             <a href="${esc(threatShareUrl)}" target="_blank" rel="noopener noreferrer">${esc(threatShareUrl)}</a>
@@ -3420,6 +3422,7 @@
       </div>`;
 
     const input=$('threatScanInput');
+    $('threatShareNewSystem')?.addEventListener('input',event=>{threatShareNewSystem=event.target.value});
     input?.addEventListener('input',()=>{
       threatShareError='';
       threatScanText=input.value;
@@ -3463,6 +3466,7 @@
       threatShareEditOpen=false;
       threatShareEditError='';
       localStorage.removeItem('jlrThreatShareUrl');
+      threatShareNewSystem='';
       renderThreatScan();
     });
     $('threatSaveShareEdit')?.addEventListener('click',()=>saveThreatShareEditor());
@@ -3582,7 +3586,7 @@
     threatShareError='';
     renderThreatScan();
     try{
-      const result=await api('/api/threat-share',{method:'POST',body:JSON.stringify({text:value})});
+      const result=await api('/api/threat-share',{method:'POST',body:JSON.stringify({text:value,system:threatShareNewSystem})});
       threatShareUrl=String(result?.url||'');
       if(!threatShareUrl)throw new Error('JLR did not return a shared scan link.');
       threatShareRecord=result?.share||null;
