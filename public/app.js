@@ -5340,11 +5340,26 @@
       }
     }
   }
-  function selectedFleetPerformanceIds(){
+  function configuredFleetPerformanceIds(){
     const boosterId=String(calcSettings.boosterCharacterId||'');
     return (me?.characters||[])
       .map(character=>String(character.characterId))
       .filter(id=>id!==boosterId&&Boolean(fleetSettings.members?.[id]?.enabled));
+  }
+  function fleetAutoTracking(){
+    return configuredFleetPerformanceIds().length===0;
+  }
+  function selectedFleetPerformanceIds(){
+    const configured=configuredFleetPerformanceIds();
+    if(configured.length)return configured;
+    // An empty local Fleet & Fits configuration must NOT silently erase ESI
+    // mining statistics. Automatically review only this account's linked mining-
+    // authorized characters. Saved ship fittings are optional for actuals.
+    const boosterId=String(calcSettings.boosterCharacterId||'');
+    return (me?.characters||[])
+      .filter(character=>character.miningAccess===true)
+      .map(character=>String(character.characterId))
+      .filter(id=>id!==boosterId);
   }
   function fleetPerformanceKey(ids=selectedFleetPerformanceIds()){
     return [...ids].map(String).sort().join(',');
@@ -5742,7 +5757,26 @@
     if($('fleetRateChartTitle'))$('fleetRateChartTitle').textContent=fleetRateMetric==='efficiency'?'EFFICIENCY OVER TIME':'SAMPLED RATE OVER TIME';
     const assignedCount=Math.max(0,Number(performance.characterIds?.length)||0);
     const cachedCount=Math.max(0,Number(performance.cachedCharacters)||0);
-    const partialCoverage=assignedCount>0&&cachedCount>0&&cachedCount<assignedCount;
+    const partialCoverage=assignedCount>0&&cachedCount<assignedCount;
+    const autoTracking=fleetAutoTracking();
+    const linked=me?.characters||[];
+    const miningAllowed=linked.filter(character=>character.miningAccess===true).length;
+    if($('fleetTrackingScope')){
+      $('fleetTrackingScope').textContent=autoTracking
+        ?'AUTO • '+assignedCount+' MINING-AUTHORIZED TOONS'
+        :'SELECTED FLEET • '+assignedCount+' TOONS';
+      $('fleetTrackingScope').title=autoTracking
+        ?'No miners are selected in Fleet & Fits. Showing ESI ledger records for all linked characters with mining access, excluding your configured booster. Fits are needed only for predicted targets.'
+        :'Scoped to miners explicitly enabled in Fleet & Fits.';
+    }
+    if($('fleetLedgerCoverage')){
+      const noAccess=Math.max(0,linked.length-miningAllowed);
+      const noFits=linked.filter(character=>character.miningAccess===true&&!Array.isArray(character.fittings)?false:character.miningAccess===true&&!(character.fittings||[]).length).length;
+      $('fleetLedgerCoverage').textContent=assignedCount
+        ?'ESI LEDGER: '+cachedCount+'/'+assignedCount+' TOONS • '+(noAccess?noAccess+' NEED MINING ACCESS • ':'')+(noFits?'NO SAVED FITS ON '+noFits:'FITS OPTIONAL')
+        :'NO LINKED MINING-ACCESS CHARACTERS';
+      $('fleetLedgerCoverage').title='EVE mining ledger drives actual m³ and ISK. Saved mining fits only power calculated targets and efficiency; they do not determine whether mined ore is tracked.';
+    }
     const staleSample=Boolean(latest&&sampleAge>45*60*1000);
     let fleetDataState='ready';
     let fleetDataLabel=latest?'● READY':'● EMPTY';
@@ -5755,10 +5789,14 @@
       fleetDataState='waiting';
       fleetDataLabel='● SYNCING';
       fleetDataReason='JLR is refreshing the selected fleet mining ledger.';
+    }else if(assignedCount<=0){
+      fleetDataState='empty';
+      fleetDataLabel='⚠ ESI MINING ACCESS NEEDED';
+      fleetDataReason='No linked characters with EVE mining-ledger access. Reauthorize their mining access in Toon Control.';
     }else if(partialCoverage){
       fleetDataState='partial';
-      fleetDataLabel='● PARTIAL '+cachedCount+'/'+assignedCount;
-      fleetDataReason='Some selected miners are missing cached ledger data, so totals may be incomplete.';
+      fleetDataLabel='● LEDGER '+cachedCount+'/'+assignedCount;
+      fleetDataReason='Some tracked characters have no cached EVE mining ledger yet. Check Toon Control / ESI sync status.';
     }else if(staleSample){
       fleetDataState='stale';
       fleetDataLabel='● STALE • SAMPLE '+ago(latest.at).toUpperCase();
@@ -5767,10 +5805,6 @@
       fleetDataState='ready';
       fleetDataLabel='● READY • SAMPLE '+ago(latest.at).toUpperCase();
       fleetDataReason='Recent mining sample available for review.';
-    }else if(assignedCount<=0){
-      fleetDataState='empty';
-      fleetDataLabel='● NO FLEET';
-      fleetDataReason='Select miners in Fleet & Fits to build a fleet review.';
     }
     const fleetStatus=$('fleetLiveStatus');
     if(fleetStatus){
@@ -5889,7 +5923,35 @@
     const fleet=fleetStats();
     const entries=fleet.entries.filter(x=>x.result);
     if(!entries.length){
-      $('fleetOutputChart').innerHTML='<div class="visual-empty">Select miners in Fleet & Fits to see fleet performance.</div>';
+      // Do not gate REAL ESI performance behind a saved fitting or locally
+      // configured fleet. Show measured averages, and leave targets empty.
+      const tracked=new Set(selectedFleetPerformanceIds());
+      const miners=(me?.characters||[]).filter(ch=>tracked.has(String(ch.characterId)));
+      const actualRows=miners.map(character=>{
+        const ledger=character.ledgerActivity||{};
+        const rate=Number(ledger.actualM3PerHour);
+        return{character,ledger,rate:Number.isFinite(rate)&&rate>0&&ledger.miningDetected?rate:null};
+      }).sort((a,b)=>(b.rate||0)-(a.rate||0)||a.character.name.localeCompare(b.character.name));
+      const active=actualRows.filter(row=>row.rate!==null);
+      const total=active.reduce((sum,row)=>sum+row.rate,0);
+      if(!miners.length){
+        $('fleetOutputChart').innerHTML='<div class="visual-empty">No linked mining-ledger characters found. Use Toon Control to connect or reauthorize the mining scope.</div>';
+        return;
+      }
+      $('fleetOutputChart').innerHTML=
+        '<div class="fleet-perf-kpis">'+
+          '<div class="ledger-kpi"><span>TRACKED ACTIVE AVG</span><strong>'+(active.length?fmt(total,'m3'):'—')+'</strong><small>m³/hr from ESI mining deltas</small></div>'+
+          '<div><span>MINERS TRACKED</span><strong>'+miners.length+'</strong><small>'+active.length+' with recorded active intervals</small></div>'+
+          '<div><span>FITTED TARGET</span><strong>—</strong><small>Choose saved mining fits to calculate targets</small></div>'+
+        '</div>'+
+        '<div class="fleet-perf-list compact">'+actualRows.map(({character,ledger,rate})=>
+          '<div class="fleet-perf-row compact">'+
+            '<div class="fleet-perf-miner"><strong>'+esc(character.name)+'</strong><small>ESI miner'+(!character.fittings?.length?' • no saved fit':' • fit not selected')+'</small></div>'+
+            '<div class="fleet-perf-cell"><span>TARGET</span><strong>—</strong><small>fit required</small></div>'+
+            '<div class="fleet-perf-cell ledger"><span>ACTIVE AVG</span><strong>'+(rate!==null?fmt(rate,'m3'):'—')+'</strong><small>'+(ledger.lastMiningAt?'last mined '+ago(ledger.lastMiningAt):'no mining interval')+'</small></div>'+
+            '<div class="fleet-perf-cell pct"><span>OF TARGET</span><strong>—</strong><small>not configured</small></div>'+
+          '</div>').join('')+
+        '</div><div class="fleet-perf-footer"><span>Observed ESI rates are shown without fits. For calculated yield, sync saved mining fittings and select miners in Fleet & Fits. No fit or activity is invented.</span></div>';
       return;
     }
 
