@@ -4198,7 +4198,7 @@ html[data-theme] .field-board .system-node.ice-system-node{background:linear-gra
 .all-ore-line-svg{min-height:270px}
 .all-ore-series{fill:none;stroke-width:2.4;stroke-linejoin:round;stroke-linecap:round;opacity:.94;pointer-events:none}
 .all-ore-axis{font-size:11px;fill:#acbecd;font-family:inherit}
-.all-ore-point{fill:var(--ore-line-color);stroke:#07111b;stroke-width:1.3;fill-opacity:.045;stroke-opacity:0;outline:none;cursor:crosshair}
+.all-ore-dot{stroke:#0d1923;stroke-width:.8;pointer-events:none}\n.all-ore-point{fill:var(--ore-line-color);stroke:#07111b;stroke-width:1.3;fill-opacity:.045;stroke-opacity:0;outline:none;cursor:crosshair}
 .all-ore-point:hover,.all-ore-point:focus{fill-opacity:1;stroke-opacity:1;r:4.5px}
 .all-ore-legend-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:14px 0 8px}
 .all-ore-legend-head strong{font-size:11px;letter-spacing:.11em;color:#d1e8fb}
