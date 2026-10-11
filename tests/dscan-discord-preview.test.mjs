@@ -70,9 +70,9 @@ assert.match(miningSvg,/>30<\/text>/);
 const eightTypes=[
   'Sabre','Loki','Falcon','Pilgrim','Rapier','Vagabond','Raven','Arazu'
 ];
-const eightRowScan={system:'C-N4OD',dscanText:eightTypes.map(name=>name+'\t'+name+'\t10 km').join('\n')};
+const eightRowScan={system:'C-N4OD',dscanText:eightTypes.flatMap(name=>Array(2).fill(name+'\t'+name+'\t10 km')).join('\n')};
 const eightSvg=renderDiscordScanSvg(eightRowScan);
-assert.match(eightSvg,/slice\\(0,8\\)/===true?/never/:/Sabre/); // actual rendered hull names
+assert.match(eightSvg,/>Sabre<\/text>/,'first ship type is rendered');
 for(const name of eightTypes)assert.match(eightSvg,new RegExp('>'+name+'<\/text>'),'visible eighth hull: '+name);
 assert.match(eightSvg,/8 HULL TYPES/,'counter reports eight different hulls');
 assert.doesNotMatch(eightSvg,/MORE SHIP TYPES/,'there is no overflow at exactly eight types');
