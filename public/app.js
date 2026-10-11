@@ -1588,6 +1588,7 @@
         const details=line.name+' • '+period+' • '+fmtPrice(row.price)+
           (percent?' • change '+displayValue(row.value):'')+
           ' • '+row.days+' recorded day'+(row.days===1?'':'s');
+        dots.push('<circle cx="'+xDateRow(row).toFixed(1)+'" cy="'+y(row.value).toFixed(1)+'" r="2.4" class="all-ore-dot" style="fill:'+line.color+'"/>');
         dots.push('<circle cx="'+xDateRow(row).toFixed(1)+'" cy="'+y(row.value).toFixed(1)+'" r="7" class="all-ore-point" tabindex="0" aria-label="'+esc(details)+'" style="--ore-line-color:'+line.color+'"><title>'+esc(details)+'</title></circle>');
       }
       return '<path d="'+d.trim()+'" style="stroke:'+line.color+'" class="all-ore-series" aria-label="'+esc(line.name)+'"/>'+
