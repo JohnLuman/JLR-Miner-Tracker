@@ -35,6 +35,7 @@ import { buildSimulatedHeavyFighterLoss } from './lib/heavy-fighter-alert.mjs';
 import { normalizeMapFieldSnapshot, mapFieldSummary } from './lib/static-map-field-catalog.mjs';
 import { parseThreatPaste, compactThreatStats, threatActivityLabels, fountainThreatTags, jlrThreatScore, threatIgnoreReason } from './lib/threat-scan.mjs';
 import { sharedScanKind, sharedScanLines, sharedLocalNames } from './lib/shared-scan.mjs';
+import { renderDiscordScanPng, renderDiscordScanHtml } from './lib/dscan-discord-preview.mjs';
 import { archivedBuildSharePublic, migrateLegacyBuildShares } from './lib/appraisal/legacy-share.mjs';
 import { appraisalSummary, appraisalSummaryWithRefine, sanitizeAppraisalShare, APPRAISAL_PRICING, APPRAISAL_VARIANTS } from './lib/appraisal/appraisal.mjs';
 import { normalizePreviewPayoutPercent, renderAppraisalShareHtml } from './lib/appraisal/share-preview.mjs';
@@ -11427,7 +11428,45 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{if(redi
   if(req.method==='GET'&&/^\/forge\/[A-Za-z0-9_-]{8,}$/.test(url.pathname)){
     if(await serveStatic(req,res,'/appraisal-legacy-share.html'))return;
   }
-  if(req.method==='GET'&&/^\/d\/[A-Za-z0-9_-]{8,}$/.test(url.pathname)){
+  // Discord and other Open Graph clients fetch the image and link preview
+  // without authenticating. Shared scan tokens are already public unlisted URLs.
+  const scanPreviewMatch=req.method==='GET'&&url.pathname.match(/^\/dscan-preview\/([A-Za-z0-9_-]{8,})\.png$/);
+  if(scanPreviewMatch){
+    const row=Object.values(state.dscanShares||{}).find(item=>String(item?.token||'')===scanPreviewMatch[1]);
+    if(!row)return text(res,404,'Shared scan not found');
+    normalizeJlrSharedScan(row);
+    const png=renderDiscordScanPng(row);
+    res.writeHead(200,{
+      'Content-Type':'image/png',
+      'Content-Length':png.length,
+      'Cache-Control':'public, max-age=120',
+      'X-Content-Type-Options':'nosniff',
+    });
+    res.end(png);
+    return;
+  }
+  const sharedScanPageMatch=req.method==='GET'&&url.pathname.match(/^\/d\/([A-Za-z0-9_-]{8,})$/);
+  if(sharedScanPageMatch){
+    const row=Object.values(state.dscanShares||{}).find(item=>String(item?.token||'')===sharedScanPageMatch[1]);
+    if(row){
+      normalizeJlrSharedScan(row);
+      const baseUrl=requestBaseUrl(req);
+      const fingerprint=crypto.createHash('sha256').update(JSON.stringify([
+        row.updatedAt,row.dscanText,row.localText,row.system,row.manualRecons
+      ])).digest('hex').slice(0,12);
+      const imageUrl=baseUrl+'/dscan-preview/'+encodeURIComponent(row.token)+'.png?v='+fingerprint;
+      const template=await fsp.readFile(path.join(PUBLIC_DIR,'dscan-share.html'),'utf8');
+      const html=renderDiscordScanHtml(template,row,{
+        canonicalUrl:baseUrl+url.pathname,
+        imageUrl,
+      });
+      res.writeHead(200,{
+        'Content-Type':'text/html; charset=utf-8',
+        'Cache-Control':'no-cache, must-revalidate',
+      });
+      res.end(html);
+      return;
+    }
     if(await serveStatic(req,res,'/dscan-share.html'))return;
   }
   if(req.method==='GET'&&/^\/(?:a|appraisal)\/[A-Za-z0-9_-]{8,}$/.test(url.pathname)){
