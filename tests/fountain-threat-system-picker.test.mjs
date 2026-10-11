@@ -76,5 +76,14 @@ assert.match(app,/attachFountainSystemPicker\('threatShareNewSystem'/,'new share
 assert.match(app,/Choose a Fountain system from the clickable suggestions/,'invalid out-of-region input prompts user to select');
 assert.match(css,/\.threat-system-options/,'dropdown visibly styled');
 assert.match(css,/\.threat-system-options\[hidden\]/,'hidden list does not remain visible');
-assert.match(html,/fountainpick1/,'browser loads fresh application and styles');
+const hero=app.slice(app.indexOf('<section class="glass threat-hero">'),app.indexOf('<section class="glass threat-input-card">'));
+const heading=hero.indexOf('<h2>THREAT SCAN</h2>');
+const selector=hero.indexOf("fountainSystemInputMarkup('threatShareNewSystem',threatShareNewSystem)");
+assert.ok(heading>=0&&selector>heading,'new system picker appears immediately to the right of Threat Scan title');
+assert.ok(hero.indexOf('class="threat-hero-title-row"')<heading,'Threat Scan heading and picker share a header row');
+assert.ok(selector<hero.indexOf('class="threat-actions"'),'picker appears before scan action buttons');
+assert.ok(!app.slice(app.indexOf('<section class="glass threat-input-card">'),app.indexOf('const input=$(\'threatScanInput\')')).includes("fountainSystemInputMarkup('threatShareNewSystem'"),'picker no longer takes space below paste box');
+assert.match(css,/\.threat-hero-title-row\{display:flex/,'header lays out heading and picker horizontally');
+assert.match(css,/@media\(max-width:480px\)/,'header picker remains usable on narrow screens');
+assert.match(html,/fountainpick2-header/g,'browser loads refreshed JS and CSS after picker relocation');
 console.log('Fountain 115-system searchable clickable Threat Scan dropdown passed.');

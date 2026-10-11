@@ -4320,3 +4320,26 @@ html[data-theme] .field-board .system-node.ice-system-node{background:linear-gra
   .threat-share-system-setup .threat-system-combobox{flex-basis:100%;max-width:100%}
   .threat-system-options{max-height:210px}
 }
+
+/* Keep the Fountain system picker beside THREAT SCAN, not below the paste box.
+   The header stacks naturally when space is constrained. */
+.threat-hero{position:relative;z-index:8}
+.threat-hero-intro{flex:1 1 auto;min-width:0}
+.threat-hero-title-row{display:flex;align-items:center;gap:11px;flex-wrap:wrap;margin-top:3px}
+.threat-hero-title-row h2{flex:0 0 auto;margin:0;white-space:nowrap}
+.threat-share-system-hero{display:flex;align-items:center;flex-wrap:nowrap;gap:8px;min-width:0;margin:0;font-size:10px}
+.threat-share-system-hero>span{flex:0 0 auto;white-space:nowrap;font-size:9px}
+.threat-share-system-hero .threat-system-combobox{flex:0 1 220px;width:220px;min-width:150px;max-width:220px}
+.threat-share-system-hero .threat-system-combobox input{min-height:34px;padding:7px 10px;font-size:11px}
+.threat-input-card{position:relative;z-index:1}
+@media(max-width:1150px){
+  .threat-hero{flex-wrap:wrap}
+  .threat-hero .threat-actions{flex:1 1 100%;justify-content:flex-end}
+}
+@media(max-width:760px){
+  .threat-hero .threat-actions{justify-content:flex-start}
+}
+@media(max-width:480px){
+  .threat-share-system-hero{flex:1 1 100%;max-width:100%}
+  .threat-share-system-hero .threat-system-combobox{flex:1 1 160px;min-width:0;max-width:none}
+}

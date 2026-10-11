@@ -3684,9 +3684,12 @@
     host.innerHTML=`
       <div class="threat-shell">
         <section class="glass threat-hero">
-          <div>
+          <div class="threat-hero-intro">
             <span class="threat-eyebrow">JLR LOCAL / D-SCAN INTELLIGENCE</span>
-            <h2>THREAT SCAN</h2>
+            <div class="threat-hero-title-row">
+              <h2>THREAT SCAN</h2>
+              ${!threatShareUrl?`<label class="threat-share-system-setup threat-share-system-hero"><span>SYSTEM <small>FOUNTAIN • 115</small></span>${fountainSystemInputMarkup('threatShareNewSystem',threatShareNewSystem)}</label>`:''}
+            </div>
           </div>
           <div class="threat-actions">
             <button id="threatPasteScan" class="orb blue" type="button">📋 PASTE & SCAN</button>
@@ -3721,7 +3724,6 @@
               <button id="threatClearScan" class="threat-clear-text" type="button" ${threatScanText?'':'disabled'}>CLEAR TEXT</button>
             </div>
           </div>
-          ${!threatShareUrl?`<label class="threat-share-system-setup"><span>ENTER SYSTEM <small>FOUNTAIN • 115 systems</small></span>${fountainSystemInputMarkup('threatShareNewSystem',threatShareNewSystem)}</label>` :''}
           ${threatShareUrl?`<div class="threat-share-ready">
             <span>JLR SHARE LINK READY</span>
             <a href="${esc(threatShareUrl)}" target="_blank" rel="noopener noreferrer">${esc(threatShareUrl)}</a>
