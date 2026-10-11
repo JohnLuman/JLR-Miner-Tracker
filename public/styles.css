@@ -4172,3 +4172,14 @@ html[data-theme] .field-board .system-node.ice-system-node{background:linear-gra
 .threat-share-system-setup{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:10px 0 4px;color:#9cc0dd;font-size:12px;font-weight:700}
 .threat-share-system-setup small{color:#7b95ae;font-weight:400}
 .threat-share-system-setup input{flex:1 1 190px;max-width:350px;padding:9px 11px;border:1px solid #355574;border-radius:9px;background:#071424;color:#ebf6ff;font:inherit}
+
+/* Long-range price trend controls: daily / weekly / monthly detail as range expands. */
+.market-trend-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.market-trend-tools{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;min-width:0}
+.market-trend-ranges{display:flex;align-items:center;gap:3px;padding:3px;border:1px solid rgba(104,165,213,.26);border-radius:9px;background:rgba(4,10,18,.75);width:max-content;max-width:100%}
+.market-trend-ranges .market-range{appearance:none;border:1px solid transparent;border-radius:6px;background:transparent;color:#9cb8d0;padding:7px 9px;min-width:37px;font-family:inherit;font-size:11px;line-height:1.2;font-weight:800;letter-spacing:.025em;cursor:pointer;transition:background .12s,color .12s}
+.market-trend-ranges .market-range:hover{background:rgba(73,153,217,.18);color:#e5f5ff}
+.market-trend-ranges .market-range:focus-visible{outline:2px solid #89d9ff;outline-offset:2px}
+.market-trend-ranges .market-range.active{background:rgba(47,131,205,.38);border-color:rgba(110,195,255,.5);color:#e5f6ff}
+.market-trend-foot{padding:7px 11px 9px;border-top:1px solid rgba(117,158,180,.14);background:rgba(5,13,20,.8);color:#9ab5c9;font-size:11px;line-height:1.45;letter-spacing:.008em}
+@media(max-width:800px){.market-trend-tools{justify-content:flex-start}.market-trend-ranges{flex-wrap:wrap}.market-trend-ranges .market-range{padding:8px 7px}.market-trend-foot{font-size:10px}}
