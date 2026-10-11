@@ -77,6 +77,22 @@
   let threatScanRequestSeq=0;
   let threatScanText='';
   let threatIgnorePositive=localStorage.getItem('jlrThreatIgnorePositive')!=='false';
+  let fountainStandingRecords=null;
+  let fountainStandingRequest=null;
+  let fountainStandingCheckedAt=0;
+  function loadFountainStandings(){
+    if(fountainStandingRequest)return fountainStandingRequest;
+    if(Date.now()-fountainStandingCheckedAt<15*60*1000)return Promise.resolve();
+    fountainStandingCheckedAt=Date.now();
+    fountainStandingRequest=api('/api/fountain/system-standings')
+      .then(response=>{
+        fountainStandingRecords=Object.fromEntries((response?.systems||[]).map(row=>[row.name,row]));
+        for(const input of document.querySelectorAll('.threat-system-input'))input.dispatchEvent(new Event('jlr-fountain-standings'));
+      })
+      .catch(()=>{fountainStandingRecords=null})
+      .finally(()=>{fountainStandingRequest=null});
+    return fountainStandingRequest;
+  }
   let threatIgnoreOwn=localStorage.getItem('jlrThreatIgnoreOwn')!=='false';
   let threatShareLoading=false;
   let threatShareNewSystem='';
@@ -3551,9 +3567,12 @@
     function show(){
       options=matchingFountainSystems(input.value);
       list.innerHTML=options.length
-        ?options.map((name,index)=>
-          '<button type="button" role="option" tabindex="-1" aria-selected="false" id="'+esc(inputId)+'Suggestion'+index+'" data-system="'+esc(name)+'">'+esc(name)+'</button>'
-        ).join('')
+        ?options.map((name,index)=>{
+          const status=fountainStandingRecords?.[name]?.standing||'unknown';
+          const label=status==='friendly'?'INIT / ALLY':status==='hostile'?'HOSTILE':
+            status==='neutral'?'NEUTRAL':status==='unclaimed'?'UNCLAIMED':'UNVERIFIED';
+          return '<button type="button" role="option" tabindex="-1" aria-selected="false" id="'+esc(inputId)+'Suggestion'+index+'" data-system="'+esc(name)+'" class="sov-'+esc(status)+'"><span>'+esc(name)+'</span><small>'+label+'</small></button>';
+        }).join('')
         :'<span class="threat-system-no-match">No matching Fountain system</span>';
       list.hidden=false;
       input.setAttribute('aria-expanded','true');
@@ -3569,6 +3588,7 @@
     }
     input.addEventListener('focus',show);
     input.addEventListener('click',show);
+    input.addEventListener('jlr-fountain-standings',()=>{if(!list.hidden)show()});
     input.addEventListener('input',()=>{
       onEdit(input.value);
       show();
@@ -3779,6 +3799,7 @@
 
     const input=$('threatScanInput');
     attachFountainSystemPicker('threatShareNewSystem',value=>{threatShareNewSystem=value});
+    void loadFountainStandings();
     attachFountainSystemPicker('threatShareSystem',value=>{if(threatShareRecord)threatShareRecord.system=value});
     input?.addEventListener('input',()=>{
       threatShareError='';
