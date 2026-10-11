@@ -47,13 +47,13 @@ assert.match(app,/saveThreatShareEditor/,'JLR Threat Scan can update the same sh
 assert.match(app,/manualRecons:threatShareReconRows/,'JLR editor saves manual recon rows');
 assert.match(app,/dscanText:\$\('threatShareDscan'\)/,'JLR editor updates D-scan separately');
 assert.match(app,/localText:\$\('threatShareLocal'\)/,'JLR editor updates Local separately');
-assert.match(html,/dscan-share\.js\?v=6/,'public viewer cache-busts the read-only client');
+assert.match(html,/dscan-share\.js\?v=7/,'public viewer cache-busts the read-only client');
 
 assert.match(html,/id="scanHighlights"/,'public D-scan leads with a composition summary');
 assert.match(html,/id="dscanObjectsDetails"/,'individual objects expand on demand');
 assert.match(html,/id="copySummary"/,'copyable fleet composition is available');
 assert.match(viewer,/Snapshot — Not Live/,'shared intel summary is marked as a snapshot');
-assert.match(viewer,/mass:15000/,'known Hulk mass can be totaled');
+assert.match(viewer,/mass:15000/,'Hulk mass lookup remains available but is excluded from combat totals');
 assert.match(viewer,/unclassified/,'unknown objects are not assumed to be ships');
 
 const catalog=JSON.parse(fs.readFileSync(new URL('../public/eve-ship-catalog.json',import.meta.url),'utf8'));
@@ -94,5 +94,28 @@ for(const type of ['Nereus','Capsule','Unrecognized Space Object']){
   assert.equal(roles.shipRoleByType(type),'other',type+' must not be marked combat');
 }
 assert.deepEqual(roles.roleTotals(['Hulk','Hulk','Rifter','Nereus'].map(type=>({type}))),{combat:1,mining:2,other:1});
+
+
+const sourceShipReport=viewer.slice(viewer.indexOf('  function shipReport(rows){'),viewer.indexOf('  function briefSummary(){'));
+const sourceGroupDscan=viewer.slice(viewer.indexOf('  function groupDscan(rows){'),viewer.indexOf('  function localFallback(){'));
+const makeReport=new Function('SHIP_TYPES',roleSource+String.fromCharCode(10)+sourceGroupDscan+String.fromCharCode(10)+sourceShipReport+String.fromCharCode(10)+'return shipReport;');
+const allHullInfo=new Map(catalog.ships.map(([name,group,massKg,typeId])=>[
+  name.toLowerCase(),{group,mass:massKg>0?massKg/1000:null,typeId},
+]));
+const fleetReport=makeReport(allHullInfo);
+const row=type=>({name:type,type,distance:'5 AU'});
+const onlyMiners=fleetReport(Array.from({length:29},()=>row('Hulk')));
+assert.equal(onlyMiners.ships,29,'mining ships are still identified and grouped');
+assert.equal(onlyMiners.combatShips,0,'mining-only fleet has no combat ships');
+assert.equal(onlyMiners.combatMass,null,'29 Hulks must not display 435,000 t as known combat mass');
+const mixedFleet=fleetReport(['Hulk','Orca','Rorqual','Porpoise','Miasmos','Rifter','Revelation','Nereus','Stargate'].map(row));
+const expectedCombatMass=(ships.get('rifter').massKg+ships.get('revelation').massKg)/1000;
+assert.equal(mixedFleet.combatShips,2,'only Rifter and Revelation count toward combat mass');
+assert.equal(mixedFleet.combatMass,expectedCombatMass,'exclude mining, support, hauler and non-ship object mass');
+const unknownCombatMass=makeReport(new Map([['test combat',{group:'Battleship',mass:null}]]))([row('Test Combat')]);
+assert.equal(unknownCombatMass.combatMass,null,'unknown combat hull mass must not appear as zero');
+assert.match(viewer,/KNOWN COMBAT MASS/,'UI labels this explicitly as combat mass, not whole scan mass');
+assert.match(viewer,/mining\/support excluded/,'shared-copy mass notes exclusion');
+assert.doesNotMatch(viewer,/Fleet mass:/,'legacy all-ships mass claim removed');
 
 console.log('shared scan tests passed');
