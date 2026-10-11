@@ -1316,12 +1316,16 @@
       cn:validPrice(row.cn),
     })).filter(row=>/^\d{4}-\d{2}-\d{2}$/.test(row.date));
     const today=new Date().toISOString().slice(0,10);
-    if(!points.some(row=>row.date===today)){
-      points.push({date:today,jita:validPrice(currentJita),cn:validPrice(currentCn)});
+    // Never manufacture a "today" observation from yesterday's cached market
+    // values. A dated market refresh (not a page view) establishes a snapshot.
+    const updatedDay=String(state?.market?.lastUpdatedAt||'').slice(0,10);
+    if(updatedDay===today&&!points.some(row=>row.date===today)){
+      const jita=validPrice(currentJita),cn=validPrice(currentCn);
+      if(jita!==null||cn!==null)points.push({date:today,jita,cn});
     }
     return points.sort((a,b)=>a.date.localeCompare(b.date)).slice(-731);
   }
-  function marketTrendView(points,selectedDays=marketTrendDays,todayISO=new Date().toISOString().slice(0,10)){
+  function marketTrendView(points,selectedDays=marketTrendDays,todayISO=new Date().toISOString().slice(0,10),resolutionOverride=null){
     const range=['30','90','180','365','all'].includes(String(selectedDays))?String(selectedDays):'30';
     const days=range==='all'?null:Number(range);
     const todayMs=Date.parse(todayISO+'T00:00:00Z');
@@ -1334,7 +1338,8 @@
       })
       .sort((a,b)=>a.date.localeCompare(b.date));
     const unique=[...new Map(observations.map(row=>[row.date,row])).values()];
-    const granularity=days===null||days>180?'month':days>30?'week':'day';
+    const defaultGranularity=days===null||days>180?'month':days>30?'week':'day';
+    const granularity=['day','week','month'].includes(resolutionOverride)?resolutionOverride:defaultGranularity;
     const groups=new Map();
     for(const row of unique){
       const ms=Date.parse(row.date+'T00:00:00Z');
@@ -1470,34 +1475,48 @@
   ];
   function allOreTrendSeries(oreInputs,range=marketTrendDays,market=allOrePriceMarket,mode=allOrePriceMode,hidden=allOreHidden,todayISO=new Date().toISOString().slice(0,10)){
     const key=market==='cn'?'cn':'jita';
+    const numberPrice=value=>value!==null&&value!==undefined&&value!==''&&Number.isFinite(Number(value))&&Number(value)>0?Number(value):null;
+    const lastAllowed=Date.parse(todayISO+'T00:00:00Z');
+    const days=range==='all'?null:Number(range)||30;
+    const earliestAllowed=days===null?-Infinity:lastAllowed-(days-1)*86400000;
+    const actualDates=new Set();
+    for(const ore of oreInputs||[]){
+      for(const row of ore.points||[]){
+        const time=Date.parse(String(row?.date||'')+'T00:00:00Z');
+        if(time>=earliestAllowed&&time<=lastAllowed&&numberPrice(row?.[key])!==null)actualDates.add(row.date);
+      }
+    }
+    // One week of stored quotes must not become a visually misleading flat
+    // "90-day weekly average". Use daily points until enough samples accumulate.
+    const resolutionOverride=range!=='30'&&actualDates.size<35?'day':null;
     const lines=(oreInputs||[]).map((ore,index)=>{
-      const view=marketTrendView(ore.points||[],range,todayISO);
-      const first=view.rows.find(row=>Number(row[key])>0)?.[key]||null;
+      const view=marketTrendView(ore.points||[],range,todayISO,resolutionOverride);
+      const first=view.rows.find(row=>numberPrice(row[key])!==null)?.[key]||null;
       const points=view.rows.map(row=>{
-        const price=Number(row[key]);
-        const available=Number.isFinite(price)&&price>0;
-        return {...row,price:available?price:null,
-          value:available?(mode==='change'?((price/first)-1)*100:price):null};
+        const price=numberPrice(row[key]);
+        return {...row,price,
+          value:price!==null?(mode==='change'?(price/first-1)*100:price):null};
       });
       const priced=points.filter(row=>row.price!==null);
+      const firstPrice=priced[0]?.price??null,latest=priced.at(-1)?.price??null;
+      const changePct=firstPrice!==null&&latest!==null&&priced.length>=2?(latest/firstPrice-1)*100:null;
+      const distinctPrices=new Set(priced.map(row=>Number(row.price).toPrecision(10))).size;
       return{
         name:String(ore.name||''),color:ALL_ORE_LINE_COLORS[index%ALL_ORE_LINE_COLORS.length],
-        points,pricedCount:priced.length,latest:priced.at(-1)?.price||null,
+        points,pricedCount:priced.length,latest,firstPrice,changePct,distinctPrices,
         firstDate:priced[0]?.firstDate||'',lastDate:priced.at(-1)?.lastDate||'',
         visible:!hidden.has(String(ore.name||''))&&priced.length>0,
       };
     });
     const visible=lines.filter(line=>line.visible);
     const dates=visible.flatMap(line=>line.points.filter(point=>point.price!==null).map(point=>point.date));
-    const allView=marketTrendView(oreInputs?.flatMap(ore=>ore.points||[])||[],range,todayISO);
-    // Older chart windows may have only a few weeks of collected prices. Zoom the
-    // plotted axis to actual observations rather than leaving months of blank space.
+    const allView=marketTrendView(oreInputs?.flatMap(ore=>ore.points||[])||[],range,todayISO,resolutionOverride);
     const earliest=dates.length?[...dates].sort()[0]:todayISO;
     const requestedStart=allView.windowStart;
     const start=allView.days===null?earliest:(earliest>requestedStart?earliest:requestedStart);
     return {
-      lines,visible,market:key,mode,granularity:allView.granularity,
-      range:allView.range,windowStart:start,windowEnd:allView.windowEnd,
+      lines,visible,market:key,mode,granularity:allView.granularity,limitedHistory:resolutionOverride==='day'&&range!=='30',
+      recordedDates:actualDates.size,range:allView.range,windowStart:start,windowEnd:allView.windowEnd,
       activeLines:visible.length,availableLines:lines.filter(line=>line.pricedCount>0).length,
       firstDate:visible.map(line=>line.firstDate).filter(Boolean).sort()[0]||'',
       lastDate:visible.map(line=>line.lastDate).filter(Boolean).sort().at(-1)||'',
@@ -1533,12 +1552,36 @@
     });
     if($('allOreTrendWindowLabel'))$('allOreTrendWindowLabel').textContent=
       (data.range==='all'?'all recorded history':data.range+' days')+' • '+
-      (data.granularity==='day'?'daily':data.granularity==='week'?'weekly averages':'monthly averages')+
+      (data.granularity==='day'?'daily snapshots':data.granularity==='week'?'weekly averages':'monthly averages')+
       (data.firstDate?' • collected since '+chartDateLabel(data.firstDate):'');
+    const dataNotice=$('allOreDataNotice');
+    if(dataNotice){
+      const active=data.visible;
+      const priceObservations=data.recordedDates;
+      const nonFlat=active.filter(line=>line.distinctPrices>=2).length;
+      const withTrend=active.filter(line=>line.pricedCount>=2).length;
+      const marketFresh=Date.parse(state?.market?.lastUpdatedAt||'');
+      const stale=!Number.isFinite(marketFresh)||Date.now()-marketFresh>48*60*60*1000;
+      const valuation='Estimated refined value • '+(data.market==='jita'?'Jita':'C-N')+' mineral buy basis.';
+      const coverage=!priceObservations?'No market snapshots for this period.':
+        priceObservations===1?'Only 1 recorded pricing day — no price trend can be measured yet.':
+        priceObservations+' actual recorded pricing days'+
+        (data.limitedHistory?' • daily detail shown until more history accumulates.':'.');
+      const flat=withTrend>0&&nonFlat===0
+        ?'All displayed ores with multiple observations have unchanged recorded values. This does not prove the live market never moved.'
+        :withTrend<active.length?'Some ores have only one observation.':'';
+      const levels=active.flatMap(line=>line.points.map(point=>point.price).filter(price=>price!==null));
+      const minPrice=levels.length?Math.min(...levels):null,maxPrice=levels.length?Math.max(...levels):null;
+      const scaleNote=data.mode==='price'&&minPrice>0&&maxPrice/minPrice>4
+        ?'Low-priced ores can appear flat beside expensive ores — use CHANGE % to compare movement.':'';
+      dataNotice.textContent=[valuation,coverage,flat,scaleNote,stale?'Market refresh is over 48 hours old; latest quotes may be stale.':''].filter(Boolean).join(' ');
+      dataNotice.classList.toggle('limited',priceObservations<7||stale||nonFlat===0);
+    }
     if($('allOreLineCount'))$('allOreLineCount').textContent=data.activeLines+' OF '+data.availableLines+' PRICED ORES SHOWN';
     legend.innerHTML=data.lines.map(line=>{
       const hidden=!line.visible,available=line.pricedCount>0;
-      const subtitle=available?fmtPrice(line.latest):'No '+(allOrePriceMarket==='cn'?'C-N':'Jita')+' prices recorded';
+      const movement=line.changePct===null?'Not enough observations for change':(line.changePct===0?'No recorded change':(line.changePct>0?'+':'')+line.changePct.toFixed(2)+'%');
+      const subtitle=available?fmtPrice(line.latest)+' • '+movement:'No '+(allOrePriceMarket==='cn'?'C-N':'Jita')+' prices recorded';
       return '<button type="button" class="all-ore-legend-item'+(hidden?' hidden-line':'')+'" data-ore-name="'+esc(line.name)+'" aria-pressed="'+String(line.visible)+'" title="'+esc(line.name+' • '+subtitle)+'" style="--ore-line-color:'+line.color+'">'+
         '<i class="ore-line-swatch" aria-hidden="true"></i><span class="all-ore-legend-name">'+esc(line.name)+'</span>'+
         '<small>'+esc(subtitle)+'</small></button>';
@@ -1598,7 +1641,7 @@
         dots.push('<circle cx="'+xDateRow(row).toFixed(1)+'" cy="'+y(row.value).toFixed(1)+'" r="3" fill="'+line.color+'" stroke="#06121c" stroke-width=".8" class="all-ore-dot"/>');
         dots.push('<circle cx="'+xDateRow(row).toFixed(1)+'" cy="'+y(row.value).toFixed(1)+'" r="10" fill="transparent" stroke="none" class="all-ore-point" tabindex="0" aria-label="'+esc(details)+'"><title>'+esc(details)+'</title></circle>');
       }
-      return '<path d="'+d.trim()+'" fill="none" stroke="'+line.color+'" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round" class="all-ore-series" aria-label="'+esc(line.name)+'"/>'+
+      return '<path d="'+d.trim()+'" fill="none" stroke="'+line.color+'" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round" class="all-ore-series" data-ore-line="'+esc(line.name)+'" aria-label="'+esc(line.name)+'"/>'+
         dots.join('');
     }).join('');
     const foot=data.firstDate
@@ -7199,6 +7242,23 @@
     localStorage.setItem('jlrAllOrePriceMode',mode);
     renderMiningVisuals();
   }));
+  // Hovering or tabbing to a named color key singles out the matching ore line.
+  const oreLegend=$('allOreLegend');
+  function focusOreLegend(event){
+    const button=event?.target?.closest?.('button[data-ore-name]');
+    const name=button?.dataset?.oreName||'';
+    document.querySelectorAll('#allOrePriceChart [data-ore-line]').forEach(path=>{
+      path.classList.toggle('ore-series-dim',Boolean(name)&&path.dataset.oreLine!==name);
+      path.classList.toggle('ore-series-focus',Boolean(name)&&path.dataset.oreLine===name);
+    });
+    oreLegend?.classList.toggle('has-highlight',Boolean(name));
+  }
+  oreLegend?.addEventListener('pointerover',focusOreLegend);
+  oreLegend?.addEventListener('pointerleave',()=>focusOreLegend(null));
+  oreLegend?.addEventListener('focusin',focusOreLegend);
+  oreLegend?.addEventListener('focusout',()=>setTimeout(()=>{
+    if(!oreLegend.contains(document.activeElement))focusOreLegend(null);
+  },0));
   $('allOreLegend')?.addEventListener('click',event=>{
     const button=event.target.closest('button[data-ore-name]');
     if(!button)return;

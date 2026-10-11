@@ -4255,3 +4255,28 @@ html[data-theme] .field-board .system-node.ice-system-node{background:linear-gra
   .fleet-trend-card .all-ore-line-svg{height:325px!important;min-height:325px!important}
   .all-ore-trend-head>div:first-child strong{font-size:12px}
 }
+
+/* Ore legend must be readable BEFORE the chart, so colors have immediate meaning.
+   Keep the price source and the limited-history explanation visible. */
+.all-ore-trend-card .all-ore-legend-head{margin:12px 0 9px}
+.all-ore-trend-card .all-ore-legend-head>div:first-child{display:flex;flex-direction:column;gap:5px;min-width:0}
+.all-ore-trend-card .all-ore-legend-head strong{font-size:12px;color:#dff4ff}
+.all-ore-trend-card .all-ore-legend-head small{display:block;color:#aac6d7;font-size:11px;line-height:1.4}
+.all-ore-trend-card .all-ore-legend{
+  grid-template-columns:repeat(auto-fill,minmax(175px,1fr));
+  margin:0 0 10px;gap:7px;
+}
+.all-ore-trend-card .all-ore-legend-item{border-color:rgba(105,168,210,.29);background:rgba(17,36,53,.88)}
+.all-ore-trend-card .all-ore-legend-name{font-size:12px;color:#ebf5ff}
+.all-ore-trend-card .ore-line-swatch{width:8px;height:28px;box-shadow:0 0 10px color-mix(in srgb,var(--ore-line-color) 35%,transparent)}
+.all-ore-trend-card .all-ore-legend-item:focus-visible,
+.all-ore-trend-card .all-ore-legend-item:hover{border-color:var(--ore-line-color)}
+.all-ore-data-notice{margin:7px 0 10px;padding:9px 12px;font-size:11px;line-height:1.55;border:1px solid rgba(106,157,192,.27);border-radius:8px;color:#aac8db;background:rgba(15,29,43,.62)}
+.all-ore-data-notice.limited{border-color:rgba(231,180,86,.35);color:#ebcf99;background:rgba(57,39,18,.36)}
+.all-ore-line-svg .all-ore-series{transition:opacity .12s,stroke-width .12s}
+.all-ore-line-svg .all-ore-series.ore-series-dim{opacity:.16!important;stroke-width:2px!important}
+.all-ore-line-svg .all-ore-series.ore-series-focus{opacity:1!important;stroke-width:4px!important}
+@media(max-width:760px){
+  .all-ore-trend-card .all-ore-legend{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .all-ore-data-notice{font-size:10.5px}
+}

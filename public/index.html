@@ -25,7 +25,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@500;600;700&family=Rajdhani:wght@600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=2.10.39-reset-loop1-t2orange3-sovmap1-ceo15-fieldblink1-a0single1-adamnav2-dscan-system2-long-trends1-all-ore1-visible-lines2">
+  <link rel="stylesheet" href="/styles.css?v=2.10.39-reset-loop1-t2orange3-sovmap1-ceo15-fieldblink1-a0single1-adamnav2-dscan-system2-long-trends1-all-ore1-visible-lines2-ore-legend2">
   <link rel="stylesheet" href="/themes.css?v=2.10.11-reset1">
   <link rel="stylesheet" href="/appraisal-enhance.css?v=5">
   <link rel="stylesheet" href="/tracker.css?v=2.10.20-alarm-sim1-hotzones1">
@@ -392,7 +392,7 @@
         </article>
         <article class="mining-visual-card fleet-trend-card all-ore-trend-card">
           <div class="visual-card-head all-ore-trend-head">
-            <div><strong>ALL ORE PRICE TRENDS</strong><small>All tracked ore types in one chart • <span id="allOreTrendWindowLabel">30 days • daily</span></small></div>
+            <div><strong>ALL ORE REFINED VALUE TRENDS</strong><small>Estimated refined mineral value per m³, not raw ore sell orders • <span id="allOreTrendWindowLabel">30 days • daily</span></small></div>
             <div class="all-ore-trend-controls">
               <div class="market-trend-ranges" role="group" aria-label="Ore price market">
                 <button class="all-ore-market active" data-all-ore-market="jita" type="button" aria-pressed="true">JITA</button>
@@ -404,16 +404,17 @@
               </div>
             </div>
           </div>
-          <div id="allOrePriceChart" class="market-line-chart all-ore-price-chart" role="region" aria-label="All ore price history"></div>
           <div class="all-ore-legend-head">
-            <strong id="allOreLineCount">ORE LINES</strong>
+            <div><strong id="allOreLineCount">COLORED LINES = ORE TYPES</strong><small>Each color belongs to the named ore below. Click an ore to show/hide it; hover to highlight its line.</small></div>
             <div class="all-ore-legend-actions">
               <button id="allOreShowAll" type="button">SHOW ALL</button>
               <button id="allOreHideAll" type="button">HIDE ALL</button>
             </div>
           </div>
-          <div id="allOreLegend" class="all-ore-legend" role="group" aria-label="Toggle ore lines"></div>
-          <p class="all-ore-caption">Each color represents one ore. Click an ore below to show or hide its line. CHANGE % compares each ore to its first recorded price in the selected period. The 30D / 90D / 180D / 1Y / ALL controls above apply to both ore charts.</p>
+          <div id="allOreLegend" class="all-ore-legend" role="group" aria-label="Which colored line belongs to each ore"></div>
+          <div id="allOreDataNotice" class="all-ore-data-notice" role="status" aria-live="polite"></div>
+          <div id="allOrePriceChart" class="market-line-chart all-ore-price-chart" role="region" aria-label="All ore refined mineral value history"></div>
+          <p class="all-ore-caption">Colors identify ores, NOT threat levels or ship types. Jita and C-N values come from priced refined minerals, not raw ore sell orders. CHANGE % compares each ore against its first recorded value. The 30D / 90D / 180D / 1Y / ALL controls above apply to both ore charts.</p>
         </article>
       </div>
     </section>
@@ -632,7 +633,7 @@
   <script src="/field-status.js?v=1" defer></script>
   <script src="/field-update-feedback.js?v=3-t2" defer></script>
   <script src="/adam-navigation.js?v=2" defer></script>
-  <script src="/app.js?v=2.10.39-threat-fast1-initfields2-alarm-sim1-grouped3-sovmap1-ceo15-fieldblink1-a0single1-adamnav2-brand1-rail2-field-status1-dscan-system3-long-trends1-all-ore1-visible-lines2" defer></script>
+  <script src="/app.js?v=2.10.39-threat-fast1-initfields2-alarm-sim1-grouped3-sovmap1-ceo15-fieldblink1-a0single1-adamnav2-brand1-rail2-field-status1-dscan-system3-long-trends1-all-ore1-visible-lines2-ore-legend2" defer></script>
   <script src="/appraisal-enhance.js?v=6" defer></script>
   <script src="/tracker-clock.js?v=1" defer></script>
   <script src="/alarm-diagnostics.js?v=2" defer></script>
