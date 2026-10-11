@@ -3502,6 +3502,108 @@
       String(data.enrichmentError||''),
     ].join('|');
   }
+  // Complete Fountain solar-system names, resolved from the EVE ESI Fountain
+  // region (10000058), its 17 constellations and their 115 systems.
+  // Keep this catalog local so suggestions are instant and work if ESI is slow.
+  const FOUNTAIN_SYSTEM_NAMES=Object.freeze(["006-L3","00GD-D","14YI-D","1-5GBW","15U-JY","38IA-E","3WE-KY","3ZTV-V","4-EP12","4HS-CR","57-KJB","5-D82P","671-ST","6F-H3W","6VDT-H","75FA-Z","7-8S5X","7BIX-A","7BX-6F","7X-02R","87XQ-0","8ESL-G","9D6O-M","9DQW-W","9O-ORX","9R4-EJ","9-VO0Q","A-1CON","A8-XBW","AC2E-3","A-HZYL","AL8-V4","APM-6K","ATQ-QS","AV-VB6","B17O-R","B32-14","BYXF-Q","C1XD-X","C-C99Z","C-FER9","CHA2-Q","CL-BWB","C-N4OD","D2AH-Z","D4KU-5","DBRN-Z","D-Q04X","E-BWUU","EI-O0O","ESC-RI","F2-2C3","F-88PJ","G1CA-Y","G95F-H","G-UTHL","HMF-9D","H-NPXW","H-S80W","I-CUVX","IGE-RI","IR-WT1","J5A-IX","JGOW-Y","J-RQMF","K8L-X7","KCT-0A","KVN-36","L-1SW8","L7-APB","L-A5XP","LBGI-2","LIWW-P","LJ-TZW","M-KXEH","MN5N-X","N2-OQG","NDH-NV","NY6-FH","OL3-78","O-PNSN","OW-TPO","P5-EFH","PB-0C1","PNQY-Y","PXF-RF","QV28-G","Q-XEB3","R3W-XU","R-BGSU","RE-C26","RP2-OQ","Serpentis Prime","SPLE-Y","TEG-SD","TU-Y2A","UAYL-F","U-SOH2","V6-NY1","WMH-SO","WY-9LL","XF-TQL","XJP-Y7","XUW-3X","Y-1W01","Y-2ANO","YRNJ-8","YVBE-E","YZ-LQL","YZS5-4","Z30S-A","Z9PP-H","ZTS-4D","ZUE-NS","Z-YN5Y"]);
+  function matchingFountainSystems(text){
+    const query=String(text||'').trim().toLocaleUpperCase();
+    return FOUNTAIN_SYSTEM_NAMES.filter(name=>name.toLocaleUpperCase().includes(query))
+      .sort((a,b)=>{
+        const aPrefix=a.toLocaleUpperCase().startsWith(query)?0:1;
+        const bPrefix=b.toLocaleUpperCase().startsWith(query)?0:1;
+        return aPrefix-bPrefix||a.localeCompare(b);
+      });
+  }
+  function canonicalFountainSystem(text){
+    const query=String(text||'').trim().toLocaleUpperCase();
+    return query?FOUNTAIN_SYSTEM_NAMES.find(name=>name.toLocaleUpperCase()===query)||'':'';
+  }
+  function fountainSystemInputMarkup(id,value){
+    return '<div class="threat-system-combobox">'+
+      '<input id="'+esc(id)+'" class="threat-system-input" maxlength="80" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" aria-expanded="false" aria-controls="'+esc(id)+'Choices" placeholder="Type RP, C-N, or click to browse" value="'+esc(value||'')+'">'+
+      '<div class="threat-system-options" id="'+esc(id)+'Choices" role="listbox" aria-label="Fountain systems" hidden></div>'+
+      '</div>';
+  }
+  function attachFountainSystemPicker(inputId,onEdit){
+    const input=$(inputId),list=$(inputId+'Choices');
+    if(!input||!list)return;
+    const box=input.closest('.threat-system-combobox');
+    let options=[],active=-1;
+    function close(){
+      list.hidden=true;
+      input.setAttribute('aria-expanded','false');
+      input.removeAttribute('aria-activedescendant');
+      active=-1;
+    }
+    function highlight(index){
+      active=index;
+      const buttons=list.querySelectorAll('button[data-system]');
+      buttons.forEach((button,i)=>{
+        const chosen=i===active;
+        button.classList.toggle('active',chosen);
+        button.setAttribute('aria-selected',String(chosen));
+        if(chosen)button.scrollIntoView({block:'nearest'});
+      });
+      if(active>=0)input.setAttribute('aria-activedescendant',inputId+'Suggestion'+active);
+      else input.removeAttribute('aria-activedescendant');
+    }
+    function show(){
+      options=matchingFountainSystems(input.value);
+      list.innerHTML=options.length
+        ?options.map((name,index)=>
+          '<button type="button" role="option" tabindex="-1" aria-selected="false" id="'+esc(inputId)+'Suggestion'+index+'" data-system="'+esc(name)+'">'+esc(name)+'</button>'
+        ).join('')
+        :'<span class="threat-system-no-match">No matching Fountain system</span>';
+      list.hidden=false;
+      input.setAttribute('aria-expanded','true');
+      highlight(-1);
+    }
+    function choose(name){
+      const exact=canonicalFountainSystem(name);
+      if(!exact)return;
+      input.value=exact;
+      onEdit(exact);
+      input.focus();
+      close();
+    }
+    input.addEventListener('focus',show);
+    input.addEventListener('click',show);
+    input.addEventListener('input',()=>{
+      onEdit(input.value);
+      show();
+    });
+    input.addEventListener('keydown',event=>{
+      if(event.key==='Escape'&&!list.hidden){
+        event.preventDefault();
+        close();
+      }else if(event.key==='ArrowDown'||event.key==='ArrowUp'){
+        event.preventDefault();
+        if(list.hidden)show();
+        if(!options.length)return;
+        highlight(event.key==='ArrowDown'
+          ?(active+1)%options.length
+          :(active+options.length-1)%options.length);
+      }else if(event.key==='Enter'&&!list.hidden&&(active>=0||options.length===1)){
+        event.preventDefault();
+        choose(options[active>=0?active:0]);
+      }
+    });
+    list.addEventListener('pointerdown',event=>{
+      const button=event.target.closest?.('button[data-system]');
+      if(!button)return;
+      event.preventDefault();
+      choose(button.dataset.system);
+    });
+    list.addEventListener('click',event=>{
+      const button=event.target.closest?.('button[data-system]');
+      if(button)choose(button.dataset.system);
+    });
+    input.addEventListener('blur',()=>setTimeout(()=>{
+      if(!box?.contains(document.activeElement))close();
+    },120));
+  }
+
   function renderThreatScan(){
     const host=$('threatScanPanel');
     if(!host)return;
@@ -3619,7 +3721,7 @@
               <button id="threatClearScan" class="threat-clear-text" type="button" ${threatScanText?'':'disabled'}>CLEAR TEXT</button>
             </div>
           </div>
-          ${!threatShareUrl?`<label class="threat-share-system-setup"><span>ENTER SYSTEM</span><input id="threatShareNewSystem" maxlength="80" autocomplete="off" placeholder="Enter system" value="${esc(threatShareNewSystem)}"></label>` :''}
+          ${!threatShareUrl?`<label class="threat-share-system-setup"><span>ENTER SYSTEM <small>FOUNTAIN • 115 systems</small></span>${fountainSystemInputMarkup('threatShareNewSystem',threatShareNewSystem)}</label>` :''}
           ${threatShareUrl?`<div class="threat-share-ready">
             <span>JLR SHARE LINK READY</span>
             <a href="${esc(threatShareUrl)}" target="_blank" rel="noopener noreferrer">${esc(threatShareUrl)}</a>
@@ -3635,7 +3737,7 @@
             </div>
             ${threatShareEditError?`<div class="threat-share-editor-error">${esc(threatShareEditError)}</div>`:''}
             ${threatShareRecord?`
-              <label><span>SYSTEM</span><input id="threatShareSystem" maxlength="80" value="${esc(threatShareRecord.system||'')}" placeholder="Example: C-N4OD"></label>
+              <label><span>SYSTEM • FOUNTAIN</span>${fountainSystemInputMarkup('threatShareSystem',threatShareRecord.system||'')}</label>
               <div class="threat-share-editor-grid">
                 <label><span>D-SCAN</span><textarea id="threatShareDscan" spellcheck="false" placeholder="Paste D-scan here…">${esc(threatShareRecord.dscanText||'')}</textarea></label>
                 <label><span>LOCAL</span><textarea id="threatShareLocal" spellcheck="false" placeholder="Paste Local names here…">${esc(threatShareRecord.localText||'')}</textarea></label>
@@ -3674,7 +3776,8 @@
       </div>`;
 
     const input=$('threatScanInput');
-    $('threatShareNewSystem')?.addEventListener('input',event=>{threatShareNewSystem=event.target.value});
+    attachFountainSystemPicker('threatShareNewSystem',value=>{threatShareNewSystem=value});
+    attachFountainSystemPicker('threatShareSystem',value=>{if(threatShareRecord)threatShareRecord.system=value});
     input?.addEventListener('input',()=>{
       threatShareError='';
       threatScanText=input.value;
@@ -3770,8 +3873,16 @@
   async function saveThreatShareEditor(){
     const token=threatShareToken();
     if(!token||threatShareSaving)return;
+    const typedSystem=$('threatShareSystem')?.value||'';
+    const resolvedSystem=canonicalFountainSystem(typedSystem);
+    if(typedSystem.trim()&&!resolvedSystem){
+      threatShareEditError='Choose a Fountain system from the clickable suggestions.';
+      const systemInput=$('threatShareSystem');
+      systemInput?.focus();
+      return;
+    }
     const draft={
-      system:$('threatShareSystem')?.value||'',
+      system:resolvedSystem,
       dscanText:$('threatShareDscan')?.value||'',
       localText:$('threatShareLocal')?.value||'',
       manualRecons:threatShareReconRows($('threatShareRecon')?.value||''),
@@ -3834,11 +3945,17 @@
       return;
     }
     if(threatShareLoading)return;
+    const selectedFountainSystem=canonicalFountainSystem(threatShareNewSystem);
+    if(threatShareNewSystem.trim()&&!selectedFountainSystem){
+      threatShareError='Choose a Fountain system from the clickable suggestions.';
+      $('threatShareNewSystem')?.focus();
+      return;
+    }
     threatShareLoading=true;
     threatShareError='';
     renderThreatScan();
     try{
-      const result=await api('/api/threat-share',{method:'POST',body:JSON.stringify({text:value,system:threatShareNewSystem})});
+      const result=await api('/api/threat-share',{method:'POST',body:JSON.stringify({text:value,system:selectedFountainSystem})});
       threatShareUrl=String(result?.url||'');
       if(!threatShareUrl)throw new Error('JLR did not return a shared scan link.');
       threatShareRecord=result?.share||null;
