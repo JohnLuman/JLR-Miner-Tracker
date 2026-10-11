@@ -951,7 +951,7 @@ function appraisalShareUrl(req,token){
 }
 function dscanShareUrl(req,token){
   const origin=JLR_SHARE_ORIGIN||requestBaseUrl(req);
-  return origin+'/d/'+encodeURIComponent(String(token||''));
+  return origin+'/d/'+encodeURIComponent(String(token||''))+'?card=shiplist1';
 }
 function callbackUrl(req) { return EVE_CALLBACK_URL || `${requestBaseUrl(req)}/auth/eve/callback`; }
 function redirectLegacyPublicHost(req,res){
@@ -11551,7 +11551,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{if(redi
       const imageUrl=baseUrl+'/dscan-preview/'+encodeURIComponent(row.token)+'.png?v='+fingerprint;
       const template=await fsp.readFile(path.join(PUBLIC_DIR,'dscan-share.html'),'utf8');
       const html=renderDiscordScanHtml(template,row,{
-        canonicalUrl:baseUrl+url.pathname,
+        canonicalUrl:baseUrl+url.pathname+url.search,
         imageUrl,
       });
       res.writeHead(200,{
