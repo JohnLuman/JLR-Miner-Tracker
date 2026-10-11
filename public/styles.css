@@ -4288,3 +4288,35 @@ html[data-theme] .field-board .system-node.ice-system-node{background:linear-gra
 .fleet-esi-coverage>span{font-size:12px;font-weight:700;color:#d5e8f7}
 .fleet-esi-coverage>small{flex:1 1 100%;font-size:11px;line-height:1.45;color:#9aafbf}
 @media(max-width:720px){.fleet-esi-coverage{gap:6px;padding:10px}.fleet-esi-coverage>strong,.fleet-esi-coverage>span{font-size:11px}}
+
+/* Threat Scan's Fountain-only searchable system combobox. Clicking/focusing
+   reveals all 115 verified ESI systems; entering RP narrows to RP2-OQ. */
+.threat-system-combobox{position:relative;flex:1 1 230px;width:100%;min-width:0;max-width:390px;z-index:10}
+.threat-system-combobox:focus-within{z-index:50}
+.threat-share-system-setup .threat-system-combobox input,
+.threat-share-editor .threat-system-combobox input{
+  display:block;box-sizing:border-box;width:100%;max-width:100%;min-height:39px;
+  font-size:12px;line-height:1.4;padding:10px 12px;background:#071524;
+  color:#eff8ff;border:1px solid #486c89;border-radius:9px;
+}
+.threat-system-combobox input:focus{border-color:#88ceff!important;outline:2px solid rgba(90,178,250,.25);outline-offset:1px}
+.threat-system-options{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:70;max-height:256px;
+  overflow-x:hidden;overflow-y:auto;border:1px solid #5b83a6;border-radius:9px;background:#0b1c2e;
+  box-shadow:0 15px 36px rgba(0,0,0,.72);scrollbar-width:thin;
+  padding:4px;overscroll-behavior:contain}
+.threat-system-options[hidden]{display:none!important}
+.threat-system-options>button{display:block;width:100%;padding:10px 12px;text-align:left;
+  color:#d9edff;border:0;border-radius:6px;background:transparent;font-size:12px;
+  font-weight:800;font-family:inherit;cursor:pointer;line-height:1.3}
+.threat-system-options>button:hover,
+.threat-system-options>button.active,
+.threat-system-options>button:focus-visible{background:rgba(64,151,221,.32);color:#fff;outline:none}
+.threat-system-options>.threat-system-no-match{display:block;padding:12px;color:#d9b9a8;font-size:11px}
+.threat-share-system-setup>span{display:flex;flex-direction:column;gap:3px}
+.threat-share-system-setup>span small{font-size:10px;color:#9fc9e6;font-weight:650}
+.threat-share-editor .threat-system-combobox{max-width:100%}
+@media(max-width:680px){
+  .threat-share-system-setup{align-items:stretch}
+  .threat-share-system-setup .threat-system-combobox{flex-basis:100%;max-width:100%}
+  .threat-system-options{max-height:210px}
+}
