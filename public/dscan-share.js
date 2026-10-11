@@ -3,6 +3,7 @@
   const $=id=>document.getElementById(id);
   let share=null;
   let dscanRows=[];
+  let shipCatalogTask=null;
   // Classification is intentionally conservative: unknown object types remain unclassified,
   // rather than being incorrectly counted as ships. Mass is shown only for fully-known scans.
   const SHIP_TYPES=new Map([
@@ -17,6 +18,31 @@
     ['porpoise',{group:'Industrial Command Ship'}],
   ]);
 
+  async function loadShipCatalog(){
+    try{
+      const response=await fetch('/eve-ship-catalog.json?v=20261010',{cache:'force-cache'});
+      if(!response.ok)throw new Error('Ship catalog unavailable');
+      const catalog=await response.json();
+      if(!Array.isArray(catalog?.ships)||catalog.ships.length<400||catalog.massUnit!=='kg')throw new Error('Incomplete ship catalog');
+      for(const item of catalog.ships){
+        if(!Array.isArray(item)||item.length<4)continue;
+        const [name,group,massKg,typeId]=item;
+        const key=String(name||'').trim().toLowerCase();
+        if(!key||!group)continue;
+        const massT=Number(massKg)>0?Number(massKg)/1000:null;
+        SHIP_TYPES.set(key,{
+          group:String(group),
+          mass:Number.isFinite(massT)?massT:null,
+          typeId:Number(typeId)||null,
+        });
+      }
+      // Re-render the classification once the static catalog becomes available;
+      // no ESI round-trips are needed when viewing/copying a fleet scan.
+      if(share?.dscanText)renderDscan();
+    }catch(error){
+      console.warn('JLR ship catalog unavailable; using mining-hull fallback',String(error?.message||error));
+    }
+  }
   function shipReport(rows){
     const classes=new Map(),types=groupDscan(rows);
     let ships=0,mass=0,massComplete=true;
@@ -36,16 +62,23 @@
   }
   function briefSummary(){
     const report=shipReport(dscanRows);
-    const system=String(share?.system||'').trim()||'Unknown system';
-    const types=report.types.map(([name,n])=>n+' × '+name).join(', ');
-    const classes=report.classes.map(([name,n])=>n+' × '+name).join(', ');
-    return [
-      'JLR D-SCAN • '+system+' • snapshot (not live)',
-      dscanRows.length+' objects • '+report.ships+' identified ships',
-      'Types: '+types,
-      classes?'Classes: '+classes:'',
-      report.mass!==null?'Known ship mass: '+report.mass.toLocaleString()+' t':'',
-    ].filter(Boolean).join('\n');
+    const system=String(share?.system||'').trim()||'Unknown (not supplied)';
+    const classified=report.types.filter(([name])=>SHIP_TYPES.has(String(name||'').trim().toLowerCase()));
+    const extra=dscanRows.length-report.ships;
+    const lines=[
+      'JLR D-SCAN INTELLIGENCE',
+      '📍 System: '+system,
+      '🚀 Ships: '+report.ships+(extra?' • '+dscanRows.length+' total objects':''),
+      ...classified.slice(0,25).map(([name,count])=>{
+        const info=SHIP_TYPES.get(String(name||'').trim().toLowerCase());
+        return '• '+count+' × '+name+(info?.group?' ('+info.group+')':'');
+      }),
+    ];
+    if(classified.length>25)lines.push('• …and '+(classified.length-25)+' more hull types');
+    if(extra)lines.push('Other/unclassified objects: '+extra);
+    if(report.mass!==null)lines.push('⚖️ Fleet mass: '+report.mass.toLocaleString('en-US',{maximumFractionDigits:1})+' t');
+    lines.push('🕒 Snapshot — Not Live');
+    return lines.join('\n');
   }
 
   function tokenFromPath(){
@@ -305,12 +338,16 @@
       if(!response.ok)throw new Error(payload?.message||payload?.error||('HTTP '+response.status));
       share=payload.share;
       render();
+      shipCatalogTask=loadShipCatalog();
     }catch(error){fail(error?.message||error)}
   }
 
   $('copyLink').addEventListener('click',()=>copyText(location.href,$('copyLink'),'LINK COPIED'));
   $('copyDscan').addEventListener('click',()=>copyText(share?.dscanText||'',$('copyDscan'),'D-SCAN COPIED'));
-  $('copySummary').addEventListener('click',()=>copyText(briefSummary(),$('copySummary'),'SUMMARY COPIED'));
+  $('copySummary').addEventListener('click',async()=>{
+    if(shipCatalogTask)await shipCatalogTask;
+    return copyText(briefSummary(),$('copySummary'),'SUMMARY COPIED');
+  });
   $('dscanFilter').addEventListener('input',renderDscan);
   $('localFilter').addEventListener('input',renderLocal);
   load();
