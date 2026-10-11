@@ -87,3 +87,22 @@
 .recon-card{border-color:rgba(255,104,113,.4);background:linear-gradient(145deg,rgba(95,29,37,.54),rgba(22,15,22,.73))}
 .recon-card>strong{background:rgba(255,110,120,.16);color:#ffb1b8}
 @media(max-width:760px){.hero.has-system #shareTitle{font-size:clamp(38px,10vw,70px)}.role-card{flex:1 1 145px;min-width:0}.role-note{font-size:11px}}
+
+/* INIT alliance standings: colors represent social affiliation, NOT ship role. */
+.local-standing-source{font-size:11px;color:#91a5b9;margin:8px 0}
+.local-standing-legend{display:flex;gap:8px 18px;flex-wrap:wrap;margin:8px 0 14px;font:800 11px/1.4 inherit;letter-spacing:.02em}
+.standing-friendly{color:#78ee9b}
+.standing-hostile{color:#ff7584}
+.standing-neutral{color:#f4cc68}
+.standing-unknown{color:#8fa5b7}
+#localRows tr.local-standing-friendly td:first-child{box-shadow:inset 4px 0 #3cdb70}
+#localRows tr.local-standing-hostile td:first-child{box-shadow:inset 4px 0 #fa4c60}
+#localRows tr.local-standing-neutral td:first-child{box-shadow:inset 4px 0 #ebbc52}
+#localRows tr.local-standing-unknown td:first-child{box-shadow:inset 4px 0 #536475}
+#localRows tr.local-standing-friendly a{color:#8bf3a8}
+#localRows tr.local-standing-hostile a{color:#ff9da5}
+#localRows tr.local-standing-neutral a{color:#f4d58d}
+.intel-card.standing-friendly{border-color:rgba(58,220,112,.52)}
+.intel-card.standing-hostile{border-color:rgba(250,76,96,.53)}
+.intel-card.standing-neutral{border-color:rgba(235,188,82,.52)}
+.intel-card.standing-unknown,.intel-card.standing-mixed{border-color:rgba(117,145,171,.3)}
