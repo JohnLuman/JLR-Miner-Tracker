@@ -3937,6 +3937,7 @@
       localText:$('threatShareLocal')?.value||'',
       manualRecons:threatShareReconRows($('threatShareRecon')?.value||''),
     };
+    const generation=threatShareGeneration;
     threatShareSaving=true;
     threatShareEditError='';
     try{
@@ -3944,13 +3945,16 @@
         method:'POST',
         body:JSON.stringify(draft),
       });
+      if(generation!==threatShareGeneration)return;
       threatShareRecord=result?.share||threatShareRecord;
       toast('Shared intel updated on the same JLR link.');
     }catch(error){
-      threatShareEditError=String(error?.message||error||'Could not update the shared link.');
+      if(generation===threatShareGeneration)threatShareEditError=String(error?.message||error||'Could not update the shared link.');
     }finally{
-      threatShareSaving=false;
-      renderThreatScan();
+      if(generation===threatShareGeneration){
+        threatShareSaving=false;
+        renderThreatScan();
+      }
     }
   }
   async function copyThreatShareUrl(){
