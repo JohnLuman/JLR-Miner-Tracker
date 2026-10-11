@@ -4167,3 +4167,8 @@ html[data-theme] .field-board .system-node.ice-system-node{background:linear-gra
 @media(max-width:1050px){.ceo-finance-report-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.ceo-finance-report-head{flex-direction:column}.ceo-finance-report-actions{justify-content:flex-start}}
 @media(max-width:780px){.ceo-finance-report-grid,.ceo-finance-report-filters{grid-template-columns:1fr}.ceo-finance-report-kpis{grid-template-columns:1fr 1fr}.ceo-finance-ledger-head{display:none}.ceo-finance-ledger-row{grid-template-columns:1fr 1fr}.ceo-finance-ledger-row>div{grid-column:1/-1}.ceo-finance-ledger-row>b,.ceo-finance-ledger-row>span:last-child{text-align:left}}
 @media(max-width:520px){.ceo-finance-report-kpis{grid-template-columns:1fr}.ceo-finance-report-actions{display:grid;grid-template-columns:1fr 1fr}.ceo-finance-month-nav{grid-column:1/-1}.ceo-finance-report-actions .board-tool{width:100%}}
+
+/* Share creation can carry an explicit solar system when D-scan has no location metadata. */
+.threat-share-system-setup{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:10px 0 4px;color:#9cc0dd;font-size:12px;font-weight:700}
+.threat-share-system-setup small{color:#7b95ae;font-weight:400}
+.threat-share-system-setup input{flex:1 1 190px;max-width:350px;padding:9px 11px;border:1px solid #355574;border-radius:9px;background:#071424;color:#ebf6ff;font:inherit}
