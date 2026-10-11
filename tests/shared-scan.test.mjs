@@ -65,7 +65,7 @@ assert.equal(ships.get('rifter').group,'Frigate');
 assert.equal(ships.get('rorqual').group,'Capital Industrial Ship');
 assert.equal(29*ships.get('hulk').massKg/1000,435000,'ship mass is shown in metric tonnes');
 assert.match(viewer,/JLR D-SCAN INTELLIGENCE/,'summary copy has a compact heading');
-assert.match(viewer,/eve-ship-catalog\\.json/,'shared scan loads the full static ship catalog');
+assert.ok(viewer.includes('eve-ship-catalog.json'),'shared scan loads the full static ship catalog');
 assert.match(app,/threatShareNewSystem/,'system can be entered when creating a scan link');
 assert.match(server,/companionScanSystem/,'unambiguous fresh companion system can fill the system');
 
