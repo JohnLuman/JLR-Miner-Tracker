@@ -25,6 +25,16 @@ assert.match(mining.status,/MINING ACTIVITY/);
 assert.doesNotMatch(mining.status,/HOSTILE SHIPS/i);
 assert.match(discordScanDescription(example),/30x Mackinaw/);
 assert.match(discordScanDescription(example),/Hostility unverified/);
+const localColorExample={
+  ...example,
+  local:{pilots:[{standingStatus:'friendly'},{standingStatus:'friendly'},{standingStatus:'hostile'},{standingStatus:'neutral'},{standingStatus:'unknown'}]},
+};
+const summary=discordScanDescription(localColorExample);
+assert.match(summary,/🟢 2 friendly/);
+assert.match(summary,/🔴 1 hostile/);
+assert.match(summary,/🟡 1 neutral/);
+assert.match(summary,/⚪ 1 unverified/);
+assert.doesNotMatch(summary,/hostile ships/,'Local hostility cannot be attributed to D-scan hulls');
 const miningSvg=renderDiscordScanSvg(example);
 assert.match(miningSvg,/Jlr/);
 assert.match(miningSvg,/Hub/);
