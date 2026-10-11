@@ -26,8 +26,8 @@ assert.deepEqual(selectedFleetPerformanceIds({characters:chars},{members:{}},{bo
 assert.deepEqual(selectedFleetPerformanceIds({characters:[]},{members:{}},{boosterCharacterId:''})(),[],'no connected accounts never fake production');
 assert.match(app,/const tracked=new Set\(selectedFleetPerformanceIds\(\)\)/,'fitless miner comparison respects the selected authorized scope');
 assert.match(app,/Observed ESI rates are shown without fits/,'actual miner readouts are independent from mining fits');
-assert.match(app,/autoTracking\?'AUTO/,'automatic tracking mode visibly identified');
-assert.match(app,/LEDGER '\+cachedCount/,'visible ledger coverage based on cached characters');
+assert.ok(app.includes("'AUTO • '+assignedCount"),'automatic tracking mode visibly identified');
+assert.ok(app.includes("'ESI LEDGER: '+cachedCount"),'visible ledger coverage based on cached characters');
 assert.match(html,/id="fleetTrackingScope"/,'tracking scope is visible in Performance');
 assert.match(html,/id="fleetLedgerCoverage"/,'missing cache and ESI scope are visible');
 assert.match(server,/const allowed=new Set\(\(user\?\.characterIds\|\|\[\]\)\.map\(String\)\)/,'backend always authorizes individual miners');
