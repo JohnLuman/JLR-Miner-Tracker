@@ -951,7 +951,7 @@ function appraisalShareUrl(req,token){
 }
 function dscanShareUrl(req,token){
   const origin=JLR_SHARE_ORIGIN||requestBaseUrl(req);
-  return origin+'/d/'+encodeURIComponent(String(token||''))+'?card=shiplist1';
+  return origin+'/d/'+encodeURIComponent(String(token||''))+'?card=shiplist2';
 }
 function callbackUrl(req) { return EVE_CALLBACK_URL || `${requestBaseUrl(req)}/auth/eve/callback`; }
 function redirectLegacyPublicHost(req,res){
