@@ -33,5 +33,5 @@ assert.match(html,/localStandingSource/,'public share explains standing source')
 assert.match(app,/sov-friendly/,'Fountain dropdown renders owner-class color');
 assert.match(css,/\.threat-system-options>button\.sov-hostile/,'hostile sov appears red');
 const meta=fs.readFileSync(new URL('../lib/dscan-discord-preview.mjs',import.meta.url),'utf8');
-assert.doesNotMatch(meta.slice(meta.indexOf('export function renderDiscordScanHtml')),/og:image|twitter:image|summary_large_image/,'text-only link previews');
+assert.match(meta.slice(meta.indexOf('export function renderDiscordScanHtml')),/og:image|twitter:image|summary_large_image/,'approved high-quality image preview is restored');
 console.log('INIT verified standings colors and text-only Discord preview regressions passed');

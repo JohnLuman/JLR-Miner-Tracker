@@ -58,6 +58,8 @@ assert.doesNotMatch(miningSvg,/Tracker/i,'old Tracker branding must not appear')
 assert.doesNotMatch(miningSvg,/<text[^>]+>.*HOSTILE SHIPS/,'miners must not be treated as hostiles');
 assert.match(miningSvg,/Mackinaw/);
 assert.match(miningSvg,/Exhumer/);
+assert.match(miningSvg,/filter="url\(#glow\)"/,'logo and outer borders use high-end neon glows');
+assert.match(miningSvg,/SHIP INTELLIGENCE/,'metadata graphic includes polished ship table');
 assert.match(miningSvg,/>30<\/text>/);
 const png=await renderDiscordScanPng(example);
 assert.equal(png.subarray(0,8).toString('hex'),'89504e470d0a1a0a','renderer returns Discord-compatible PNG');
@@ -80,19 +82,21 @@ const htmlTemplate=fs.readFileSync(new URL('../public/dscan-share.html',import.m
 const imageUrl='https://jlrhub.com/dscan-preview/safePublicToken.png?v=abc123';
 const rendered=renderDiscordScanHtml(htmlTemplate,example,{canonicalUrl:'https://jlrhub.com/d/safePublicToken',imageUrl});
 assert.match(rendered,/<meta property="og:site_name" content="JlrHub">/);
-assert.doesNotMatch(rendered,/property="og:image"/,'Discord preview is text-only without large images');
-assert.doesNotMatch(rendered,/name="twitter:card"/,'Discord shows only the link text summary');
+assert.match(rendered,/property="og:image"/,'Discord preview restores the high-definition scan image');
+assert.match(rendered,/name="twitter:card" content="summary_large_image"/,'social card uses the full image');
 assert.match(rendered,/<meta property="og:url" content="https:\/\/jlrhub.com\/d\/safePublicToken">/);
-assert.doesNotMatch(rendered,/name="twitter:image"/,'Discord share previews omit image tags entirely');
+assert.match(rendered,/name="twitter:image"/,'Discord image also works for Twitter-style previews');
 assert.match(rendered,/<meta property="og:description" content="30× Mackinaw">/);
+assert.match(rendered,/<meta property="og:image:width" content="1200">/);
+assert.match(rendered,/<meta property="og:image:height" content="630">/);
 assert.match(rendered,/<meta property="og:title" content="30 SHIPS ON D-SCAN">/,'compact title shows scan count without repeating the site name');
 assert.doesNotMatch(rendered,/og:title" content="JLR Shared Intel"/);
 const renderedWithSystem=renderDiscordScanHtml(htmlTemplate,{...example,system:'C-N4OD'},{
-  canonicalUrl:'https://jlrhub.com/d/safePublicToken?card=shiplist2',
+  canonicalUrl:'https://jlrhub.com/d/safePublicToken?card=hdscan1',imageUrl,
 });
 assert.match(renderedWithSystem,/<meta property="og:title" content="C-N4OD • 30 SHIPS ON D-SCAN">/,'known system leads the Discord headline');
 assert.match(renderedWithSystem,/<meta property="og:site_name" content="JlrHub">/,'JlrHub appears once in the site header');
-assert.doesNotMatch(renderedWithSystem,/property="og:image"/,'polished small card does not reintroduce a large preview image');
+assert.match(renderedWithSystem,/property="og:image"/,'polished large card includes live ship artwork');
 const injection=renderDiscordScanHtml(htmlTemplate,{...example,system:'<script>alert(1)</script>'},{
   canonicalUrl:'https://jlrhub.com/d/safePublicToken',imageUrl,
 });
@@ -101,10 +105,10 @@ const server=fs.readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
 assert.match(server,/dscan-preview\/.*png/);
 assert.match(server,/renderDiscordScanHtml\(template,row/);
 assert.match(server,/fingerprint=crypto.createHash/,'preview image URL changes when share updates');
-assert.match(server,/card=shiplist2/,'new copy links bypass cached previous Discord previews');
+assert.match(server,/card=hdscan1/,'new copy links bypass cached previous Discord previews');
 assert.match(server,/canonicalUrl:baseUrl\+url.pathname\+url.search/,'OG canonical URLs preserve the cache-busting card query');
 const appSource=fs.readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
 assert.match(appSource,/function versionDiscordScanLink/,'existing saved share links are updated to the text-only preview version');
-assert.match(appSource,/searchParams.set\('card','shiplist2'\)/,'saved links get the versioned new card');
+assert.match(appSource,/searchParams.set\('card','hdscan1'\)/,'saved links get the restored artwork URL');
 
 console.log('Discord metadata previews: mining fleets, unknown hostility, missing system, ship-only, Local-only, PNG, and OG HTML passed');
