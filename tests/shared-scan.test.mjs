@@ -47,7 +47,7 @@ assert.match(app,/saveThreatShareEditor/,'JLR Threat Scan can update the same sh
 assert.match(app,/manualRecons:threatShareReconRows/,'JLR editor saves manual recon rows');
 assert.match(app,/dscanText:\$\('threatShareDscan'\)/,'JLR editor updates D-scan separately');
 assert.match(app,/localText:\$\('threatShareLocal'\)/,'JLR editor updates Local separately');
-assert.match(html,/dscan-share\.js\?v=5/,'public viewer cache-busts the read-only client');
+assert.match(html,/dscan-share\.js\?v=6/,'public viewer cache-busts the read-only client');
 
 assert.match(html,/id="scanHighlights"/,'public D-scan leads with a composition summary');
 assert.match(html,/id="dscanObjectsDetails"/,'individual objects expand on demand');
@@ -68,5 +68,31 @@ assert.match(viewer,/JLR D-SCAN INTELLIGENCE/,'summary copy has a compact headin
 assert.ok(viewer.includes('eve-ship-catalog.json'),'shared scan loads the full static ship catalog');
 assert.match(app,/threatShareNewSystem/,'system can be entered when creating a scan link');
 assert.match(server,/companionScanSystem/,'unambiguous fresh companion system can fill the system');
+
+
+assert.match(html,/id="systemLabel"/,'known system has a dedicated prominent label');
+assert.match(html,/id="shipRoleOverview"/,'D-scan shows an explicit ship-role legend');
+const styles=fs.readFileSync(new URL('../public/dscan-share.css',import.meta.url),'utf8');
+assert.match(styles,/hero\.has-system #shareTitle/,'known solar system has strong dedicated headline styling');
+assert.match(styles,/\.role-card\.role-combat/,'combat overview has red theme');
+assert.match(styles,/\.role-card\.role-mining/,'mining overview has blue theme');
+assert.match(viewer,/shipRoleByType\(type\)/,'ship types are assigned role colors');
+assert.match(viewer,/shipRoleByGroup\(group\)/,'ship classes use matching role colors');
+assert.match(viewer,/ship-type-tag role-/,'individual hull rows use role badges');
+const roleSource=viewer.slice(viewer.indexOf('  const MINING_GROUPS='),viewer.indexOf('  async function loadShipCatalog(){'));
+assert.ok(roleSource.includes('function shipRoleByType'), 'role classifier must exist');
+const roles=new Function('SHIP_TYPES',roleSource+'\\nreturn {shipRoleByType,roleTotals};')(
+  new Map(catalog.ships.map(([name,group])=>[name.toLowerCase(),{group}])),
+);
+for(const type of ['Hulk','Orca','Porpoise','Rorqual','Miasmos']){
+  assert.equal(roles.shipRoleByType(type),'mining',type+' is mining or mining support');
+}
+for(const type of ['Rifter','Huginn','Guardian','Revelation']){
+  assert.equal(roles.shipRoleByType(type),'combat',type+' is a combat/PvP hull');
+}
+for(const type of ['Nereus','Capsule','Unrecognized Space Object']){
+  assert.equal(roles.shipRoleByType(type),'other',type+' must not be marked combat');
+}
+assert.deepEqual(roles.roleTotals(['Hulk','Hulk','Rifter','Nereus'].map(type=>({type}))),{combat:1,mining:2,other:1});
 
 console.log('shared scan tests passed');
