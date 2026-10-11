@@ -8,7 +8,7 @@
   <meta property="og:description" content="Shared EVE Online D-scan and Local intel hosted by JLR Hub.">
   <meta name="description" content="Shared EVE Online D-scan and Local intel hosted by JLR Hub.">
   <title>JLR Shared Intel</title>
-  <link rel="stylesheet" href="/dscan-share.css?v=3">
+  <link rel="stylesheet" href="/dscan-share.css?v=4">
   <link rel="stylesheet" href="/connected-rail.css?v=2">
 </head>
 <body class="jlr-rail-controls">
@@ -22,6 +22,7 @@
       <div class="hero-actions">
         <button id="copyLink" type="button">COPY LINK</button>
         <button id="copyDscan" type="button" disabled>COPY D-SCAN</button>
+        <button id="copySummary" type="button" disabled>COPY SUMMARY</button>
         <a href="/" class="secondary">OPEN JLR</a>
       </div>
     </header>
@@ -31,8 +32,8 @@
     <section id="content" class="hidden">
       <div class="stats">
         <article><span>D-SCAN OBJECTS</span><strong id="dscanObjectCount">0</strong></article>
-        <article><span>LOCAL PILOTS</span><strong id="localPilotCount">0</strong></article>
-        <article><span>MANUAL RECONS</span><strong id="reconCount">0</strong></article>
+        <article><span>LOCAL PILOTS</span><strong id="localPilotCount">—</strong><small id="localStatus" class="stat-note">Not provided</small></article>
+        <article><span>MANUAL RECONS</span><strong id="reconCount">—</strong><small id="reconStatus" class="stat-note">Not added</small></article>
       </div>
 
       <section id="manualReconPanel" class="panel hidden">
@@ -48,14 +49,19 @@
           <div><span class="kicker">DIRECTIONAL SCAN</span><h2>D-SCAN COMPOSITION</h2></div>
           <input id="dscanFilter" type="search" autocomplete="off" placeholder="Filter type, object, or distance…">
         </div>
+        <div id="scanHighlights" class="scan-highlights" aria-live="polite"></div>
+        <div class="breakdown-head"><strong>OBJECT TYPES</strong><span class="muted" id="typeBreakdownLabel"></span></div>
         <div id="dscanSummary" class="groups"></div>
-        <div class="table-section-head"><strong>INDIVIDUAL OBJECTS</strong><span id="dscanShownCount" class="muted"></span></div>
-        <div class="table-wrap">
+        <div id="classBreakdown" class="hidden"><div class="breakdown-head"><strong>SHIP CLASSES</strong><span class="muted" id="classBreakdownLabel"></span></div><div id="dscanClasses" class="groups"></div></div>
+        <details id="dscanObjectsDetails" class="scan-details">
+          <summary class="table-section-head"><strong>INDIVIDUAL OBJECTS <span class="detail-hint">(EXPAND)</span></strong><span id="dscanShownCount" class="muted"></span></summary>
+          <div class="table-wrap">
           <table>
             <thead><tr><th>#</th><th>NAME</th><th>TYPE</th><th>DISTANCE</th></tr></thead>
             <tbody id="dscanRows"></tbody>
           </table>
-        </div>
+          </div>
+        </details>
         <details class="raw">
           <summary>RAW D-SCAN TEXT</summary>
           <pre id="rawDscan"></pre>
@@ -88,6 +94,6 @@
       </section>
     </section>
   </main>
-  <script src="/dscan-share.js?v=3"></script>
+  <script src="/dscan-share.js?v=4"></script>
 </body>
 </html>
