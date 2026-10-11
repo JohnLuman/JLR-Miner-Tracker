@@ -138,15 +138,12 @@ const helperStart=app.indexOf('  function marketHistoryPoints(');
 const helperEnd=app.indexOf('  function marketTrendView(',helperStart);
 const getMarketHistory=new Function('state',app.slice(helperStart,helperEnd)+'\nreturn marketHistoryPoints;');
 const yesterday=priorDate(1);
-const staleHistory=getMarketHistory({market:{
-  lastUpdatedAt:yesterday+'T10:00:00Z',
-  history:{ore:{Beryl:[{date:yesterday,jita:100,cn:90}]}},
-}})('ore','Beryl',100,90);
+const savedHistory={ore:{Beryl:[{date:yesterday,jita:100,cn:90}]}};
+const staleState={market:{lastUpdatedAt:yesterday+'T10:00:00Z',history:savedHistory}};
+const staleHistory=getMarketHistory(staleState)('ore','Beryl',100,90);
 assert.equal(staleHistory.length,1,'stale yesterday value must never be redated as a fabricated today's observation');
-const freshHistory=getMarketHistory({market:{
-  lastUpdatedAt:todayGenerated+'T10:00:00Z',
-  history:{ore:{Beryl:[{date:yesterday,jita:100,cn:90}]}},
-}})('ore','Beryl',101,91);
+const freshState={market:{lastUpdatedAt:todayGenerated+'T10:00:00Z',history:savedHistory}};
+const freshHistory=getMarketHistory(freshState)('ore','Beryl',101,91);
 assert.equal(freshHistory.length,2,'new daily observation only added if fresh market update actually completed today');
 
 console.log('All-ore price trend lines, normalization, market switching and filtering passed.');
