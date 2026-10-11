@@ -8,7 +8,7 @@
   <meta property="og:description" content="Shared EVE Online D-scan and Local intel hosted by JLR Hub.">
   <meta name="description" content="Shared EVE Online D-scan and Local intel hosted by JLR Hub.">
   <title>JLR Shared Intel</title>
-  <link rel="stylesheet" href="/dscan-share.css?v=5">
+  <link rel="stylesheet" href="/dscan-share.css?v=6">
   <link rel="stylesheet" href="/connected-rail.css?v=2">
 </head>
 <body class="jlr-rail-controls">
@@ -16,6 +16,7 @@
     <header class="hero">
       <div>
         <span class="eyebrow">JLR HUB • SHARED INTEL</span>
+        <span id="systemLabel" class="system-label hidden">SOLAR SYSTEM</span>
         <h1 id="shareTitle">SHARED INTEL</h1>
         <p id="scanMeta">Loading shared scan…</p>
       </div>
@@ -50,6 +51,8 @@
           <input id="dscanFilter" type="search" autocomplete="off" placeholder="Filter type, object, or distance…">
         </div>
         <div id="scanHighlights" class="scan-highlights" aria-live="polite"></div>
+        <div id="shipRoleOverview" class="role-overview" aria-label="Ship roles"></div>
+        <p class="role-note">Colors identify ship roles, not pilot standings or confirmed hostility.</p>
         <div class="breakdown-head"><strong>OBJECT TYPES</strong><span class="muted" id="typeBreakdownLabel"></span></div>
         <div id="dscanSummary" class="groups"></div>
         <div id="classBreakdown" class="hidden"><div class="breakdown-head"><strong>SHIP CLASSES</strong><span class="muted" id="classBreakdownLabel"></span></div><div id="dscanClasses" class="groups"></div></div>
@@ -94,6 +97,6 @@
       </section>
     </section>
   </main>
-  <script src="/dscan-share.js?v=5"></script>
+  <script src="/dscan-share.js?v=6"></script>
 </body>
 </html>

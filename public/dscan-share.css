@@ -56,3 +56,34 @@
 .scan-details .table-wrap{margin-top:10px}
 @media(max-width:760px){.scan-highlights{grid-template-columns:repeat(2,minmax(0,1fr))}.scan-highlight{padding:12px}.scan-highlight>strong{font-size:21px}.breakdown-head{flex-wrap:wrap}}
 @media(max-width:400px){.scan-highlights{grid-template-columns:1fr}}
+
+
+/* Solar system is the primary shared-intel landmark when the location is known. */
+.hero.has-system{border-color:rgba(255,206,99,.44);background:radial-gradient(circle at 12% 35%,rgba(167,108,12,.18),transparent 42%),linear-gradient(145deg,rgba(19,27,41,.98),rgba(7,11,19,.95))}
+.hero.has-system .system-label{display:block;margin-top:12px;color:#ffd98b;font-size:13px;font-weight:900;letter-spacing:.2em}
+.hero.has-system #shareTitle{color:#ffdf80;text-shadow:0 0 26px rgba(255,188,56,.19);font-size:clamp(46px,7.5vw,94px);line-height:1.04;letter-spacing:.015em;overflow-wrap:anywhere}
+.hero.has-system .eyebrow{color:#a9c9e0}
+.hero.has-system #scanMeta{margin-top:13px}
+.role-overview{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 8px}
+.role-card{display:flex;align-items:center;gap:12px;min-width:175px;padding:10px 14px;border-radius:12px;border:1px solid rgba(121,145,174,.24);background:rgba(19,31,45,.75);font-size:11px;font-weight:900;letter-spacing:.07em}
+.role-card strong{font-size:25px;line-height:1;min-width:30px;font-variant-numeric:tabular-nums}
+.role-card.role-combat{border-color:rgba(255,104,113,.48);color:#ff9299;background:rgba(94,25,38,.36)}
+.role-card.role-mining{border-color:rgba(78,180,255,.48);color:#88d5ff;background:rgba(23,67,114,.36)}
+.role-card.role-other{color:#b4bed1}
+.role-note{font-size:11px;color:#829bb1;margin:4px 0 17px;line-height:1.5}
+.groups .group.role-combat,.ship-type-tag.role-combat{border-color:rgba(255,105,115,.52);background:rgba(105,28,42,.46);color:#ff9ba3}
+.groups .group.role-mining,.ship-type-tag.role-mining{border-color:rgba(65,176,255,.55);background:rgba(21,72,123,.48);color:#9bdcff}
+.groups .group.role-other,.ship-type-tag.role-other{border-color:rgba(132,155,181,.18);background:rgba(42,53,68,.36);color:#c2ccd9}
+.groups .group.role-combat strong{color:#ff828d}
+.groups .group.role-mining strong{color:#69c9ff}
+.groups .group.role-other strong{color:#aebfd1}
+.groups .group.role-combat span,.groups .group.role-mining span{color:inherit}
+.ship-type-tag{display:inline-flex;align-items:center;max-width:100%;padding:5px 10px;border-radius:8px;border:1px solid;font-weight:750;font-size:12px}
+.scan-row.role-combat td:first-child{box-shadow:inset 3px 0 #e25c67}
+.scan-row.role-mining td:first-child{box-shadow:inset 3px 0 #51a9eb}
+.scan-row.role-combat:hover{background:rgba(170,48,63,.1)}
+.scan-row.role-mining:hover{background:rgba(40,122,198,.1)}
+/* Reported recon hulls are combat vessels, but retain their MANUAL intel label. */
+.recon-card{border-color:rgba(255,104,113,.4);background:linear-gradient(145deg,rgba(95,29,37,.54),rgba(22,15,22,.73))}
+.recon-card>strong{background:rgba(255,110,120,.16);color:#ffb1b8}
+@media(max-width:760px){.hero.has-system #shareTitle{font-size:clamp(38px,10vw,70px)}.role-card{flex:1 1 145px;min-width:0}.role-note{font-size:11px}}

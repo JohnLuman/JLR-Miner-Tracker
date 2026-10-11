@@ -18,6 +18,40 @@
     ['porpoise',{group:'Industrial Command Ship'}],
   ]);
 
+  // Ship role colors are based on hull class, not standings, ownership or threat.
+  // Unknown hulls, general haulers and civilian ships remain neutral.
+  const MINING_GROUPS=new Set([
+    'Exhumer','Mining Barge','Expedition Frigate','Expedition Command Ship',
+    'Industrial Command Ship','Capital Industrial Ship',
+  ]);
+  const COMBAT_GROUPS=new Set([
+    'Assault Frigate','Attack Battlecruiser','Battleship','Black Ops','Carrier',
+    'Combat Battlecruiser','Combat Recon Ship','Command Carrier','Command Destroyer',
+    'Command Ship','Corvette','Covert Ops','Cruiser','Destroyer','Dreadnought',
+    'Electronic Attack Ship','Flag Cruiser','Force Auxiliary','Force Recon Ship',
+    'Frigate','Heavy Assault Cruiser','Heavy Interdiction Cruiser','Interceptor',
+    'Interdictor','Lancer Dreadnought','Logistics','Logistics Frigate','Marauder',
+    'Stealth Bomber','Strategic Cruiser','Supercarrier','Tactical Destroyer','Titan',
+  ]);
+  // Miasmos is an ore hauler but its SDE group is the broader Hauler category.
+  const MINING_SPECIAL_HULLS=new Set(['miasmos']);
+  function shipRoleByGroup(group){
+    if(MINING_GROUPS.has(group))return 'mining';
+    if(COMBAT_GROUPS.has(group))return 'combat';
+    return 'other';
+  }
+  function shipRoleByType(type){
+    const key=String(type||'').trim().toLowerCase();
+    if(MINING_SPECIAL_HULLS.has(key))return 'mining';
+    const info=SHIP_TYPES.get(key);
+    return info?shipRoleByGroup(info.group):'other';
+  }
+  function roleTotals(rows){
+    const totals={combat:0,mining:0,other:0};
+    for(const row of rows)totals[shipRoleByType(row.type)]++;
+    return totals;
+  }
+
   async function loadShipCatalog(){
     try{
       const response=await fetch('/eve-ship-catalog.json?v=20261010',{cache:'force-cache'});
@@ -179,7 +213,9 @@
   }
   function renderHeader(){
     const system=String(share?.system||'').trim();
-    $('shareTitle').textContent=system?system+' • SHARED INTEL':'SHARED INTEL';
+    $('shareTitle').textContent=system||'SHARED INTEL';
+    $('systemLabel').classList.toggle('hidden',!system);
+    document.querySelector('.hero')?.classList.toggle('has-system',Boolean(system));
     const created=share?.createdAt?new Date(share.createdAt):null;
     const updated=share?.updatedAt?new Date(share.updatedAt):null;
     const createdText=created&&!Number.isNaN(created.getTime())?'created '+created.toLocaleString():'created through JLR';
@@ -223,6 +259,19 @@
     const q=String($('dscanFilter').value||'').trim().toLowerCase();
     const filtered=q?dscanRows.filter(row=>[row.name,row.type,row.distance].some(v=>String(v||'').toLowerCase().includes(q))):dscanRows;
     const report=shipReport(filtered);
+    const roles=roleTotals(filtered);
+    $('shipRoleOverview').replaceChildren(...[
+      ['combat','PVP / COMBAT',roles.combat],
+      ['mining','MINING / SUPPORT',roles.mining],
+      ...(roles.other?[['other','OTHER / UNKNOWN',roles.other]]:[]),
+    ].map(([role,label,count])=>{
+      const card=document.createElement('div');
+      card.className='role-card role-'+role;
+      const badge=document.createElement('strong');badge.textContent=String(count);
+      const description=document.createElement('span');description.textContent=label;
+      card.append(badge,description);
+      return card;
+    }));
     const highlights=[
       ['OBJECTS',filtered.length.toLocaleString(),q?'Filtered scan':'Total D-scan entries'],
       ['IDENTIFIED SHIPS',report.ships.toLocaleString(),report.ships===filtered.length?'All objects recognized':'Unknown types remain unclassified'],
@@ -240,7 +289,7 @@
     $('typeBreakdownLabel').textContent=report.types.length+' types'+(q?' • filtered':'');
     const summary=$('dscanSummary');
     summary.replaceChildren(...report.types.map(([type,count])=>{
-      const el=document.createElement('div');el.className='group';
+      const el=document.createElement('div');el.className='group role-'+shipRoleByType(type);
       const n=document.createElement('strong');n.textContent=String(count);
       const t=document.createElement('span');t.textContent=type;
       el.append(n,t);return el;
@@ -248,15 +297,24 @@
     $('classBreakdown').classList.toggle('hidden',!report.classes.length);
     $('classBreakdownLabel').textContent=report.ships+' identified ships';
     $('dscanClasses').replaceChildren(...report.classes.map(([group,count])=>{
-      const el=document.createElement('div');el.className='group class-group';
+      const el=document.createElement('div');el.className='group class-group role-'+shipRoleByGroup(group);
       const n=document.createElement('strong');n.textContent=String(count);
       const t=document.createElement('span');t.textContent=group;
       el.append(n,t);return el;
     }));
     $('dscanRows').replaceChildren(...filtered.map((row,index)=>{
+      const role=shipRoleByType(row.type);
       const tr=document.createElement('tr');
-      [String(index+1),row.name,row.type,row.distance||'—'].forEach(value=>{
-        const td=document.createElement('td');td.textContent=value;tr.append(td);
+      tr.className='scan-row role-'+role;
+      [String(index+1),row.name,row.type,row.distance||'—'].forEach((value,column)=>{
+        const td=document.createElement('td');
+        if(column===2){
+          const badge=document.createElement('span');
+          badge.className='ship-type-tag role-'+role;
+          badge.textContent=value;
+          td.append(badge);
+        }else td.textContent=value;
+        tr.append(td);
       });
       return tr;
     }));
