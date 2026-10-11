@@ -474,7 +474,23 @@ const ledgerSnapshotAtByCharacter = restoredLedgerCache.snapshotAtByCharacter;
 // Rebuild immediately from the durable ledger cache so a deployment publishes
 // the new type-ID payout semantics without waiting for the next ESI cycle.
 if(ledgerRowsByCharacter.size)rebuildDailyFleetFromLedgerCache();
+// EVE universe/names is not guaranteed to respond during a quick Threat Scan.
+// Seed inventory-type names from our shipped SDE catalog so numeric D-scan
+// type IDs (e.g. Rorqual 28352) always have names, without remote requests.
 const universeNameCache = new Map();
+try{
+  const shipCatalog=JSON.parse(fs.readFileSync(path.join(PUBLIC_DIR,'eve-ship-catalog.json'),'utf8'));
+  if(Array.isArray(shipCatalog?.ships)){
+    for(const ship of shipCatalog.ships){
+      if(!Array.isArray(ship))continue;
+      const id=Number(ship[3]);
+      const name=String(ship[0]||'').trim();
+      if(Number.isSafeInteger(id)&&id>0&&name)universeNameCache.set(id,name);
+    }
+  }
+}catch(error){
+  console.warn('Threat Scan ship-name catalog unavailable',String(error?.message||error));
+}
 const trackerLiveClients = new Set();
 const trackerLiveClientUsers = new Map();
 let heavyFighterTypeIdsCache = {at:0,ids:null,promise:null};
