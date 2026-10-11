@@ -23,8 +23,8 @@ assert.equal(mining.system,'SYSTEM NOT PROVIDED','never invent a system');
 assert.equal(mining.confirmedHostiles,null,'D-scan cannot identify hostile standings');
 assert.match(mining.status,/MINING ACTIVITY/);
 assert.doesNotMatch(mining.status,/HOSTILE SHIPS/i);
-assert.match(discordScanDescription(example),/30x Mackinaw/);
-assert.equal(discordScanDescription(example),'30x Mackinaw','Discord description lists only ships');
+assert.match(discordScanDescription(example),/30× Mackinaw/);
+assert.equal(discordScanDescription(example),'30× Mackinaw','Discord description lists only ships');
 const localColorExample={
   ...example,
   local:{pilots:[{standingStatus:'friendly'},{standingStatus:'friendly'},{standingStatus:'hostile'},{standingStatus:'neutral'},{standingStatus:'unknown'}]},
@@ -43,13 +43,13 @@ const exampleShips={
   ].join('\n'),
 };
 const brief=discordScanDescription(exampleShips);
-assert.ok(brief.length<=58,'Discord embed description has a one-line character budget');
-assert.match(brief,/^2x Velator, 1x Akoman/,'keep most common ships first');
+assert.ok(brief.length<=48,'Discord embed description has a one-line character budget');
+assert.match(brief,/^2× Velator · 1× Akoman/,'keep most common ships first');
 assert.match(brief,/\.\.\.$/,'append ... when additional ships do not fit');
 assert.doesNotMatch(brief,/contacts|Hostility|unverified|System/i,'only list ships');
 assert.equal(discordScanDescription({localText:'Pilot One\nPilot Two'}),'No ships identified','Local-only link is concise');
 const longHull=discordScanDescription({dscanText:'Raven Navy Issue\tRaven Navy Issue\t10 km'});
-assert.equal(longHull,'1x Raven Navy Issue','untruncated single entry has no ellipsis');
+assert.equal(longHull,'1× Raven Navy Issue','untruncated single entry has no ellipsis');
 
 const miningSvg=renderDiscordScanSvg(example);
 assert.match(miningSvg,/Jlr/);
@@ -84,8 +84,15 @@ assert.doesNotMatch(rendered,/property="og:image"/,'Discord preview is text-only
 assert.doesNotMatch(rendered,/name="twitter:card"/,'Discord shows only the link text summary');
 assert.match(rendered,/<meta property="og:url" content="https:\/\/jlrhub.com\/d\/safePublicToken">/);
 assert.doesNotMatch(rendered,/name="twitter:image"/,'Discord share previews omit image tags entirely');
-assert.match(rendered,/<meta property="og:description" content="30x Mackinaw">/);
+assert.match(rendered,/<meta property="og:description" content="30× Mackinaw">/);
+assert.match(rendered,/<meta property="og:title" content="30 SHIPS ON D-SCAN">/,'compact title shows scan count without repeating the site name');
 assert.doesNotMatch(rendered,/og:title" content="JLR Shared Intel"/);
+const renderedWithSystem=renderDiscordScanHtml(htmlTemplate,{...example,system:'C-N4OD'},{
+  canonicalUrl:'https://jlrhub.com/d/safePublicToken?card=shiplist2',
+});
+assert.match(renderedWithSystem,/<meta property="og:title" content="C-N4OD • 30 SHIPS ON D-SCAN">/,'known system leads the Discord headline');
+assert.match(renderedWithSystem,/<meta property="og:site_name" content="JlrHub">/,'JlrHub appears once in the site header');
+assert.doesNotMatch(renderedWithSystem,/property="og:image"/,'polished small card does not reintroduce a large preview image');
 const injection=renderDiscordScanHtml(htmlTemplate,{...example,system:'<script>alert(1)</script>'},{
   canonicalUrl:'https://jlrhub.com/d/safePublicToken',imageUrl,
 });
@@ -94,10 +101,10 @@ const server=fs.readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
 assert.match(server,/dscan-preview\/.*png/);
 assert.match(server,/renderDiscordScanHtml\(template,row/);
 assert.match(server,/fingerprint=crypto.createHash/,'preview image URL changes when share updates');
-assert.match(server,/card=shiplist1/,'new copy links bypass old Discord image previews');
+assert.match(server,/card=shiplist2/,'new copy links bypass cached previous Discord previews');
 assert.match(server,/canonicalUrl:baseUrl\+url.pathname\+url.search/,'OG canonical URLs preserve the cache-busting card query');
 const appSource=fs.readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
 assert.match(appSource,/function versionDiscordScanLink/,'existing saved share links are updated to the text-only preview version');
-assert.match(appSource,/searchParams.set\('card','shiplist1'\)/,'saved links get the versioned new card');
+assert.match(appSource,/searchParams.set\('card','shiplist2'\)/,'saved links get the versioned new card');
 
 console.log('Discord metadata previews: mining fleets, unknown hostility, missing system, ship-only, Local-only, PNG, and OG HTML passed');
