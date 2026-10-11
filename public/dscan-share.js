@@ -33,8 +33,9 @@
     'Interdictor','Lancer Dreadnought','Logistics','Logistics Frigate','Marauder',
     'Stealth Bomber','Strategic Cruiser','Supercarrier','Tactical Destroyer','Titan',
   ]);
-  // Miasmos is an ore hauler but its SDE group is the broader Hauler category.
-  const MINING_SPECIAL_HULLS=new Set(['miasmos']);
+  // Venture is a mining frigate despite its generic SDE Frigate group;
+  // Miasmos is an ore hauler despite its generic Hauler group.
+  const MINING_SPECIAL_HULLS=new Set(['miasmos','venture']);
   function shipRoleByGroup(group){
     if(MINING_GROUPS.has(group))return 'mining';
     if(COMBAT_GROUPS.has(group))return 'combat';
@@ -78,16 +79,19 @@
     }
   }
   function shipReport(rows){
-    const classes=new Map(),types=groupDscan(rows);
+    const classes=new Map(),classRoleSets=new Map(),types=groupDscan(rows);
     let ships=0,combatShips=0,combatMass=0,combatMassComplete=true;
     for(const row of rows){
       const data=SHIP_TYPES.get(String(row.type||'').toLowerCase().trim());
       if(!data)continue;
       ships++;
       classes.set(data.group,(classes.get(data.group)||0)+1);
+      if(!classRoleSets.has(data.group))classRoleSets.set(data.group,new Set());
+      const role=shipRoleByType(row.type);
+      classRoleSets.get(data.group).add(role);
       // Only PvP/combat-class hulls contribute to displayed mass. Mining hulls,
       // mining support, haulers and unknown objects never enter this total.
-      if(shipRoleByType(row.type)!=='combat')continue;
+      if(role!=='combat')continue;
       combatShips++;
       if(Number.isFinite(data.mass)&&data.mass>0)combatMass+=data.mass;
       else combatMassComplete=false;
@@ -95,6 +99,11 @@
     return {
       ships, types, combatShips,
       classes:[...classes.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])),
+      // Shared SDE classes can contain multiple roles (e.g. Venture + Rifter are
+      // both Frigates). Do not mark the whole class as combat in such scans.
+      classRoles:Object.fromEntries([...classRoleSets.entries()].map(([group,roles])=>[
+        group,roles.size===1?[...roles][0]:'other',
+      ])),
       combatMass:combatShips>0&&combatMassComplete?combatMass:null,
     };
   }
@@ -301,7 +310,7 @@
     $('classBreakdown').classList.toggle('hidden',!report.classes.length);
     $('classBreakdownLabel').textContent=report.ships+' identified ships';
     $('dscanClasses').replaceChildren(...report.classes.map(([group,count])=>{
-      const el=document.createElement('div');el.className='group class-group role-'+shipRoleByGroup(group);
+      const el=document.createElement('div');el.className='group class-group role-'+(report.classRoles[group]||'other');
       const n=document.createElement('strong');n.textContent=String(count);
       const t=document.createElement('span');t.textContent=group;
       el.append(n,t);return el;
