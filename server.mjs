@@ -8606,15 +8606,39 @@ async function enrichJlrDscanShare(row,{force=false}={}){
   }
   return changed;
 }
-async function createJlrDscanShare(req,user,scanText){
+function sharedScanSystemName(value){
+  return String(value||'').replace(/[\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim().slice(0,80);
+}
+function companionScanSystem(user){
+  // Never guess a solar system from ship names or stale character positions.
+  // Only use current, same-system companion observations belonging to this user.
+  const recent=companionLocationsForUser(user).filter(row=>{
+    const age=Date.now()-Date.parse(row?.checkedAt||0);
+    return Number.isFinite(age)&&age>=0&&age<COMPANION_LOCATION_TTL_MS;
+  });
+  const names=new Map();
+  for(const row of recent){
+    const name=sharedScanSystemName(row.system);
+    if(name)names.set(name.toLowerCase(),name);
+  }
+  return names.size===1?[...names.values()][0]:'';
+}
+async function createJlrDscanShare(req,user,scanText,options={}){
   state.dscanShares ||= {};
   const digest=crypto.createHash('sha256').update(scanText).digest('hex');
+  const suppliedSystem=sharedScanSystemName(options?.system);
+  const inferredSystem=suppliedSystem?'':companionScanSystem(user);
+  const system=suppliedSystem||inferredSystem;
   const existing=Object.values(state.dscanShares).find(row=>
-    String(row?.digest||'')===digest&&String(row?.ownerId||'')===String(user?.id||'')
+    String(row?.digest||'')===digest&&String(row?.ownerId||'')===String(user?.id||'')&&
+    (!suppliedSystem||!sharedScanSystemName(row.system)||sharedScanSystemName(row.system).toLowerCase()===suppliedSystem.toLowerCase())
   );
   if(existing){
-    normalizeJlrSharedScan(existing);
-    if(await enrichJlrDscanShare(existing))await save();
+    const normalized=normalizeJlrSharedScan(existing);
+    let changed=normalized;
+    if(!existing.system&&system){existing.system=system;existing.updatedAt=now();changed=true}
+    if(await enrichJlrDscanShare(existing))changed=true;
+    if(changed)await save();
     return{url:dscanShareUrl(req,existing.token),share:dscanSharePublic(existing,user),cached:true};
   }
 
@@ -8634,7 +8658,7 @@ async function createJlrDscanShare(req,user,scanText){
     localText:kind==='local'?scanText:'',
     lineCount:sharedScanLines(scanText).length,
     kind,
-    system:'',
+    system,
     manualRecons:[],
     createdAt:timestamp,
     updatedAt:timestamp,
@@ -11125,7 +11149,7 @@ async function routeApi(req,res,url) {
     const scanText=String(body?.text||'').trim();
     if(scanText.length<2)return json(res,400,{error:'EMPTY_SCAN',message:'Paste a D-scan, Local list, or fleet scan first.'});
     if(scanText.length>50_000)return json(res,413,{error:'SCAN_TOO_LARGE',message:'The scan is too large to share. Keep it under 50,000 characters.'});
-    try{return json(res,200,await createJlrDscanShare(req,user,scanText))}
+    try{return json(res,200,await createJlrDscanShare(req,user,scanText,{system:body?.system}))}
     catch(err){
       console.warn('JLR D-scan share failed',String(err.message||err));
       return json(res,502,{error:'DSCAN_SHARE_FAILED',message:`Could not create the JLR D-scan link: ${String(err.message||err)}`});
