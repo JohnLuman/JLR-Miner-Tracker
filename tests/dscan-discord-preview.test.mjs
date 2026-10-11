@@ -94,4 +94,10 @@ const server=fs.readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
 assert.match(server,/dscan-preview\/.*png/);
 assert.match(server,/renderDiscordScanHtml\(template,row/);
 assert.match(server,/fingerprint=crypto.createHash/,'preview image URL changes when share updates');
+assert.match(server,/card=shiplist1/,'new copy links bypass old Discord image previews');
+assert.match(server,/canonicalUrl:baseUrl\+url.pathname\+url.search/,'OG canonical URLs preserve the cache-busting card query');
+const appSource=fs.readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
+assert.match(appSource,/function versionDiscordScanLink/,'existing saved share links are updated to the text-only preview version');
+assert.match(appSource,/searchParams.set\('card','shiplist1'\)/,'saved links get the versioned new card');
+
 console.log('Discord metadata previews: mining fleets, unknown hostility, missing system, ship-only, Local-only, PNG, and OG HTML passed');
