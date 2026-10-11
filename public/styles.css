@@ -4183,3 +4183,42 @@ html[data-theme] .field-board .system-node.ice-system-node{background:linear-gra
 .market-trend-ranges .market-range.active{background:rgba(47,131,205,.38);border-color:rgba(110,195,255,.5);color:#e5f6ff}
 .market-trend-foot{padding:7px 11px 9px;border-top:1px solid rgba(117,158,180,.14);background:rgba(5,13,20,.8);color:#9ab5c9;font-size:11px;line-height:1.45;letter-spacing:.008em}
 @media(max-width:800px){.market-trend-tools{justify-content:flex-start}.market-trend-ranges{flex-wrap:wrap}.market-trend-ranges .market-range{padding:8px 7px}.market-trend-foot{font-size:10px}}
+
+/* One consolidated line chart for every ore, scoped to the recorded price history. */
+.all-ore-trend-card{min-width:0}
+.all-ore-trend-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.all-ore-trend-head>div:first-child{min-width:180px}
+.all-ore-trend-controls{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:6px}
+.all-ore-trend-controls .market-trend-ranges{flex-wrap:nowrap}
+.all-ore-trend-controls button{font-size:11px;font-weight:850;letter-spacing:.025em;color:#98b6d0;background:transparent;border:1px solid transparent;border-radius:6px;padding:7px 10px;cursor:pointer}
+.all-ore-trend-controls button:hover{color:#e5f6ff;background:rgba(75,151,211,.2)}
+.all-ore-trend-controls button.active{color:#f1faff;border-color:rgba(107,187,246,.5);background:rgba(38,122,199,.36)}
+.all-ore-trend-controls button:focus-visible,.all-ore-legend-item:focus-visible,.all-ore-legend-actions button:focus-visible{outline:2px solid #84d4ff;outline-offset:2px}
+.all-ore-price-chart{min-height:300px;overflow:hidden}
+.all-ore-line-svg{min-height:270px}
+.all-ore-series{fill:none;stroke-width:2.4;stroke-linejoin:round;stroke-linecap:round;opacity:.94;pointer-events:none}
+.all-ore-axis{font-size:11px;fill:#acbecd;font-family:inherit}
+.all-ore-point{fill:var(--ore-line-color);stroke:#07111b;stroke-width:1.3;fill-opacity:.045;stroke-opacity:0;outline:none;cursor:crosshair}
+.all-ore-point:hover,.all-ore-point:focus{fill-opacity:1;stroke-opacity:1;r:4.5px}
+.all-ore-legend-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:14px 0 8px}
+.all-ore-legend-head strong{font-size:11px;letter-spacing:.11em;color:#d1e8fb}
+.all-ore-legend-actions{display:flex;align-items:center;gap:8px}
+.all-ore-legend-actions button{padding:6px 10px;border-radius:8px;border:1px solid rgba(111,160,199,.35);color:#b1d4ed;background:rgba(22,45,65,.5);font-size:10px;letter-spacing:.055em;font-weight:850;cursor:pointer}
+.all-ore-legend-actions button:hover{background:rgba(39,105,153,.6);color:#fff}
+.all-ore-legend{display:grid;grid-template-columns:repeat(auto-fill,minmax(154px,1fr));gap:6px}
+.all-ore-legend-item{display:grid;grid-template-columns:8px minmax(0,1fr);grid-template-rows:auto auto;align-items:center;column-gap:8px;padding:9px 10px;text-align:left;min-width:0;border:1px solid rgba(101,142,176,.22);border-radius:9px;background:rgba(15,28,43,.76);color:#d9eaff;cursor:pointer}
+.all-ore-legend-item:hover{border-color:var(--ore-line-color);background:rgba(30,53,76,.84)}
+.ore-line-swatch{grid-column:1;grid-row:1/3;display:block;width:7px;height:26px;border-radius:6px;background:var(--ore-line-color)}
+.all-ore-legend-name{grid-column:2;grid-row:1;min-width:0;font-weight:850;font-size:12px;overflow-wrap:anywhere;line-height:1.25}
+.all-ore-legend-item small{grid-column:2;grid-row:2;min-width:0;font-size:10px;color:#91a8bc;line-height:1.35}
+.all-ore-legend-item.hidden-line{background:rgba(15,24,36,.38);color:#8096a9;border-color:rgba(101,142,176,.13)}
+.all-ore-legend-item.hidden-line .ore-line-swatch{opacity:.22}
+.all-ore-legend-item.hidden-line small{color:#667f91}
+.all-ore-caption{margin:12px 3px 2px;font-size:11px;line-height:1.55;color:#8eacbf}
+@media(max-width:760px){
+  .all-ore-trend-controls{justify-content:flex-start}
+  .all-ore-legend{grid-template-columns:repeat(auto-fill,minmax(135px,1fr))}
+  .all-ore-legend-item{padding:7px}
+  .all-ore-legend-name{font-size:11px}
+  .all-ore-trend-head>div:first-child{min-width:0}
+}
