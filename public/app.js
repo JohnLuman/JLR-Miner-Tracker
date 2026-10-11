@@ -156,6 +156,8 @@
   let doctrineShoppingMode=localStorage.getItem('jlrDoctrineShoppingMode')==='shortfall'?'shortfall':'full';
   let doctrineShoppingOpen=localStorage.getItem('jlrDoctrineShoppingOpen')==='true';
   let oreTrendType=localStorage.getItem('jlrOreTrend')||'Kylixium';
+  const savedMarketTrendDays=localStorage.getItem('jlrMarketTrendDays')||'30';
+  let marketTrendDays=['30','90','180','365','all'].includes(savedMarketTrendDays)?savedMarketTrendDays:'30';
   const savedFleetHistoryDays=Number(localStorage.getItem('jlrFleetHistoryDays'));
   let fleetHistoryDays=[7,30,90].includes(savedFleetHistoryDays)?savedFleetHistoryDays:7;
   let fleetHistoryMetric=localStorage.getItem('jlrFleetHistoryMetric')==='value'?'value':'m3';
@@ -1299,27 +1301,72 @@
   }
   function marketHistoryPoints(bucket,key,currentJita,currentCn){
     const source=Array.isArray(state?.market?.history?.[bucket]?.[key])?state.market.history[bucket][key]:[];
-    const points=source.slice(-31).map(row=>({
+    const validPrice=value=>value!==null&&value!==undefined&&value!==''&&Number.isFinite(Number(value))&&Number(value)>0?Number(value):null;
+    const points=source.slice(-731).map(row=>({
       date:String(row.date||''),
-      jita:Number.isFinite(Number(row.jita))?Number(row.jita):null,
-      cn:Number.isFinite(Number(row.cn))?Number(row.cn):null,
-    })).filter(row=>row.date);
+      jita:validPrice(row.jita),
+      cn:validPrice(row.cn),
+    })).filter(row=>/^\d{4}-\d{2}-\d{2}$/.test(row.date));
     const today=new Date().toISOString().slice(0,10);
     if(!points.some(row=>row.date===today)){
-      points.push({
-        date:today,
-        jita:Number.isFinite(Number(currentJita))&&Number(currentJita)>0?Number(currentJita):null,
-        cn:Number.isFinite(Number(currentCn))&&Number(currentCn)>0?Number(currentCn):null,
-      });
+      points.push({date:today,jita:validPrice(currentJita),cn:validPrice(currentCn)});
     }
-    return points.sort((a,b)=>a.date.localeCompare(b.date)).slice(-31);
+    return points.sort((a,b)=>a.date.localeCompare(b.date)).slice(-731);
   }
-  function renderMarketLineChart(el,points,{unit='',decimals=2}={}){
+  function marketTrendView(points,selectedDays=marketTrendDays,todayISO=new Date().toISOString().slice(0,10)){
+    const range=['30','90','180','365','all'].includes(String(selectedDays))?String(selectedDays):'30';
+    const days=range==='all'?null:Number(range);
+    const todayMs=Date.parse(todayISO+'T00:00:00Z');
+    const startMs=days===null?null:todayMs-(days-1)*86400000;
+    const observations=(points||[])
+      .filter(row=>row&&/^\d{4}-\d{2}-\d{2}$/.test(String(row.date||'')))
+      .filter(row=>{
+        const ms=Date.parse(row.date+'T00:00:00Z');
+        return Number.isFinite(ms)&&ms<=todayMs&&(startMs===null||ms>=startMs);
+      })
+      .sort((a,b)=>a.date.localeCompare(b.date));
+    const unique=[...new Map(observations.map(row=>[row.date,row])).values()];
+    const granularity=days===null||days>180?'month':days>30?'week':'day';
+    const groups=new Map();
+    for(const row of unique){
+      const ms=Date.parse(row.date+'T00:00:00Z');
+      let key=row.date;
+      if(granularity==='week'){
+        const monday=new Date(ms);
+        monday.setUTCDate(monday.getUTCDate()-(monday.getUTCDay()+6)%7);
+        key=monday.toISOString().slice(0,10);
+      }else if(granularity==='month')key=row.date.slice(0,7)+'-01';
+      if(!groups.has(key))groups.set(key,{date:key,firstDate:row.date,lastDate:row.date,days:0,jitaSum:0,jitaCount:0,cnSum:0,cnCount:0});
+      const group=groups.get(key);
+      group.days++;
+      group.lastDate=row.date;
+      for(const k of ['jita','cn']){
+        const price=Number(row[k]);
+        if(Number.isFinite(price)&&price>0){group[k+'Sum']+=price;group[k+'Count']++}
+      }
+    }
+    const rows=[...groups.values()].map(group=>({
+      date:group.date,firstDate:group.firstDate,lastDate:group.lastDate,days:group.days,
+      jita:group.jitaCount?group.jitaSum/group.jitaCount:null,
+      cn:group.cnCount?group.cnSum/group.cnCount:null,
+    }));
+    const firstRecorded=unique[0]?.date||'';
+    // "ALL" means all retained observations, not the entire history of EVE markets.
+    const windowStart=days===null?(rows[0]?.date||todayISO):new Date(startMs).toISOString().slice(0,10);
+    const windowEnd=todayISO;
+    return {rows,days,range,granularity,recordedDays:unique.length,firstRecorded,windowStart,windowEnd};
+  }
+  function marketTrendRangeLabel(view){
+    const interval=view.range==='all'?'all recorded history':view.range+' days';
+    const grain=view.granularity==='day'?'daily prices':view.granularity==='week'?'weekly averages':'monthly averages';
+    return interval+' • '+grain;
+  }
+  function renderMarketLineChart(el,view,{unit='',decimals=2}={}){
     if(!el)return;
-    const rows=(points||[]).filter(row=>row&&row.date).slice(-31);
-    const vals=rows.flatMap(row=>[row.jita,row.cn]).filter(v=>Number.isFinite(Number(v))&&Number(v)>0).map(Number);
+    const rows=Array.isArray(view?.rows)?view.rows:[];
+    const vals=rows.flatMap(row=>[row.jita,row.cn]).filter(v=>Number.isFinite(v)&&v>0);
     if(!vals.length){
-      el.innerHTML='<div class="visual-empty">Market history is collecting its first daily point.</div>';
+      el.innerHTML='<div class="visual-empty">No recorded market prices in this period yet. JLR records new daily snapshots as they arrive.</div>';
       return;
     }
 
@@ -1329,7 +1376,11 @@
     if(min===max){min*=.97;max*=1.03}
     else{const pad=(max-min)*.10;min=Math.max(0,min-pad);max+=pad}
     const range=Math.max(1e-9,max-min);
-    const x=i=>rows.length<=1?L+pw/2:L+(i/(rows.length-1))*pw;
+    const startMs=Date.parse(view.windowStart+'T00:00:00Z');
+    const endMs=Date.parse(view.windowEnd+'T00:00:00Z');
+    const dateSpan=Math.max(86400000,endMs-startMs);
+    const xDate=ms=>L+Math.min(1,Math.max(0,(ms-startMs)/dateSpan))*pw;
+    const x=i=>xDate(Date.parse(rows[i].date+'T00:00:00Z'));
     const y=v=>T+(max-Number(v))/range*ph;
 
     let grid='';
@@ -1341,31 +1392,35 @@
         '<text x="'+(L-7)+'" y="'+(yy+3).toFixed(1)+'" text-anchor="end" class="market-axis-label">'+esc(compactNumber(value))+'</text>';
     }
 
-    const labelCount=Math.min(5,rows.length),tickIndexes=new Set();
-    if(rows.length===1)tickIndexes.add(0);
-    else for(let i=0;i<labelCount;i++)tickIndexes.add(Math.round(i*(rows.length-1)/(labelCount-1)));
-    const xLabels=[...tickIndexes].map(i=>
-      '<text x="'+x(i).toFixed(1)+'" y="'+(H-8)+'" text-anchor="middle" class="market-axis-label">'+esc(chartDateLabel(rows[i].date))+'</text>'
-    ).join('');
+    const labelCount=5,xLabels=Array.from({length:labelCount},(_,i)=>{
+      const t=startMs+(endMs-startMs)*i/(labelCount-1);
+      const label=new Date(t).toISOString().slice(0,10);
+      return '<text x="'+xDate(t).toFixed(1)+'" y="'+(H-8)+'" text-anchor="middle" class="market-axis-label">'+esc(chartDateLabel(label))+'</text>';
+    }).join('');
 
+    // A missing week/month is a gap, not a zero price or a made-up connection.
+    const maxGap=view.granularity==='month'?45: view.granularity==='week'?15:3;
     function seriesPath(key){
-      let d='',started=false;
+      let d='',previousDay=null;
       for(let i=0;i<rows.length;i++){
         const v=Number(rows[i][key]);
-        if(!(Number.isFinite(v)&&v>0)){started=false;continue}
-        d+=(started?' L ':'M ')+x(i).toFixed(1)+' '+y(v).toFixed(1);
-        started=true;
+        if(!(Number.isFinite(v)&&v>0)){previousDay=null;continue}
+        const day=Date.parse(rows[i].date+'T00:00:00Z');
+        const continuous=previousDay!==null&&(day-previousDay)/86400000<=maxGap;
+        d+=(continuous?' L ':' M ')+x(i).toFixed(1)+' '+y(v).toFixed(1);
+        previousDay=day;
       }
-      return d;
+      return d.trim();
     }
     function validPoints(key){
-      return rows.map((row,i)=>({i,v:Number(row[key]),date:row.date})).filter(p=>Number.isFinite(p.v)&&p.v>0);
+      return rows.map((row,i)=>({i,v:Number(row[key]),date:row.date,days:row.days,first:row.firstDate,last:row.lastDate})).filter(p=>Number.isFinite(p.v)&&p.v>0);
     }
     function hoverTargets(key,label){
-      return validPoints(key).map(p=>
-        '<circle cx="'+x(p.i).toFixed(1)+'" cy="'+y(p.v).toFixed(1)+'" r="7" class="market-hit"><title>'+
-        esc(chartDateLabel(p.date)+' • '+label+' '+p.v.toFixed(decimals)+(unit?' '+unit:''))+'</title></circle>'
-      ).join('');
+      return validPoints(key).map(p=>{
+        const interval=p.first===p.last?chartDateLabel(p.first):chartDateLabel(p.first)+'–'+chartDateLabel(p.last);
+        const title=interval+' • '+label+' '+p.v.toFixed(decimals)+(unit?' '+unit:'')+' • '+p.days+' recorded day'+(p.days===1?'':'s');
+        return '<circle cx="'+x(p.i).toFixed(1)+'" cy="'+y(p.v).toFixed(1)+'" r="7" class="market-hit"><title>'+esc(title)+'</title></circle>';
+      }).join('');
     }
     function deltaText(points){
       if(points.length<2||points[0].v<=0)return'';
@@ -1383,24 +1438,22 @@
     }
     const clampLabelY=value=>Math.max(T+7,Math.min(T+ph-4,value));
     jitaLabelY=clampLabelY(jitaLabelY);cnLabelY=clampLabelY(cnLabelY);
-
     const jitaPath=seriesPath('jita'),cnPath=seriesPath('cn');
     const latestDots=(jitaLast?'<circle cx="'+x(jitaLast.i).toFixed(1)+'" cy="'+y(jitaLast.v).toFixed(1)+'" r="3.8" class="market-dot market-dot-jita"/>':'')+
       (cnLast?'<circle cx="'+x(cnLast.i).toFixed(1)+'" cy="'+y(cnLast.v).toFixed(1)+'" r="3.8" class="market-dot market-dot-cn"/>':'');
     const endLabels=(jitaLast?'<text x="'+(W-R+9)+'" y="'+jitaLabelY.toFixed(1)+'" class="market-end-label market-end-jita">JITA '+esc(compactNumber(jitaLast.v))+esc(deltaText(jitaPoints))+'</text>':'')+
       (cnLast?'<text x="'+(W-R+9)+'" y="'+cnLabelY.toFixed(1)+'" class="market-end-label market-end-cn">C-N '+esc(compactNumber(cnLast.v))+esc(deltaText(cnPoints))+'</text>':'');
-    const first=rows[0]?.date;
-    const collecting=rows.length<30?'<div class="market-history-note">History started '+esc(chartDateLabel(first))+' • '+rows.length+' daily point'+(rows.length===1?'':'s')+' collected</div>':'';
 
+    const covering='Showing '+view.recordedDays+' recorded day'+(view.recordedDays===1?'':'s')+
+      ' • '+esc(marketTrendRangeLabel(view))+' • '+esc(chartDateLabel(view.firstRecorded))+' to '+esc(chartDateLabel(view.windowEnd));
     el.innerHTML='<div class="market-chart-shell">'+
-      '<svg class="market-line-svg" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Jita versus C-N market trend">'+
+      '<svg class="market-line-svg" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Jita versus C-N market trend, '+esc(marketTrendRangeLabel(view))+'">'+
         grid+xLabels+
         (jitaPath?'<path d="'+jitaPath+'" class="market-line market-line-jita"/>':'')+
         (cnPath?'<path d="'+cnPath+'" class="market-line market-line-cn"/>':'')+
         hoverTargets('jita','Jita')+hoverTargets('cn','C-N')+latestDots+endLabels+
         '<text x="'+L+'" y="'+(T-9)+'" class="market-unit-label">'+esc(unit)+'</text>'+
-      '</svg>'+collecting+
-    '</div>';
+      '</svg><div class="market-trend-foot">'+covering+' • older prices appear as JLR collects them (no backfill)</div></div>';
   }
   function updateSoundStatus(){
     const button=$('soundStatus');
@@ -5629,7 +5682,8 @@
     const trendOre=trendOres.find(ore=>ore.name===oreTrendType)||trendOres[0]||null;
     const currentJita=Number(trendOre?.market?.jita?.refinedBuyPerM3 ?? trendOre?.market?.jita?.buyPerM3 ?? trendOre?.jbvPerM3);
     const currentCn=Number(trendOre?.market?.cn?.refinedBuyPerM3 ?? trendOre?.market?.cn?.buyPerM3);
-    const oreHistory=marketHistoryPoints('ore',trendOre?.name||oreTrendType,currentJita,currentCn);
+    const oreHistory=marketTrendView(marketHistoryPoints('ore',trendOre?.name||oreTrendType,currentJita,currentCn));
+    if($('oreTrendWindowLabel'))$('oreTrendWindowLabel').textContent=marketTrendRangeLabel(oreHistory);
     renderMarketLineChart($('oreValueChart'),oreHistory,{unit:'ISK/m³',decimals:2});
 
     const fleet=fleetStats();
@@ -5750,7 +5804,8 @@
         '</div>'
       ).join('');
 
-      const iceHistory=marketHistoryPoints('ice',selected?.name||iceTrackType,selected?.jita,selected?.cn);
+      const iceHistory=marketTrendView(marketHistoryPoints('ice',selected?.name||iceTrackType,selected?.jita,selected?.cn));
+      if($('iceTrendWindowLabel'))$('iceTrendWindowLabel').textContent=marketTrendRangeLabel(iceHistory);
       renderMarketLineChart($('iceValueChart'),iceHistory,{unit:'ISK/block',decimals:0});
     }
 
@@ -6957,6 +7012,24 @@
     }
   });
 
+  document.querySelectorAll('.market-range').forEach(button=>button.addEventListener('click',()=>{
+    const range=String(button.dataset.marketDays||'30');
+    if(!['30','90','180','365','all'].includes(range))return;
+    marketTrendDays=range;
+    localStorage.setItem('jlrMarketTrendDays',range);
+    document.querySelectorAll('.market-range').forEach(item=>{
+      const active=item.dataset.marketDays===range;
+      item.classList.toggle('active',active);
+      item.setAttribute('aria-pressed',String(active));
+    });
+    renderMiningVisuals();
+    renderIceMining();
+  }));
+  document.querySelectorAll('.market-range').forEach(button=>{
+    const active=button.dataset.marketDays===marketTrendDays;
+    button.classList.toggle('active',active);
+    button.setAttribute('aria-pressed',String(active));
+  });
   $('oreTrendSelect').addEventListener('change',()=>{
     oreTrendType=$('oreTrendSelect').value||'Kylixium';
     localStorage.setItem('jlrOreTrend',oreTrendType);
