@@ -54,6 +54,10 @@ assert.equal(longHull,'1× Raven Navy Issue','untruncated single entry has no el
 const miningSvg=renderDiscordScanSvg(example);
 assert.match(miningSvg,/Jlr/);
 assert.match(miningSvg,/Hub/);
+assert.equal((miningSvg.match(/>Jlr<\/text>/g)||[]).length,1,'brand first half appears only once');
+assert.equal((miningSvg.match(/>Hub<\/text>/g)||[]).length,1,'brand second half appears only once');
+assert.doesNotMatch(miningSvg,/JLRHUB(?:\.COM)?|VIEW FULL LIST ON JLRHUB/i,'no repeated brand next to system or footer');
+assert.match(miningSvg,/VIEW FULL INTEL/,'footer links to detail without repeating the brand');
 assert.doesNotMatch(miningSvg,/Tracker/i,'old Tracker branding must not appear');
 assert.doesNotMatch(miningSvg,/<text[^>]+>.*HOSTILE SHIPS/,'miners must not be treated as hostiles');
 assert.match(miningSvg,/Mackinaw/);
@@ -92,7 +96,7 @@ assert.match(rendered,/<meta property="og:image:height" content="630">/);
 assert.match(rendered,/<meta property="og:title" content="30 SHIPS ON D-SCAN">/,'compact title shows scan count without repeating the site name');
 assert.doesNotMatch(rendered,/og:title" content="JLR Shared Intel"/);
 const renderedWithSystem=renderDiscordScanHtml(htmlTemplate,{...example,system:'C-N4OD'},{
-  canonicalUrl:'https://jlrhub.com/d/safePublicToken?card=hdscan2',imageUrl,
+  canonicalUrl:'https://jlrhub.com/d/safePublicToken?card=hdscan3',imageUrl,
 });
 assert.match(renderedWithSystem,/<meta property="og:title" content="C-N4OD • 30 SHIPS ON D-SCAN">/,'known system leads the Discord headline');
 assert.match(renderedWithSystem,/<meta property="og:site_name" content="JlrHub">/,'JlrHub appears once in the site header');
@@ -105,10 +109,10 @@ const server=fs.readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
 assert.match(server,/dscan-preview\/.*png/);
 assert.match(server,/renderDiscordScanHtml\(template,row/);
 assert.match(server,/fingerprint=crypto.createHash/,'preview image URL changes when share updates');
-assert.match(server,/card=hdscan2/,'new copy links bypass cached previous Discord previews');
+assert.match(server,/card=hdscan3/,'new copy links bypass cached previous Discord previews');
 assert.match(server,/canonicalUrl:baseUrl\+url.pathname\+url.search/,'OG canonical URLs preserve the cache-busting card query');
 const appSource=fs.readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
 assert.match(appSource,/function versionDiscordScanLink/,'existing saved share links are updated to the text-only preview version');
-assert.match(appSource,/searchParams.set\('card','hdscan2'\)/,'saved links get the restored artwork URL');
+assert.match(appSource,/searchParams.set\('card','hdscan3'\)/,'saved links get the restored artwork URL');
 
 console.log('Discord metadata previews: mining fleets, unknown hostility, missing system, ship-only, Local-only, PNG, and OG HTML passed');

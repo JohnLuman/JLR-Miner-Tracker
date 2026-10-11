@@ -951,7 +951,7 @@ function appraisalShareUrl(req,token){
 }
 function dscanShareUrl(req,token){
   const origin=JLR_SHARE_ORIGIN||requestBaseUrl(req);
-  return origin+'/d/'+encodeURIComponent(String(token||''))+'?card=hdscan2';
+  return origin+'/d/'+encodeURIComponent(String(token||''))+'?card=hdscan3';
 }
 function callbackUrl(req) { return EVE_CALLBACK_URL || `${requestBaseUrl(req)}/auth/eve/callback`; }
 function redirectLegacyPublicHost(req,res){
@@ -11548,7 +11548,7 @@ const server=http.createServer(async(req,res)=>{securityHeaders(res);try{if(redi
       const fingerprint=crypto.createHash('sha256').update(JSON.stringify([
         row.updatedAt,row.dscanText,row.localText,row.system,row.manualRecons
       ])).digest('hex').slice(0,12);
-      const imageUrl=baseUrl+'/dscan-preview/'+encodeURIComponent(row.token)+'.png?v='+fingerprint+'-hdscan2';
+      const imageUrl=baseUrl+'/dscan-preview/'+encodeURIComponent(row.token)+'.png?v='+fingerprint+'-hdscan3';
       const template=await fsp.readFile(path.join(PUBLIC_DIR,'dscan-share.html'),'utf8');
       const html=renderDiscordScanHtml(template,row,{
         canonicalUrl:baseUrl+url.pathname+url.search,
