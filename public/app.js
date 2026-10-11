@@ -3877,8 +3877,8 @@
     const resolvedSystem=canonicalFountainSystem(typedSystem);
     if(typedSystem.trim()&&!resolvedSystem){
       threatShareEditError='Choose a Fountain system from the clickable suggestions.';
-      const systemInput=$('threatShareSystem');
-      systemInput?.focus();
+      toast(threatShareEditError);
+      $('threatShareSystem')?.focus();
       return;
     }
     const draft={
@@ -3948,6 +3948,7 @@
     const selectedFountainSystem=canonicalFountainSystem(threatShareNewSystem);
     if(threatShareNewSystem.trim()&&!selectedFountainSystem){
       threatShareError='Choose a Fountain system from the clickable suggestions.';
+      renderThreatScan();
       $('threatShareNewSystem')?.focus();
       return;
     }
