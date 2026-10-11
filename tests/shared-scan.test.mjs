@@ -47,7 +47,7 @@ assert.match(app,/saveThreatShareEditor/,'JLR Threat Scan can update the same sh
 assert.match(app,/manualRecons:threatShareReconRows/,'JLR editor saves manual recon rows');
 assert.match(app,/dscanText:\$\('threatShareDscan'\)/,'JLR editor updates D-scan separately');
 assert.match(app,/localText:\$\('threatShareLocal'\)/,'JLR editor updates Local separately');
-assert.match(html,/dscan-share\.js\?v=7/,'public viewer cache-busts the read-only client');
+assert.match(html,/dscan-share\.js\?v=8/,'public viewer cache-busts the read-only client');
 
 assert.match(html,/id="scanHighlights"/,'public D-scan leads with a composition summary');
 assert.match(html,/id="dscanObjectsDetails"/,'individual objects expand on demand');
@@ -84,7 +84,7 @@ assert.ok(roleSource.includes('function shipRoleByType'), 'role classifier must 
 const roles=new Function('SHIP_TYPES',roleSource+String.fromCharCode(10)+'return {shipRoleByType,roleTotals};')(
   new Map(catalog.ships.map(([name,group])=>[name.toLowerCase(),{group}])),
 );
-for(const type of ['Hulk','Orca','Porpoise','Rorqual','Miasmos']){
+for(const type of ['Hulk','Orca','Porpoise','Rorqual','Miasmos','Venture']){
   assert.equal(roles.shipRoleByType(type),'mining',type+' is mining or mining support');
 }
 for(const type of ['Rifter','Huginn','Guardian','Revelation']){
@@ -108,7 +108,7 @@ const onlyMiners=fleetReport(Array.from({length:29},()=>row('Hulk')));
 assert.equal(onlyMiners.ships,29,'mining ships are still identified and grouped');
 assert.equal(onlyMiners.combatShips,0,'mining-only fleet has no combat ships');
 assert.equal(onlyMiners.combatMass,null,'29 Hulks must not display 435,000 t as known combat mass');
-const mixedFleet=fleetReport(['Hulk','Orca','Rorqual','Porpoise','Miasmos','Rifter','Revelation','Nereus','Stargate'].map(row));
+const mixedFleet=fleetReport(['Hulk','Orca','Rorqual','Porpoise','Miasmos','Venture','Rifter','Revelation','Nereus','Stargate'].map(row));
 const expectedCombatMass=(ships.get('rifter').massKg+ships.get('revelation').massKg)/1000;
 assert.equal(mixedFleet.combatShips,2,'only Rifter and Revelation count toward combat mass');
 assert.equal(mixedFleet.combatMass,expectedCombatMass,'exclude mining, support, hauler and non-ship object mass');
@@ -117,5 +117,27 @@ assert.equal(unknownCombatMass.combatMass,null,'unknown combat hull mass must no
 assert.match(viewer,/KNOWN COMBAT MASS/,'UI labels this explicitly as combat mass, not whole scan mass');
 assert.match(viewer,/mining\/support excluded/,'shared-copy mass notes exclusion');
 assert.doesNotMatch(viewer,/Fleet mass:/,'legacy all-ships mass claim removed');
+
+
+const ventureFleet=fleetReport([row('Venture'),row('Venture')]);
+assert.equal(ventureFleet.ships,2,'Venture remains an identified ship');
+assert.equal(ventureFleet.combatShips,0,'Venture is not classified as PvP');
+assert.equal(ventureFleet.combatMass,null,'mining Venture contributes no PvP mass');
+assert.equal(ventureFleet.classRoles.Frigate,'mining','Venture-only Frigate class is blue');
+const mixedFrigates=fleetReport([row('Venture'),row('Rifter')]);
+assert.equal(mixedFrigates.combatShips,1,'only the Rifter contributes combat ship count');
+assert.equal(mixedFrigates.combatMass,ships.get('rifter').massKg/1000,'Venture is excluded from combat mass');
+assert.equal(mixedFrigates.classRoles.Frigate,'other','mixed-role Frigate class must not be all-red');
+const catalogBlockStart=server.indexOf('const universeNameCache = new Map();');
+const catalogBlockEnd=server.indexOf('const trackerLiveClients',catalogBlockStart);
+assert.ok(catalogBlockStart>0&&catalogBlockEnd>catalogBlockStart,'server seeds its ship-name cache');
+const initShipNameCache=new Function('fs','path','PUBLIC_DIR','console',
+  server.slice(catalogBlockStart,catalogBlockEnd)+String.fromCharCode(10)+'return universeNameCache;'
+);
+const cachedShipNames=initShipNameCache(fs,(await import('node:path')).default,
+  (await import('node:url')).fileURLToPath(new URL('../public/',import.meta.url)),console);
+assert.equal(cachedShipNames.get(28352),'Rorqual','Rorqual 28352 resolves immediately even in quick Threat Scan');
+assert.equal(cachedShipNames.get(32880),'Venture','Venture 32880 resolves by name');
+assert.ok(cachedShipNames.size>=500,'all ships receive fast-name lookups');
 
 console.log('shared scan tests passed');
