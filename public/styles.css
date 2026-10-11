@@ -4222,3 +4222,36 @@ html[data-theme] .field-board .system-node.ice-system-node{background:linear-gra
   .all-ore-legend-name{font-size:11px}
   .all-ore-trend-head>div:first-child{min-width:0}
 }
+
+/* All-ore visibility fix: older Fleet Performance layout forces SVG charts
+   to just 205px tall. This independent multi-series chart needs its own
+   readable canvas, with SVG presentation attributes as a CSS-cache fallback. */
+.fleet-trend-card .all-ore-price-chart{
+  height:auto!important;min-height:347px!important;max-height:none!important;
+  overflow-x:auto;overflow-y:hidden;
+}
+.fleet-trend-card .all-ore-line-svg{
+  display:block;width:100%;min-width:720px;min-height:325px!important;
+  height:325px!important;max-height:none!important;overflow:visible;
+}
+.all-ore-trend-head>div:first-child{
+  display:flex;flex-direction:column;align-items:flex-start;gap:6px;
+}
+.all-ore-trend-head>div:first-child strong{font-size:13px;letter-spacing:.08em}
+.all-ore-trend-head>div:first-child small{
+  display:block;font-size:11px;color:#adc0d0;line-height:1.4;
+}
+.all-ore-line-svg .all-ore-series{
+  fill:none!important;stroke-width:2.8px!important;
+  stroke-linecap:round;stroke-linejoin:round;opacity:1;
+}
+.all-ore-line-svg .all-ore-point{
+  fill:transparent!important;stroke:transparent!important;
+  fill-opacity:0!important;stroke-opacity:0!important;pointer-events:all;
+}
+.all-ore-line-svg .all-ore-dot{fill-opacity:1!important;opacity:1!important}
+.all-ore-line-svg .all-ore-axis{font-size:12px!important;fill:#b5ccdf!important}
+@media(max-width:760px){
+  .fleet-trend-card .all-ore-line-svg{height:325px!important;min-height:325px!important}
+  .all-ore-trend-head>div:first-child strong{font-size:12px}
+}
