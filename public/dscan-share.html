@@ -8,7 +8,7 @@
   <meta property="og:description" content="Shared EVE Online D-scan and Local intel hosted by JLR Hub.">
   <meta name="description" content="Shared EVE Online D-scan and Local intel hosted by JLR Hub.">
   <title>JLR Shared Intel</title>
-  <link rel="stylesheet" href="/dscan-share.css?v=6">
+  <link rel="stylesheet" href="/dscan-share.css?v=7-init-standing">
   <link rel="stylesheet" href="/connected-rail.css?v=2">
 </head>
 <body class="jlr-rail-controls">
@@ -76,6 +76,8 @@
           <div><span class="kicker">LOCAL</span><h2>LOCAL COMPOSITION</h2></div>
           <input id="localFilter" type="search" autocomplete="off" placeholder="Filter pilot, corporation, or alliance…">
         </div>
+        <p id="localStandingSource" class="local-standing-source">INIT standings status loading…</p>
+        <div class="local-standing-legend"><span class="standing-friendly">● INIT / ALLY</span><span class="standing-hostile">● HOSTILE</span><span class="standing-neutral">● NEUTRAL</span><span class="standing-unknown">● UNVERIFIED</span></div>
         <div id="localSummary"></div>
         <div class="table-section-head"><strong>CHARACTER LIST</strong><span id="localShownCount" class="muted"></span></div>
         <div class="table-wrap">
@@ -97,6 +99,6 @@
       </section>
     </section>
   </main>
-  <script src="/dscan-share.js?v=8"></script>
+  <script src="/dscan-share.js?v=9-init-standing"></script>
 </body>
 </html>
