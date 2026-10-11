@@ -56,4 +56,17 @@ assert.match(viewer,/Snapshot — Not Live/,'shared intel summary is marked as a
 assert.match(viewer,/mass:15000/,'known Hulk mass can be totaled');
 assert.match(viewer,/unclassified/,'unknown objects are not assumed to be ships');
 
+const catalog=JSON.parse(fs.readFileSync(new URL('../public/eve-ship-catalog.json',import.meta.url),'utf8'));
+assert.equal(catalog.massUnit,'kg');
+assert.ok(catalog.ships.length>=500,'ship database should have at least 500 EVE hulls');
+const ships=new Map(catalog.ships.map(([name,group,massKg,typeId])=>[name.toLowerCase(),{group,massKg,typeId}]));
+assert.deepEqual(ships.get('hulk'),{group:'Exhumer',massKg:15000000,typeId:22544});
+assert.equal(ships.get('rifter').group,'Frigate');
+assert.equal(ships.get('rorqual').group,'Capital Industrial Ship');
+assert.equal(29*ships.get('hulk').massKg/1000,435000,'ship mass is shown in metric tonnes');
+assert.match(viewer,/JLR D-SCAN INTELLIGENCE/,'summary copy has a compact heading');
+assert.match(viewer,/eve-ship-catalog\\.json/,'shared scan loads the full static ship catalog');
+assert.match(app,/threatShareNewSystem/,'system can be entered when creating a scan link');
+assert.match(server,/companionScanSystem/,'unambiguous fresh companion system can fill the system');
+
 console.log('shared scan tests passed');
