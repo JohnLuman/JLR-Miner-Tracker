@@ -39,7 +39,7 @@ assert.deepEqual(cn.lines[0].points.filter(p=>p.price!==null).map(p=>p.price),[7
 const change=processOre(inputs,'30','jita','change',new Set(),today);
 assert.equal(change.lines[0].points[0].value,0,'relative change starts from first observed price');
 assert.equal(change.lines[0].points.at(-1).value,50,'lower priced ore rises 50%');
-assert.equal(change.lines[1].points.at(-1).value,-10,'higher priced ore falls 10%');
+assert.ok(Math.abs(change.lines[1].points.at(-1).value+10)<1e-9,'higher priced ore falls 10%');
 const hidden=processOre(inputs,'30','jita','price',new Set(['Low value ore']),today);
 assert.equal(hidden.activeLines,1);
 assert.equal(hidden.lines[0].visible,false);
