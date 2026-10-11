@@ -100,7 +100,7 @@
     try{
       const url=new URL(String(value||''),location.origin);
       if(!url.pathname.startsWith('/d/')||!/^[A-Za-z0-9_-]{8,}$/.test(url.pathname.slice(3)))return String(value||'');
-      url.searchParams.set('card','hdscan3');
+      url.searchParams.set('card','hdscan4');
       return url.toString();
     }catch{return String(value||'')}
   }
