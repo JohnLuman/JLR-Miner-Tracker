@@ -158,6 +158,14 @@
   let oreTrendType=localStorage.getItem('jlrOreTrend')||'Kylixium';
   const savedMarketTrendDays=localStorage.getItem('jlrMarketTrendDays')||'30';
   let marketTrendDays=['30','90','180','365','all'].includes(savedMarketTrendDays)?savedMarketTrendDays:'30';
+  let allOrePriceMarket=localStorage.getItem('jlrAllOrePriceMarket')==='cn'?'cn':'jita';
+  let allOrePriceMode=localStorage.getItem('jlrAllOrePriceMode')==='change'?'change':'price';
+  let allOreHidden=new Set();
+  try{
+    const savedHidden=JSON.parse(localStorage.getItem('jlrAllOreHidden')||'[]');
+    if(Array.isArray(savedHidden))allOreHidden=new Set(savedHidden.filter(value=>typeof value==='string').slice(0,150));
+  }catch{}
+
   const savedFleetHistoryDays=Number(localStorage.getItem('jlrFleetHistoryDays'));
   let fleetHistoryDays=[7,30,90].includes(savedFleetHistoryDays)?savedFleetHistoryDays:7;
   let fleetHistoryMetric=localStorage.getItem('jlrFleetHistoryMetric')==='value'?'value':'m3';
@@ -1455,6 +1463,147 @@
         '<text x="'+L+'" y="'+(T-9)+'" class="market-unit-label">'+esc(unit)+'</text>'+
       '</svg><div class="market-trend-foot">'+covering+' • older prices appear as JLR collects them (no backfill)</div></div>';
   }
+  const ALL_ORE_LINE_COLORS=[
+    '#72d6ff','#ffc875','#e89fff','#8ee6a4','#ff909e','#b4b8ff',
+    '#f3e383','#6ddccb','#ffac81','#d58ced','#b9e477','#fc91cc',
+    '#87a9ff','#ffa6a0','#b0e4f9','#a8d29c','#e4b58b','#a2aef7',
+  ];
+  function allOreTrendSeries(oreInputs,range=marketTrendDays,market=allOrePriceMarket,mode=allOrePriceMode,hidden=allOreHidden,todayISO=new Date().toISOString().slice(0,10)){
+    const key=market==='cn'?'cn':'jita';
+    const lines=(oreInputs||[]).map((ore,index)=>{
+      const view=marketTrendView(ore.points||[],range,todayISO);
+      const first=view.rows.find(row=>Number(row[key])>0)?.[key]||null;
+      const points=view.rows.map(row=>{
+        const price=Number(row[key]);
+        const available=Number.isFinite(price)&&price>0;
+        return {...row,price:available?price:null,
+          value:available?(mode==='change'?((price/first)-1)*100:price):null};
+      });
+      const priced=points.filter(row=>row.price!==null);
+      return{
+        name:String(ore.name||''),color:ALL_ORE_LINE_COLORS[index%ALL_ORE_LINE_COLORS.length],
+        points,pricedCount:priced.length,latest:priced.at(-1)?.price||null,
+        firstDate:priced[0]?.firstDate||'',lastDate:priced.at(-1)?.lastDate||'',
+        visible:!hidden.has(String(ore.name||''))&&priced.length>0,
+      };
+    });
+    const visible=lines.filter(line=>line.visible);
+    const dates=visible.flatMap(line=>line.points.filter(point=>point.price!==null).map(point=>point.date));
+    const allView=marketTrendView(oreInputs?.flatMap(ore=>ore.points||[])||[],range,todayISO);
+    const start=allView.days===null?(dates.length?dates.sort()[0]:todayISO):allView.windowStart;
+    return {
+      lines,visible,market:key,mode,granularity:allView.granularity,
+      range:allView.range,windowStart:start,windowEnd:allView.windowEnd,
+      activeLines:visible.length,availableLines:lines.filter(line=>line.pricedCount>0).length,
+      firstDate:visible.map(line=>line.firstDate).filter(Boolean).sort()[0]||'',
+      lastDate:visible.map(line=>line.lastDate).filter(Boolean).sort().at(-1)||'',
+    };
+  }
+  function renderAllOrePriceChart(ores){
+    const chart=$('allOrePriceChart'),legend=$('allOreLegend');
+    if(!chart||!legend)return;
+    const oreInputs=(ores||[])
+      .filter(row=>String(row?.name||'').trim())
+      .map(row=>({
+        name:String(row.name),
+        points:marketHistoryPoints('ore',row.name,
+          row?.market?.jita?.refinedBuyPerM3??row?.market?.jita?.buyPerM3,
+          row?.market?.cn?.refinedBuyPerM3??row?.market?.cn?.buyPerM3),
+      }))
+      .sort((a,b)=>a.name.localeCompare(b.name));
+    const data=allOreTrendSeries(oreInputs);
+    const percent=data.mode==='change';
+    const priceText=value=>Number(value).toLocaleString(undefined,{
+      minimumFractionDigits:0,maximumFractionDigits:2,
+    });
+    const fmtPrice=value=>value===null?'—':priceText(value)+' ISK/m³';
+    document.querySelectorAll('.all-ore-market').forEach(button=>{
+      const active=button.dataset.allOreMarket===allOrePriceMarket;
+      button.classList.toggle('active',active);
+      button.setAttribute('aria-pressed',String(active));
+    });
+    document.querySelectorAll('.all-ore-mode').forEach(button=>{
+      const active=button.dataset.allOreMode===allOrePriceMode;
+      button.classList.toggle('active',active);
+      button.setAttribute('aria-pressed',String(active));
+    });
+    if($('allOreTrendWindowLabel'))$('allOreTrendWindowLabel').textContent=
+      (data.range==='all'?'all recorded history':data.range+' days')+' • '+
+      (data.granularity==='day'?'daily':data.granularity==='week'?'weekly averages':'monthly averages');
+    if($('allOreLineCount'))$('allOreLineCount').textContent=data.activeLines+' OF '+data.availableLines+' PRICED ORES SHOWN';
+    legend.innerHTML=data.lines.map(line=>{
+      const hidden=!line.visible,available=line.pricedCount>0;
+      const subtitle=available?fmtPrice(line.latest):'No '+(allOrePriceMarket==='cn'?'C-N':'Jita')+' prices recorded';
+      return '<button type="button" class="all-ore-legend-item'+(hidden?' hidden-line':'')+'" data-ore-name="'+esc(line.name)+'" aria-pressed="'+String(line.visible)+'" title="'+esc(line.name+' • '+subtitle)+'" style="--ore-line-color:'+line.color+'">'+
+        '<i class="ore-line-swatch" aria-hidden="true"></i><span class="all-ore-legend-name">'+esc(line.name)+'</span>'+
+        '<small>'+esc(subtitle)+'</small></button>';
+    }).join('');
+    if(!data.visible.length){
+      chart.innerHTML='<div class="visual-empty">'+(data.availableLines
+        ?'All ore lines are hidden. Click SHOW ALL or select an ore below.'
+        :'No ore market prices recorded for this period yet. JLR adds daily snapshots as market data arrives.')+'</div>';
+      return;
+    }
+
+    const W=960,H=310,L=81,R=24,T=23,B=35,pw=W-L-R,ph=H-T-B;
+    const values=data.visible.flatMap(line=>line.points.map(p=>p.value).filter(v=>v!==null&&Number.isFinite(v)));
+    if(!values.length){chart.innerHTML='<div class="visual-empty">No priced ore observations in this range.</div>';return}
+    let min=Math.min(...values),max=Math.max(...values);
+    if(percent){min=Math.min(0,min);max=Math.max(0,max)}
+    if(Math.abs(max-min)<1e-9){
+      const pad=percent?5:Math.max(.05,Math.abs(max)*.05);
+      min-=pad;max+=pad;
+    }else{const pad=(max-min)*.08;min-=pad;max+=pad}
+    if(!percent)min=Math.max(0,min);
+    const span=Math.max(1e-12,max-min);
+    const startMs=Date.parse(data.windowStart+'T00:00:00Z'),endMs=Date.parse(data.windowEnd+'T00:00:00Z');
+    const duration=Math.max(86400000,endMs-startMs);
+    const xDate=ms=>L+Math.min(1,Math.max(0,(ms-startMs)/duration))*pw;
+    const xDateRow=row=>xDate(Date.parse(row.date+'T00:00:00Z'));
+    const y=value=>T+(max-value)/span*ph;
+    const displayValue=value=>percent?((value>0?'+':'')+value.toFixed(1)+'%'):priceText(value);
+    let grid='';
+    for(let i=0;i<=4;i++){
+      const v=max-i/4*span,yy=T+i/4*ph;
+      grid+='<line x1="'+L+'" y1="'+yy.toFixed(1)+'" x2="'+(W-R)+'" y2="'+yy.toFixed(1)+'" class="market-grid"/>'+
+        '<text x="'+(L-8)+'" y="'+(yy+3).toFixed(1)+'" text-anchor="end" class="all-ore-axis">'+esc(displayValue(v))+'</text>';
+    }
+    const axis=Array.from({length:6},(_,i)=>{
+      const ms=startMs+(endMs-startMs)*i/5;
+      const date=new Date(ms).toISOString().slice(0,10);
+      return '<text x="'+xDate(ms).toFixed(1)+'" y="'+(H-10)+'" text-anchor="middle" class="all-ore-axis">'+esc(chartDateLabel(date))+'</text>';
+    }).join('');
+    const maxGap=data.granularity==='month'?45:data.granularity==='week'?15:3;
+    const lines=data.visible.map(line=>{
+      let d='',previous=null;
+      const dots=[];
+      for(const row of line.points){
+        if(row.value===null||!Number.isFinite(row.value)){previous=null;continue}
+        const dateMs=Date.parse(row.date+'T00:00:00Z');
+        const continuous=previous!==null&&(dateMs-previous)/86400000<=maxGap;
+        d+=(continuous?' L ':' M ')+xDateRow(row).toFixed(1)+' '+y(row.value).toFixed(1);
+        previous=dateMs;
+        const period=row.firstDate===row.lastDate?chartDateLabel(row.firstDate)
+          :chartDateLabel(row.firstDate)+' to '+chartDateLabel(row.lastDate);
+        const details=line.name+' • '+period+' • '+fmtPrice(row.price)+
+          (percent?' • change '+displayValue(row.value):'')+
+          ' • '+row.days+' recorded day'+(row.days===1?'':'s');
+        dots.push('<circle cx="'+xDateRow(row).toFixed(1)+'" cy="'+y(row.value).toFixed(1)+'" r="2.4" class="all-ore-dot" style="fill:'+line.color+'"/>');
+        dots.push('<circle cx="'+xDateRow(row).toFixed(1)+'" cy="'+y(row.value).toFixed(1)+'" r="7" class="all-ore-point" tabindex="0" aria-label="'+esc(details)+'" style="--ore-line-color:'+line.color+'"><title>'+esc(details)+'</title></circle>');
+      }
+      return '<path d="'+d.trim()+'" style="stroke:'+line.color+'" class="all-ore-series" aria-label="'+esc(line.name)+'"/>'+
+        dots.join('');
+    }).join('');
+    const foot=data.firstDate
+      ?data.activeLines+' ore line'+(data.activeLines===1?'':'s')+' • '+esc(chartDateLabel(data.firstDate))+'–'+esc(chartDateLabel(data.lastDate))+
+        ' actual recorded prices • '+(percent?'percentage change starts at 0% on the first recorded price for each ore':'prices in ISK/m³')
+      :'No recorded dates';
+    chart.innerHTML='<div class="market-chart-shell">'+
+      '<svg class="market-line-svg all-ore-line-svg" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+esc((percent?'Percentage changes':'Market prices')+' for all selected ores in '+(data.market==='cn'?'C-N':'Jita'))+'">'+
+        grid+axis+lines+'<text x="'+L+'" y="'+(T-8)+'" class="market-unit-label">'+(percent?'CHANGE %':'ISK/M³')+'</text>'+
+      '</svg><div class="market-trend-foot">'+foot+' • Missing historical dates are not filled in.</div></div>';
+  }
+
   function updateSoundStatus(){
     const button=$('soundStatus');
     if(!button)return;
@@ -5685,6 +5834,7 @@
     const oreHistory=marketTrendView(marketHistoryPoints('ore',trendOre?.name||oreTrendType,currentJita,currentCn));
     if($('oreTrendWindowLabel'))$('oreTrendWindowLabel').textContent=marketTrendRangeLabel(oreHistory);
     renderMarketLineChart($('oreValueChart'),oreHistory,{unit:'ISK/m³',decimals:2});
+    renderAllOrePriceChart(trendOres);
 
     const fleet=fleetStats();
     const entries=fleet.entries.filter(x=>x.result);
@@ -7030,6 +7180,38 @@
     button.classList.toggle('active',active);
     button.setAttribute('aria-pressed',String(active));
   });
+  document.querySelectorAll('.all-ore-market').forEach(button=>button.addEventListener('click',()=>{
+    const market=button.dataset.allOreMarket==='cn'?'cn':'jita';
+    allOrePriceMarket=market;
+    localStorage.setItem('jlrAllOrePriceMarket',market);
+    renderMiningVisuals();
+  }));
+  document.querySelectorAll('.all-ore-mode').forEach(button=>button.addEventListener('click',()=>{
+    const mode=button.dataset.allOreMode==='change'?'change':'price';
+    allOrePriceMode=mode;
+    localStorage.setItem('jlrAllOrePriceMode',mode);
+    renderMiningVisuals();
+  }));
+  $('allOreLegend')?.addEventListener('click',event=>{
+    const button=event.target.closest('button[data-ore-name]');
+    if(!button)return;
+    const ore=button.dataset.oreName;
+    if(allOreHidden.has(ore))allOreHidden.delete(ore);
+    else allOreHidden.add(ore);
+    localStorage.setItem('jlrAllOreHidden',JSON.stringify([...allOreHidden]));
+    renderMiningVisuals();
+  });
+  $('allOreShowAll')?.addEventListener('click',()=>{
+    allOreHidden.clear();
+    localStorage.setItem('jlrAllOreHidden','[]');
+    renderMiningVisuals();
+  });
+  $('allOreHideAll')?.addEventListener('click',()=>{
+    allOreHidden=new Set([...$('allOreLegend').querySelectorAll('[data-ore-name]')].map(button=>button.dataset.oreName));
+    localStorage.setItem('jlrAllOreHidden',JSON.stringify([...allOreHidden]));
+    renderMiningVisuals();
+  });
+
   $('oreTrendSelect').addEventListener('change',()=>{
     oreTrendType=$('oreTrendSelect').value||'Kylixium';
     localStorage.setItem('jlrOreTrend',oreTrendType);
