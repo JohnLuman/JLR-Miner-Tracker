@@ -5771,7 +5771,7 @@
     }
     if($('fleetLedgerCoverage')){
       const noAccess=Math.max(0,linked.length-miningAllowed);
-      const noFits=linked.filter(character=>character.miningAccess===true&&!Array.isArray(character.fittings)?false:character.miningAccess===true&&!(character.fittings||[]).length).length;
+      const noFits=linked.filter(character=>character.miningAccess===true&&(!Array.isArray(character.fittings)||character.fittings.length===0)).length;
       $('fleetLedgerCoverage').textContent=assignedCount
         ?'ESI LEDGER: '+cachedCount+'/'+assignedCount+' TOONS • '+(noAccess?noAccess+' NEED MINING ACCESS • ':'')+(noFits?'NO SAVED FITS ON '+noFits:'FITS OPTIONAL')
         :'NO LINKED MINING-ACCESS CHARACTERS';
