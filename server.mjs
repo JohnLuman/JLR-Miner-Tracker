@@ -3030,6 +3030,9 @@ async function refreshFieldDistances() {
     console.warn('Field distance refresh failed',String(err.message||err));
   }
 }
+// Retain two years of JLR's own daily snapshots. Do not invent or backfill
+// dates before tracking began; long-range charts expose actual collected data.
+const MARKET_HISTORY_MAX_DAYS=731;
 function pushMarketHistory(bucket,key,row) {
   bucket[key] ||= [];
   const date=String(row.date||dateUTC());
@@ -3040,12 +3043,12 @@ function pushMarketHistory(bucket,key,row) {
   bucket[key]=bucket[key]
     .filter(x=>x&&x.date)
     .sort((a,b)=>String(a.date).localeCompare(String(b.date)))
-    .slice(-31);
+    .slice(-MARKET_HISTORY_MAX_DAYS);
 }
 function marketHistoryPublic() {
   return {
-    ore:Object.fromEntries(Object.entries(state.market?.history?.ore||{}).map(([k,v])=>[k,(v||[]).slice(-31)])),
-    ice:Object.fromEntries(Object.entries(state.market?.history?.ice||{}).map(([k,v])=>[k,(v||[]).slice(-31)])),
+    ore:Object.fromEntries(Object.entries(state.market?.history?.ore||{}).map(([k,v])=>[k,(v||[]).slice(-MARKET_HISTORY_MAX_DAYS)])),
+    ice:Object.fromEntries(Object.entries(state.market?.history?.ice||{}).map(([k,v])=>[k,(v||[]).slice(-MARKET_HISTORY_MAX_DAYS)])),
   };
 }
 async function refreshMarketPrices(force=false) {
