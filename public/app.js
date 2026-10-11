@@ -1567,8 +1567,8 @@
         priceObservations===1?'Only 1 recorded pricing day — no price trend can be measured yet.':
         priceObservations+' actual recorded pricing days'+
         (data.limitedHistory?' • daily detail shown until more history accumulates.':'.');
-      const flat=active.length&&nonFlat===0
-        ?'All displayed prices are unchanged across recorded observations; JLR does not have evidence of movement yet.'
+      const flat=withTrend>0&&nonFlat===0
+        ?'All displayed ores with multiple observations have unchanged recorded values. This does not prove the live market never moved.'
         :withTrend<active.length?'Some ores have only one observation.':'';
       const levels=active.flatMap(line=>line.points.map(point=>point.price).filter(price=>price!==null));
       const minPrice=levels.length?Math.min(...levels):null,maxPrice=levels.length?Math.max(...levels):null;
@@ -7242,6 +7242,23 @@
     localStorage.setItem('jlrAllOrePriceMode',mode);
     renderMiningVisuals();
   }));
+  // Hovering or tabbing to a named color key singles out the matching ore line.
+  const oreLegend=$('allOreLegend');
+  function focusOreLegend(event){
+    const button=event?.target?.closest?.('button[data-ore-name]');
+    const name=button?.dataset?.oreName||'';
+    document.querySelectorAll('#allOrePriceChart [data-ore-line]').forEach(path=>{
+      path.classList.toggle('ore-series-dim',Boolean(name)&&path.dataset.oreLine!==name);
+      path.classList.toggle('ore-series-focus',Boolean(name)&&path.dataset.oreLine===name);
+    });
+    oreLegend?.classList.toggle('has-highlight',Boolean(name));
+  }
+  oreLegend?.addEventListener('pointerover',focusOreLegend);
+  oreLegend?.addEventListener('pointerleave',()=>focusOreLegend(null));
+  oreLegend?.addEventListener('focusin',focusOreLegend);
+  oreLegend?.addEventListener('focusout',()=>setTimeout(()=>{
+    if(!oreLegend.contains(document.activeElement))focusOreLegend(null);
+  },0));
   $('allOreLegend')?.addEventListener('click',event=>{
     const button=event.target.closest('button[data-ore-name]');
     if(!button)return;
