@@ -24,17 +24,33 @@ assert.equal(mining.confirmedHostiles,null,'D-scan cannot identify hostile stand
 assert.match(mining.status,/MINING ACTIVITY/);
 assert.doesNotMatch(mining.status,/HOSTILE SHIPS/i);
 assert.match(discordScanDescription(example),/30x Mackinaw/);
-assert.match(discordScanDescription(example),/Hostility unverified/);
+assert.equal(discordScanDescription(example),'30x Mackinaw','Discord description lists only ships');
 const localColorExample={
   ...example,
   local:{pilots:[{standingStatus:'friendly'},{standingStatus:'friendly'},{standingStatus:'hostile'},{standingStatus:'neutral'},{standingStatus:'unknown'}]},
 };
 const summary=discordScanDescription(localColorExample);
-assert.match(summary,/🟢 2 friendly/);
-assert.match(summary,/🔴 1 hostile/);
-assert.match(summary,/🟡 1 neutral/);
-assert.match(summary,/⚪ 1 unverified/);
-assert.doesNotMatch(summary,/hostile ships/,'Local hostility cannot be attributed to D-scan hulls');
+assert.equal(summary,'30x Mackinaw','Discord description should show ships only, even when Local standings are attached');
+assert.doesNotMatch(summary,/Hostility|unverified|friendly|hostile|neutral/i,'hide standing commentary and count banners');
+// A multi-ship D-scan should fit the compact embed line without wrapping into
+// a paragraph. Omitted ship types are represented by a trailing ellipsis.
+const exampleShips={
+  dscanText:[
+    'Velator\tVelator\t5 km','Velator\tVelator\t6 km',
+    'Akoman\tAkoman\t7 km','Falcon\tFalcon\t8 km',
+    'Ibis\tIbis\t9 km','Pilgrim\tPilgrim\t10 km',
+    'Pioneer\tPioneer\t11 km',
+  ].join('\n'),
+};
+const brief=discordScanDescription(exampleShips);
+assert.ok(brief.length<=58,'Discord embed description has a one-line character budget');
+assert.match(brief,/^2x Velator, 1x Akoman/,'keep most common ships first');
+assert.match(brief,/\.\.\.$/,'append ... when additional ships do not fit');
+assert.doesNotMatch(brief,/contacts|Hostility|unverified|System/i,'only list ships');
+assert.equal(discordScanDescription({localText:'Pilot One\nPilot Two'}),'No ships identified','Local-only link is concise');
+const longHull=discordScanDescription({dscanText:'Raven Navy Issue\tRaven Navy Issue\t10 km'});
+assert.equal(longHull,'1x Raven Navy Issue','untruncated single entry has no ellipsis');
+
 const miningSvg=renderDiscordScanSvg(example);
 assert.match(miningSvg,/Jlr/);
 assert.match(miningSvg,/Hub/);
@@ -68,7 +84,7 @@ assert.doesNotMatch(rendered,/property="og:image"/,'Discord preview is text-only
 assert.doesNotMatch(rendered,/name="twitter:card"/,'Discord shows only the link text summary');
 assert.match(rendered,/<meta property="og:url" content="https:\/\/jlrhub.com\/d\/safePublicToken">/);
 assert.doesNotMatch(rendered,/name="twitter:image"/,'Discord share previews omit image tags entirely');
-assert.match(rendered,/<meta property="og:description" content="30 ship contacts \| 30x Mackinaw/);
+assert.match(rendered,/<meta property="og:description" content="30x Mackinaw">/);
 assert.doesNotMatch(rendered,/og:title" content="JLR Shared Intel"/);
 const injection=renderDiscordScanHtml(htmlTemplate,{...example,system:'<script>alert(1)</script>'},{
   canonicalUrl:'https://jlrhub.com/d/safePublicToken',imageUrl,
