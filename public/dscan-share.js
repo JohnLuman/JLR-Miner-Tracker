@@ -175,12 +175,14 @@
     for(const row of rows){
       const id=Number(row?.[key])||0;
       if(!id)continue;
-      if(!map.has(id))map.set(id,{id,name:String(row?.[nameKey]||id),ticker:String(row?.[tickerKey]||''),count:0,pilots:[]});
+      if(!map.has(id))map.set(id,{id,name:String(row?.[nameKey]||id),ticker:String(row?.[tickerKey]||''),count:0,pilots:[],standings:new Set()});
       const group=map.get(id);
       group.count++;
       group.pilots.push(String(row?.name||'Unknown'));
+      group.standings.add(row.standingStatus||'unknown');
     }
-    return [...map.values()].sort((a,b)=>b.count-a.count||a.name.localeCompare(b.name));
+    return [...map.values()].map(group=>({...group,standingStatus:group.standings.size===1?[...group.standings][0]:'mixed'}))
+      .sort((a,b)=>b.count-a.count||a.name.localeCompare(b.name));
   }
   function makeLink(label,url){
     const a=document.createElement('a');
@@ -193,7 +195,7 @@
   }
   function intelCard(row,kind){
     const card=document.createElement('article');
-    card.className='intel-card';
+    card.className='intel-card standing-'+(row.standingStatus||'unknown');
     card.title=row.pilots.join('\n');
     const count=document.createElement('strong');
     count.textContent=String(row.count);
@@ -347,6 +349,10 @@
     const filtered=q?source.filter(row=>[
       row.name,row.corporationName,row.corporationTicker,row.allianceName,row.allianceTicker
     ].some(v=>String(v||'').toLowerCase().includes(q))):source;
+    const verified=String(local.standingSource||'')==='INIT ALLIANCE';
+    $('localStandingSource').textContent=verified
+      ?'Standings: INIT alliance ESI • green friendly/allied, red hostile, amber neutral'
+      :'Standings: INIT alliance data unavailable • unknown contacts are unverified (not hostile)';
     const corporations=groupedLocal(filtered,'corporationId','corporationName','corporationTicker');
     const alliances=groupedLocal(filtered,'allianceId','allianceName','allianceTicker');
     $('localSummary').replaceChildren(
@@ -355,6 +361,8 @@
     );
     $('localRows').replaceChildren(...filtered.map(row=>{
       const tr=document.createElement('tr');
+      tr.className='local-standing-'+(row.standingStatus||'unknown');
+      tr.title='INIT standing: '+(row.standingStatus||'unknown').toUpperCase();
       const char=document.createElement('td');
       if(row.id)char.append(makeLink(row.name,'https://zkillboard.com/character/'+encodeURIComponent(String(row.id))+'/'));
       else char.textContent=row.name;
