@@ -35,6 +35,7 @@ import { buildSimulatedHeavyFighterLoss } from './lib/heavy-fighter-alert.mjs';
 import { normalizeMapFieldSnapshot, mapFieldSummary } from './lib/static-map-field-catalog.mjs';
 import { parseThreatPaste, compactThreatStats, threatActivityLabels, fountainThreatTags, jlrThreatScore, threatIgnoreReason } from './lib/threat-scan.mjs';
 import { sharedScanKind, sharedScanLines, sharedLocalNames } from './lib/shared-scan.mjs';
+import { initStandingClass, initSovClass, INIT_ALLIANCE_ID as INIT_STANDING_ALLIANCE_ID } from './lib/init-standings.mjs';
 import { renderDiscordScanPng, renderDiscordScanHtml } from './lib/dscan-discord-preview.mjs';
 import { archivedBuildSharePublic, migrateLegacyBuildShares } from './lib/appraisal/legacy-share.mjs';
 import { appraisalSummary, appraisalSummaryWithRefine, sanitizeAppraisalShare, APPRAISAL_PRICING, APPRAISAL_VARIANTS } from './lib/appraisal/appraisal.mjs';
@@ -212,6 +213,8 @@ const ZKILL_LIFETIME_DAMAGE_CACHE_MS = 24 * 60 * 60 * 1000;
 const ZKILL_LIFETIME_PAGE_GAP_MS = 700;
 const THREAT_CHARACTER_CACHE_MS = 6 * 60 * 60 * 1000;
 const THREAT_CONTACTS_CACHE_MS = 60 * 60 * 1000;
+const initContactsForUserCache=new Map();
+let fountainSovStandingsCache=null;
 const THREAT_CONTACTS_STALE_MS = 6 * 60 * 60 * 1000;
 const THREAT_ENTITY_CACHE_MS = 24 * 60 * 60 * 1000;
 const THREAT_AFFILIATION_CACHE_MS = 30 * 60 * 1000;
@@ -8406,10 +8409,11 @@ async function positiveStandingContactsForUser(user){
   });
   const extraRows=await Promise.all(extraSources.map(sourceRow=>esiContactRows(sourceRow.base,access).catch(err=>{
     console.warn(`Threat ${sourceRow.label} contacts lookup failed`,String(err.message||err));
-    return[];
+    return null;
   })));
+  const standingSources=Object.fromEntries(extraSources.map((row,index)=>[row.label,Array.isArray(extraRows[index])]));
   const byOwner={character:new Map(),corporation:new Map(),alliance:new Map()};
-  const rowsByOwner=[{owner:'character',rows:personalRows},...extraSources.map((sourceRow,index)=>({owner:sourceRow.label,rows:extraRows[index]}))];
+  const rowsByOwner=[{owner:'character',rows:personalRows},...extraSources.map((sourceRow,index)=>({owner:sourceRow.label,rows:extraRows[index]||[]}))];
   for(const sourceRows of rowsByOwner)for(const row of sourceRows.rows){
     const standing=Number(row?.standing);
     if(!Number.isFinite(standing)||standing===0)continue;
@@ -8424,13 +8428,88 @@ async function positiveStandingContactsForUser(user){
     memberCorporations:new Set(Number(profile?.corporation_id)?[Number(profile.corporation_id)]:[]),
     memberAlliances:new Set(Number(profile?.alliance_id)?[Number(profile.alliance_id)]:[]),
   };
-  const data={sourceCharacterId:key,sourceCharacterName:source.name,standingData};
+  const data={sourceCharacterId:key,sourceCharacterName:source.name,standingData,standingSources};
   threatContactsCache.set(key,{at:Date.now(),data});
   return data;
   })().finally(()=>threatContactsPromises.delete(key));
   threatContactsPromises.set(key,pending);
   return pending;
 }
+
+// Standings are determined from an authenticated INIT alliance member, never
+// from another alliance's contacts or a user's personal standing list.
+async function initContactsForUser(user){
+  const ids=(user?.characterIds||[]).map(String).filter(id=>hasThreatContactAccess(state.characters?.[id]?.scopes));
+  if(!ids.length)return null;
+  const key=String(user.id)+'|'+ids.join(',');
+  const cached=initContactsForUserCache.get(key);
+  if(cached&&Date.now()-cached.at<THREAT_CONTACTS_CACHE_MS)return cached.contacts;
+  try{
+    const {data}=await esiPost('https://esi.evetech.net/latest/characters/affiliation/?datasource=tranquility',ids.map(Number));
+    const membership=(Array.isArray(data)?data:[]).find(row=>Number(row?.alliance_id)===INIT_STANDING_ALLIANCE_ID&&ids.includes(String(row.character_id)));
+    if(!membership){
+      initContactsForUserCache.set(key,{at:Date.now(),contacts:null});
+      return null;
+    }
+    const scopedUser={...user,primaryCharacterId:String(membership.character_id)};
+    const intel=await positiveStandingContactsForUser(scopedUser);
+    const contacts=intel?.standingSources?.alliance?intel.standingData?.byOwner?.alliance:null;
+    initContactsForUserCache.set(key,{at:Date.now(),contacts:contacts instanceof Map?contacts:null});
+    return contacts instanceof Map?contacts:null;
+  }catch(error){
+    console.warn('INIT alliance standings unavailable',String(error?.message||error));
+    initContactsForUserCache.set(key,{at:Date.now(),contacts:null});
+    return null;
+  }
+}
+async function fountainSystemStandingRows(user){
+  const fresh=fountainSovStandingsCache&&Date.now()-fountainSovStandingsCache.at<30*60*1000;
+  if(!fresh){
+    try{
+      const catalog=JSON.parse(fs.readFileSync(path.join(PUBLIC_DIR,'fountain-systems.json'),'utf8'));
+      const names=Array.isArray(catalog.systems)?catalog.systems:[];
+      const [systemIds,ownerRows]=await Promise.all([
+        resolveUniverseIds(names),
+        esiGet('https://esi.evetech.net/latest/sovereignty/map/?datasource=tranquility'),
+      ]);
+      const byId=new Map((Array.isArray(ownerRows?.data)?ownerRows.data:[]).map(record=>[Number(record.system_id),record]));
+      const holdings=names.map(name=>{
+        const id=Number(systemIds.get(name))||0;
+        const owner=id?byId.get(id):null;
+        return{name,known:Boolean(id),allianceId:Number(owner?.alliance_id)||0};
+      });
+      fountainSovStandingsCache={at:Date.now(),holdings};
+    }catch(error){
+      console.warn('Fountain sovereignty lookup unavailable',String(error?.message||error));
+      if(!fountainSovStandingsCache)throw error;
+    }
+  }
+  const contacts=await initContactsForUser(user);
+  return (fountainSovStandingsCache?.holdings||[]).map(row=>({
+    name:row.name,
+    standing:row.known?initSovClass(row.allianceId,contacts):'unknown',
+    ownerAllianceId:row.allianceId||null,
+  }));
+}
+async function annotateJlrSharedInitStandings(row){
+  if(!row?.localText||!Array.isArray(row.local?.pilots)||!row.local.pilots.length)return false;
+  const checked=Date.parse(row.local?.standingCheckedAt||'');
+  if(Number.isFinite(checked)&&Date.now()-checked<THREAT_CONTACTS_CACHE_MS)return false;
+  const owner=state.users?.[String(row.ownerId)]||null;
+  const contacts=owner?await initContactsForUser(owner):null;
+  const pilots=row.local.pilots;
+  for(const pilot of pilots){
+    pilot.standingStatus=initStandingClass({
+      characterId:Number(pilot.id)||0,
+      corporationId:Number(pilot.corporationId)||0,
+      allianceId:Number(pilot.allianceId)||0,
+    },contacts);
+  }
+  row.local.standingSource=contacts?'INIT ALLIANCE':'INIT STANDINGS UNAVAILABLE';
+  row.local.standingCheckedAt=now();
+  return true;
+}
+
 function sharedScanReconRows(value){
   const input=Array.isArray(value)?value:[];
   const merged=new Map();
@@ -8658,6 +8737,7 @@ async function createJlrDscanShare(req,user,scanText,options={}){
     let changed=normalized;
     if(!existing.system&&system){existing.system=system;existing.updatedAt=now();changed=true}
     if(await enrichJlrDscanShare(existing))changed=true;
+    if(await annotateJlrSharedInitStandings(existing))changed=true;
     if(changed)await save();
     return{url:dscanShareUrl(req,existing.token),share:dscanSharePublic(existing,user),cached:true};
   }
@@ -8685,6 +8765,7 @@ async function createJlrDscanShare(req,user,scanText,options={}){
   };
   state.dscanShares[id]=row;
   await enrichJlrDscanShare(row);
+  await annotateJlrSharedInitStandings(row);
 
   // Shared intel links keep a generous recent history while preventing pasted
   // Local/D-scans from growing state.json forever.
@@ -8729,6 +8810,8 @@ async function updateJlrDscanShare(req,user,row,body){
   row.digest=crypto.createHash('sha256').update(primary).digest('hex');
   row.updatedAt=now();
   await enrichJlrDscanShare(row,{force:localChanged});
+  if(localChanged&&row.local)delete row.local.standingCheckedAt;
+  await annotateJlrSharedInitStandings(row);
   await save();
   return{url:dscanShareUrl(req,row.token),share:dscanSharePublic(row,user)};
 }
@@ -10619,7 +10702,9 @@ async function routeApi(req,res,url) {
     const row=Object.values(state.dscanShares||{}).find(entry=>String(entry?.token||'')===token);
     if(!row)return json(res,404,{error:'DSCAN_SHARE_NOT_FOUND',message:'That JLR shared scan link was not found.'});
     try{
-      if(await enrichJlrDscanShare(row))await save();
+      const enriched=await enrichJlrDscanShare(row);
+      const standings=await annotateJlrSharedInitStandings(row);
+      if(enriched||standings)await save();
     }catch(error){
       console.warn('Shared scan enrichment failed',String(error?.message||error));
     }
@@ -10627,6 +10712,10 @@ async function routeApi(req,res,url) {
   }
 
   const user=requireUser(req,res);if(!user)return;
+  if(req.method==='GET'&&url.pathname==='/api/fountain/system-standings'){
+    try{return json(res,200,{source:'INIT alliance standings + public ESI sovereignty',systems:await fountainSystemStandingRows(user)})}
+    catch(error){return json(res,503,{error:'SOV_STANDINGS_UNAVAILABLE',message:'Standings cannot be verified right now.'})}
+  }
   if(fieldRouteRequiresInit(url.pathname)&&!(await fieldAccessForUser(user)).allowed)return json(res,403,{error:'INIT_FIELD_ACCESS_REQUIRED',message:'Field Tracker requires a linked character currently in INIT.'});
   if(url.pathname.startsWith('/api/voice/')||/^\/api\/tracker\/heavy-fighters\/voice(?:\/|$)/.test(url.pathname)){
     return json(res,410,{error:'VOICE_REMOVED',message:'Spoken voice output has been removed from JLR. The Heavy Fighter alarm tone remains available.'});

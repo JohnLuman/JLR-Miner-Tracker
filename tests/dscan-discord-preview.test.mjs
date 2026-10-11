@@ -54,10 +54,10 @@ const htmlTemplate=fs.readFileSync(new URL('../public/dscan-share.html',import.m
 const imageUrl='https://jlrhub.com/dscan-preview/safePublicToken.png?v=abc123';
 const rendered=renderDiscordScanHtml(htmlTemplate,example,{canonicalUrl:'https://jlrhub.com/d/safePublicToken',imageUrl});
 assert.match(rendered,/<meta property="og:site_name" content="JlrHub">/);
-assert.match(rendered,/<meta property="og:image" content="https:\/\/jlrhub.com\/dscan-preview\/safePublicToken.png\?v=abc123">/);
-assert.match(rendered,/<meta name="twitter:card" content="summary_large_image">/);
-assert.match(rendered,/<meta property="og:image:width" content="1200">/);
-assert.match(rendered,/<meta property="og:image:height" content="630">/);
+assert.doesNotMatch(rendered,/property="og:image"/,'Discord preview is text-only without large images');
+assert.doesNotMatch(rendered,/name="twitter:card"/,'Discord shows only the link text summary');
+assert.match(rendered,/<meta property="og:url" content="https:\/\/jlrhub.com\/d\/safePublicToken">/);
+assert.doesNotMatch(rendered,/name="twitter:image"/,'Discord share previews omit image tags entirely');
 assert.match(rendered,/<meta property="og:description" content="30 ship contacts \| 30x Mackinaw/);
 assert.doesNotMatch(rendered,/og:title" content="JLR Shared Intel"/);
 const injection=renderDiscordScanHtml(htmlTemplate,{...example,system:'<script>alert(1)</script>'},{

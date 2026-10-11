@@ -4343,3 +4343,16 @@ html[data-theme] .field-board .system-node.ice-system-node{background:linear-gra
   .threat-share-system-hero{flex:1 1 100%;max-width:100%}
   .threat-share-system-hero .threat-system-combobox{flex:1 1 160px;min-width:0;max-width:none}
 }
+
+/* Fountain sovereignty standings are relative to INIT ALLIANCE contacts, not
+   mining ship types or guessed player hostility. */
+.threat-system-options>button{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.threat-system-options>button small{font-size:9px;font-weight:850;letter-spacing:.045em;opacity:.9}
+.threat-system-options>button.sov-friendly{color:#7af2a1;border-left:3px solid #36ca68}
+.threat-system-options>button.sov-friendly small{color:#72e997}
+.threat-system-options>button.sov-hostile{color:#ff9298;border-left:3px solid #ff4657}
+.threat-system-options>button.sov-hostile small{color:#ff7280}
+.threat-system-options>button.sov-neutral{color:#f8d67d;border-left:3px solid #f0ba51}
+.threat-system-options>button.sov-neutral small{color:#e7c36b}
+.threat-system-options>button.sov-unclaimed,.threat-system-options>button.sov-unknown{color:#a8bacb;border-left:3px solid transparent}
+.threat-system-options>button.sov-unclaimed small,.threat-system-options>button.sov-unknown small{color:#8397a9}
