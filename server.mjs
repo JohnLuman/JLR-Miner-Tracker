@@ -1,5 +1,6 @@
 import {recordSystemMining,recentSystemMining} from './lib/system-mining-activity.mjs';
 import {fieldMiningTargets} from './lib/field-mining-target.mjs';
+import {credibleAbsentT3Scan,observeAbsentT3,markAbsentT3FieldCleared} from './lib/t3-probe-absence.mjs';
 import {freshLedgerInterval,freshConfirmedScan} from './lib/field-ledger-freshness.mjs';
 import {snapshotT3ForSoftReset,applyT3SoftReset} from './lib/t3-field-soft-reset.mjs';
 import {recordPlayerLoss,prunePlayerLosses,playerLossSnapshot} from './lib/field-player-loss.mjs';
@@ -72,7 +73,7 @@ const EVE_CALLBACK_URL = String(process.env.EVE_CALLBACK_URL || '').trim();
 const JLR_LEGACY_HOSTS = new Set(String(process.env.JLR_LEGACY_HOSTS || 'jlr-miner-tracker-production.up.railway.app,jlr.crabdance.com,jlrtracker.crabdance.com').split(',').map(value=>value.trim().toLowerCase()).filter(Boolean));
 const EVE_CLIENT_ID = String(process.env.EVE_CLIENT_ID || '').trim();
 const EVE_CLIENT_SECRET = String(process.env.EVE_CLIENT_SECRET || '').trim();
-const ESI_USER_AGENT = String(process.env.ESI_USER_AGENT || 'JLRHub/2.10.43').trim();
+const ESI_USER_AGENT = String(process.env.ESI_USER_AGENT || 'JLRHub/2.10.44').trim();
 const ESI_COMPAT_DATE = String(process.env.ESI_COMPATIBILITY_DATE || '2026-09-16').trim();
 const TRACKER_SUPPORT_SHARED_SECRET = String(process.env.TRACKER_SUPPORT_SHARED_SECRET || '').trim();
 const trackerSupport = createTrackerSupportClient({
@@ -166,6 +167,7 @@ const COMPANION_CLIPBOARD_REPLAY_MS = 2 * 60 * 1000;
 const COMPANION_PAIR_TTL_MS = 10 * 60 * 1000;
 const COMPANION_LOCATION_TTL_MS = 90 * 1000;
 const scoutLocationInFlight = new Map();
+const observerAbsentT3Candidates = new Map();
 const TEN_HOURS = 10 * 60 * 60 * 1000;
 const A0_REPORT_TTL = 12 * 60 * 60 * 1000;
 const WORMHOLE_GAS_REPORT_TTL = 12 * 60 * 60 * 1000;
@@ -1944,7 +1946,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Hub',version:'2.10.43',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
+    app:{name:'JLR Hub',version:'2.10.44',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,mapFields:FIELD_MAP_SNAPSHOT.fields.map(row=>mapFieldReport(row,state.market.mapFieldReports||{})),mapFieldSnapshot:{source:FIELD_MAP_SNAPSHOT.source,capturedAt:FIELD_MAP_SNAPSHOT.capturedAt,summary:mapFieldSummary(FIELD_MAP_SNAPSHOT),extractionStatus:String(source.fieldMapSnapshot?.extractionStatus||'')},ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}])),wormholes:{reports:wormholeGasPublicReports(),reportHours:WORMHOLE_GAS_REPORT_TTL/3600000}},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     miningActivity:recentSystemMining(state.esi.systemMiningActivity),
     playerLosses:playerLossSnapshot(pvpDb.fieldPlayerLosses,fieldLossSystems),
@@ -5670,7 +5672,7 @@ function recordBoardScan({system,text,a0,t3Scan=null,definition=null}){
   };
 }
 
-async function probeScanPreview(ch,text,expectedSystem=null){
+async function probeScanPreview(ch,text,expectedSystem=null,{origin='manual'}={}){
   const {access,identity}=await characterAccess(ch);
   if(!identity.scopes.includes(LOCATION_SCOPE)){
     const error=new Error('Update this toon’s EVE access before importing scans.');
@@ -5692,6 +5694,40 @@ async function probeScanPreview(ch,text,expectedSystem=null){
   const definition=SYSTEM_MAP.get(system)||null;
   const scan=definition?parseProbeScan(text,definition.ore):null;
   let correction=null;
+  const negativeKey=String(ch.characterId)+'|'+system;
+  let negativeConfirmed=false;
+  if(definition&&scan?.valid){
+    if(scan.detected){
+      observerAbsentT3Candidates.delete(negativeKey);
+    }else{
+      const observer=origin==='observer';
+      const credible=credibleAbsentT3Scan(text,scan,{observer});
+      if(!credible){
+        return{
+          system,systemId,tracked:true,scan,
+          negativeUnreliable:true,origin,
+          message:observer?'Screen observation cannot establish deposit absence from this partial Probe Scanner view. Show the full scanner or copy its complete rows.':'Copy the full unfiltered Probe Scanner table, including its header and scan rows, to confirm the T3 deposit is absent.',
+          boardScan:{recorded:false,boardTracked:true,valid:false},
+        };
+      }
+      if(observer){
+        const at=Date.now();
+        const result=observeAbsentT3(observerAbsentT3Candidates.get(negativeKey),{characterId:String(ch.characterId),system,scanText:text,at});
+        if(!result.confirmed){
+          observerAbsentT3Candidates.set(negativeKey,result.next);
+          return{
+            system,systemId,tracked:true,scan,origin,
+            pendingAbsence:true,confirmationObserved:1,
+            retryInMs:result.retryInMs||15000,
+            message:'Yeda sees no T3 deposit in the latest screen scan. Waiting for a second separate observation to protect against OCR errors.',
+            boardScan:{recorded:false,boardTracked:true,valid:true},
+          };
+        }
+      }
+      observerAbsentT3Candidates.delete(negativeKey);
+      negativeConfirmed=true;
+    }
+  }
   if(definition&&scan?.valid&&scan.detected){
     const f=state.fields[system];
     if(f?.status==='cleared'){
@@ -5719,6 +5755,16 @@ async function probeScanPreview(ch,text,expectedSystem=null){
   const a0=await recordA0ProbeScan({characterName:ch.name,systemId,system,text});
   const gasWormhole=recordWormholeGasProbeScan({characterName:ch.name,systemId,system,text});
   const boardScan=recordBoardScan({system,text,a0,t3Scan:scan,definition});
+  // A real, system-verified scan without the tracked deposit can now start
+  // RED immediately. The ten-hour timer is conservative: from first
+  // reliable detection of absence, never a fabricated earlier mining time.
+  const clearance=negativeConfirmed&&boardScan?.recorded
+    ?markAbsentT3FieldCleared(state.fields[system],state.scans[system].lastScanAt,{respawnMs:TEN_HOURS})
+    :null;
+  if(clearance?.applied){
+    console.log('T3 deposit absent on confirmed Probe Scanner: auto-cleared field:',system,
+      'by',origin,'observer=',String(ch.name||'toon'),'timer ends',clearance.timerEndsAt);
+  }
   return{
     characterId:String(ch.characterId),
     characterName:ch.name,
@@ -5729,6 +5775,7 @@ async function probeScanPreview(ch,text,expectedSystem=null){
     scan,
     field:definition?state.fields[system]:null,
     correction,
+    clearance,
     a0,
     gasWormhole,
     boardScan,
@@ -10546,12 +10593,15 @@ async function routeApi(req,res,url) {
         if(!(await fieldAccessForUser(auth.user)).allowed)return json(res,403,{error:'INIT_FIELD_ACCESS_REQUIRED',message:'INIT membership is required for field reports.'});
         if(!ch)return json(res,404,{error:'CHARACTER_NOT_LINKED',message:'The foreground EVE character is not linked to this JLR account.'});
         if(!(Array.isArray(ch.scopes)&&ch.scopes.includes(LOCATION_SCOPE)))return json(res,409,{error:'LOCATION_SCOPE_REQUIRED',message:'Update this toon’s EVE location access before automatic scan imports.'});
-        const preview=await probeScanPreview(ch,clipText,observedSystem||null);
+        const preview=await probeScanPreview(ch,clipText,observedSystem||null,{origin:'clipboard'});
+        if(preview.negativeUnreliable)return json(res,200,{ok:true,accepted:false,kind:'probe-scan',message:preview.message});
+        if(preview.pendingAbsence)return json(res,200,{ok:true,accepted:false,kind:'probe-scan',message:preview.message});
         const valid=Boolean(preview.scan?.valid||preview.a0?.scan?.valid||preview.gasWormhole?.scan?.valid||preview.boardScan?.valid);
         if(!valid)return json(res,200,{ok:true,accepted:false,kind:'ignored'});
         event.preview=preview;
         event.system=String(preview.system||observedSystem||'')||null;
-        if(preview.correction?.applied||preview.a0?.tracked||preview.gasWormhole?.recorded||preview.boardScan?.recorded)broadcast();
+        await save();
+        if(preview.correction?.applied||preview.clearance?.applied||preview.a0?.tracked||preview.gasWormhole?.recorded||preview.boardScan?.recorded)broadcast();
       }else if(kind==='threat-scan'){
         event.text=clipText;
       }
@@ -10590,14 +10640,16 @@ async function routeApi(req,res,url) {
     if(!scanText)return json(res,400,{error:'EMPTY_SCAN',message:'Observer did not recognize Probe Scanner text.'});
     if(!(Array.isArray(ch.scopes)&&ch.scopes.includes(LOCATION_SCOPE)))return json(res,409,{error:'LOCATION_SCOPE_REQUIRED',message:'Update this toon’s EVE access before automatic scan imports.'});
     try{
-      const preview=await probeScanPreview(ch,scanText,observedSystem);
+      const preview=await probeScanPreview(ch,scanText,observedSystem,{origin:'observer'});
+      if(preview.pendingAbsence)return json(res,409,{error:'SCAN_PENDING_CONFIRMATION',message:preview.message,retryInMs:preview.retryInMs,system:preview.system});
+      if(preview.negativeUnreliable)return json(res,422,{error:'SCAN_TOO_INCOMPLETE',message:preview.message,system:preview.system});
       const valid=Boolean(preview.scan?.valid||preview.a0?.scan?.valid||preview.gasWormhole?.scan?.valid||preview.boardScan?.valid);
       if((preview.tracked||preview.a0?.tracked||preview.gasWormhole?.tracked||preview.boardScan?.boardTracked)&&!valid){
         return json(res,400,{error:'INVALID_SCAN',message:'Observer text did not contain enough Probe Scanner rows to update Tracker.',preview});
       }
       auth.device.lastSeenAt=now();
       await save();
-      if(preview.correction?.applied||preview.a0?.tracked||preview.gasWormhole?.recorded||preview.boardScan?.recorded)broadcast();
+      if(preview.correction?.applied||preview.clearance?.applied||preview.a0?.tracked||preview.gasWormhole?.recorded||preview.boardScan?.recorded)broadcast();
       return json(res,200,{ok:true,observer:true,observerAllowed:true,...preview});
     }catch(err){
       if(err?.code==='OBSERVER_SYSTEM_CHANGED')return json(res,409,{error:err.code,message:String(err.message||err)});
@@ -11319,10 +11371,11 @@ async function routeApi(req,res,url) {
     if(!(Array.isArray(ch.scopes)&&ch.scopes.includes(LOCATION_SCOPE)))return json(res,409,{error:'LOCATION_SCOPE_REQUIRED',message:'Update this toon’s EVE access before importing scans.'});
     try{
       const preview=await probeScanPreview(ch,scanText);
+      if(preview.negativeUnreliable)return json(res,422,{error:'SCAN_TOO_INCOMPLETE',message:preview.message,system:preview.system});
       const valid=Boolean(preview.scan?.valid||preview.a0?.scan?.valid||preview.gasWormhole?.scan?.valid||preview.boardScan?.valid);
       if((preview.tracked||preview.a0?.tracked||preview.gasWormhole?.tracked||preview.boardScan?.boardTracked)&&!valid)return json(res,400,{error:'INVALID_SCAN',message:'This does not look like copied Probe Scanner rows. Copy the complete scanner list and try again.',preview});
       await save();
-      if(preview.correction?.applied||preview.a0?.tracked||preview.gasWormhole?.recorded||preview.boardScan?.recorded)broadcast();
+      if(preview.correction?.applied||preview.clearance?.applied||preview.a0?.tracked||preview.gasWormhole?.recorded||preview.boardScan?.recorded)broadcast();
       return json(res,200,{ok:true,...preview});
     }catch(err){
       if(err.code==='LOCATION_SCOPE_REQUIRED')return json(res,409,{error:err.code,message:err.message});
