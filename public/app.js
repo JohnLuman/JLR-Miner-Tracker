@@ -4643,7 +4643,7 @@
     if(ledger?.likelyDepleted&&pctKnown){
       return{
         text:`${minedText||'LEDGER • '+Math.round(pct)+'% REPORTED MINED'} • SCAN NOW`,
-        tone:verified?'danger':'warning',
+        tone:verified&&site>0&&confirmedMined>=site*0.95?'danger':'warning',
         title:summary+' Scan now to confirm whether the current deposit is depleted.',
       };
     }
