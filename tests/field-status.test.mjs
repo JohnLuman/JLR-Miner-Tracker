@@ -23,10 +23,15 @@ assert.match(build(s,now+46*60000).details.find(([n])=>n==='Mining')[1],/No rece
 s.entry.f={status:'cleared',timerEndsAt:at(1000)};
 assert.match(value(s,'Reset'),/00:00:01/);
 assert.match(build(s,now+2000).details.find(([n])=>n==='Reset')[1],/scan to confirm/);
+s.state.scans.A.source='probe-scan';s.state.scans.A.t3={detected:true};
 s.state.scans.A.ledger={siteM3:100,verifiedM3SinceScan:25,baselineDetected:true,baselineAt:at(-60000),verifiedFromScanAt:at(-60000)};
 assert.match(value(s,'Reported progress'),/25%/);
 s.state.scans.A.ledger.verifiedFromScanAt=null;
-assert.match(value(s,'Progress'),/Awaiting/);
+assert.match(value(s,'Progress'),/Unverified/);
+s.state.scans.A.ledger.verifiedFromScanAt=at(-60000);
+assert.match(value(s,'Reported progress'),/25%/);
+s.state.scans.A.lastScanAt=at(-13*60*60000);
+assert.match(value(s,'Progress'),/Unverified/,'13-hour-old scan may not claim current progress');
 s.state.scans.A.source='clear-report';assert.ok(value(s,'Last clear report'));
 s=fixture();s.entry={key:'map:t2|A',kind:'map',system:'A',row:{tier:2,rows:[{ore:'Bistot',status:'cleared',timerEndsAt:at(2000),siteM3:100,minedM3:100},{ore:'Arkonor',status:'picked',siteM3:200,minedM3:20}]}};
 assert.equal(value(s,'Field state'),'Partially cleared');assert.match(value(s,'Bistot progress'),/100 m³/);assert.match(value(s,'Arkonor progress'),/20 m³/);
