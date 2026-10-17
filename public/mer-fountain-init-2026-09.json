@@ -1,0 +1,275 @@
+{
+  "period": "2026-09",
+  "reportLabel": "September 2026",
+  "source": "EVE Online Monthly Economic Report 2026-09",
+  "region": "Fountain",
+  "alliance": {
+    "name": "The Initiative.",
+    "ticker": "INIT.",
+    "allianceId": 1900696668
+  },
+  "fountain": {
+    "economic": {
+      "destroyed_value": {
+        "label": "Destroyed value",
+        "value": 1556611132623,
+        "rank": 10,
+        "of": 69
+      },
+      "mined_value": {
+        "label": "Mined value",
+        "value": 3171655279573,
+        "rank": 4,
+        "of": 69
+      },
+      "produced_value": {
+        "label": "Produced value",
+        "value": 13293417960003,
+        "rank": 4,
+        "of": 69
+      },
+      "trade_value": {
+        "label": "Trade value",
+        "value": 10500526628431,
+        "rank": 8,
+        "of": 69
+      },
+      "loyalty_points": {
+        "label": "Loyalty points",
+        "value": 331562124,
+        "rank": 10,
+        "of": 69
+      },
+      "npc_bounties": {
+        "label": "NPC bounties",
+        "value": 6758803960528,
+        "rank": 2,
+        "of": 69
+      }
+    },
+    "mining": {
+      "asteroid": {
+        "label": "Asteroid",
+        "minedM3": 6379225427.05,
+        "wastedM3": 471416039.6,
+        "wasteRate": 0.06881341577937299,
+        "rank": 3,
+        "of": 66
+      },
+      "ice": {
+        "label": "Ice",
+        "minedM3": 2438048000,
+        "wastedM3": 121589000,
+        "wasteRate": 0.047502438822379894,
+        "rank": 5,
+        "of": 66
+      },
+      "moon": {
+        "label": "Moon",
+        "minedM3": 2141188990,
+        "wastedM3": 91882320,
+        "wasteRate": 0.04114616474115195,
+        "rank": 10,
+        "of": 66
+      },
+      "gas": {
+        "label": "Gas",
+        "minedM3": 16849930,
+        "wastedM3": 2539390,
+        "wasteRate": 0.1309684919326722,
+        "rank": 9,
+        "of": 66
+      }
+    },
+    "moonMaterials": {
+      "metenoxMining": 277528823028,
+      "refineryMining": 578344719211.71
+    },
+    "combat": {
+      "killRecords": 14573,
+      "ccpDestroyed": 887168850056,
+      "zkbDestroyed": 1285201183839
+    },
+    "hotspots": [
+      {
+        "system": "C-N4OD",
+        "systemId": 30004600,
+        "records": 1790,
+        "ccpDestroyed": 67713686634,
+        "zkbDestroyed": 92146369632
+      },
+      {
+        "system": "75FA-Z",
+        "systemId": 30004620,
+        "records": 1019,
+        "ccpDestroyed": 49804523490,
+        "zkbDestroyed": 68518019402
+      },
+      {
+        "system": "J5A-IX",
+        "systemId": 30004589,
+        "records": 868,
+        "ccpDestroyed": 39451913274,
+        "zkbDestroyed": 55276366188
+      },
+      {
+        "system": "B32-14",
+        "systemId": 30004599,
+        "records": 139,
+        "ccpDestroyed": 38826391955,
+        "zkbDestroyed": 24211992924
+      },
+      {
+        "system": "WY-9LL",
+        "systemId": 30004621,
+        "records": 991,
+        "ccpDestroyed": 33582768027,
+        "zkbDestroyed": 48090457900
+      },
+      {
+        "system": "LBGI-2",
+        "systemId": 30004663,
+        "records": 305,
+        "ccpDestroyed": 30512184138,
+        "zkbDestroyed": 42475944562
+      },
+      {
+        "system": "KVN-36",
+        "systemId": 30004642,
+        "records": 556,
+        "ccpDestroyed": 21156308262,
+        "zkbDestroyed": 28903711440
+      },
+      {
+        "system": "O-PNSN",
+        "systemId": 30004649,
+        "records": 181,
+        "ccpDestroyed": 20509555623,
+        "zkbDestroyed": 27349981880
+      }
+    ]
+  },
+  "init": {
+    "global": {
+      "lossRecords": 24262,
+      "ccpLost": 2201977725054,
+      "zkbLost": 2884283692646,
+      "killRecords": 25062,
+      "ccpDestroyed": 1622877034276,
+      "zkbDestroyed": 2336007700111,
+      "ccpEfficiency": 0.4242976887729665,
+      "zkbEfficiency": 0.44748607392915685
+    },
+    "fountain": {
+      "killRecords": 8396,
+      "ccpDestroyed": 366551932008,
+      "zkbDestroyed": 547012817722,
+      "lossRecords": 6096,
+      "ccpLost": 814048357123,
+      "zkbLost": 1107960495837,
+      "ccpEfficiency": 0.3104792836174947,
+      "zkbEfficiency": 0.3305266696691656,
+      "shareOfInitKillRecords": 0.3350091772404437,
+      "shareOfInitLossRecords": 0.25125710988376887,
+      "shareOfFountainKillRecordsAsKiller": 0.5761339463391203,
+      "shareOfFountainKillRecordsAsVictim": 0.4183078295477939
+    },
+    "fountainHotspots": [
+      {
+        "system": "C-N4OD",
+        "systemId": 30004600,
+        "records": 1780,
+        "ccpDestroyed": 67502194884,
+        "zkbDestroyed": 91889175495,
+        "initKillRecords": 1326,
+        "initLossRecords": 550
+      },
+      {
+        "system": "75FA-Z",
+        "systemId": 30004620,
+        "records": 934,
+        "ccpDestroyed": 47861235469,
+        "zkbDestroyed": 65954320017,
+        "initKillRecords": 497,
+        "initLossRecords": 438
+      },
+      {
+        "system": "J5A-IX",
+        "systemId": 30004589,
+        "records": 845,
+        "ccpDestroyed": 39239617561,
+        "zkbDestroyed": 54890643301,
+        "initKillRecords": 600,
+        "initLossRecords": 250
+      },
+      {
+        "system": "WY-9LL",
+        "systemId": 30004621,
+        "records": 768,
+        "ccpDestroyed": 27624951381,
+        "zkbDestroyed": 39521503347,
+        "initKillRecords": 320,
+        "initLossRecords": 451
+      },
+      {
+        "system": "KVN-36",
+        "systemId": 30004642,
+        "records": 553,
+        "ccpDestroyed": 21098264323,
+        "zkbDestroyed": 28788084356,
+        "initKillRecords": 455,
+        "initLossRecords": 98
+      },
+      {
+        "system": "EI-O0O",
+        "systemId": 30004586,
+        "records": 406,
+        "ccpDestroyed": 13929251126,
+        "zkbDestroyed": 21970864210,
+        "initKillRecords": 298,
+        "initLossRecords": 123
+      },
+      {
+        "system": "LBGI-2",
+        "systemId": 30004663,
+        "records": 302,
+        "ccpDestroyed": 30294168308,
+        "zkbDestroyed": 42248750642,
+        "initKillRecords": 167,
+        "initLossRecords": 149
+      },
+      {
+        "system": "YZ-LQL",
+        "systemId": 30004617,
+        "records": 278,
+        "ccpDestroyed": 11641746911,
+        "zkbDestroyed": 13971633972,
+        "initKillRecords": 116,
+        "initLossRecords": 162
+      },
+      {
+        "system": "7BX-6F",
+        "systemId": 30004616,
+        "records": 241,
+        "ccpDestroyed": 12289152207,
+        "zkbDestroyed": 24469478452,
+        "initKillRecords": 144,
+        "initLossRecords": 117
+      },
+      {
+        "system": "B17O-R",
+        "systemId": 30004590,
+        "records": 239,
+        "ccpDestroyed": 12523468549,
+        "zkbDestroyed": 19429709018,
+        "initKillRecords": 168,
+        "initLossRecords": 72
+      }
+    ],
+    "notes": [
+      "Fountain economic and mining figures are regional MER data; the MER does not attribute those totals to INIT.",
+      "INIT combat figures use alliance ID 1900696668 in killer_alliance_id and victim_alliance_id from the MER kill dump.",
+      "Each MER kill row identifies one killer alliance; it is not a full participant list."
+    ]
+  }
+}
