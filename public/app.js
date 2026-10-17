@@ -54,6 +54,12 @@
   let scoutTargetsOriginSystem = '';
   let scoutPromptKey = '';
   let adamCurrentTimer = null;
+  const MER_REPORTS=[
+    {period:'2026-09',label:'September 2026',url:'/mer-fountain-init-2026-09.json'},
+    {period:'2026-08',label:'August 2026',url:'/mer-fountain-init.json'},
+  ];
+  const savedMerPeriod=localStorage.getItem('jlrMerPeriod');
+  let merSelectedPeriod=MER_REPORTS.some(row=>row.period===savedMerPeriod)?savedMerPeriod:MER_REPORTS[0].period;
   let merIntel = null;
   let merIntelError = '';
   let pvpIntel = null;
@@ -4128,13 +4134,18 @@
             <p>Only the MER data that directly describes Fountain or identifies The Initiative. in the kill dump.</p>
           </div>
           <div class="mer-badges">
+            <label class="mer-month-picker"><span>REPORT MONTH</span>
+              <select id="merMonthSelect" aria-label="Monthly Economic Report month">
+                ${MER_REPORTS.map(row=>`<option value="${row.period}"${row.period===merSelectedPeriod?' selected':''}>${esc(row.label)}</option>`).join('')}
+              </select>
+            </label>
             <span>FOUNTAIN</span>
             <span>INIT. • ${esc(String(m.alliance?.allianceId||''))}</span>
           </div>
         </section>
 
         <section class="glass mer-section">
-          <div class="mer-section-head"><strong>FOUNTAIN ECONOMY</strong><span>regional August totals</span></div>
+          <div class="mer-section-head"><strong>FOUNTAIN ECONOMY</strong><span>regional ${esc(m.reportLabel||m.period)} totals</span></div>
           <div class="mer-kpi-grid">${econCards}</div>
         </section>
 
@@ -4159,7 +4170,7 @@
               <article><span>FOUNTAIN PRESENCE</span><strong>${merPct(init.shareOfFountainKillRecordsAsKiller)}</strong><small>of Fountain records list INIT as killer</small></article>
             </div>
             <div class="mer-global-line">
-              <span>INIT ALL-NEW-EDEN AUGUST</span>
+              <span>INIT ALL NEW EDEN • ${esc(String(m.reportLabel||m.period).toUpperCase())}</span>
               <strong>${fmt(global.killRecords)} kill records • ${fmt(global.lossRecords)} losses • ${fmt(global.ccpDestroyed)} destroyed • ${fmt(global.ccpLost)} lost</strong>
             </div>
           </section>
@@ -4181,14 +4192,30 @@
           <small>Source: ${esc(m.source||'EVE Online Monthly Economic Report')}</small>
         </section>
       </div>`;
+    host.querySelector('#merMonthSelect')?.addEventListener('change',event=>{
+      const period=String(event.currentTarget.value||'');
+      if(!MER_REPORTS.some(row=>row.period===period)||period===merSelectedPeriod)return;
+      merSelectedPeriod=period;
+      localStorage.setItem('jlrMerPeriod',period);
+      merIntel=null;
+      merIntelError='';
+      renderMerIntel();
+      void loadMerIntel();
+    });
   }
   async function loadMerIntel(){
+    const period=merSelectedPeriod;
+    const report=MER_REPORTS.find(row=>row.period===period)||MER_REPORTS[0];
     merIntelError='';
     try{
-      const response=await fetch('/mer-fountain-init.json',{cache:'no-cache'});
-      if(!response.ok)throw new Error(`MER data request failed (${response.status})`);
-      merIntel=await response.json();
+      const response=await fetch(report.url,{cache:'no-cache'});
+      if(!response.ok)throw new Error(`MER ${report.label} request failed (${response.status})`);
+      const payload=await response.json();
+      if(merSelectedPeriod!==period)return; // Ignore a slower response for another month.
+      if(payload.period!==period)throw new Error('MER report month does not match its source.');
+      merIntel=payload;
     }catch(error){
+      if(merSelectedPeriod!==period)return;
       merIntel=null;
       merIntelError=String(error?.message||error||'MER data could not be loaded.');
     }
