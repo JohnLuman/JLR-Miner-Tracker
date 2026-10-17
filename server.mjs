@@ -4216,7 +4216,7 @@ function trackerBrainWhySystem(system){
   const mined=Math.max(0,Number(ledger?.minedM3SinceSite)||0);
   const verified=Boolean(ledger?.baselineDetected&&ledger?.baselineAt&&ledger?.verifiedFromScanAt===ledger.baselineAt);
   const postScanMined=verified?Math.max(0,Number(ledger?.verifiedM3SinceScan)||0):0;
-  const pct=Number(ledger?.depletionPct);
+  const pct=ledger?.depletionPct==null?NaN:Number(ledger.depletionPct);
   const scanMs=Date.parse(scan?.lastScanAt||'');
   const stale=!Number.isFinite(scanMs)||Date.now()-scanMs>=A0_REPORT_TTL;
   const facts=[];
@@ -4241,17 +4241,15 @@ function trackerBrainWhySystem(system){
     facts.push('The field is currently marked mineable.');
   }
 
-  if(rawToday>0){
-    facts.push(`Linked Eve mining ledgers report ${trackerBrainVolumeText(rawToday)} mined in this system today.`);
-  }
-
-  if(field?.status==='ready'&&rawToday>0&&mined<=0&&stale){
-    priority='attention';
-    facts.push('Tracker has not safely assigned that daily total to the current site cycle, so the field has not been changed from green yet.');
-  }else if(postScanMined>0){
-    facts.push(`Tracker verified ${trackerBrainVolumeText(postScanMined)} mined after the scan confirming this deposit.`);
-  }else if(mined>0){
-    facts.push(`Tracker observed ${trackerBrainVolumeText(mined)} in the field activity history, but has not verified that total against this deposit.`);
+  // Field guidance ignores historical UTC-day mining: it may belong to a
+  // previous anomaly. Only fresh scan-backed progress or live ESI increments
+  // should influence the current field recommendation.
+  if(postScanMined>0){
+    facts.push(`Recent scan-backed mining observed: ${trackerBrainVolumeText(postScanMined)}.`);
+  }else if(ledger?.active){
+    facts.push('Recent ESI mining detected, but current deposit progress is unverified until a fresh Probe Scanner report.');
+  }else if(scan?.source==='operator-soft-reset'){
+    facts.push('Deposit presence is an operator assumption, not a confirmed scan.');
   }
 
   if(field?.status!=='cleared'&&actionableLedgerScanWarning(scan)&&Number.isFinite(pct)){
@@ -4278,7 +4276,7 @@ function trackerBrainWhySystem(system){
     facts,
     fieldStatus:field?.status||null,
     rawTodayM3:rawToday,
-    minedM3SinceSite:mined,
+    minedM3SinceSite:verified?postScanMined:0,
     depletionPct:Number.isFinite(pct)?pct:null,
     lastScanAt:scan?.lastScanAt||null,
     generatedAt:now(),
@@ -4345,22 +4343,9 @@ function trackerBrainSnapshot(scans=scanActivityPublic(),debug=miningLedgerDebug
     const ledger=scan?.ledger||null;
     const rawToday=Math.max(0,Number(scan?.esiTodayM3)||0);
     const mined=Math.max(0,Number(ledger?.minedM3SinceSite)||0);
-    const pct=Number(ledger?.depletionPct);
+    const pct=ledger?.depletionPct==null?NaN:Number(ledger.depletionPct);
     const scanMs=Date.parse(scan?.lastScanAt||'');
     const stale=!Number.isFinite(scanMs)||Date.now()-scanMs>=A0_REPORT_TTL;
-
-    if(field?.status==='ready'&&rawToday>0&&mined<=0&&stale){
-      add({
-        id:'field-attribution-'+system,
-        type:'field-attribution',
-        system,
-        priority:'attention',
-        title:`${system}: mining recorded, site attribution pending`,
-        reason:`ESI reports ${Math.round(rawToday).toLocaleString()} m³ mined today, but Tracker cannot safely assign it to the current site cycle yet.`,
-        signature:`field-attribution|${system}|${Math.round(rawToday)}|${field?.updatedAt||''}`,
-      });
-      continue;
-    }
 
     if(field?.status!=='cleared'&&actionableLedgerScanWarning(scan)&&Number.isFinite(pct)&&pct>=95){
       add({
@@ -4369,7 +4354,7 @@ function trackerBrainSnapshot(scans=scanActivityPublic(),debug=miningLedgerDebug
         system,
         priority:'high',
         title:`${system}: scan needed now`,
-        reason:`Estimated depletion is ${Math.round(pct)}% with ${Math.round(mined).toLocaleString()} m³ attributed to this site cycle.`,
+        reason:`Recent Probe Scanner evidence and subsequent ESI increments indicate ${Math.round(pct)}% estimated depletion; rescan to confirm.`,
         signature:`field-depletion|${system}|${Math.round(pct)}|${ledger?.lastActivityAt||''}`,
       });
       continue;
