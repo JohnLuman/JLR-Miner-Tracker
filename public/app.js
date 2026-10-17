@@ -4612,13 +4612,15 @@
   }
 
   function boardEvidenceLine(system){
-    const ledger=state?.scans?.[system]?.ledger||null;
-    if(!ledger)return null;
-    const pct=Number(ledger.depletionPct);
+    const scan=state?.scans?.[system]||{};
+    const ledger=scan.ledger||null;
+    const today=Math.max(0,Number(scan.esiTodayM3)||0);
+    if(!ledger&&today<=0)return null;
+    const pct=ledger?.depletionPct==null?NaN:Number(ledger.depletionPct);
     const pctKnown=Number.isFinite(pct);
-    const mined=Math.max(0,Number(ledger.minedM3SinceSite)||0);
-    const site=Math.max(0,Number(ledger.siteM3)||0);
-    const verified=ledger.baselineDetected&&ledger.baselineAt&&ledger.verifiedFromScanAt===ledger.baselineAt;
+    const mined=Math.max(0,Number(ledger?.minedM3SinceSite)||0);
+    const site=Math.max(0,Number(ledger?.siteM3)||0);
+    const verified=Boolean(ledger?.baselineDetected&&ledger?.baselineAt&&ledger?.verifiedFromScanAt===ledger.baselineAt);
     const confirmedMined=verified?Math.max(0,Number(ledger.verifiedM3SinceScan)||0):0;
     const fieldState=state?.fields?.[system];
     if(fieldState?.status==='cleared'&&fieldState.autoClearReason==='esi-ledger-cap'){
@@ -4629,41 +4631,44 @@
         title:`Linked ESI ledgers reported ${Math.round(verified).toLocaleString()} m³ after a Probe Scanner report confirmed this T3 site. Reaching the estimated ${Math.round(site).toLocaleString()} m³ field cap started the 10-hour timer. A new scan showing the deposit is still present can correct it.`,
       };
     }
+    // The displayed ESI day total is the raw system-wide total, never the
+    // inferred since-site total (which can span a previous deposit cycle).
     const minedText=site>0&&verified
       ?`${fmt(confirmedMined,'m3')} / ${fmt(site,'m3')} m³ VERIFIED`
-      :mined>0?`ESI TODAY • ${fmt(mined,'m3')} m³`:null;
+      :today>0?`ESI SYSTEM TODAY • ${fmt(today,'m3')} m³`
+      :mined>0?`ESI HISTORY • ${fmt(mined,'m3')} m³`:null;
+    const caveat='Daily ESI totals are system-wide and can include earlier deposits. Only mining observed after a scan confirming this deposit qualifies for automatic RED.';
+    const summary=`ESI system today: ${Math.round(today).toLocaleString()} m³. Historical field-cycle estimate: ${Math.round(mined).toLocaleString()} m³. Post-scan verified: ${Math.round(confirmedMined).toLocaleString()} m³${site>0?' / '+Math.round(site).toLocaleString()+' m³ estimated cap':''}. ${caveat}`;
 
-    if(ledger.likelyDepleted&&pctKnown){
+    if(ledger?.likelyDepleted&&pctKnown){
       return{
         text:`${minedText||'LEDGER • '+Math.round(pct)+'% REPORTED MINED'} • SCAN NOW`,
-        tone:'danger',
-        title:`ESI reports ${Math.round(mined).toLocaleString()} m³ in this system, but only ${Math.round(confirmedMined).toLocaleString()} m³ is verified after the current-site scan. Daily totals can include an earlier site. Automatic RED requires ${Math.round(site).toLocaleString()} m³ verified after a scan confirming this deposit; scan now to check whether it is gone.`,
+        tone:verified&&site>0&&confirmedMined>=site*0.95?'danger':'warning',
+        title:summary+' Scan now to confirm whether the current deposit is depleted.',
       };
     }
-    if(ledger.needsScan&&pctKnown){
+    if(ledger?.needsScan&&pctKnown){
       return{
         text:`${minedText||'LEDGER • '+Math.round(pct)+'% REPORTED MINED'} • SCAN`,
         tone:'warning',
-        title:`ESI reports ${Math.round(mined).toLocaleString()} m³ in this system; ${Math.round(confirmedMined).toLocaleString()} m³ is verified after the current-site scan. The estimated site cap is ${Math.round(site).toLocaleString()} m³. Scan recommended.`,
+        title:summary+' A new scan is recommended before changing field status.',
       };
     }
     if(minedText){
       return{
         text:minedText,
-        tone:ledger.active?'active':'',
-        title:ledger.seeded&&!ledger.active
-          ?`Today's linked ESI ledger already contains ${Math.round(mined).toLocaleString()} m³ mined in this system. ESI's daily ledger does not provide the exact mining time, so this confirms today's mining but not that mining is active right now.`
-          :`Linked ESI ledgers report ${Math.round(mined).toLocaleString()} m³ in this system. ${Math.round(confirmedMined).toLocaleString()} m³ was verified after a scan confirming this site${site>0?' against a '+Math.round(site).toLocaleString()+' m³ site cap':''}. Last activity ${ago(ledger.lastActivityAt)}.`,
+        tone:ledger?.active?'active':'',
+        title:summary+(ledger?.lastActivityAt?' Last observed ledger activity '+ago(ledger.lastActivityAt)+'.':''),
       };
     }
-    if(ledger.active){
+    if(ledger?.active){
       return{
         text:minedText||'LEDGER • MINING DETECTED',
         tone:'active',
         title:`ESI mining-ledger activity detected ${ago(ledger.lastActivityAt)}. This confirms mining activity, not field depletion.`,
       };
     }
-    if(ledger.lastActivityAt){
+    if(ledger?.lastActivityAt){
       return{
         text:`LEDGER • ${ago(ledger.lastActivityAt).toUpperCase()}`,
         tone:'',
