@@ -62,7 +62,7 @@
     if(lossRecent)activity.push({at:loss.at,text:'Player loss in this system · '+age(loss.at,now)+' (reports may be delayed)',alert:true});
     if(miningAt)activity.push({at:miningAt,text:'Field-matched mining ledger update · '+age(miningAt,now)});
     if(field.autoReopenedAt)activity.push({at:field.autoReopenedAt,text:'Field reopened from ESI evidence · '+age(field.autoReopenedAt,now)});
-    if(field.autoClearedAt)activity.push({at:field.autoClearedAt,text:'Estimated field cap reached · '+age(field.autoClearedAt,now)});
+    if(field.autoClearedAt)activity.push({at:field.autoClearedAt,text:(field.autoClearReason==='probe-scan-absent'?'Probe Scanner reported T3 deposit not detected':'Estimated field cap reached')+' · '+age(field.autoClearedAt,now)});
     for(const note of field.notes||[])activity.push({at:note.createdAt,text:note.text+' · '+age(note.createdAt,now)});
     activity.sort((a,b)=>Number(Boolean(b.alert))-Number(Boolean(a.alert))||(stamp(b.at)||0)-(stamp(a.at)||0));
     return {system,type,details,activity:activity.slice(0,3)};

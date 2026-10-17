@@ -52,4 +52,8 @@ assert.match(server,/probeScanPreview\(ch,clipText,observedSystem\|\|null,\{orig
 assert.match(server,/markAbsentT3FieldCleared\(state\.fields\[system\],state\.scans\[system\]\.lastScanAt/,'only committed scan absence starts timer');
 assert.match(server,/SCAN_PENDING_CONFIRMATION/,'old companion retry logic receives 409 rather than premature success');
 assert.match(server,/await save\(\);\n        if\(preview\.correction\?\.applied\|\|preview\.clearance/,'clipboard commit persisted');
+const app=fs.readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
+const details=fs.readFileSync(new URL('../public/field-status.js',import.meta.url),'utf8');
+assert.match(app,/PROBE SCAN • T3 NOT DETECTED/,'field card shows source of RED timer');
+assert.match(details,/Probe Scanner reported T3 deposit not detected/,'field history never confuses absence with a full ESI cap');
 console.log('Yeda/clipboard T3 missing-site confirmation, no false scanner clear, timer and persistence tests passed.');
