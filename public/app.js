@@ -4649,7 +4649,7 @@
     const scan=state?.scans?.[system]||{};
     const ledger=scan.ledger||null;
     const today=Math.max(0,Number(scan.esiTodayM3)||0);
-    if(!ledger&&today<=0)return null;
+    if(!ledger&&today<=0&&state?.fields?.[system]?.autoClearReason!=='probe-scan-absent')return null;
     const pct=ledger?.depletionPct==null?NaN:Number(ledger.depletionPct);
     const pctKnown=Number.isFinite(pct);
     const mined=Math.max(0,Number(ledger?.minedM3SinceSite)||0);
@@ -4662,6 +4662,13 @@
     const fieldState=state?.fields?.[system];
     if(scan.source==='operator-soft-reset'){
       return{text:ledger?.active?'RECENT MINING • NOT VERIFIED':'SOFT RESET • NOT SCANNED',tone:ledger?.active?'active':'',title:'Field presence was assumed by an operator, not confirmed by a real Probe Scanner report. Daily ESI history cannot verify this deposit. A fresh Probe Scanner report is required.'};
+    }
+    if(fieldState?.status==='cleared'&&fieldState.autoClearReason==='probe-scan-absent'){
+      return{
+        text:'PROBE SCAN • T3 NOT DETECTED',
+        tone:'danger',
+        title:'A current-system Probe Scanner report did not contain the tracked T3 deposit. The 10-hour timer was started when absence was observed; this is not proof of the exact disappearance time. If filters hid the deposit, a new scan showing it present will correct the card.',
+      };
     }
     if(fieldState?.status==='cleared'&&fieldState.autoClearReason==='esi-ledger-cap'){
       const verified=Math.max(0,Number(fieldState.autoClearM3)||0);
