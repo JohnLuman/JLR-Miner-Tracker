@@ -1,3 +1,4 @@
+import {readFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
 import { addVerifiedSiteMining, autoClearFieldAtCap, FIELD_AUTO_CLEAR_REASON } from '../lib/field-auto-clear.mjs';
 
@@ -36,4 +37,15 @@ const oldScan={...inference,baselineAt:'2026-09-25T05:00:00.000Z'};
 assert.equal(addVerifiedSiteMining(oldScan,1_000_000,'2026-09-25T05:10:00.000Z','2026-09-25T05:20:00.000Z'),false,'old scan evidence cannot arm a new cycle');
 assert.equal(autoClearFieldAtCap({status:'picked'},oldScan,cap,'2026-09-25T05:20:00.000Z',tenHours),false);
 
+// A daily system-wide ESI number must not be confused with unverified
+// historical field-cycle volume or verified current deposit progress.
+const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
+const evidence=app.slice(app.indexOf('  function boardEvidenceLine(system){'),app.indexOf('  function renderTop(){'));
+assert.match(evidence,/const today=Math\.max\(0,Number\(scan\.esiTodayM3\)/,'read the independent daily ESI system total');
+assert.match(evidence,/ESI SYSTEM TODAY.*fmt\(today,'m3'\)/,'label the independent total as system-wide');
+assert.doesNotMatch(evidence,/ESI TODAY.*fmt\(mined,'m3'\)/,'never label a multi-cycle estimate as ESI today');
+assert.match(evidence,/ESI HISTORY.*fmt\(mined,'m3'\)/,'unverified historical volume has its own label');
+assert.match(evidence,/site>0&&verified/,'only verified current-site values appear as field progress');
+assert.match(evidence,/tone:verified\?'danger':'warning'/,'unverified probable depletion stays a scan warning');
+assert.match(evidence,/can include earlier deposits/,'explain the cycle attribution limitation');
 console.log('Verified T3 field auto-clear tests passed.');
