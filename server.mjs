@@ -1,5 +1,6 @@
 import {recordSystemMining,recentSystemMining} from './lib/system-mining-activity.mjs';
 import {fieldMiningTargets} from './lib/field-mining-target.mjs';
+import {freshLedgerInterval,freshConfirmedScan} from './lib/field-ledger-freshness.mjs';
 import {snapshotT3ForSoftReset,applyT3SoftReset} from './lib/t3-field-soft-reset.mjs';
 import {recordPlayerLoss,prunePlayerLosses,playerLossSnapshot} from './lib/field-player-loss.mjs';
 import {updateT2Ledger} from './lib/map-field-ledger.mjs';
@@ -1738,8 +1739,12 @@ function scanActivityPublic() {
     const seeded=Number.isFinite(seededMs)&&(!Number.isFinite(lastMs)||seededMs>lastMs);
     const evidenceAt=seeded?row.seededAt:(row?.lastLedgerAt||row?.seededAt||null);
     if(!row||(!evidenceAt&&minedM3SinceSite<=0&&!row.respawnCompletedAt))return null;
-    const active=Number.isFinite(lastMs)&&at-lastMs<=45*60*1000;
-    const depletionPct=Number.isFinite(Number(row.depletionPct))?Math.max(0,Math.min(100,Number(row.depletionPct))):null;
+    const active=Number.isFinite(lastMs)&&at>=lastMs&&at-lastMs<=45*60*1000;
+    const latestScan=state.scans?.[system];
+    const scanFresh=freshConfirmedScan(latestScan,at);
+    const verified=scanFresh&&row.baselineDetected&&row.verifiedFromScanAt===row.baselineAt;
+    const depletionPct=verified&&row.depletionPct!=null&&Number.isFinite(Number(row.depletionPct))
+      ?Math.max(0,Math.min(100,Number(row.depletionPct))):null;
     return{
       lastActivityAt:evidenceAt,
       active,
@@ -1748,17 +1753,17 @@ function scanActivityPublic() {
       lastDeltaM3:Math.max(0,Number(row.lastDeltaM3)||0),
       minedM3SinceBaseline:Math.max(0,Number(row.minedM3SinceBaseline)||0),
       minedM3SinceSite:Math.max(0,Number(row.minedM3SinceSite)||0),
-      verifiedM3SinceScan:Math.max(0,Number(row.verifiedM3SinceScan)||0),
-      verifiedFromScanAt:row.verifiedFromScanAt||null,
+      verifiedM3SinceScan:verified?Math.max(0,Number(row.verifiedM3SinceScan)||0):0,
+      verifiedFromScanAt:verified?row.verifiedFromScanAt:null,
       activityStartedAt:row.activityStartedAt||null,
       siteM3:Math.max(0,Number(row.siteM3)||0),
       depletionPct,
-      needsScan:Boolean(row.needsScan),
-      likelyDepleted:Boolean(row.likelyDepleted),
-      baselineAt:row.baselineAt||null,
-      baselineDetected:Boolean(row.baselineDetected),
+      needsScan:verified&&Boolean(row.needsScan),
+      likelyDepleted:verified&&Boolean(row.likelyDepleted),
+      baselineAt:verified?row.baselineAt:null,
+      baselineDetected:Boolean(verified),
       respawnCompletedAt:row.respawnCompletedAt||null,
-      confidence:row.likelyDepleted?'inferred-depletion':active?'ledger-confirmed-active':'ledger-history',
+      confidence:verified?'scan-backed-recent':active?'recent-unverified-mining':'no-current-evidence',
     };
   };
   const add=(system,row={})=>{
@@ -3902,88 +3907,10 @@ function currentFieldCycleBoundaryMs(system,field,inference){
   return values.length?Math.max(...values):NaN;
 }
 
-function reconcileFieldCardsFromLedgerCache(sampleAt=now()){
-  state.esi.fieldInference ||= {};
-  const day=dateUTC(new Date(sampleAt));
-  const dayStartMs=Date.parse(day+'T00:00:00Z');
-  const totals=combinedTrackedFieldLedgerTotals(day);
-  const changed=[];
-
-  for(const [system,totalRaw] of Object.entries(totals)){
-    const total=Math.max(0,Number(totalRaw)||0);
-    if(total<=0)continue;
-    const definition=SYSTEM_MAP.get(system);
-    const field=state.fields?.[system];
-    if(!definition||!field)continue;
-    // Daily totals can include a previous deposit. An ESI-started timer must
-    // remain RED until it expires or a new Probe Scanner report corrects it.
-    if(field.status==='cleared'&&field.autoClearReason===FIELD_AUTO_CLEAR_REASON)continue;
-
-    let inference=state.esi.fieldInference[system]||{
-      baselineAt:state.scans?.[system]?.lastScanAt||null,
-      baselineDetected:Boolean(state.scans?.[system]?.t3?.detected),
-      minedM3SinceBaseline:0,minedM3SinceSite:0,activityStartedAt:null,
-      lastLedgerAt:null,lastDeltaM3:0,depletionPct:null,
-      needsScan:false,likelyDepleted:false,siteM3:Number(definition.siteM3)||0,
-    };
-
-    const boundaryMs=currentFieldCycleBoundaryMs(system,field,inference);
-    // ESI only gives a cumulative quantity for the date. If this site's current
-    // scan/reset/respawn boundary happened today, the whole daily quantity may
-    // include an older site cycle. Preserve only deltas observed after that
-    // boundary instead of guessing.
-    if(Number.isFinite(dayStartMs)&&Number.isFinite(boundaryMs)&&boundaryMs>=dayStartMs)continue;
-
-    const current=Math.max(0,Number(inference.minedM3SinceSite)||0);
-    const reconciled=Math.max(current,total);
-    if(reconciled<=0)continue;
-
-    const baselineMs=Date.parse(inference.baselineAt||'');
-    let baselineM3=Math.max(0,Number(inference.minedM3SinceBaseline)||0);
-    if(inference.baselineDetected&&(!Number.isFinite(baselineMs)||baselineMs<dayStartMs)){
-      baselineM3=Math.max(baselineM3,total);
-    }
-
-    const siteM3=Math.max(0,Number(definition.siteM3)||Number(inference.siteM3)||0);
-    const depletionBase=inference.baselineDetected?baselineM3:reconciled;
-    const depletionPct=siteM3>0&&depletionBase>0?Math.min(100,(depletionBase/siteM3)*100):null;
-    const increased=reconciled>current+0.001;
-
-    inference={
-      ...inference,
-      siteM3,
-      minedM3SinceSite:reconciled,
-      minedM3SinceBaseline:baselineM3,
-      seededAt:increased?sampleAt:(inference.seededAt||null),
-      seededDay:day,
-      depletionPct,
-      needsScan:Number.isFinite(depletionPct)&&depletionPct>=80,
-      likelyDepleted:Number.isFinite(depletionPct)&&depletionPct>=95,
-    };
-    state.esi.fieldInference[system]=inference;
-    field.ledgerMinedM3=reconciled;
-
-    if(field.status==='ready'){
-      field.status='picked';
-      field.timerEndsAt=null;
-      field.updatedAt=sampleAt;
-      field.ledgerPickedAt=field.ledgerPickedAt||sampleAt;
-      changed.push(system);
-    }else if(field.status==='picked'){
-      if(increased)changed.push(system);
-    }else if(field.status==='cleared'){
-      field.status='picked';
-      field.timerEndsAt=null;
-      field.updatedAt=sampleAt;
-      field.autoReopenedAt=sampleAt;
-      field.autoReopenReason='esi-ledger-reconcile';
-      field.autoReopenM3=total;
-      field.ledgerPickedAt=field.ledgerPickedAt||sampleAt;
-      changed.push(system);
-    }
-  }
-  return [...new Set(changed)];
-}
+// The full UTC day total is kept for payout and historical reporting only.
+// It cannot establish the present deposit, even if a site has no recent scan.
+// Fresh, ordered ESI deltas in updateFieldLedgerActivity are the sole ledger
+// source allowed to influence current T3 cards.
 
 function updateFieldLedgerActivity(characterId,rows,sampleAt=now()){
   state.esi.ledgerFieldSnapshots ||= {};
@@ -3999,6 +3926,12 @@ function updateFieldLedgerActivity(characterId,rows,sampleAt=now()){
 
   const previousSampleAt=prev.lastSampleAt;
   const previousSampleMs=Date.parse(previousSampleAt||'');
+  // If the cache was asleep, reconnecting, out of order, or crossed UTC
+  // midnight, this whole interval may include old fields. Rebaseline only.
+  if(!freshLedgerInterval(previousSampleAt,sampleAt)){
+    state.esi.ledgerFieldSnapshots[key]={date:day,lastSampleAt:sampleAt,totals};
+    return [];
+  }
   const changedSystems=[];
   for(const [system,total] of Object.entries(totals)){
     const previous=Math.max(0,Number(prev.totals?.[system])||0);
@@ -4033,8 +3966,8 @@ function updateFieldLedgerActivity(characterId,rows,sampleAt=now()){
         verifiedFromScanAt:state.scans?.[system]?.t3?.detected?scanAt:null,
         verifiedM3SinceScan:0,
         verifiedLastAt:null,
-        minedM3SinceSite:keepObserved?Math.max(0,Number(inference.minedM3SinceSite)||0):0,
-        activityStartedAt:keepObserved?(inference.activityStartedAt||null):null,
+        minedM3SinceSite:0,
+        activityStartedAt:null,
         depletionPct:0,
         needsScan:false,
         likelyDepleted:false,
@@ -4056,11 +3989,17 @@ function updateFieldLedgerActivity(characterId,rows,sampleAt=now()){
       inference.activityStartedAt=inference.activityStartedAt||sampleAt;
     }
 
+    // A scan-backed, fresh interval is required for field depletion.
+    // Old cumulative daily totals and unverified deposit estimates must never
+    // produce RED warnings or misleading percent-complete figures.
+    if(field?.status==='ready'||field?.status==='picked'){
+      addVerifiedSiteMining(inference,delta,previousSampleAt,sampleAt);
+    }
     const siteM3=Math.max(0,Number(definition.siteM3)||Number(inference.siteM3)||0);
-    const depletionBase=inference.baselineDetected
-      ?Math.max(0,Number(inference.minedM3SinceBaseline)||0)
-      :Math.max(0,Number(inference.minedM3SinceSite)||0);
-    const depletionPct=siteM3>0&&depletionBase>0?Math.min(100,(depletionBase/siteM3)*100):null;
+    const freshScan=freshConfirmedScan(state.scans?.[system],Date.parse(sampleAt));
+    const verified=Boolean(freshScan&&inference.baselineDetected&&inference.verifiedFromScanAt===inference.baselineAt);
+    const depletionBase=verified?Math.max(0,Number(inference.verifiedM3SinceScan)||0):null;
+    const depletionPct=verified&&siteM3>0?Math.min(100,(depletionBase/siteM3)*100):null;
     inference={
       ...inference,
       siteM3,
@@ -4073,9 +4012,6 @@ function updateFieldLedgerActivity(characterId,rows,sampleAt=now()){
     state.esi.fieldInference[system]=inference;
 
     if(!field)continue;
-    if(field.status==='ready'||field.status==='picked'){
-      addVerifiedSiteMining(inference,delta,previousSampleAt,sampleAt);
-    }
     field.ledgerLastActivityAt=sampleAt;
     field.ledgerMinedM3=Math.max(0,Number(inference.minedM3SinceSite)||0);
 
@@ -4101,22 +4037,8 @@ function updateFieldLedgerActivity(characterId,rows,sampleAt=now()){
       continue;
     }
 
-    if(field.status!=='cleared')continue;
-
-    // The ledger is daily/cumulative, not timestamped per mining cycle. Only
-    // override RED when it was already RED at the previous sample, proving this
-    // increase happened after the timer was started rather than before it.
-    const clearedAt=Date.parse(field.updatedAt||'');
-    if(!Number.isFinite(clearedAt)||!Number.isFinite(previousSampleMs)||clearedAt>previousSampleMs)continue;
-
-    field.status='picked';
-    field.timerEndsAt=null;
-    field.updatedAt=sampleAt;
-    field.autoReopenedAt=sampleAt;
-    field.autoReopenReason='esi-ledger-mining';
-    field.autoReopenM3=delta;
-    field.ledgerPickedAt=field.ledgerPickedAt||sampleAt;
-    changedSystems.push(system);
+    // Never reopen a cleared field from delayed cumulative ESI alone.
+    // A new real Probe Scanner report may correct RED instead.
   }
 
   state.esi.ledgerFieldSnapshots[key]={date:day,lastSampleAt:sampleAt,totals};
@@ -5732,7 +5654,6 @@ function recordBoardScan({system,text,a0,t3Scan=null,definition=null}){
   if(definition&&t3Scan?.valid){
     state.esi.fieldInference ||= {};
     const prior=state.esi.fieldInference[system]||{};
-    const keepObserved=Boolean(t3Scan.detected&&state.fields?.[system]?.status==='picked');
     state.esi.fieldInference[system]={
       ...prior,
       baselineAt:lastScanAt,
@@ -5741,13 +5662,11 @@ function recordBoardScan({system,text,a0,t3Scan=null,definition=null}){
       verifiedFromScanAt:t3Scan.detected?lastScanAt:null,
       verifiedM3SinceScan:0,
       verifiedLastAt:null,
-      minedM3SinceSite:keepObserved?Math.max(0,Number(prior.minedM3SinceSite)||0):0,
-      activityStartedAt:keepObserved?(prior.activityStartedAt||null):null,
+      minedM3SinceSite:0,
+      activityStartedAt:null,
       lastScanAt,
       siteM3:Number(definition.siteM3)||0,
-      depletionPct:t3Scan.detected&&keepObserved&&Number(definition.siteM3)>0
-        ?Math.min(100,(Math.max(0,Number(prior.minedM3SinceSite)||0)/Number(definition.siteM3))*100)
-        :(t3Scan.detected?0:null),
+      depletionPct:t3Scan.detected?0:null,
       needsScan:false,
       likelyDepleted:false,
     };
@@ -6266,9 +6185,6 @@ async function applyLedgerResults(results,{fullCycle=false}={}){
     const reopened=updateFieldLedgerActivity(ledger.characterId,ledger.rows,sampleAt);
     if(reopened.length)console.log('ESI mining updated T3 field cards:',reopened.join(', '));
   }
-
-  const reconciledFields=reconcileFieldCardsFromLedgerCache(sampleAt);
-  if(reconciledFields.length)console.log('ESI daily ledger reconciled field cards:',reconciledFields.join(', '));
 
   // A toon gets 24 hours to repair a continuously failing ESI/API connection.
   // Only prune during an otherwise healthy full-fleet cycle so a broad CCP/ESI
