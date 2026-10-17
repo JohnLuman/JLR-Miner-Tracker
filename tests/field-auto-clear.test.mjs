@@ -37,15 +37,16 @@ const oldScan={...inference,baselineAt:'2026-09-25T05:00:00.000Z'};
 assert.equal(addVerifiedSiteMining(oldScan,1_000_000,'2026-09-25T05:10:00.000Z','2026-09-25T05:20:00.000Z'),false,'old scan evidence cannot arm a new cycle');
 assert.equal(autoClearFieldAtCap({status:'picked'},oldScan,cap,'2026-09-25T05:20:00.000Z',tenHours),false);
 
-// A daily system-wide ESI number must not be confused with unverified
-// historical field-cycle volume or verified current deposit progress.
+// Current T3 cards must not expose historical/cumulative UTC mining.
 const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
 const evidence=app.slice(app.indexOf('  function boardEvidenceLine(system){'),app.indexOf('  function renderTop(){'));
-assert.match(evidence,/const today=Math\.max\(0,Number\(scan\.esiTodayM3\)/,'read the independent daily ESI system total');
-assert.match(evidence,/ESI SYSTEM TODAY.*fmt\(today,'m3'\)/,'label the independent total as system-wide');
-assert.doesNotMatch(evidence,/ESI TODAY.*fmt\(mined,'m3'\)/,'never label a multi-cycle estimate as ESI today');
-assert.match(evidence,/ESI HISTORY.*fmt\(mined,'m3'\)/,'unverified historical volume has its own label');
-assert.match(evidence,/site>0&&verified/,'only verified current-site values appear as field progress');
-assert.match(evidence,/tone:verified&&site>0&&confirmedMined>=site\*0\.95\?'danger':'warning'/,'red evidence styling requires verified near-complete site progress');
-assert.match(evidence,/can include earlier deposits/,'explain the cycle attribution limitation');
+assert.match(evidence,/const today=Math\.max\(0,Number\(scan\.esiTodayM3\)/,'raw UTC total remains an independent diagnostic input');
+assert.doesNotMatch(evidence,/ESI SYSTEM TODAY.*fmt\(today,'m3'\)/,'historic day-total no longer on field card');
+assert.doesNotMatch(evidence,/ESI HISTORY.*fmt\(mined,'m3'\)/,'old field estimates no longer on field card');
+assert.match(evidence,/RECENT ESI INCREASE/,'only most recent ESI interval appears without a scan');
+assert.match(evidence,/ledger\?\.active&&Number\(ledger\.lastDeltaM3\)>0/,'stale ESI increments are hidden');
+assert.match(evidence,/site>0&&verified/,'post-scan observed field progress is separate from old history');
+assert.match(evidence,/scan\.source==='probe-scan'/,'only actual Probe Scanner reports can confirm the site');
+assert.match(evidence,/tone:verified&&site>0&&confirmedMined>=site\*0\.95\?'danger':'warning'/,'critical styling requires verified near-complete site progress');
+assert.match(evidence,/raw daily history belongs in Fleet Performance/);
 console.log('Verified T3 field auto-clear tests passed.');

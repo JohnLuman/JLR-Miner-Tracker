@@ -4628,6 +4628,9 @@
       const expired=!Number.isFinite(ms)||Date.now()-ms>=12*60*60*1000;
       return{text:expired?'NEEDS A REAL SCAN':'ASSUMED PRESENT',stale:expired,title:expired?'Soft reset assumption expired; copy a genuine Probe Scanner report':'Operator soft reset '+ago(at)+'; field presence was assumed, NOT actually scanned. Verify with a real Probe Scanner report.'};
     }
+    if(row?.source==='probe-scan'&&row?.t3?.detected===false){
+      return{text:'SITE NOT DETECTED • VERIFY',stale:true,title:'Most recent Probe Scanner report did not detect the T3 deposit. Check scanner filters and field status before mining.'};
+    }
     const reminder=mapFields().find(row=>Number(row.tier)===3&&row.system===system&&row.scanReminderStartedAt);
     if(useMapReminder&&reminder&&(!Number.isFinite(ms)||Date.parse(reminder.scanReminderStartedAt)>ms))return mapScanReminderLine(reminder);
     if(!Number.isFinite(ms)){
@@ -4651,11 +4654,14 @@
     const pctKnown=Number.isFinite(pct);
     const mined=Math.max(0,Number(ledger?.minedM3SinceSite)||0);
     const site=Math.max(0,Number(ledger?.siteM3)||0);
-    const verified=Boolean(ledger?.baselineDetected&&ledger?.baselineAt&&ledger?.verifiedFromScanAt===ledger.baselineAt);
+    const scanMs=Date.parse(scan.lastScanAt||'');
+    const latest=scan.source==='probe-scan'&&scan?.t3?.detected===true
+      &&Number.isFinite(scanMs)&&Date.now()>=scanMs&&Date.now()-scanMs<12*60*60*1000;
+    const verified=Boolean(latest&&ledger?.baselineDetected&&ledger?.baselineAt&&ledger?.verifiedFromScanAt===ledger.baselineAt);
     const confirmedMined=verified?Math.max(0,Number(ledger.verifiedM3SinceScan)||0):0;
     const fieldState=state?.fields?.[system];
     if(scan.source==='operator-soft-reset'){
-      return{text:mined>0?`POST-RESET OBSERVED • ${fmt(mined,'m3')} m³`:'SOFT RESET • UNVERIFIED',tone:'',title:`Field presence was assumed by an operator at ${scan.lastScanAt||'unknown time'}; there is no real Probe Scanner confirmation yet. ${Math.round(mined).toLocaleString()} m³ observed since reset. Current EVE-day system ESI total: ${Math.round(today).toLocaleString()} m³ (may include mining before the reset).`};
+      return{text:ledger?.active?'RECENT MINING • NOT VERIFIED':'SOFT RESET • NOT SCANNED',tone:ledger?.active?'active':'',title:'Field presence was assumed by an operator, not confirmed by a real Probe Scanner report. Daily ESI history cannot verify this deposit. A fresh Probe Scanner report is required.'};
     }
     if(fieldState?.status==='cleared'&&fieldState.autoClearReason==='esi-ledger-cap'){
       const verified=Math.max(0,Number(fieldState.autoClearM3)||0);
@@ -4665,14 +4671,15 @@
         title:`Linked ESI ledgers reported ${Math.round(verified).toLocaleString()} m³ after a Probe Scanner report confirmed this T3 site. Reaching the estimated ${Math.round(site).toLocaleString()} m³ field cap started the 10-hour timer. A new scan showing the deposit is still present can correct it.`,
       };
     }
-    // The displayed ESI day total is the raw system-wide total, never the
-    // inferred since-site total (which can span a previous deposit cycle).
+    // Only fresh, scan-backed progress or the latest observed ESI increment
+    // belongs on the Field card. Full-day totals stay in Fleet Performance.
     const minedText=site>0&&verified
       ?`${fmt(confirmedMined,'m3')} / ${fmt(site,'m3')} m³ VERIFIED`
-      :today>0?`ESI SYSTEM TODAY • ${fmt(today,'m3')} m³`
-      :mined>0?`ESI HISTORY • ${fmt(mined,'m3')} m³`:null;
-    const caveat='Daily ESI totals are system-wide and can include earlier deposits. Only mining observed after a scan confirming this deposit qualifies for automatic RED.';
-    const summary=`ESI system today: ${Math.round(today).toLocaleString()} m³. Historical field-cycle estimate: ${Math.round(mined).toLocaleString()} m³. Post-scan verified: ${Math.round(confirmedMined).toLocaleString()} m³${site>0?' / '+Math.round(site).toLocaleString()+' m³ estimated cap':''}. ${caveat}`;
+      :ledger?.active&&Number(ledger.lastDeltaM3)>0
+        ?`RECENT ESI INCREASE • ${fmt(ledger.lastDeltaM3,'m3')} m³`
+        :null;
+    const caveat='ESI ledgers accumulate by UTC day, not by anomaly. This card shows only recent ESI increases or post-scan current-site progress; raw daily history belongs in Fleet Performance.';
+    const summary=`Recent evidence: ${ledger?.active?'ESI increment observed '+ago(ledger.lastActivityAt):'no recent mining interval'}. ${verified?'Current deposit post-scan volume: '+Math.round(confirmedMined).toLocaleString()+' m³'+(site>0?' of '+Math.round(site).toLocaleString()+' m³ estimated cap':''):'Deposit progress is unverified until a fresh real scan'}. ${caveat}`;
 
     if(ledger?.likelyDepleted&&pctKnown){
       return{
@@ -4702,13 +4709,7 @@
         title:`ESI mining-ledger activity detected ${ago(ledger.lastActivityAt)}. This confirms mining activity, not field depletion.`,
       };
     }
-    if(ledger?.lastActivityAt){
-      return{
-        text:`LEDGER • ${ago(ledger.lastActivityAt).toUpperCase()}`,
-        tone:'',
-        title:`Last tracked mining-ledger activity ${ago(ledger.lastActivityAt)}.`,
-      };
-    }
+
     return null;
   }
 

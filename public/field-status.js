@@ -45,10 +45,10 @@
     add('Mining',miningRecent?(lossRecent?'Recent activity · player loss reported':'Recent field-matched activity'):'No recent confirmed activity');
     add('Miners present','Unknown · ledger activity does not confirm presence');
     if(kind==='t3'&&ledger){
-      const verified=ledger.baselineDetected&&ledger.baselineAt&&ledger.verifiedFromScanAt===ledger.baselineAt;
+      const verified=recent(scan.lastScanAt,now,12)&&scan.source==='probe-scan'&&scan?.t3?.detected===true&&ledger.baselineDetected&&ledger.baselineAt&&ledger.verifiedFromScanAt===ledger.baselineAt;
       const cap=Number(ledger.siteM3),mined=Number(ledger.verifiedM3SinceScan);
       if(verified&&cap>0&&Number.isFinite(mined))add('Reported progress',volume(Math.max(0,mined))+' / '+volume(cap)+' · '+Math.min(100,Math.max(0,Math.round(mined/cap*100)))+'% of estimated cap');
-      else add('Progress','Awaiting a confirmed current-site baseline');
+      else add('Progress','Unverified · fresh Probe Scanner confirmation required');
     }else if(kind==='map'){
       for(const r of rows)if(Number(r.siteM3)>0)add(rows.length>1?r.ore+' progress':'Reported progress',volume(Math.max(0,Number(r.minedM3)||0))+' / '+volume(Number(r.siteM3))+' estimated');
     }
