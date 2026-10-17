@@ -58,6 +58,9 @@ assert.match(ps,/ConvertFrom-SecureString/,'pair token is protected with Windows
 assert.match(ps,/SecureStringToBSTR/,'protected pair token can be restored for API calls');
 assert.match(ps,/LastSentAt/,'companion heartbeats unchanged locations');
 assert.match(ps,/TotalSeconds -ge 30/,'companion heartbeat interval is 30 seconds');
-assert.match(ps,/TotalHours -lt 1/,'screen observer sends at most one successful scan per system per hour');
+assert.doesNotMatch(ps,/TotalHours -lt 1/,'one-hour lockout must not hide a newly depleted T3 anomaly');
+assert.match(ps,/\$secondsSince -lt 18/,'only a short quiet period separates screen samples');
+assert.match(ps,/\$script:ObserverLastSent\[\$key\] -eq \$hash -and \$secondsSince -lt 20\*60/,'identical frames are suppressed but changed scanner content is sent promptly');
+assert.match(server,/JLR T3 SCAN OBSERVED/,'server logs scan decisions without screenshot contents');
 assert.match(cmd,/JLR-Tracker-Companion\.ps1/);
 console.log('Desktop companion integration tests passed.');

@@ -8,7 +8,7 @@ set "JLR_STARTUP=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\JLR Hub
 if not exist "%JLR_DIR%" mkdir "%JLR_DIR%"
 echo Installing JLR Hub Companion...
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; Invoke-WebRequest -UseBasicParsing 'https://jlrhub.com/downloads/JLR-Tracker-Companion.ps1' -OutFile '%JLR_PS1%'; Unblock-File '%JLR_PS1%'"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; Invoke-WebRequest -UseBasicParsing 'https://jlrhub.com/downloads/JLR-Tracker-Companion.ps1?v=2.10.46' -OutFile '%JLR_PS1%'; Unblock-File '%JLR_PS1%'"
 if errorlevel 1 (
   echo.
   echo Installation failed while downloading the companion.

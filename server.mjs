@@ -5693,6 +5693,15 @@ async function probeScanPreview(ch,text,expectedSystem=null,{origin='manual'}={}
   trackerLocationCache.set(String(ch.characterId),{systemId,system,checkedAt:now(),live:true});
   const definition=SYSTEM_MAP.get(system)||null;
   const scan=definition?parseProbeScan(text,definition.ore):null;
+  // Compact diagnostics only. No screen frames or clipboard contents in logs.
+  const logT3Observation=(stage,extra={})=>{
+    if(!definition)return;
+    console.log('JLR T3 SCAN OBSERVED',JSON.stringify({
+      system,source:origin,stage,valid:Boolean(scan?.valid),
+      detected:Boolean(scan?.detected),scannerRows:Number(scan?.scannerRowCount)||0,
+      ...extra,
+    }));
+  };
   let correction=null;
   const negativeKey=String(ch.characterId)+'|'+system;
   let negativeConfirmed=false;
@@ -5703,6 +5712,7 @@ async function probeScanPreview(ch,text,expectedSystem=null,{origin='manual'}={}
       const observer=origin==='observer';
       const credible=credibleAbsentT3Scan(text,scan,{observer});
       if(!credible){
+        logT3Observation('negative-uncertain');
         return{
           system,systemId,tracked:true,scan,
           negativeUnreliable:true,origin,
@@ -5715,6 +5725,7 @@ async function probeScanPreview(ch,text,expectedSystem=null,{origin='manual'}={}
         const result=observeAbsentT3(observerAbsentT3Candidates.get(negativeKey),{characterId:String(ch.characterId),system,scanText:text,at});
         if(!result.confirmed){
           observerAbsentT3Candidates.set(negativeKey,result.next);
+          logT3Observation('negative-first-frame',{retryInMs:result.retryInMs||15000});
           return{
             system,systemId,tracked:true,scan,origin,
             pendingAbsence:true,confirmationObserved:1,
@@ -5765,6 +5776,8 @@ async function probeScanPreview(ch,text,expectedSystem=null,{origin='manual'}={}
     console.log('T3 deposit absent on confirmed Probe Scanner: auto-cleared field:',system,
       'by',origin,'observer=',String(ch.name||'toon'),'timer ends',clearance.timerEndsAt);
   }
+  logT3Observation(clearance?.applied?'absence-cleared':scan?.detected?'deposit-detected':scan?.valid?'absent-not-cleared':'invalid-report',
+    {fieldStatus:state.fields?.[system]?.status||null,clearanceApplied:Boolean(clearance?.applied)});
   return{
     characterId:String(ch.characterId),
     characterName:ch.name,
