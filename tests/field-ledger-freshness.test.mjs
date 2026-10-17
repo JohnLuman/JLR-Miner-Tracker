@@ -38,4 +38,7 @@ assert.match(server,/const latestScan=state\.scans\?\.\[system\]/,'public metric
 assert.match(app,/RECENT ESI INCREASE/,'Field cards surface only fresh samples');
 assert.doesNotMatch(app,/ESI HISTORY •/,'Field cards hide stale mining estimates');
 assert.match(status,/recent\(scan\.lastScanAt,now,12\)/,'field details do not show stale scan as verified');
+assert.doesNotMatch(server,/id:'field-attribution-'\+system/,'Adam never pages operators for historical UTC mining without a fresh interval');
+assert.match(server,/Recent scan-backed mining observed/,'Adam uses the latest scan-backed observation');
+assert.match(server,/Recent ESI mining detected, but current deposit progress is unverified/,'Adam distinguishes fresh unverified ESI from scan-backed progress');
 console.log('T3 newest-evidence-only and fail-closed ESI integration tests passed.');
