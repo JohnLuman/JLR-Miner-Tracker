@@ -52,7 +52,7 @@ const status=readFileSync(new URL('../public/field-status.js',import.meta.url),'
 const server=readFileSync(new URL('../server.mjs',import.meta.url),'utf8');
 assert.match(app,/ASSUMED PRESENT/);
 assert.match(app,/SOFT RESET • UNVERIFIED/);
-assert.match(app,/POST-RESET OBSERVED/);
+assert.match(app,/RECENT MINING • NOT VERIFIED/,'only fresh mining is shown after an assumed soft reset');
 assert.match(status,/Presence assumed \(NOT scanned\)/);
 assert.match(server,/JLR_T3_SOFT_RESET_ONCE/);
 assert.match(server,/field-reset-backups/);
