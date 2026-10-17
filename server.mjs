@@ -3929,7 +3929,9 @@ function updateFieldLedgerActivity(characterId,rows,sampleAt=now()){
   // If the cache was asleep, reconnecting, out of order, or crossed UTC
   // midnight, this whole interval may include old fields. Rebaseline only.
   if(!freshLedgerInterval(previousSampleAt,sampleAt)){
-    state.esi.ledgerFieldSnapshots[key]={date:day,lastSampleAt:sampleAt,totals};
+    // Out-of-order poll responses must not rewind the saved baseline.
+    if(!Number.isFinite(previousSampleMs)||Date.parse(sampleAt)>previousSampleMs)
+      state.esi.ledgerFieldSnapshots[key]={date:day,lastSampleAt:sampleAt,totals};
     return [];
   }
   const changedSystems=[];
@@ -3950,14 +3952,12 @@ function updateFieldLedgerActivity(characterId,rows,sampleAt=now()){
       needsScan:false,likelyDepleted:false,siteM3:Number(definition.siteM3)||0,
     };
 
-    // A newer Probe Scanner report becomes the depletion baseline. If a scan
-    // occurs while the field is already PICKED, keep JLR's observed site total
-    // so the board does not forget mining already proven by ESI.
+    // Every genuine new Probe Scanner report starts a clean deposit baseline.
+    // Mining from before the scan is never carried into its progress.
     const baselineMs=Date.parse(inference.baselineAt||'');
     const respawnMs=Date.parse(inference.respawnCompletedAt||'');
     if(Number.isFinite(scanMs)&&(!Number.isFinite(respawnMs)||scanMs>respawnMs)&&
       (!Number.isFinite(baselineMs)||scanMs>baselineMs)){
-      const keepObserved=Boolean(state.fields?.[system]?.status==='picked'&&state.scans?.[system]?.t3?.detected);
       inference={
         ...inference,
         baselineAt:scanAt,
