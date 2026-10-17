@@ -373,17 +373,22 @@ function Invoke-JlrProbeObserver {
   $system = [string]$snapshot.system
   $key = ([string]$capture.characterName) + "|" + $system
 
-  # One successful scan is enough for this system for one hour. This stops
-  # passive OCR from repeatedly hitting JLR while the pilot remains in place.
+  # The previous one-hour suppression could leave a depleted T3 site
+  # GREEN for an hour after its Probe Scanner entry vanished. Watch the
+  # scanner for *changes* every 3 seconds; throttle network sends, not OCR.
   $lastSentAt = $script:ObserverLastSentAt[$key]
-  if($lastSentAt -and ((Get-Date) - [datetime]$lastSentAt).TotalHours -lt 1){ return }
+  $secondsSince = if($lastSentAt){ ((Get-Date) - [datetime]$lastSentAt).TotalSeconds }else{ [double]::PositiveInfinity }
+  if($secondsSince -lt 18){ return }
 
   $ocrText = Read-JlrObserverText $capture
   $payload = Get-JlrProbeObserverPayload $ocrText
   if([string]::IsNullOrWhiteSpace($payload)){ return }
 
   $hash = Get-JlrObserverHash $payload
-  if($script:ObserverLastSent[$key] -eq $hash){ return }
+  # Never re-upload an unchanged screen more often than every 20 minutes.
+  # A disappeared anomaly changes the frame hash, so that new evidence
+  # gets submitted immediately after the short 18-second quiet period.
+  if($script:ObserverLastSent[$key] -eq $hash -and $secondsSince -lt 20*60){ return }
 
   if(Send-JlrObservedProbeScan ([string]$capture.characterName) $system $payload){
     $script:ObserverLastSent[$key] = $hash
