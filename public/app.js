@@ -4624,6 +4624,10 @@
     const row=scanOverride||state?.scans?.[system]||null;
     const at=row?.lastScanAt||null;
     const ms=Date.parse(at||'');
+    if(row?.source==='operator-soft-reset'){
+      const expired=!Number.isFinite(ms)||Date.now()-ms>=12*60*60*1000;
+      return{text:expired?'NEEDS A REAL SCAN':'ASSUMED PRESENT',stale:expired,title:expired?'Soft reset assumption expired; copy a genuine Probe Scanner report':'Operator soft reset '+ago(at)+'; field presence was assumed, NOT actually scanned. Verify with a real Probe Scanner report.'};
+    }
     const reminder=mapFields().find(row=>Number(row.tier)===3&&row.system===system&&row.scanReminderStartedAt);
     if(useMapReminder&&reminder&&(!Number.isFinite(ms)||Date.parse(reminder.scanReminderStartedAt)>ms))return mapScanReminderLine(reminder);
     if(!Number.isFinite(ms)){
@@ -4650,6 +4654,9 @@
     const verified=Boolean(ledger?.baselineDetected&&ledger?.baselineAt&&ledger?.verifiedFromScanAt===ledger.baselineAt);
     const confirmedMined=verified?Math.max(0,Number(ledger.verifiedM3SinceScan)||0):0;
     const fieldState=state?.fields?.[system];
+    if(scan.source==='operator-soft-reset'){
+      return{text:mined>0?`POST-RESET OBSERVED • ${fmt(mined,'m3')} m³`:'SOFT RESET • UNVERIFIED',tone:'',title:`Field presence was assumed by an operator at ${scan.lastScanAt||'unknown time'}; there is no real Probe Scanner confirmation yet. ${Math.round(mined).toLocaleString()} m³ observed since reset. Current EVE-day system ESI total: ${Math.round(today).toLocaleString()} m³ (may include mining before the reset).`};
+    }
     if(fieldState?.status==='cleared'&&fieldState.autoClearReason==='esi-ledger-cap'){
       const verified=Math.max(0,Number(fieldState.autoClearM3)||0);
       return{

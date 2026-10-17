@@ -40,7 +40,7 @@
       status=row.scan?.superseded?'Previous site':scanHint?.stale?'Scan due':row.scan?.detected?'Site active':'No site detected';
     }
     add('Field state',status);
-    add(scan.source==='clear-report'&&kind!=='a0'?'Last clear report':'Last scan',age(scanAt,now)+(Number.isFinite(stamp(scanAt))?' · '+new Date(scanAt).toISOString().replace('T',' ').slice(0,19)+' UTC':''));
+    add(scan.source==='operator-soft-reset'?'Presence assumed (NOT scanned)':scan.source==='clear-report'&&kind!=='a0'?'Last clear report':'Last scan',age(scanAt,now)+(Number.isFinite(stamp(scanAt))?' · '+new Date(scanAt).toISOString().replace('T',' ').slice(0,19)+' UTC':''));
     if(field.updatedAt)add('Field updated',age(field.updatedAt,now));
     add('Mining',miningRecent?(lossRecent?'Recent activity · player loss reported':'Recent field-matched activity'):'No recent confirmed activity');
     add('Miners present','Unknown · ledger activity does not confirm presence');
@@ -56,7 +56,7 @@
     const active=timers.filter(r=>r.timerEndsAt);
     if(active.length)for(const r of active)add(active.length>1?r.ore+' reset':'Reset',countdown(r.timerEndsAt,now));
     else add('Reset',kind==='ice'||kind==='a0'?'No timer recorded':'No active timer');
-    add('Scan status',scanHint?.stale||ledger?.needsScan||ledger?.likelyDepleted?'Scan needed':'Scan reminder current');
+    add('Scan status',scan.source==='operator-soft-reset'?'Presence assumed · real Probe Scanner confirmation required':(scanHint?.stale||ledger?.needsScan||ledger?.likelyDepleted?'Scan needed':'Scan reminder current'));
     if(nearest?.system===system)add('Nearest scan',Number(nearest.jumps||0)+' jumps from current travel toon');
     if(row.distanceLy!=null&&Number.isFinite(Number(row.distanceLy)))add('From C-N4OD',Number(row.distanceLy).toFixed(2)+' LY');
     if(lossRecent)activity.push({at:loss.at,text:'Player loss in this system · '+age(loss.at,now)+' (reports may be delayed)',alert:true});

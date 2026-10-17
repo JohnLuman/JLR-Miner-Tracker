@@ -1,5 +1,6 @@
 import {recordSystemMining,recentSystemMining} from './lib/system-mining-activity.mjs';
 import {fieldMiningTargets} from './lib/field-mining-target.mjs';
+import {snapshotT3ForSoftReset,applyT3SoftReset} from './lib/t3-field-soft-reset.mjs';
 import {recordPlayerLoss,prunePlayerLosses,playerLossSnapshot} from './lib/field-player-loss.mjs';
 import {updateT2Ledger} from './lib/map-field-ledger.mjs';
 import {mapFieldReport,clearMapField,applyMapScanReminders} from './lib/map-field-report.mjs';
@@ -70,7 +71,7 @@ const EVE_CALLBACK_URL = String(process.env.EVE_CALLBACK_URL || '').trim();
 const JLR_LEGACY_HOSTS = new Set(String(process.env.JLR_LEGACY_HOSTS || 'jlr-miner-tracker-production.up.railway.app,jlr.crabdance.com,jlrtracker.crabdance.com').split(',').map(value=>value.trim().toLowerCase()).filter(Boolean));
 const EVE_CLIENT_ID = String(process.env.EVE_CLIENT_ID || '').trim();
 const EVE_CLIENT_SECRET = String(process.env.EVE_CLIENT_SECRET || '').trim();
-const ESI_USER_AGENT = String(process.env.ESI_USER_AGENT || 'JLRHub/2.10.39').trim();
+const ESI_USER_AGENT = String(process.env.ESI_USER_AGENT || 'JLRHub/2.10.42').trim();
 const ESI_COMPAT_DATE = String(process.env.ESI_COMPATIBILITY_DATE || '2026-09-16').trim();
 const TRACKER_SUPPORT_SHARED_SECRET = String(process.env.TRACKER_SUPPORT_SHARED_SECRET || '').trim();
 const trackerSupport = createTrackerSupportClient({
@@ -460,6 +461,21 @@ let syncInProgress = false;
 let manualSyncCount = 0;
 let marketRefreshInProgress = false;
 let state = await loadState();
+// One-time operator-requested reset. The Railway variable is an explicit,
+// auditable trigger, never a persistent global ESI scanner override.
+const oneTimeFieldResetId=String(process.env.JLR_T3_SOFT_RESET_ONCE||'').trim();
+if(oneTimeFieldResetId&&state.lastT3SoftReset?.id!==oneTimeFieldResetId){
+  const resetAt=now();
+  const backup=snapshotT3ForSoftReset(state,SYSTEM_DEFS,oneTimeFieldResetId,resetAt);
+  const dir=path.join(DATA_DIR,'field-reset-backups');
+  await fsp.mkdir(dir,{recursive:true});
+  const backupFile=path.join(dir,'t3-'+oneTimeFieldResetId+'.json');
+  try{await fsp.writeFile(backupFile,JSON.stringify(backup,null,2),{flag:'wx',mode:0o600})}
+  catch(error){if(error.code!=='EEXIST')throw error}
+  const result=applyT3SoftReset(state,SYSTEM_DEFS,oneTimeFieldResetId,resetAt);
+  await writeState(state);
+  console.log('JLR T3 SOFT RESET APPLIED',JSON.stringify(result),'backup='+backupFile);
+}
 const restoredLedgerCache = await loadLedgerCache(state.characters);
 let pvpDb = await loadPvpDb();
 const fieldLossSystems=new Map();
@@ -1923,7 +1939,7 @@ function publicState() {
   const marketOres=effectiveOres();
   const marketSystems=effectiveSystems(marketOres);
   return {
-    app:{name:'JLR Hub',version:'2.10.39',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
+    app:{name:'JLR Hub',version:'2.10.42',systemCount:SYSTEM_DEFS.length,privacy:'Shared field and fleet totals; Auto Follow checks linked toon locations while the page is open. Locations stay private, are cached briefly in memory, and are not retained in character history.'},
     source:{respawnHours:10,presetOutputs:source.presetOutputs,yieldCalculator:source.yieldCalculator,ores:marketOres,trendOres:TREND_ONLY_ORES.map(name=>({name,market:state.market.prices?.[name]||null})),systems:marketSystems,mapFields:FIELD_MAP_SNAPSHOT.fields.map(row=>mapFieldReport(row,state.market.mapFieldReports||{})),mapFieldSnapshot:{source:FIELD_MAP_SNAPSHOT.source,capturedAt:FIELD_MAP_SNAPSHOT.capturedAt,summary:mapFieldSummary(FIELD_MAP_SNAPSHOT),extractionStatus:String(source.fieldMapSnapshot?.extractionStatus||'')},ice:Object.entries(ICE_REPROCESSING).map(([name,recipe])=>({name,volume:recipe.volume,recipe,market:state.market.icePrices?.[name]||null})),iceFields:state.market.iceFields||[],gas:{regions:GAS_REGIONS,types:Object.fromEntries(Object.entries(GAS_TYPES).map(([name,row])=>[name,{name,...row,market:state.market.gasPrices?.[name]||null}])),wormholes:{reports:wormholeGasPublicReports(),reportHours:WORMHOLE_GAS_REPORT_TTL/3600000}},a0Fields:a0PublicFields(),a0ScannedAt:state.market.a0ScannedAt||null,a0ReportHours:A0_REPORT_TTL/3600000},
     miningActivity:recentSystemMining(state.esi.systemMiningActivity),
     playerLosses:playerLossSnapshot(pvpDb.fieldPlayerLosses,fieldLossSystems),
