@@ -1,5 +1,6 @@
 import {recordSystemMining,recentSystemMining} from './lib/system-mining-activity.mjs';
 import {fieldMiningTargets} from './lib/field-mining-target.mjs';
+import {snapshotT3ForSoftReset,applyT3SoftReset} from './lib/t3-field-soft-reset.mjs';
 import {recordPlayerLoss,prunePlayerLosses,playerLossSnapshot} from './lib/field-player-loss.mjs';
 import {updateT2Ledger} from './lib/map-field-ledger.mjs';
 import {mapFieldReport,clearMapField,applyMapScanReminders} from './lib/map-field-report.mjs';
@@ -460,6 +461,21 @@ let syncInProgress = false;
 let manualSyncCount = 0;
 let marketRefreshInProgress = false;
 let state = await loadState();
+// One-time operator-requested reset. The Railway variable is an explicit,
+// auditable trigger, never a persistent global ESI scanner override.
+const oneTimeFieldResetId=String(process.env.JLR_T3_SOFT_RESET_ONCE||'').trim();
+if(oneTimeFieldResetId&&state.lastT3SoftReset?.id!==oneTimeFieldResetId){
+  const resetAt=now();
+  const backup=snapshotT3ForSoftReset(state,SYSTEM_DEFS,oneTimeFieldResetId,resetAt);
+  const dir=path.join(DATA_DIR,'field-reset-backups');
+  await fsp.mkdir(dir,{recursive:true});
+  const backupFile=path.join(dir,'t3-'+oneTimeFieldResetId+'.json');
+  try{await fsp.writeFile(backupFile,JSON.stringify(backup,null,2),{flag:'wx',mode:0o600})}
+  catch(error){if(error.code!=='EEXIST')throw error}
+  const result=applyT3SoftReset(state,SYSTEM_DEFS,oneTimeFieldResetId,resetAt);
+  await writeState(state);
+  console.log('JLR T3 SOFT RESET APPLIED',JSON.stringify(result),'backup='+backupFile);
+}
 const restoredLedgerCache = await loadLedgerCache(state.characters);
 let pvpDb = await loadPvpDb();
 const fieldLossSystems=new Map();
