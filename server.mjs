@@ -4276,6 +4276,8 @@ function trackerBrainWhySystem(system){
   const ledger=scan?.ledger||null;
   const rawToday=Math.max(0,Number(scan?.esiTodayM3)||0);
   const mined=Math.max(0,Number(ledger?.minedM3SinceSite)||0);
+  const verified=Boolean(ledger?.baselineDetected&&ledger?.baselineAt&&ledger?.verifiedFromScanAt===ledger.baselineAt);
+  const postScanMined=verified?Math.max(0,Number(ledger?.verifiedM3SinceScan)||0):0;
   const pct=Number(ledger?.depletionPct);
   const scanMs=Date.parse(scan?.lastScanAt||'');
   const stale=!Number.isFinite(scanMs)||Date.now()-scanMs>=A0_REPORT_TTL;
@@ -4308,17 +4310,19 @@ function trackerBrainWhySystem(system){
   if(field?.status==='ready'&&rawToday>0&&mined<=0&&stale){
     priority='attention';
     facts.push('Tracker has not safely assigned that daily total to the current site cycle, so the field has not been changed from green yet.');
+  }else if(postScanMined>0){
+    facts.push(`Tracker verified ${trackerBrainVolumeText(postScanMined)} mined after the scan confirming this deposit.`);
   }else if(mined>0){
-    facts.push(`Tracker has attributed ${trackerBrainVolumeText(mined)} to the current site cycle.`);
+    facts.push(`Tracker observed ${trackerBrainVolumeText(mined)} in the field activity history, but has not verified that total against this deposit.`);
   }
 
   if(field?.status!=='cleared'&&actionableLedgerScanWarning(scan)&&Number.isFinite(pct)){
     if(pct>=95){
       priority='high';
-      facts.push(`Estimated depletion is ${Math.round(pct)} percent. A new scan is needed.`);
+      facts.push(verified?`Ledger inference suggests ${Math.round(pct)} percent depletion; confirm with a scan.`:`Historical ESI volume exceeds the scan threshold, but depletion is unverified; scan to confirm this deposit.`);
     }else if(pct>=80){
       if(priority!=='high')priority='attention';
-      facts.push(`Estimated depletion is ${Math.round(pct)} percent. A new scan is recommended.`);
+      facts.push(verified?`Ledger inference suggests ${Math.round(pct)} percent depletion; confirm with a scan.`:`Historical ESI volume reached the scan threshold; it does not prove this deposit is depleted.`);
     }
   }
 
