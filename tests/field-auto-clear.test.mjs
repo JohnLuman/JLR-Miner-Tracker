@@ -46,6 +46,6 @@ assert.match(evidence,/ESI SYSTEM TODAY.*fmt\(today,'m3'\)/,'label the independe
 assert.doesNotMatch(evidence,/ESI TODAY.*fmt\(mined,'m3'\)/,'never label a multi-cycle estimate as ESI today');
 assert.match(evidence,/ESI HISTORY.*fmt\(mined,'m3'\)/,'unverified historical volume has its own label');
 assert.match(evidence,/site>0&&verified/,'only verified current-site values appear as field progress');
-assert.match(evidence,/tone:verified\?'danger':'warning'/,'unverified probable depletion stays a scan warning');
+assert.match(evidence,/tone:verified&&site>0&&confirmedMined>=site\*0\.95\?'danger':'warning'/,'red evidence styling requires verified near-complete site progress');
 assert.match(evidence,/can include earlier deposits/,'explain the cycle attribution limitation');
 console.log('Verified T3 field auto-clear tests passed.');
