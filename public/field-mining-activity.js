@@ -18,7 +18,19 @@
       const boardKey=String(card.dataset.boardKey||'');
       const exact=boardKey?state.miningActivity?.[boardKey]:null;
       const legacy=perSystem.get(system)===1?state.miningActivity?.[system]:null;
-      const active=state.fieldAccess?.allowed!==false&&recent(exact||legacy,at)&&!window.JlrFieldPlayerLoss?.recent(state.playerLosses?.[system],at);
+      const miningAt=exact||legacy;
+      // A recent ESI ledger delta is historical evidence, not proof that a
+      // depleted T3 site still exists. RED cards must lose their mining scene
+      // immediately, even if ESI retains a 45-minute activity timestamp.
+      // Read live state rather than card.dataset.status: hovered cards may
+      // deliberately retain older DOM while the latest state arrives.
+      const field=boardKey===`t3:${system}`?state.fields?.[system]:null;
+      const fieldUpdatedAt=Date.parse(field?.updatedAt||'');
+      const activityAt=Date.parse(miningAt||'');
+      const currentCycle=!field||(field.status!=='cleared'&&
+        (!Number.isFinite(fieldUpdatedAt)||Number.isFinite(activityAt)&&activityAt>=fieldUpdatedAt));
+      const active=state.fieldAccess?.allowed!==false&&currentCycle&&recent(miningAt,at)&&
+        !window.JlrFieldPlayerLoss?.recent(state.playerLosses?.[system],at);
       const existing=card.querySelector('.mining-activity-icon');
       if(!active){existing?.remove();continue;}
       if(existing)continue;

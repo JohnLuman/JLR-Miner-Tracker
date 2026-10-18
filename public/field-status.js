@@ -20,7 +20,13 @@
     const single=snapshot.systemEntryCount===1;
     const miningAt=state.miningActivity?.[key]||(single?state.miningActivity?.[system]:null);
     const loss=state.playerLosses?.[system];
-    const lossRecent=recent(loss?.at,now,30),miningRecent=recent(miningAt,now,45);
+    // Clear/respawn ends the active mining session regardless of ESI's
+    // retained recent-activity timestamp. Older activity after a manual
+    // field reset belongs to the previous site cycle.
+    const fieldUpdatedAt=stamp(field.updatedAt),miningStamp=stamp(miningAt);
+    const currentCycle=kind!=='t3'||(field.status!=='cleared'&&
+      (!Number.isFinite(fieldUpdatedAt)||miningStamp>=fieldUpdatedAt));
+    const lossRecent=recent(loss?.at,now,30),miningRecent=currentCycle&&recent(miningAt,now,45);
     const details=[],activity=[];
     const add=(label,value)=>details.push([label,String(value)]);
     let type='',status='Unknown';
@@ -60,7 +66,7 @@
     if(nearest?.system===system)add('Nearest scan',Number(nearest.jumps||0)+' jumps from current travel toon');
     if(row.distanceLy!=null&&Number.isFinite(Number(row.distanceLy)))add('From C-N4OD',Number(row.distanceLy).toFixed(2)+' LY');
     if(lossRecent)activity.push({at:loss.at,text:'Player loss in this system · '+age(loss.at,now)+' (reports may be delayed)',alert:true});
-    if(miningAt)activity.push({at:miningAt,text:'Field-matched mining ledger update · '+age(miningAt,now)});
+    if(miningAt&&currentCycle)activity.push({at:miningAt,text:'Field-matched mining ledger update · '+age(miningAt,now)});
     if(field.autoReopenedAt)activity.push({at:field.autoReopenedAt,text:'Field reopened from ESI evidence · '+age(field.autoReopenedAt,now)});
     if(field.autoClearedAt)activity.push({at:field.autoClearedAt,text:(field.autoClearReason==='probe-scan-absent'?'Probe Scanner reported T3 deposit not detected':'Estimated field cap reached')+' · '+age(field.autoClearedAt,now)});
     for(const note of field.notes||[])activity.push({at:note.createdAt,text:note.text+' · '+age(note.createdAt,now)});
