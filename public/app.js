@@ -4678,8 +4678,17 @@
         title:`Linked ESI ledgers reported ${Math.round(verified).toLocaleString()} m³ after a Probe Scanner report confirmed this T3 site. Reaching the estimated ${Math.round(site).toLocaleString()} m³ field cap started the 10-hour timer. A new scan showing the deposit is still present can correct it.`,
       };
     }
+    if(fieldState?.status==='cleared'){
+      // Old ESI deltas often arrive after a player clears a site. They are
+      // historical mining evidence, NEVER evidence that a RED deposit remains.
+      return{
+        text:'CLEAR REPORTED • RESPAWNING',
+        tone:'danger',
+        title:'This T3 field is marked cleared and its respawn timer is running. Recent ESI increases can describe ore mined before it disappeared and must not display as ongoing site mining.',
+      };
+    }
     // Only fresh, scan-backed progress or the latest observed ESI increment
-    // belongs on the Field card. Full-day totals stay in Fleet Performance.
+    // belongs on an active Field card. Full-day totals stay in Fleet Performance.
     const minedText=site>0&&verified
       ?`${fmt(confirmedMined,'m3')} / ${fmt(site,'m3')} m³ VERIFIED`
       :ledger?.active&&Number(ledger.lastDeltaM3)>0
