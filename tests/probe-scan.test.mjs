@@ -30,6 +30,21 @@ assert.equal(
   parseProbeScan('ABC-123\tCosmic Anomaly\tOre Site\tLarge Griemeer Deposit\t100.0%\t2 AU', 'Griemeer').detected,
   true,
 );
+// Screen OCR can split a site label across rows or confuse similar glyphs.
+const splitOcr = [
+  'Probe Scanner',
+  'Cosmic Anomaly',
+  'Ore Site',
+  'Large Kyli',
+  'xium Deposit',
+  '100.0%',
+  '2 AU',
+].join('\n');
+assert.equal(parseProbeScan(splitOcr, 'Kylixium').detected, true, 'split OCR deposit must count as present');
+assert.equal(parseProbeScan('Probe Scanner\nCosmic Anomaly\nOre Site\nLarge Kylixiurn Deposit\n100%\n2 AU', 'Kylixium').detected, true, 'rn OCR confusion must count as present');
+assert.equal(parseProbeScan('Probe Scanner\nCosmic Anomaly\nOre Site\nLarge Kyiixium Deposit\n100%\n2 AU', 'Kylixium').detected, true, 'one-character OCR confusion must count as present');
+assert.equal(parseProbeScan('Probe Scanner\nCosmic Anomaly\nCombat Site\nForsaken Hub\n100%\n2 AU', 'Kylixium').detected, false, 'unrelated scanner rows must not count as T3');
+
 assert.equal(parseProbeScan('random clipboard text', 'Kylixium').valid, false);
 assert.equal(parseProbeScan('ID\tGroup\tType\tName\tSignal Strength\tDistance', 'Kylixium').valid, false);
 
