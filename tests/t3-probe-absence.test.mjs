@@ -25,7 +25,7 @@ const observer=[
   '100%',
   '8.1 AU'
 ].join('\n');
-assert.equal(credibleAbsentT3Scan(observer,parseProbeScan(observer,expectedOre),{observer:true}),true,'readable Yeda screen OCR can nominate absence');
+assert.equal(credibleAbsentT3Scan(observer,parseProbeScan(observer,expectedOre),{observer:true}),false,'full-screen OCR cannot prove a deposit is absent, even when scanner text is readable');
 assert.equal(credibleAbsentT3Scan('Cosmic Anomaly\nCombat Site\nForsaken Hub\n100%\n8.1 AU',parseProbeScan('Cosmic Anomaly\nCombat Site\nForsaken Hub\n100%\n8.1 AU',expectedOre),{observer:true}),false,'unidentified screen cannot clear a field');
 const t=Date.parse('2026-10-17T20:00:00Z');
 const first=observeAbsentT3(null,{characterId:'111',system:'APM-8K',scanText:observer,at:t});
